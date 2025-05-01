@@ -224,9 +224,9 @@ class Dust:
             for v, p in ATTENUATION_LAWS[law].get("defaults", {}).items():
                 defaults[v] = p
             
-
-        diffuse_defaults = ATTENUATION_LAWS[self.diffuse_law].get("defaults", {})
-        defaults['diffuse_params'] = diffuse_defaults
+        if self.diffuse_law is not None:
+            diffuse_defaults = ATTENUATION_LAWS[self.diffuse_law].get("defaults", {})
+            defaults['diffuse_params'] = diffuse_defaults
 
         return defaults
     
