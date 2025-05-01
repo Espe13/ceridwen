@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 from jax import vmap, lax
+from functools import partial
 from collections import defaultdict
 from sedpy_jax.attenuation_dust import ATTENUATION_LAWS
 
@@ -141,9 +142,8 @@ class Dust:
             jnp.ndarray: shape (num_bins, len(wave)) attenuation per bin
         """
         def curve_fn(i, wave, fit_params):
-            def wrapped_law_fn(idx):
-                return self.law_funcs[idx](wave, **fit_params)
-            return lax.switch(i, [lambda: f(wave, **fit_params) for f in self.law_funcs])
+            branch_fns = [partial(f, wave, **fit_params) for f in self.law_funcs]
+            return lax.switch(i, branch_fns)
 
         curves = vmap(curve_fn, in_axes=(0, None, None))(jnp.arange(self.num_bins), wave, fit_params)
 
@@ -160,9 +160,8 @@ class Dust:
             jnp.ndarray: shape (num_bins, len(wave)) attenuation per bin
         """
         def curve_fn(i, wave, fit_params):
-            def wrapped_law_fn(idx):
-                return self.law_funcs[idx](wave, **fit_params)
-            return lax.switch(i, [lambda: f(wave, **fit_params) for f in self.law_funcs])
+            branch_fns = [partial(f, wave, **fit_params) for f in self.law_funcs]
+            return lax.switch(i, branch_fns)
 
         curves = vmap(curve_fn, in_axes=(0, None, None))(jnp.arange(self.num_bins), wave, fit_params)
 
