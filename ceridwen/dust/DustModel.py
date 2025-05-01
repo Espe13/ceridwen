@@ -172,6 +172,25 @@ class Dust:
 
         return curves
     
+    def display(self):
+        """
+        Display the attenuation curves for each bin using matplotlib.
+        Returns:
+            fig, ax: Matplotlib figure and axis objects.
+        """
+        import matplotlib.pyplot as plt
+        wave = jnp.linspace(0, 10000, 1000)
+        curves = self.compute_attenuation(wave, self.get_default_fit_params())
+        fig, ax = plt.subplots()
+        for i in range(self.num_bins):
+            ax.plot(wave, curves[i], label=f"Bin {i+1}: {self.law_names_resolved[i]}")
+        ax.set_xlabel("Wavelength (Angstroms)")
+        ax.set_ylabel("Attenuation")
+        ax.set_yscale("log")
+        
+        ax.legend()
+        plt.show()
+        return fig, ax
     @staticmethod
     def describe_attenuation_laws():
         """
