@@ -18,6 +18,7 @@ import jax.numpy as jnp
 from jax import jit
 from dataclasses import dataclass
 from typing import Optional
+from astropy import constants as const
 
 # Import fsps and check availability
 try:
@@ -26,12 +27,13 @@ try:
 except (ImportError, RuntimeError):
     HAS_FSPS = False
 
-from .ssp import SSPBasis
+#from .ssp import SSPBasis
 
 
 
 # Default filename for SSP data
 DEFAULT_SSP_BNAME = "ssp_data_fsps_v3.2_lgmet_age.h5"
+
 
 @dataclass(frozen=True)
 class SSPData:
@@ -65,7 +67,8 @@ class SSPData:
     ssp_lg_age_gyr: jnp.ndarray
     ssp_wave: jnp.ndarray
     ssp_flux: jnp.ndarray
-    ssp_flux_aa: jnp.array
+    log_qq: jnp.ndarray
+    
 
     def __post_init__(self):
         """Validate the shapes of the SSP data after initialization."""
@@ -92,8 +95,7 @@ class SSPData:
             f.create_dataset('ssp_lg_age_gyr', data=np.array(self.ssp_lg_age_gyr))
             f.create_dataset('ssp_wave', data=np.array(self.ssp_wave))
             f.create_dataset('ssp_flux', data=np.array(self.ssp_flux))
-            f.create_dataset('ssp_flux_aa', data=np.array(self.ssp_flux_aa))
-
+            f.create_dataset('log_qq', data=np.array(self.log_qq))
 
     @classmethod
     def load(cls, filename):
@@ -116,81 +118,10 @@ class SSPData:
             ssp_lg_age_gyr = jnp.array(f['ssp_lg_age_gyr'][:])
             ssp_wave = jnp.array(f['ssp_wave'][:])
             ssp_flux = jnp.array(f['ssp_flux'][:])
-        
-        return cls(ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux)   
-        
-    def plot_spectrum(self, lg_metallicity, lg_age, ax=None, **kwargs):
-        import warnings
-        import matplotlib.pyplot as plt
+            log_qq = jnp.array(f['log_qq'][:])
 
-        """
-        Plot the flux array for a given metallicity and age over the wavelength array.
-        
-        Parameters:
-        -----------
-        self : object
-            The object that contains the SSP data, including ssp_lgmet, ssp_lg_age_gyr, 
-            ssp_wave, and ssp_flux.
-        
-        lg_metallicity : float
-            The desired log10(metallicity) value.
-        
-        lg_age : float
-            The desired log10(age/Gyr) value.
 
-        ax : matplotlib.axes.Axes, optional
-            The axis on which to plot the spectrum. If None, a new plot will be created.
-        
-        **plot_kwargs : keyword arguments
-            Additional keyword arguments to customize the plot, passed directly to plt.plot().
-        
-        Returns:
-        --------
-        ax : matplotlib.axes.Axes
-            The axis with the plotted spectrum.
-        """
-        # Unpack plot-related keyword arguments from kwargs
-        plot_kwargs = kwargs.get('plot_kwargs', {})
-        title_kwargs = kwargs.get('title_kwargs', {})
-        label_kwargs = kwargs.get('label_kwargs', {})
-        show_legend = kwargs.get('show_legend', True)
-
-        # Find the closest available metallicity
-        closest_met_idx = np.argmin(np.abs(self.ssp_lgmet - lg_metallicity))
-        closest_metallicity = self.ssp_lgmet[closest_met_idx]
-
-        if closest_metallicity != lg_metallicity:
-            warnings.warn(f"Requested lg_metallicity = {lg_metallicity} not found, using closest value: {closest_metallicity}")
-
-        # Find the closest available age
-        closest_age_idx = np.argmin(np.abs(self.ssp_lg_age_gyr - lg_age))
-        closest_age = self.ssp_lg_age_gyr[closest_age_idx]
-
-        if closest_age != lg_age:
-            warnings.warn(f"Requested lg_age = {lg_age} not found, using closest value: {closest_age}")
-
-        # Extract the flux array for the closest metallicity and age
-        flux = self.ssp_flux[closest_met_idx, closest_age_idx, :]
-        
-        # If no axis is provided, create a new figure and axis
-        if ax is None:
-            fig, ax = plt.subplots(figsize=(10, 6))
-
-        # Plot flux over wavelength with additional plot parameters passed via **plot_kwargs
-        ax.plot(self.ssp_wave, flux, label=f'lg(Z) = {closest_metallicity:.3f}, lg(age/Gyr) = {closest_age:.3f}', **plot_kwargs)
-        ax.set_xlabel('Wavelength [Å]', **label_kwargs)
-        ax.set_ylabel('Flux [Lsun/Hz/Msun]', **label_kwargs)
-
-        default_title = f'Spectrum for lg(Z) = {lg_metallicity:.3f}, lg(age/Gyr) = {lg_age:.3f}'
-        title = title_kwargs.pop('title', default_title)
-        ax.set_title(title, **title_kwargs)
-
-        if show_legend:
-            ax.legend()
-        ax.set_xlim(0, 8000)
-        ax.grid(True)
-
-        return ax
+        return cls(ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, log_qq)
 
 # Default keys for SSPData attributes
 DEFAULT_SSP_KEYS = SSPData.__annotations__.keys()
@@ -220,50 +151,53 @@ def collect_ssp_data(**kwargs) -> typing.Tuple[jnp.ndarray, jnp.ndarray, jnp.nda
     if not HAS_FSPS:
         raise ImportError("FSPS is required for SSP data collection but is not installed.")
 
-    # Initialize the SSPBasis object
-    ssp = SSPBasis(zcontinuous=0, sfh=0, **kwargs)
+    # Initialize
+    ssp = fsps.StellarPopulation(zcontinuous=0, sfh=0, **kwargs)
 
     # Retrieve logarithmic metallicity and age data
-    ssp_lgmet = jnp.log10(ssp.ssp.zlegend)
+    ssp_lgmet = jnp.log10(ssp.zlegend)
     nzmet = ssp_lgmet.size
-    ssp_lg_age_gyr = ssp.ssp.log_age - 9.0  # Log age in Gyr
+    ssp_lg_age_gyr = ssp.log_age - 9.0  # Log age in Gyr
 
     # Identify the index where log age is -4
     age_minus_4_idx = np.where(ssp_lg_age_gyr == -4)[0][0]
 
     # Collect spectral data for each metallicity
     spectrum_collector = []
-    spectrum_collector_aa = []
     for zmet_indx in range(1, nzmet + 1):
         print(f"...retrieving zmet = {zmet_indx} of {nzmet}")
-        _wave, _fluxes, _ = ssp.get_galaxy_spectrum(zmet=zmet_indx)
-        _wave, _fluxes_aa, _ = ssp.get_galaxy_spectrum(zmet=zmet_indx, peraa=True)
+        _wave, _fluxes = ssp.get_spectrum(tage=0.0, zmet=zmet_indx, peraa=False)
         spectrum_collector.append(_fluxes)
-        spectrum_collector_aa.append(_fluxes_aa)
+
 
     # Convert collected data to JAX arrays
     ssp_wave = jnp.array(_wave)
     ssp_flux = jnp.array(spectrum_collector)
-    ssp_flux_aa = jnp.array(spectrum_collector_aa)
 
     # Step 1: Duplicate the SSP with age -4 to create one with age -6
     # Select flux corresponding to log age -4 for all metallicities
     duplicated_flux = ssp_flux[:, age_minus_4_idx, :]  # Shape: (nzmet, wavelength)
-    duplicated_flux_aa = ssp_flux_aa[:, age_minus_4_idx, :]  # Shape: (nzmet, wavelength)
     # Step 2: Modify the age to log age -6 and insert it at the beginning of ssp_lg_age_gyr
     new_age = -6
     ssp_lg_age_gyr = np.insert(ssp_lg_age_gyr, 0, new_age)
 
     # Step 3: Insert the duplicated flux at the beginning of ssp_flux for each metallicity
     ssp_flux = np.concatenate([duplicated_flux[:, np.newaxis, :], ssp_flux], axis=1)
-    ssp_flux_aa = np.concatenate([duplicated_flux_aa[:, np.newaxis, :], ssp_flux_aa], axis=1)
 
     # Convert the updated arrays to JAX arrays
     ssp_lg_age_gyr = jnp.array(ssp_lg_age_gyr)
     ssp_flux = jnp.array(ssp_flux)
-    ssp_flux_aa = jnp.array(ssp_flux_aa)
 
-    return ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, ssp_flux_aa
+    # Get ionising information
+    idx_ion = jnp.searchsorted(ssp_wave, 912.0)
+    
+    ssp_flux_ion = ssp_flux[:, :, :idx_ion]  # Flux under 912 Angstroms for each metallicity and age
+    ssp_wave_ion = ssp_wave[:idx_ion]  # Wavelength under 912 Angstroms
+
+    qq = jnp.trapezoid(ssp_flux_ion/ssp_wave_ion, x = ssp_wave_ion)
+    log_qq = jnp.log10(qq / const.h) + jnp.log10(const.L_sun)
+
+    return ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, log_qq
 
 
 def collect_ssp_data_wrapper(**kwargs) -> SSPData:
@@ -288,7 +222,7 @@ def collect_ssp_data_wrapper(**kwargs) -> SSPData:
         wavelength, and flux arrays.
     """
     # Collect SSP data in the form of JAX arrays
-    ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, ssp_flux_aa = collect_ssp_data(**kwargs)
+    ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, log_qq = collect_ssp_data(**kwargs)
 
     # Return the data wrapped in an SSPData dataclass
-    return SSPData(ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, ssp_flux_aa)
+    return SSPData(ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, log_qq)
