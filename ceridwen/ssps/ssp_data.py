@@ -17,6 +17,7 @@ import numpy as np
 import jax.numpy as jnp
 from jax import jit
 from dataclasses import dataclass
+from typing import Optional
 
 # Import fsps and check availability
 try:
@@ -51,14 +52,20 @@ class SSPData:
 
     ssp_flux : jnp.ndarray
         3D array of shape (n_met, n_ages, n_wave) containing the Spectral Energy 
-        Distribution (SED) of the SSP in units of Lsun/Hz/Msun. This represents the 
+        Distribution (SED) of the SSP in units of Lsun/Hz. This represents the 
         flux for each combination of metallicity, age, and wavelength.
+
+    ssp_flux_aa : Optional[jnp.ndarray]
+        3D array of shape (n_met, n_ages, n_wave) containing the SED of the SSP in
+        units of Lsun/AA, but with wavelengths in Angstroms (Å). This is an
+        optional attribute that may not be present in all SSP datasets. If not provided,
     """
 
     ssp_lgmet: jnp.ndarray
     ssp_lg_age_gyr: jnp.ndarray
     ssp_wave: jnp.ndarray
     ssp_flux: jnp.ndarray
+    ssp_flux_aa: jnp.array
 
     def __post_init__(self):
         """Validate the shapes of the SSP data after initialization."""
@@ -68,6 +75,7 @@ class SSPData:
                 f"(n_met, n_ages, n_wave), but got {self.ssp_flux.shape}. "
                 f"Expected: ({self.ssp_lgmet.size}, {self.ssp_lg_age_gyr.size}, {self.ssp_wave.size})"
             )
+    
 
     def save(self, filename):
         """
@@ -84,6 +92,7 @@ class SSPData:
             f.create_dataset('ssp_lg_age_gyr', data=np.array(self.ssp_lg_age_gyr))
             f.create_dataset('ssp_wave', data=np.array(self.ssp_wave))
             f.create_dataset('ssp_flux', data=np.array(self.ssp_flux))
+            f.create_dataset('ssp_flux_aa', data=np.array(self.ssp_flux_aa))
 
 
     @classmethod
@@ -212,7 +221,7 @@ def collect_ssp_data(**kwargs) -> typing.Tuple[jnp.ndarray, jnp.ndarray, jnp.nda
         raise ImportError("FSPS is required for SSP data collection but is not installed.")
 
     # Initialize the SSPBasis object
-    ssp = SSPBasis(zcontinuous=0, **kwargs)
+    ssp = SSPBasis(zcontinuous=0, sfh=0, **kwargs)
 
     # Retrieve logarithmic metallicity and age data
     ssp_lgmet = jnp.log10(ssp.ssp.zlegend)
@@ -224,31 +233,37 @@ def collect_ssp_data(**kwargs) -> typing.Tuple[jnp.ndarray, jnp.ndarray, jnp.nda
 
     # Collect spectral data for each metallicity
     spectrum_collector = []
+    spectrum_collector_aa = []
     for zmet_indx in range(1, nzmet + 1):
         print(f"...retrieving zmet = {zmet_indx} of {nzmet}")
         _wave, _fluxes, _ = ssp.get_galaxy_spectrum(zmet=zmet_indx)
+        _wave, _fluxes_aa, _ = ssp.get_galaxy_spectrum(zmet=zmet_indx, peraa=True)
         spectrum_collector.append(_fluxes)
+        spectrum_collector_aa.append(_fluxes_aa)
 
     # Convert collected data to JAX arrays
     ssp_wave = jnp.array(_wave)
     ssp_flux = jnp.array(spectrum_collector)
+    ssp_flux_aa = jnp.array(spectrum_collector_aa)
 
     # Step 1: Duplicate the SSP with age -4 to create one with age -6
     # Select flux corresponding to log age -4 for all metallicities
     duplicated_flux = ssp_flux[:, age_minus_4_idx, :]  # Shape: (nzmet, wavelength)
-
+    duplicated_flux_aa = ssp_flux_aa[:, age_minus_4_idx, :]  # Shape: (nzmet, wavelength)
     # Step 2: Modify the age to log age -6 and insert it at the beginning of ssp_lg_age_gyr
     new_age = -6
     ssp_lg_age_gyr = np.insert(ssp_lg_age_gyr, 0, new_age)
 
     # Step 3: Insert the duplicated flux at the beginning of ssp_flux for each metallicity
     ssp_flux = np.concatenate([duplicated_flux[:, np.newaxis, :], ssp_flux], axis=1)
+    ssp_flux_aa = np.concatenate([duplicated_flux_aa[:, np.newaxis, :], ssp_flux_aa], axis=1)
 
     # Convert the updated arrays to JAX arrays
     ssp_lg_age_gyr = jnp.array(ssp_lg_age_gyr)
     ssp_flux = jnp.array(ssp_flux)
+    ssp_flux_aa = jnp.array(ssp_flux_aa)
 
-    return ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux
+    return ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, ssp_flux_aa
 
 
 def collect_ssp_data_wrapper(**kwargs) -> SSPData:
@@ -273,7 +288,7 @@ def collect_ssp_data_wrapper(**kwargs) -> SSPData:
         wavelength, and flux arrays.
     """
     # Collect SSP data in the form of JAX arrays
-    ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux = collect_ssp_data(**kwargs)
+    ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, ssp_flux_aa = collect_ssp_data(**kwargs)
 
     # Return the data wrapped in an SSPData dataclass
-    return SSPData(ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux)
+    return SSPData(ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, ssp_flux_aa)
