@@ -1,5 +1,31 @@
-import jax.numpy as jnp
-from jax import jit
+"""
+Composite Stellar Population (CSP) Module
+
+This module implements the CSP modeling framework for generating synthetic spectra
+from complex star formation and metallicity histories. It provides tools for:
+
+- Building CSPs from Simple Stellar Population (SSP) libraries
+- Handling time-dependent star formation and metallicity evolution  
+- Computing spectral weights through integration of stellar population models
+- Supporting both tabular and parametric stellar formation histories
+
+The core algorithm follows the approach of flexible stellar population synthesis,
+where CSPs are constructed by weighting and combining SSP spectra across age
+and metallicity grids based on the input star formation and chemical enrichment
+histories.
+
+Key classes:
+    CSPBasis: Main class for CSP spectrum generation and weight calculation
+
+Key functions:
+    add_sfh: Add star formation history to CSP model
+    add_zh: Add metallicity evolution history to CSP model  
+    intsfwght: Core integration function for stellar formation weights
+"""
+
+# JAX imports for high-performance numerical computing
+import jax.numpy as jnp  # JAX's numpy-compatible array operations
+from jax import jit      # Just-in-time compilation decorator for performance
 
 
 def add_zh(zh, lookback_time=None, forward_time=None, tuniv=13.8):
@@ -31,24 +57,30 @@ def add_zh(zh, lookback_time=None, forward_time=None, tuniv=13.8):
         >>> add_sfh(sfh=[0.1, 0.2, 0.3, 0.4], lookback_time=[1.0, 2.0, 3.0, 4.0])
         >>> add_sfh(sfh=[0.1, 0.2, 0.3, 0.4], forward_time= [9.8, 10.8, 11.8, 12.8])
     """
-    zh = jnp.array(zh)  # Ensure sfh is a JAX array
+    # Convert metallicity history to JAX array for efficient computation
+    zh = jnp.array(zh)  # Ensure zh is a JAX array
 
+    # Process time input - either lookback time (time before present) or forward time (age of universe)
     if lookback_time is not None:
-        print('lookback time')
+        print('lookback time')  # Debug output for time mode
         lookback_time = jnp.array(lookback_time)
+        # Convert from Gyr to years for internal calculations
         zh_times = lookback_time*1e9  
     elif forward_time is not None:
-        print('forward time')
+        print('forward time')  # Debug output for time mode  
         forward_time = jnp.array(forward_time)
+        # Convert forward time to lookback time: lookback = tuniv - forward_time
         zh_times = tuniv*1e9 - forward_time*1e9  # Compute lookback time from forward time  
-        print(zh_times)
+        print(zh_times)  # Debug output for computed times
     else:
+        # Neither time specification provided - this is an error condition
         raise ValueError("Either 'lookback_time' or 'forward_time' must be provided.")
     
+    # Note: This condition seems incorrect - zh_times should never be None at this point
     if zh_times != None:
         print('No times added for metallicity history, use lookback_time or forward_time of SFH')
     
-    #Validate shapes
+    # Validate that metallicity and time arrays have consistent dimensions
     if zh.shape != zh_times.shape:
         raise ValueError(
             f"Shape mismatch: zh has shape {zh.shape}, but zh_times has shape {zh_times.shape}."
@@ -86,22 +118,27 @@ def add_sfh(sfh, lookback_time=None, forward_time=None, tuniv=13.8):
         >>> add_sfh(sfh=[0.1, 0.2, 0.3, 0.4], lookback_time=[1.0, 2.0, 3.0, 4.0])
         >>> add_sfh(sfh=[0.1, 0.2, 0.3, 0.4], forward_time= [9.8, 10.8, 11.8, 12.8])
     """
+    # Convert star formation history to JAX array for efficient computation
     sfh = jnp.array(sfh)  # Ensure sfh is a JAX array
 
+    # Process time input - either lookback time (time before present) or forward time (age of universe)
     if lookback_time is not None:
-        print('lookback time')
+        print('lookback time')  # Debug output for time mode
         lookback_time = jnp.array(lookback_time)
+        # Convert from Gyr to years for internal calculations  
         sfh_times = lookback_time*1e9  
 
     elif forward_time is not None:
-        print('forward time')
+        print('forward time')  # Debug output for time mode
         forward_time = jnp.array(forward_time)
+        # Convert forward time to lookback time: lookback = tuniv - forward_time
         sfh_times = tuniv*1e9 - forward_time*1e9  # Compute lookback time from forward time  
-        print(sfh_times)
+        print(sfh_times)  # Debug output for computed times
     else:
+        # Neither time specification provided - this is an error condition
         raise ValueError("Either 'lookback_time' or 'forward_time' must be provided.")
     
-    #Validate shapes
+    # Validate that star formation rate and time arrays have consistent dimensions
     if sfh.shape != sfh_times.shape:
         raise ValueError(
             f"Shape mismatch: sfh has shape {sfh.shape}, but sfh_times has shape {sfh_times.shape}."
@@ -112,21 +149,53 @@ def add_sfh(sfh, lookback_time=None, forward_time=None, tuniv=13.8):
 
 @jit
 def intsfwght(tlimhi, tlimlo, a_broadcasted, sf_slope_broadcasted, logage_broadcasted):
+    """
+    Compute the integrated star formation weight for CSP modeling.
+    
+    This function calculates the contribution of stellar populations formed within 
+    specific age bins to the overall CSP spectrum. It handles the integration of
+    the star formation rate over time intervals, accounting for linear interpolation
+    between adjacent time points.
+    
+    The integration accounts for:
+    - Linear interpolation of SFR between time bins (sf_slope term)
+    - Proper weighting by formation time and current age
+    - Log-linear time scaling typical in stellar population models
+    
+    Args:
+        tlimhi: Upper integration limit in log(age) (younger ages)
+        tlimlo: Lower integration limit in log(age) (older ages) 
+        a_broadcasted: Linear term coefficient for SFH interpolation
+        sf_slope_broadcasted: Slope term for linear SFH interpolation
+        logage_broadcasted: Log age of SSP bin being weighted
+        
+    Returns:
+        intsfwght: Integrated star formation weight for the age interval
+    """
+    # Natural log conversion factor (log10(e)) for mathematical convenience
     loge = jnp.log10(jnp.e)
 
-    exp_tlimlo = 10**tlimlo  # Shape: (i, j)
-    exp_tlimhi = 10**tlimhi  # Shape: (i, j)
-    exp_tlimlo_squared = exp_tlimlo**2  # Shape: (i, j)
-    exp_tlimhi_squared = exp_tlimhi**2  # Shape: (i, j)
+    # Convert log ages back to linear scale for integration calculations
+    exp_tlimlo = 10**tlimlo  # Shape: (i, j) - Linear age at lower limit (older)
+    exp_tlimhi = 10**tlimhi  # Shape: (i, j) - Linear age at upper limit (younger)  
+    exp_tlimlo_squared = exp_tlimlo**2  # Shape: (i, j) - Squared for quadratic terms
+    exp_tlimhi_squared = exp_tlimhi**2  # Shape: (i, j) - Squared for quadratic terms
 
+    # Compute star formation weight at lower integration limit (older ages)
+    # b1: Linear term contribution at older boundary
     b1 = a_broadcasted * exp_tlimlo * (logage_broadcasted - tlimlo + loge)
+    # c1: Quadratic term contribution from SFH slope at older boundary  
     c1 = sf_slope_broadcasted * exp_tlimlo_squared / 2 * (logage_broadcasted - tlimlo + loge / 2)
-    sfwght_lo = b1 + c1
+    sfwght_lo = b1 + c1  # Total weight contribution at older boundary
 
+    # Compute star formation weight at upper integration limit (younger ages)
+    # b2: Linear term contribution at younger boundary
     b2 = a_broadcasted * exp_tlimhi * (logage_broadcasted - tlimhi + loge)
+    # c2: Quadratic term contribution from SFH slope at younger boundary
     c2 = sf_slope_broadcasted * exp_tlimhi_squared / 2 * (logage_broadcasted - tlimhi + loge / 2)
-    sfwght_hi = b2 + c2
+    sfwght_hi = b2 + c2  # Total weight contribution at younger boundary
 
+    # Fundamental theorem of calculus: integrated weight = upper_limit - lower_limit
     intsfwght = sfwght_hi - sfwght_lo
     return intsfwght
 
@@ -141,18 +210,27 @@ class CSPBasis:
         
         Parameters:
             SSPData: An object holding SSP data (ages, metallicities, wavelengths, fluxes).
+            tuniv: Age of the universe in Gyr (default: 13.8 Gyr)
+            tiny_logt: Minimum lookback time in log(years) to prevent numerical issues
             **kwargs: Additional keyword arguments (not used here, but available for future extensions).
         """
         
-        self.flux = jnp.array(SSPData.ssp_flux)
-        self.wave = jnp.array(SSPData.ssp_wave)
-        self.ages = jnp.array(SSPData.ssp_lg_age_gyr)
-        self.zmet = jnp.array(SSPData.ssp_lgmet)
-        self.zlegend = 10**jnp.array(SSPData.ssp_lgmet)
+        # Extract and convert SSP data to JAX arrays for efficient computation
+        self.flux = jnp.array(SSPData.ssp_flux)        # SSP flux array: shape (n_metallicity, n_age, n_wavelength)
+        self.wave = jnp.array(SSPData.ssp_wave)        # Wavelength grid in Angstroms: shape (n_wavelength,)
+        self.ages = jnp.array(SSPData.ssp_lg_age_gyr)  # SSP ages in log10(Gyr): shape (n_age,)
+        self.zmet = jnp.array(SSPData.ssp_lgmet)       # SSP metallicities in log10(Z/Zsun): shape (n_metallicity,)
+        
+        # Convert log metallicities to linear scale for interpolation calculations
+        self.zlegend = 10**jnp.array(SSPData.ssp_lgmet)  # Linear metallicity scale: shape (n_metallicity,)
 
-        self.time_full = self.ages + 9  # Convert from log(Gyr) to log(yr)
-        self.tuniv = tuniv # Age of the Universe in Gyr
-        self.tiny_logt =  tiny_logt #smallest lookback time we accept
+        # Convert SSP age grid from log(Gyr) to log(yr) for internal time calculations
+        # This standardizes time units throughout the CSP calculations
+        self.time_full = self.ages + 9  # Convert from log(Gyr) to log(yr): log10(Gyr) + log10(1e9) = log10(yr)
+        
+        # Universe age and numerical precision parameters
+        self.tuniv = tuniv        # Age of the Universe in Gyr (cosmological parameter)
+        self.tiny_logt = tiny_logt  # Smallest lookback time we accept in log(years) to prevent numerical issues
     
     def __repr__(self):
         """
@@ -240,29 +318,55 @@ class CSPBasis:
     
     def calculate_ssp_weights(self):
         """
-        Get the spectrum of the CSP for the given SFH. The dimensions are: number of bins = i, number of ssp ages = j.
+        Calculate SSP weights for CSP spectrum generation.
+        
+        This is the core method that computes how much each SSP (defined by age and metallicity)
+        contributes to the final CSP spectrum based on the star formation and metallicity histories.
+        
+        The algorithm:
+        1. Interpolates SFH linearly between time bins
+        2. Computes mass formed in each time interval  
+        3. Distributes this mass across SSP age bins via integration
+        4. Handles metallicity evolution through linear interpolation
+        
+        Dimensions: i = number of SFH time bins, j = number of SSP age bins
+        
+        Returns:
+            total_weights: Array of SSP weights, shape depends on metallicity history:
+                         - No metallicity history: (1, n_age)
+                         - With metallicity history: (n_metallicity, n_age)
         """
         if not hasattr(self, "sfh"):
             raise ValueError("Please add an SFH to the CSP object using the 'add_sfh' method.")
         
+        # Ensure SFH values are positive to avoid numerical issues
         self.sfh = jnp.clip(self.sfh, 1e-30, None)  # Ensure SFH is non-negative
-        # DEFINE INTERMEDIATE VARIABLE
-        t1 = self.sfh_times[1:] # Time at the beginning of intervals (shape: (i,))
-        t2 = self.sfh_times[:-1] # Time at the end of intervals (shape: (i,)) 
-        sf_slope = jnp.diff(self.sfh) / ((t1 - t2) * self.sfh[1:])  # Shape: (9,)  # Compute star formation slope (sf_slope)
+        # === TIME BINNING AND SFH INTERPOLATION SETUP ===
+        # Define time intervals from the SFH grid
+        t1 = self.sfh_times[1:] # Beginning of time intervals (older times) - shape: (i,)
+        t2 = self.sfh_times[:-1] # End of time intervals (younger times) - shape: (i,)
+        
+        # Compute slope for linear interpolation of SFH between adjacent points
+        # This allows smooth SFH evolution within each time bin rather than step functions
+        sf_slope = jnp.diff(self.sfh) / ((t1 - t2) * self.sfh[1:])  # Shape: (i,) - Normalized SFH slope
 
-        # Clip times to valid range
-        tq = jnp.clip(t1, 10**self.tiny_logt, 10**self.time_full[-1])  # Shape: (9,)
-        tage = jnp.clip(t2, 10**self.tiny_logt, 10**self.time_full[-1]) # Shape: (9,)
-        sf_trunc = tage - tq  # Shape: (9,)
+        # === TIME CLIPPING AND MASS CALCULATION ===
+        # Clip times to physically valid range to avoid extrapolation beyond SSP grid
+        tq = jnp.clip(t1, 10**self.tiny_logt, 10**self.time_full[-1])  # Shape: (i,) - Clipped older times
+        tage = jnp.clip(t2, 10**self.tiny_logt, 10**self.time_full[-1]) # Shape: (i,) - Clipped younger times
+        sf_trunc = tage - tq  # Shape: (i,) - Effective time interval after clipping
+        
+        # Calculate total stellar mass formed in each time interval
+        # Accounts for linear SFH variation within the interval via trapezoidal rule
         m2 = (
-                self.sfh[1:]
-                * (1 + sf_slope / 2.0 * (tage + tq - 2 * t1))
-                * sf_trunc
-            )  # Shape: (9,) # Compute mass contribution (m2)
+                self.sfh[1:]  # SFR at younger edge of interval
+                * (1 + sf_slope / 2.0 * (tage + tq - 2 * t1))  # Correction for linear SFH slope
+                * sf_trunc  # Multiply by time interval duration
+            )  # Shape: (i,) - Total stellar mass formed in each interval
 
-        tprime = jnp.maximum(0.0, tage - sf_trunc)  # Shape: (9,)
-        a = 1 - sf_slope * tprime  # Shape: (9,)
+        # Calculate parameters for linear SFH interpolation within integration
+        tprime = jnp.maximum(0.0, tage - sf_trunc)  # Shape: (i,) - Time offset for slope calculation
+        a = 1 - sf_slope * tprime  # Shape: (i,) - Linear interpolation coefficient
 
         # SSP-related computations
         ssp_dt = jnp.diff(self.time_full)  # Time intervals in SSP (shape: (107,))
@@ -360,26 +464,54 @@ class CSPBasis:
 
     def calculate_ssp_weights_direct(self, sfh, zh):
         """
-        Get the spectrum of the CSP for the given SFH. The dimensions are: number of bins = i, number of ssp ages = j.
+        Calculate SSP weights directly from input SFH and metallicity history.
+        
+        This is the core computational method that implements the CSP algorithm
+        without requiring the histories to be stored as object attributes.
+        
+        Parameters:
+            sfh: Star formation history array
+            zh: Metallicity history array
+            
+        Returns:
+            total_weights: SSP weights array (n_metallicity, n_age)
         """
 
-        # DEFINE INTERMEDIATE VARIABLE
-        t1 = self.sfh_times[1:] # Time at the beginning of intervals (shape: (i,))
-        t2 = self.sfh_times[:-1] # Time at the end of intervals (shape: (i,)) 
-        sf_slope = jnp.diff(sfh) / ((t1 - t2) * sfh[1:])  # Shape: (9,)  # Compute star formation slope (sf_slope)
+        # === TIME BINNING SETUP (same logic as calculate_ssp_weights) ===
+        # Use the time grid stored in the object but operate on input SFH arrays directly
+        t1 = self.sfh_times[1:]  # Beginning of time intervals (older times) - shape: (i,)
+        t2 = self.sfh_times[:-1]  # End of time intervals (younger times) - shape: (i,)
         
-        # Clip times to valid range
-        tq = jnp.clip(t1, 10**self.tiny_logt, 10**self.time_full[-1])  # Shape: (9,)
-        tage = jnp.clip(t2, 10**self.tiny_logt, 10**self.time_full[-1]) # Shape: (9,)
-        sf_trunc = tage - tq  # Shape: (9,)
-        m2 = (sfh[1:]
-                * (1 + sf_slope / 2.0 * (tage + tq - 2 * t1))
-                * sf_trunc
-            )  # Shape: (9,) # Compute mass contribution (m2)
+        # Compute slope for linear interpolation using input SFH (not self.sfh)
+        sf_slope = jnp.diff(sfh) / ((t1 - t2) * sfh[1:])  # Shape: (i,) - SFH slope per interval
+        
+        # === TIME CLIPPING AND MASS CALCULATION ===
+        # Clip integration times to valid SSP grid range (same logic as calculate_ssp_weights)
+        tq = jnp.clip(t1, 10**self.tiny_logt, 10**self.time_full[-1])  # Shape: (i,) - Clipped older times
+        tage = jnp.clip(t2, 10**self.tiny_logt, 10**self.time_full[-1]) # Shape: (i,) - Clipped younger times
+        sf_trunc = tage - tq  # Shape: (i,) - Effective time interval after clipping
+        
+        # Calculate stellar mass formed using input SFH (key difference: uses sfh parameter, not self.sfh)
+        m2 = (sfh[1:]  # Use input SFH array instead of self.sfh
+                * (1 + sf_slope / 2.0 * (tage + tq - 2 * t1))  # Trapezoidal rule correction
+                * sf_trunc  # Time interval duration
+            )  # Shape: (i,) - Stellar mass formed per time interval
 
-        tprime = jnp.maximum(0.0, tage - sf_trunc)  # Shape: (9,)
-        a = 1 - sf_slope * tprime  # Shape: (9,)
+        # Linear interpolation parameters for SFH integration
+        tprime = jnp.maximum(0.0, tage - sf_trunc)  # Shape: (i,) - Time offset for slope calculation
+        a = 1 - sf_slope * tprime  # Shape: (i,) - Linear interpolation coefficient
 
+        # === REMAINDER OF ALGORITHM IDENTICAL TO calculate_ssp_weights ===
+        # The following sections implement the same SSP weight calculation algorithm:
+        # 1. SSP grid preparation 
+        # 2. Integration limit setup and broadcasting
+        # 3. Efficiency masking for sparse operations
+        # 4. Weight integration using intsfwght function
+        # 5. Edge contribution combination via finite differences
+        # 6. Mass normalization
+        # 7. Metallicity interpolation (using input zh instead of self.zh)
+        # See calculate_ssp_weights method for detailed comments on each section
+        
         # SSP-related computations
         ssp_dt = jnp.diff(self.time_full)  # Time intervals in SSP (shape: (107,))
         logage_lft = self.time_full[1:]    # Left edge of log-age bins (shape: (107,))
