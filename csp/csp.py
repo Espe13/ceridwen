@@ -245,12 +245,12 @@ class CSPBasis:
         if not hasattr(self, "sfh"):
             raise ValueError("Please add an SFH to the CSP object using the 'add_sfh' method.")
         
-
+        self.sfh = jnp.clip(self.sfh, 1e-30, None)  # Ensure SFH is non-negative
         # DEFINE INTERMEDIATE VARIABLE
         t1 = self.sfh_times[1:] # Time at the beginning of intervals (shape: (i,))
         t2 = self.sfh_times[:-1] # Time at the end of intervals (shape: (i,)) 
         sf_slope = jnp.diff(self.sfh) / ((t1 - t2) * self.sfh[1:])  # Shape: (9,)  # Compute star formation slope (sf_slope)
-        
+
         # Clip times to valid range
         tq = jnp.clip(t1, 10**self.tiny_logt, 10**self.time_full[-1])  # Shape: (9,)
         tage = jnp.clip(t2, 10**self.tiny_logt, 10**self.time_full[-1]) # Shape: (9,)
