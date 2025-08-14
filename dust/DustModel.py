@@ -16,7 +16,7 @@ class Dust:
     Call `Dust.describe_attenuation_laws()` to list all available models.
     """
 
-    def __init__(self, bin_edges = [(-jnp.inf, -2)], laws = ['powerlaw'], diffuse_law="kriek_conroy"):
+    def __init__(self, bin_edges = [(-jnp.inf, -1.97)], laws = ['powerlaw'], diffuse_law="kriek_conroy"):
         """
         Parameters:
             bin_edges (list of tuple): Age bins in Gyr.
