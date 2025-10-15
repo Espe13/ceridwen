@@ -16,10 +16,10 @@ class Dust:
     Call `Dust.describe_attenuation_laws()` to list all available models.
     """
 
-    def __init__(self, bin_edges = [(0, 10),(10, jnp.inf)], laws = ['kriek_conroy', 'kriek_conroy'], diffuse_law="kriek_conroy"):
+    def __init__(self, bin_edges = [(-jnp.inf, -1.97)], laws = ['powerlaw'], diffuse_law="kriek_conroy"):
         """
         Parameters:
-            bin_edges (list of tuple): Age bins in Myr.
+            bin_edges (list of tuple): Age bins in Gyr.
             laws (list of str): Attenuation law names (e.g., 'smc', 'kriek_conroy') for each bin.
             diffuse_law (str): Law to apply multiplicatively as diffuse component.
         """
@@ -109,7 +109,7 @@ class Dust:
             "Dust Model Configuration",
             "=" * 60,
             f"Number of bins          : {self.num_bins}",
-            f"Bin edges (Myr)         : {format_array(self.bin_edges)}",
+            f"Bin edges (Gyr)         : {format_array(self.bin_edges)}",
             f"Dust laws               : {', '.join(self.laws)}",
             f"Dust parameters        : {', '.join(map(str, self.law_params))}",
             f"Diffuse dust law        : {self.diffuse_law}",
@@ -168,9 +168,8 @@ class Dust:
         diffuse_curve = self.diffuse_fn(
                 wave, **fit_params["diffuse_params"])
         
-        curves *= diffuse_curve
 
-        return curves
+        return curves, diffuse_curve
     
     def display(self, fit_params=None):
         """
