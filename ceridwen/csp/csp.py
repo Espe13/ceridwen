@@ -26,7 +26,7 @@ Key functions:
 # JAX imports for high-performance numerical computing
 import jax.numpy as jnp  # JAX's numpy-compatible array operations
 from jax import jit, vmap      # Just-in-time compilation decorator for performance
-from ceridwen.dust import Dust  # Import Dust model for handling dust attenuation
+from ceridwen.dust import Dust, DiffuseDust  # Import Dust model for handling dust attenuation
 from ceridwen.dust import DustEmission
 from ceridwen.neb import NebularModel
 
@@ -34,6 +34,8 @@ from typing import NamedTuple, Any
 import pprint
 
 import astropy.constants as const
+
+tiny_number = 1e-70
 
 def fnu2flam(lam, fnu):
     """Convert f_nu [erg/s/cm^2/Hz] to f_lambda [erg/s/cm^2/Å]."""
@@ -210,6 +212,9 @@ def intsfwght(tlimhi, tlimlo, a_broadcasted, sf_slope_broadcasted, logage_broadc
     intsfwght = sfwght_hi - sfwght_lo
     return intsfwght
 
+
+
+
 class CSPBasis:
     """
     A class to wrap the CSP object, providing the spectrum of a CSP for a given SFH.
@@ -217,9 +222,9 @@ class CSPBasis:
 
     def __init__(self, SSPData, theta_dict = {'lookback_time': 13.8 - jnp.linspace(1e-2, 13.8, 100)}, tuniv = 13.8, tiny_logt = -70, zh_const = False,
                  add_neb = True, init_neb_params = {"isoc_type": "mist", "cloudy_dust": True}, 
-                 add_dust = True, add_dust_emission = False, sps_home = '/Users/amanda/Prospector/fsps',
-                 init_dust_params = {'bin_edges': [(-jnp.inf, -1.97), (-1.97, jnp.inf)], 
-                                'laws': ['powerlaw', 'kriek_conroy']}, verbose = True, **kwargs):
+                 add_dust = True, add_diffuse_dust = True, add_dust_emission = False, sps_home = '/Users/amanda/Prospector/fsps',
+                 init_dust_params = {'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']},
+                 diffuse_law = 'kriek_conroy', verbose = True, **kwargs):
         """
         Initialize CSPBasis with the given SSPData object and age bounds from gal_t_table.
         
@@ -250,6 +255,8 @@ class CSPBasis:
 
         self.sps_home = sps_home  # Path to FSPS home directory for stellar population synthesis
 
+
+
         if add_neb:
             self.neb_model = NebularModel(
                 sps_home=self.sps_home,
@@ -258,7 +265,48 @@ class CSPBasis:
                 smooth_velocity=True,
                 mypi = jnp.pi,
                 **init_neb_params)
-            
+
+        if add_diffuse_dust:
+            self.diff_dust = DiffuseDust(diffuse_law)
+            diff_fit_dict = self.diff_dust.get_default_params()._asdict()
+
+            for k, v in diff_fit_dict.items():
+                if k not in theta_dict:
+                    theta_dict[k] = v
+
+            self.diff_param_names = list(diff_fit_dict.keys())
+            self.DiffDustParams = NamedTuple("DiffDustParams", [(name, float) for name in self.diff_param_names])
+
+            def attenuate_with_diffuse(wave, theta):
+                # --- Extract bin-based dust parameters
+                dust_param_values = tuple(theta[getattr(self, f"{name}_idx")] for name in self.dust_param_names)
+                dust_params = self.DustParams(*dust_param_values)
+                attn = self.dust_attn.compute_attenuation(wave, dust_params)  # shape (num_bins, len(wave))
+
+                # --- Extract diffuse dust parameters
+                diffuse_param_values = tuple(theta[getattr(self, f"{name}_idx")] for name in self.diff_param_names)
+                diffuse_params = self.DiffDustParams(*diffuse_param_values)
+                attn_diffuse = self.diff_dust.compute_attenuation(wave, diffuse_params)  # shape (1, len(wave))
+
+                return attn, attn_diffuse
+
+            self.attenuate_dust = attenuate_with_diffuse
+
+        else:
+
+            def attenuate_without_diffuse(wave, theta):
+                # --- Extract bin-based dust parameters
+                dust_param_values = tuple(theta[getattr(self, f"{name}_idx")] for name in self.dust_param_names)
+                dust_params = self.DustParams(*dust_param_values)
+                attn = self.dust_attn.compute_attenuation(wave, dust_params)  # shape (num_bins, len(wave))
+
+                # --- Dummy diffuse attenuation: shape (1, len(wave)), all ones
+                attn_diffuse = jnp.zeros((1, wave.shape[0]))
+
+                return attn, attn_diffuse
+
+            self.attenuate_dust = attenuate_without_diffuse
+
         if add_dust:
             # Initialize Dust model with provided parameters
             self.dust_attn = Dust(**init_dust_params)
@@ -270,10 +318,10 @@ class CSPBasis:
                 if k not in theta_dict:
                     theta_dict[k] = v
 
-            self.dust_param_names = list(self.dust_attn.get_default_fit_params()._asdict().keys())
-            self.DustParamsType = NamedTuple("DustParams", [(name, float) for name in self.dust_param_names])
+            self.dust_param_names = list(dust_fit_dict.keys())
+            self.DustParams = NamedTuple("DustParams", [(name, float) for name in self.dust_param_names])
 
-            print(self.DustParamsType)
+            print(self.DustParams)
 
             if add_dust_emission:
                 # Initialize DustEmission model for re-emission of absorbed light
@@ -331,6 +379,7 @@ class CSPBasis:
             - self.zh_is_scalar: bool
             - self.n_time: int
         """
+
 
         # --- Required base parameters
         self.sfh_times = theta_dict['lookback_time'] * 1e9  # Gyr → yr
@@ -438,6 +487,7 @@ class CSPBasis:
 
         return repr_str
 
+ 
     def get_spectrum_dattn_dem_neb(self):
         """
         Get the spectrum of the CSP with dust attenuation, dust emission, and nebular emission.
@@ -461,24 +511,19 @@ class CSPBasis:
         Get the spectrum of the CSP with dust attenuation, but no dust emission or nebular emission.
         """
 
-        dust_param_values = tuple(theta[getattr(self, f"{name}_idx")] for name in self.dust_param_names)
-        dust_params = self.DustParamsType(*dust_param_values)
-
-        attenuation = self.dust_attn.compute_attenuation(self.wave, dust_params)
+        attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
 
         is_in_bin = (self.ages[:, None] >= self.bin_low[None, :]) & (self.ages[:, None] < self.bin_high[None, :])
-
         bin_indices = jnp.argmax(is_in_bin, axis=1)
         has_bin = jnp.any(is_in_bin, axis=1)
-        self.attenuation_matrix = jnp.where(has_bin[:, None], jnp.exp(-attenuation[bin_indices]), jnp.ones_like(attenuation[0]))
 
-        dusty_flux = self.flux * self.attenuation_matrix[None, :, :]  # Apply attenuation to SSP fluxes
+        atten_matrix = jnp.where(has_bin[:, None], jnp.exp(-attn[bin_indices]), jnp.ones_like(attn[0]))
+        dusty_flux = self.flux * atten_matrix[None, :, :]
+        weights = self.calculate_ssp_weights(theta)
+        spectrum_dust = jnp.sum(weights[:, :, None] * dusty_flux, axis=(0, 1))
 
-        total_weights = self.calculate_ssp_weights(theta)
-        spectrum_dust = jnp.sum(total_weights[:, :, None] * dusty_flux, axis=(0,1))
-
-        self.spectrum = spectrum_dust/ (self.n_time - 1)  # Normalize by the number of time bins
-
+        # apply diffuse dust, diffuse dust is not included, this is just multiplying with ones
+        self.spectrum = (spectrum_dust * jnp.exp(-attn_diffuse)) / (self.n_time - 1)
         return self.spectrum
     
     def get_spectrum_nodattn_nodem_neb(self):
@@ -489,6 +534,7 @@ class CSPBasis:
         # Compute the spectrum using the total_weights and the nebular model
         # This is a placeholder implementation
         raise NotImplementedError("This method is not yet implemented.")
+
 
     def get_spectrum_nodattn_nodem_noneb(self, theta):
         """
@@ -501,6 +547,9 @@ class CSPBasis:
         self.spectrum = spectrum / (self.n_time - 1) # Normalize by the number of time bins
 
         return self.spectrum
+
+
+    
 
     def calculate_ssp_weights_const_zh(self, theta):
         """
@@ -640,6 +689,8 @@ class CSPBasis:
         
         return total_weights
     
+
+
     def calculate_ssp_weights_var_zh(self, theta):
         """
         Calculate SSP weights for CSP spectrum generation.
@@ -782,4 +833,5 @@ class CSPBasis:
         
         return total_weights
     
+
 
