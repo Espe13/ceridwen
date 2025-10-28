@@ -25,8 +25,20 @@ Key functions:
 
 # JAX imports for high-performance numerical computing
 import jax.numpy as jnp  # JAX's numpy-compatible array operations
-from jax import jit      # Just-in-time compilation decorator for performance
+from jax import jit, vmap      # Just-in-time compilation decorator for performance
+from ceridwen.dust import Dust  # Import Dust model for handling dust attenuation
+from ceridwen.dust import DustEmission
+from ceridwen.neb import NebularModel
 
+from typing import NamedTuple, Any
+import pprint
+
+import astropy.constants as const
+
+def fnu2flam(lam, fnu):
+    """Convert f_nu [erg/s/cm^2/Hz] to f_lambda [erg/s/cm^2/Å]."""
+    c = 2.998e18  # Å/s
+    return c * (fnu / (lam**2))
 
 def add_zh(zh, lookback_time=None, forward_time=None, tuniv=13.8):
     """
@@ -87,7 +99,6 @@ def add_zh(zh, lookback_time=None, forward_time=None, tuniv=13.8):
         )
     
     return zh, zh_times
-
 
 def add_sfh(sfh, lookback_time=None, forward_time=None, tuniv=13.8):
     """
@@ -204,7 +215,11 @@ class CSPBasis:
     A class to wrap the CSP object, providing the spectrum of a CSP for a given SFH.
     """
 
-    def __init__(self, SSPData, tuniv = 13.8, tiny_logt = -10, **kwargs):
+    def __init__(self, SSPData, theta_dict = {'lookback_time': 13.8 - jnp.linspace(1e-2, 13.8, 100)}, tuniv = 13.8, tiny_logt = -70, zh_const = False,
+                 add_neb = True, init_neb_params = {"isoc_type": "mist", "cloudy_dust": True}, 
+                 add_dust = True, add_dust_emission = False, sps_home = '/Users/amanda/Prospector/fsps',
+                 init_dust_params = {'bin_edges': [(-jnp.inf, -1.97), (-1.97, jnp.inf)], 
+                                'laws': ['powerlaw', 'kriek_conroy']}, verbose = True, **kwargs):
         """
         Initialize CSPBasis with the given SSPData object and age bounds from gal_t_table.
         
@@ -220,21 +235,169 @@ class CSPBasis:
         self.wave = jnp.array(SSPData.ssp_wave)        # Wavelength grid in Angstroms: shape (n_wavelength,)
         self.ages = jnp.array(SSPData.ssp_lg_age_gyr)  # SSP ages in log10(Gyr): shape (n_age,)
         self.zmet = jnp.array(SSPData.ssp_lgmet)       # SSP metallicities in log10(Z/Zsun): shape (n_metallicity,)
-        
+        self.logqq = jnp.array(SSPData.log_qq)         # SSP log10(Q/Qsun): shape (n_age, n_metallicity)
+
         # Convert log metallicities to linear scale for interpolation calculations
         self.zlegend = 10**jnp.array(SSPData.ssp_lgmet)  # Linear metallicity scale: shape (n_metallicity,)
 
         # Convert SSP age grid from log(Gyr) to log(yr) for internal time calculations
         # This standardizes time units throughout the CSP calculations
-        self.time_full = self.ages + 9  # Convert from log(Gyr) to log(yr): log10(Gyr) + log10(1e9) = log10(yr)
+        self.ssp_ages_lgyr = self.ages + 9  # Convert from log(Gyr) to log(yr): log10(Gyr) + log10(1e9) = log10(yr)
         
         # Universe age and numerical precision parameters
         self.tuniv = tuniv        # Age of the Universe in Gyr (cosmological parameter)
         self.tiny_logt = tiny_logt  # Smallest lookback time we accept in log(years) to prevent numerical issues
-    
+
+        self.sps_home = sps_home  # Path to FSPS home directory for stellar population synthesis
+
+        if add_neb:
+            self.neb_model = NebularModel(
+                sps_home=self.sps_home,
+                csp_lambda=self.wave,
+                nebular_smooth_init=2,
+                smooth_velocity=True,
+                mypi = jnp.pi,
+                **init_neb_params)
+            
+        if add_dust:
+            # Initialize Dust model with provided parameters
+            self.dust_attn = Dust(**init_dust_params)
+            self.bin_low = jnp.array([edge[0] for edge in self.dust_attn.bin_edges])
+            self.bin_high = jnp.array([edge[1] for edge in self.dust_attn.bin_edges])
+
+            dust_fit_dict = self.dust_attn.get_default_fit_params()._asdict()
+            for k, v in dust_fit_dict.items():
+                if k not in theta_dict:
+                    theta_dict[k] = v
+
+            self.dust_param_names = list(self.dust_attn.get_default_fit_params()._asdict().keys())
+            self.DustParamsType = NamedTuple("DustParams", [(name, float) for name in self.dust_param_names])
+
+            print(self.DustParamsType)
+
+            if add_dust_emission:
+                # Initialize DustEmission model for re-emission of absorbed light
+                self.dust_emi = DustEmission(spec_lambda=self.wave, dust_file=sps_home)
+
+                if add_neb:
+                    print('Get spectrum with dust attenuation, dust emission, and nebular emission')
+                    self.get_spectrum = self.get_spectrum_dattn_dem_neb
+                else:
+                    print('Get spectrum with dust attenuation and dust emission, but no nebular emission')
+                    self.get_spectrum = self.get_spectrum_dattn_dem_noneb
+            else:
+                if add_neb:
+                    print('Get spectrum with dust attenuation, but no dust emission or nebular emission')
+                    self.get_spectrum = self.get_spectrum_dattn_nodem_neb
+                else:
+                    print('Get spectrum with dust attenuation, but no dust emission or nebular emission')
+                    self.get_spectrum = self.get_spectrum_dattn_nodem_noneb
+        else:
+            if add_neb:
+                print('Get spectrum with no dust attenuation, but with nebular emission')
+                self.get_spectrum = self.get_spectrum_nodattn_nodem_neb
+            else:
+                print('Get spectrum with no dust attenuation, dust emission, or nebular emission')
+                self.get_spectrum = self.get_spectrum_nodattn_nodem_noneb
+
+        # Initially set the SSP weight calculation method depending on metallicity history    
+        if zh_const:
+            self.calculate_ssp_weights = self.calculate_ssp_weights_const_zh    
+        else:
+            self.calculate_ssp_weights = self.calculate_ssp_weights_var_zh
+
+
+        # Determine Model Structure
+        summary = self.initialize_model_structure(theta_dict)
+        if verbose:
+            pprint.pprint(summary.keys())
+
+    def initialize_model_structure(self, theta_dict: dict):
+        """
+        Initializes model structure from a flexible theta_dict.
+
+        Required:
+            - 'sfh': jnp.ndarray of shape (n_time,)
+            - 'lookback_time': jnp.ndarray of shape (n_time,)
+
+        Optional:
+            - Any number of scalar or array parameters (e.g. 'Z', 'zh', 'dust', ...)
+
+        Sets:
+            - self.sfh_times : jnp.ndarray (in yr)
+            - sfh       : jnp.ndarray
+            - self.theta_init: jnp.ndarray (flat vector)
+            - self.<param>_idx: indices into theta vector for each parameter
+            - self.zh_is_scalar: bool
+            - self.n_time: int
+        """
+
+        # --- Required base parameters
+        self.sfh_times = theta_dict['lookback_time'] * 1e9  # Gyr → yr
+        sfh = jnp.atleast_1d(theta_dict['sfh'])
+        self.n_time = self.sfh_times.size
+
+        assert sfh.shape == (self.n_time,), "'sfh' must match 'lookback_time' length"
+        self.sfh_idx = jnp.arange(self.n_time)
+
+        theta_parts = [sfh]
+        current_idx = self.n_time  # start after sfh
+
+        # Track special handling of Z vs. zh
+        self.zh_is_scalar = None
+
+        for key, val in theta_dict.items():
+            if key in ('sfh', 'lookback_time'):
+                continue  # already handled
+
+            arr = jnp.atleast_1d(val)
+
+            if key == 'zh':
+                assert arr.shape == (self.n_time,), "'zh' must match 'lookback_time' length"
+                setattr(self, f'{key}_idx', jnp.arange(current_idx, current_idx + self.n_time))
+                self.zh_is_scalar = False
+                current_idx += self.n_time
+
+            elif key == 'Z':
+                assert arr.shape == (1,), "'Z' must be a scalar"
+                setattr(self, f'{key}_idx', jnp.array([current_idx]))
+                self.zh_is_scalar = True
+                current_idx += 1
+
+            else:
+                # General case: scalar or vector parameters
+                arr_shape = arr.shape
+                flat_len = arr.size
+                setattr(self, f'{key}_idx', jnp.arange(current_idx, current_idx + flat_len))
+                current_idx += flat_len
+
+            # Append to flat vector
+            theta_parts.append(arr)
+
+        # Final flat parameter vector
+        self.theta_init = jnp.concatenate(theta_parts)
+        
+        summary = {
+            'sfh_times': self.sfh_times.tolist(),
+            'sfh': sfh.tolist(),
+            'theta_init': self.theta_init.tolist(),
+        }
+
+        # Dynamically include all *_idx attributes
+        for name in dir(self):
+            if name.endswith('_idx') and not name.startswith('__'):
+                summary[name] = getattr(self, name).tolist()
+
+        return summary
+   
+    def predict(self, theta):
+        spectrum = self.get_spectrum(theta = theta)
+        return spectrum
+
     def __repr__(self):
         """
-        Provide a string representation of the CSPBasis object.
+        Provide a string representation of the CSPBasis object, including
+        dust attenuation and dust emission models if present.
         """
         repr_str = (
             f"<CSPBasis Object>\n"
@@ -245,78 +408,101 @@ class CSPBasis:
             f"Number of SSP Metallicities: {len(self.zmet)}\n"
             f"Wavelength Range: {self.wave.min()} - {self.wave.max()} Å\n"
         )
-        
+
+        # SFH
         if hasattr(self, "sfh"):
             repr_str += (
-                f"Star Formation History:\n"
+                "Star Formation History:\n"
                 f"  SFH Times (lookback): {self.sfh_times}\n"
-                f"  SFH Values: {self.sfh}\n"
+                f"  SFH Values: {sfh}\n"
             )
         else:
             repr_str += "Star Formation History: Not added yet\n"
-        
-        if hasattr(self, "spectrum"):
-            repr_str += "Spectrum: Computed\n"
+
+        # Spectrum status
+        repr_str += "Spectrum: Computed\n" if hasattr(self, "spectrum") else "Spectrum: Not computed yet\n"
+
+        # Dust attenuation (if present)
+        if getattr(self, "dust", None) is not None:
+            repr_str += f"Dust Model: {repr(self.dust)}\n"
+            if hasattr(self, "bin_low") and hasattr(self, "bin_high"):
+                repr_str += f"  Dust Bins: {len(self.bin_low)} (low={self.bin_low}, high={self.bin_high})\n"
         else:
-            repr_str += "Spectrum: Not computed yet\n"
+            repr_str += "Dust Model: None\n"
+
+        # Dust emission (if present)
+        if getattr(self, "emi", None) is not None:
+            repr_str += f"Dust Emission: {repr(self.emi)}\n"
+        else:
+            repr_str += "Dust Emission: None\n"
 
         return repr_str
 
-    def add_sfh(self, sfh, lookback_time=None, forward_time=None, tuniv=13.8):
+    def get_spectrum_dattn_dem_neb(self):
         """
-        Add a star formation history to the CSP.
+        Get the spectrum of the CSP with dust attenuation, dust emission, and nebular emission.
+        """
+        raise NotImplementedError("This method is not yet implemented.")
 
-        Parameters:
-            sfh: The star formation rate at the given ages.
-            lookback_time: Array of lookback times for the SFH in Gyr.
-            forward_time: Array of forward times (age of the universe) for the SFH in Gyr.
-            tuniv: The age of the universe in Gyr.
+    def get_spectrum_dattn_dem_noneb(self):
         """
-        sfh, sfh_times = add_sfh(sfh, lookback_time = lookback_time, forward_time = forward_time, tuniv=tuniv)  # Use the JIT-compiled pure function
-        self.sfh = sfh
-        self.sfh_times = sfh_times
-
-    def add_zh(self, zh, lookback_time=None, forward_time=None, tuniv=13.8):
+        Get the spectrum of the CSP with dust attenuation and dust emission, but no nebular emission.
         """
-        Add a metallicity history to the CSP.
-
-        Parameters:
-            zh: The metallicity at the given ages.
-            lookback_time: Array of lookback times for the SFH in Gyr.
-            forward_time: Array of forward times (age of the universe) for the SFH in Gyr.
-            tuniv: The age of the universe in Gyr.
-        """
-        zh, zh_times = add_zh(zh=zh, lookback_time = lookback_time, forward_time = forward_time, tuniv=tuniv)  # Use the JIT-compiled pure function
-        #check that the metallicity history is the same length as the SFH
-        if self.sfh_times.shape != zh_times.shape:
-            raise ValueError("The metallicity history must have the same length as the SFH.")
-        self.sfh_times = zh_times
-        self.zh = zh
+        raise NotImplementedError("This method is not yet implemented.")
     
-    def change_history(self, sfh=None, zh=None):
+    def get_spectrum_dattn_nodem_neb(self):
         """
-        Change the star formation history or metallicity history of the CSP.
-        
-        Parameters:
-            sfh: New star formation history to set.
-            zh: New metallicity history to set.
+        Get the spectrum of the CSP with dust attenuation and nebular emission, but no dust emission.
         """
-        self.sfh = sfh
-        self.zh = zh
-
-    def get_spectrum(self):
-        """
-        Get the spectrum of the CSP for the given SFH. SFH (and optionally zh) must be added to the CSP object using the 'add_sfh' method.
-        """
+        raise NotImplementedError("This method is not yet implemented.")
     
-        total_weights = self.calculate_ssp_weights()
-        
-        spectrum = jnp.sum(total_weights[:, :, None] * self.flux, axis=(0,1))  # Shape: (n_wave,)
-        self.spectrum = spectrum / (len(self.sfh) - 1) # Normalize by the number of time bins
+    def get_spectrum_dattn_nodem_noneb(self, theta):
+        """
+        Get the spectrum of the CSP with dust attenuation, but no dust emission or nebular emission.
+        """
+
+        dust_param_values = tuple(theta[getattr(self, f"{name}_idx")] for name in self.dust_param_names)
+        dust_params = self.DustParamsType(*dust_param_values)
+
+        attenuation = self.dust_attn.compute_attenuation(self.wave, dust_params)
+
+        is_in_bin = (self.ages[:, None] >= self.bin_low[None, :]) & (self.ages[:, None] < self.bin_high[None, :])
+
+        bin_indices = jnp.argmax(is_in_bin, axis=1)
+        has_bin = jnp.any(is_in_bin, axis=1)
+        self.attenuation_matrix = jnp.where(has_bin[:, None], jnp.exp(-attenuation[bin_indices]), jnp.ones_like(attenuation[0]))
+
+        dusty_flux = self.flux * self.attenuation_matrix[None, :, :]  # Apply attenuation to SSP fluxes
+
+        total_weights = self.calculate_ssp_weights(theta)
+        spectrum_dust = jnp.sum(total_weights[:, :, None] * dusty_flux, axis=(0,1))
+
+        self.spectrum = spectrum_dust/ (self.n_time - 1)  # Normalize by the number of time bins
 
         return self.spectrum
     
-    def calculate_ssp_weights(self):
+    def get_spectrum_nodattn_nodem_neb(self):
+        """
+        Get the spectrum of the CSP with nebular emission, but no dust attenuation or dust emission.
+        """
+        total_weights = self.calculate_ssp_weights()
+        # Compute the spectrum using the total_weights and the nebular model
+        # This is a placeholder implementation
+        raise NotImplementedError("This method is not yet implemented.")
+
+    def get_spectrum_nodattn_nodem_noneb(self, theta):
+        """
+        Compute CSP spectrum at fixed metallicity (no dust, no nebular).
+        """
+        
+        total_weights = self.calculate_ssp_weights(theta=theta)
+        
+        spectrum = jnp.sum(total_weights[:, :, None] * self.flux, axis=(0,1))  # Shape: (n_wave,)
+        self.spectrum = spectrum / (self.n_time - 1) # Normalize by the number of time bins
+
+        return self.spectrum
+
+    def calculate_ssp_weights_const_zh(self, theta):
         """
         Calculate SSP weights for CSP spectrum generation.
         
@@ -329,37 +515,38 @@ class CSPBasis:
         3. Distributes this mass across SSP age bins via integration
         4. Handles metallicity evolution through linear interpolation
         
-        Dimensions: i = number of SFH time bins, j = number of SSP age bins
+        Dimensions: i = number of SFH time bins (len(sfh) - 1), j = number of SSP ages (len(ssp_ages_lgyr) - 1)
         
         Returns:
             total_weights: Array of SSP weights, shape depends on metallicity history:
                          - No metallicity history: (1, n_age)
                          - With metallicity history: (n_metallicity, n_age)
         """
-        if not hasattr(self, "sfh"):
-            raise ValueError("Please add an SFH to the CSP object using the 'add_sfh' method.")
-        
         # Ensure SFH values are positive to avoid numerical issues
-        self.sfh = jnp.clip(self.sfh, 1e-30, None)  # Ensure SFH is non-negative
+        sfh = theta[self.sfh_idx]
+        sfh = jnp.clip(sfh, 1e-30, None)  # Ensure SFH is non-negative - shape (i+1)
+
         # === TIME BINNING AND SFH INTERPOLATION SETUP ===
         # Define time intervals from the SFH grid
         t1 = self.sfh_times[1:] # Beginning of time intervals (older times) - shape: (i,)
         t2 = self.sfh_times[:-1] # End of time intervals (younger times) - shape: (i,)
+
         
         # Compute slope for linear interpolation of SFH between adjacent points
         # This allows smooth SFH evolution within each time bin rather than step functions
-        sf_slope = jnp.diff(self.sfh) / ((t1 - t2) * self.sfh[1:])  # Shape: (i,) - Normalized SFH slope
+        sf_slope = jnp.diff(sfh) / ((t1 - t2) * sfh[1:])  # Shape: (i,) - Normalized SFH slope
 
         # === TIME CLIPPING AND MASS CALCULATION ===
         # Clip times to physically valid range to avoid extrapolation beyond SSP grid
-        tq = jnp.clip(t1, 10**self.tiny_logt, 10**self.time_full[-1])  # Shape: (i,) - Clipped older times
-        tage = jnp.clip(t2, 10**self.tiny_logt, 10**self.time_full[-1]) # Shape: (i,) - Clipped younger times
+        tq = jnp.clip(t1, 10**self.tiny_logt, 10**self.ssp_ages_lgyr[-1])  # Shape: (i,) - Clipped older times
+        tage = jnp.clip(t2, 10**self.tiny_logt, 10**self.ssp_ages_lgyr[-1]) # Shape: (i,) - Clipped younger times
         sf_trunc = tage - tq  # Shape: (i,) - Effective time interval after clipping
-        
+
+
         # Calculate total stellar mass formed in each time interval
         # Accounts for linear SFH variation within the interval via trapezoidal rule
         m2 = (
-                self.sfh[1:]  # SFR at younger edge of interval
+                sfh[1:]  # SFR at younger edge of interval
                 * (1 + sf_slope / 2.0 * (tage + tq - 2 * t1))  # Correction for linear SFH slope
                 * sf_trunc  # Multiply by time interval duration
             )  # Shape: (i,) - Total stellar mass formed in each interval
@@ -368,77 +555,83 @@ class CSPBasis:
         tprime = jnp.maximum(0.0, tage - sf_trunc)  # Shape: (i,) - Time offset for slope calculation
         a = 1 - sf_slope * tprime  # Shape: (i,) - Linear interpolation coefficient
 
+
         # SSP-related computations
-        ssp_dt = jnp.diff(self.time_full)  # Time intervals in SSP (shape: (107,))
-        logage_lft = self.time_full[1:]    # Left edge of log-age bins (shape: (107,))
-        logage_rght = self.time_full[:-1]  # Right edge of log-age bins (shape: (107,))
+        ssp_dt = jnp.diff(self.ssp_ages_lgyr)  # Time intervals in SSP (shape: (j,))
+        logage_lft = self.ssp_ages_lgyr[1:]    # Left edge of log-age bins (shape: (j,))
+        logage_rght = self.ssp_ages_lgyr[:-1]  # Right edge of log-age bins (shape: (j,))
+
 
         # Broadcasting integration limits
-        tq_broadcasted = jnp.log10(tq)[:, None]  # Expand tq for broadcasting (shape: (9, 1))
-        tage_broadcasted = jnp.log10(tage)[:, None]  # Expand tage for broadcasting (shape: (9, 1))
+        tq_broadcasted = jnp.log10(tq)[:, None]  # Expand tq for broadcasting (shape: (i, 1))
+        tage_broadcasted = jnp.log10(tage)[:, None]  # Expand tage for broadcasting (shape: (i, 1))
+
 
         # Compute integration limits with broadcasting
-        tlimlo = jnp.clip(logage_lft[None, :], tq_broadcasted, tage_broadcasted)  # Shape: (9, 107)
-        tlimhi = jnp.clip(logage_rght[None, :], tq_broadcasted, tage_broadcasted)  # Shape: (9, 107)
+        tlimlo = jnp.clip(logage_lft[None, :], tq_broadcasted, tage_broadcasted)  # Shape: (i, j)
+        tlimhi = jnp.clip(logage_rght[None, :], tq_broadcasted, tage_broadcasted)  # Shape: (i, j)
+
 
         # Mask computation
-        j_indices = jnp.arange(len(self.time_full))  # Indices for SSP bins (shape: (108,))
-        jmin = jnp.clip(jnp.searchsorted(self.time_full, jnp.log10(t1)) - 1, 0, len(self.time_full) - 1)  # Shape: (9,)
-        jmax = jnp.clip(jnp.searchsorted(self.time_full, jnp.log10(t2)) + 2, 0, len(self.time_full) - 1)  # Shape: (9,)
+        j_indices = jnp.arange(len(self.ssp_ages_lgyr))  # Indices for SSP bins (shape: (j,))
+        jmin = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t1)) - 1, 0, len(self.ssp_ages_lgyr) - 1)  # Shape: (i,)
+        jmax = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t2)) + 2, 0, len(self.ssp_ages_lgyr) - 1)  # Shape: (i,)
+
 
         # Create mask for relevant SSP bins
-        mask = (j_indices >= jmin[:, None]) & (j_indices < jmax[:, None])  # Shape: (9, 108)
-        mask_lft = mask[:, 1:]  # Mask for left edges (shape: (9, 107))
-        mask_rght = mask[:, :-1]  # Mask for right edges (shape: (9, 107))
+        mask = (j_indices >= jmin[:, None]) & (j_indices < jmax[:, None])  # Shape: (i, n_time)
+        mask_lft = mask[:, 1:]  # Mask for left edges (shape: (i, j))
+        mask_rght = mask[:, :-1]  # Mask for right edges (shape: (i, j))
 
-        # Boadcast bin edges
-        logage_lft_broadcasted = logage_lft[None, :]  # Shape: (1, j), broadcast to (i, j)
-        logage_rght_broadcasted = logage_rght[None, :]  # Shape: (1, j), broadcast to (i, j)
+    
+        # Broadcast bin edges
+        logage_lft_broadcasted = logage_lft[None, :]  # broadcast to (1, j)
+        logage_rght_broadcasted = logage_rght[None, :]  # broadcast to (1, j)
+ 
 
-        a_broadcasted = a[:, None]  # Shape: (i, 1), broadcast to (i, j)
-        sf_slope_broadcasted = sf_slope[:, None]  # Shape: (i, 1), broadcast to (i, j)
+        a_broadcasted = a[:, None]  # broadcast to (i, 1)
+        sf_slope_broadcasted = sf_slope[:, None]  # broadcast to (i, 1)
+
 
         # Left weights  
-        intsfwght_lft = intsfwght(tlimhi, tlimlo, a_broadcasted, sf_slope_broadcasted, logage_lft_broadcasted)
+        intsfwght_lft = intsfwght(tlimhi, tlimlo, a_broadcasted, sf_slope_broadcasted, logage_lft_broadcasted) # Shape: (i, j)
         tmp_weights_lft = jnp.zeros_like(intsfwght_lft) - intsfwght_lft / ssp_dt[None, :]  # Shape: (i, j)
         tmp_weights_lft = jnp.where(mask_lft, tmp_weights_lft, 0.0)
 
+
         # Right weights
-        intsfwght_rght = intsfwght(tlimhi, tlimlo, a_broadcasted, sf_slope_broadcasted, logage_rght_broadcasted)
+        intsfwght_rght = intsfwght(tlimhi, tlimlo, a_broadcasted, sf_slope_broadcasted, logage_rght_broadcasted)  # Shape: (i, j)
         tmp_weights_rght = jnp.zeros_like(intsfwght_rght) + intsfwght_rght / ssp_dt[None, :]  # Shape: (i, j)
         tmp_weights_rght = jnp.where(mask_rght, tmp_weights_rght, 0.0)
 
+
         # Combine left and right weights
-        result = jnp.zeros((tmp_weights_lft.shape[0], tmp_weights_lft.shape[1]+1))  
-        w1 = result.at[:, :-1].add(tmp_weights_lft).at[:, 1:].add(tmp_weights_rght) # Shape: (i, j)
+        result = jnp.zeros((tmp_weights_lft.shape[0], tmp_weights_lft.shape[1]+1))  # Shape: (i, n_time)
+        w1 = result.at[:, :-1].add(tmp_weights_lft).at[:, 1:].add(tmp_weights_rght) # Shape: (i, n_time)
 
-        m1 = jnp.sum(w1, axis=1) #shape (9,)
-
-        sfh_weights = w1 * (m2[:, None] / m1[:, None])  # Shape: (j,)
+        m1 = jnp.sum(w1, axis=1) #shape (i,)
         
-        if not hasattr(self, "zh"):
-            total_weights = sfh_weights.sum(axis=0)
-            total_weights = total_weights[None, :]
-        else:
-            zbin = (self.zh[:-1] + self.zh[1:]) / 2 # Shape: (9,)  # Compute metallicity bin (zbin) from a simple average of adjacent metallicities
-            k = jnp.clip(jnp.searchsorted(self.zlegend, zbin) - 1, 0, len(self.zlegend) - 2)  # Shape: (i,)
-            bin_size = jnp.log10(self.zlegend[k + 1]) - jnp.log10(self.zlegend[k])  # Shape: (i,)
+        sfh_weights = w1 * (m2[:, None] / m1[:, None])  # Shape: (i, n_time)
+        total_sfh_weights = sfh_weights.sum(axis=0) # Shape: (n_time,)
 
-            dz = (jnp.log10(zbin) - jnp.log10(self.zlegend[k])) / bin_size  # Shape: (i,)
-            dz = jnp.clip(dz, -1.0, 1.0)  # Clamping dz to avoid extrapolation
+        # Metallicity handling: constant metallicity case
+        target_Z = theta[self.Z_idx] # scalar
 
-            total_weights = jnp.zeros((len(self.sfh_times)-1, len(self.zlegend), len(self.ages)))
+        # 1. Find interpolation indices along z-axis
+        z_idx = jnp.searchsorted(self.zmet, target_Z, side='left')
+        z_idx = jnp.clip(z_idx, 1, len(self.zmet) - 1)
 
-            total_weights = total_weights.at[:, k].add((1 - dz[:, None]) * sfh_weights)
-            total_weights = total_weights.at[:, k + 1].add(dz[:, None] * sfh_weights)
-            total_weights = total_weights.sum(axis=0)#/(len(self.sfh_times)-1)  # Shape: (n_z, n_time)
+        z1 = self.zmet[z_idx - 1]
+        z2 = self.zmet[z_idx]
+        w = (target_Z - z1) / (z2 - z1)
 
-            
+        # 2. Prepare zeroed weights cube: (n_z, n_age)
+        total_weights = jnp.zeros((len(self.zmet), len(self.ages)))  # (n_z, n_age)
 
-            # See how much is going into each z bin:
-            z_weights = jnp.sum(total_weights, axis=(1))  # shape (n_z,)
-            
-                
+        # 3. Add the weights to bins k and k+1 with linear interpolation
+        total_weights = total_weights.at[z_idx - 1].add((1 - w) * total_sfh_weights)
+        total_weights = total_weights.at[z_idx].add(w * total_sfh_weights)
+        
         self.ssp_weights = total_weights
         self.mass_formed = m2
         self.m1 = m1    
@@ -447,135 +640,139 @@ class CSPBasis:
         
         return total_weights
     
-
-
-
-
-    def get_spectrum_direct(self, sfh, zh):
+    def calculate_ssp_weights_var_zh(self, theta):
         """
-        Get the spectrum of the CSP for the given SFH. SFH (and optionally zh) must be added to the CSP object using the 'add_sfh' method.
-        """
-    
-        total_weights = self.calculate_ssp_weights_direct( sfh = sfh, zh = zh)
+        Calculate SSP weights for CSP spectrum generation.
         
-        spectrum = jnp.sum(total_weights[:, :, None] * self.flux, axis=(0,1))  # Shape: (n_wave,)
-
-        return spectrum / (len(sfh) - 1)
-
-    def calculate_ssp_weights_direct(self, sfh, zh):
-        """
-        Calculate SSP weights directly from input SFH and metallicity history.
+        This is the core method that computes how much each SSP (defined by age and metallicity)
+        contributes to the final CSP spectrum based on the star formation and metallicity histories.
         
-        This is the core computational method that implements the CSP algorithm
-        without requiring the histories to be stored as object attributes.
+        The algorithm:
+        1. Interpolates SFH linearly between time bins
+        2. Computes mass formed in each time interval  
+        3. Distributes this mass across SSP age bins via integration
+        4. Handles metallicity evolution through linear interpolation
         
-        Parameters:
-            sfh: Star formation history array
-            zh: Metallicity history array
-            
+        Dimensions: i = number of SFH time bins (len(sfh) - 1), j = number of SSP ages (len(ssp_ages_lgyr) - 1)
+        
         Returns:
-            total_weights: SSP weights array (n_metallicity, n_age)
+            total_weights: Array of SSP weights, shape depends on metallicity history:
+                         - No metallicity history: (1, n_age)
+                         - With metallicity history: (n_metallicity, n_age)
         """
+        
+        # Ensure SFH values are positive to avoid numerical issues
+        sfh = theta[self.sfh_idx]
+        sfh = jnp.clip(sfh, 1e-30, None)  # Ensure SFH is non-negative - shape (i+1)
 
-        # === TIME BINNING SETUP (same logic as calculate_ssp_weights) ===
-        # Use the time grid stored in the object but operate on input SFH arrays directly
-        t1 = self.sfh_times[1:]  # Beginning of time intervals (older times) - shape: (i,)
-        t2 = self.sfh_times[:-1]  # End of time intervals (younger times) - shape: (i,)
+        # === TIME BINNING AND SFH INTERPOLATION SETUP ===
+        # Define time intervals from the SFH grid
+        t1 = self.sfh_times[1:] # Beginning of time intervals (older times) - shape: (i,)
+        t2 = self.sfh_times[:-1] # End of time intervals (younger times) - shape: (i,)
+
         
-        # Compute slope for linear interpolation using input SFH (not self.sfh)
-        sf_slope = jnp.diff(sfh) / ((t1 - t2) * sfh[1:])  # Shape: (i,) - SFH slope per interval
-        
+        # Compute slope for linear interpolation of SFH between adjacent points
+        # This allows smooth SFH evolution within each time bin rather than step functions
+        sf_slope = jnp.diff(sfh) / ((t1 - t2) * sfh[1:])  # Shape: (i,) - Normalized SFH slope
+
         # === TIME CLIPPING AND MASS CALCULATION ===
-        # Clip integration times to valid SSP grid range (same logic as calculate_ssp_weights)
-        tq = jnp.clip(t1, 10**self.tiny_logt, 10**self.time_full[-1])  # Shape: (i,) - Clipped older times
-        tage = jnp.clip(t2, 10**self.tiny_logt, 10**self.time_full[-1]) # Shape: (i,) - Clipped younger times
+        # Clip times to physically valid range to avoid extrapolation beyond SSP grid
+        tq = jnp.clip(t1, 10**self.tiny_logt, 10**self.ssp_ages_lgyr[-1])  # Shape: (i,) - Clipped older times
+        tage = jnp.clip(t2, 10**self.tiny_logt, 10**self.ssp_ages_lgyr[-1]) # Shape: (i,) - Clipped younger times
         sf_trunc = tage - tq  # Shape: (i,) - Effective time interval after clipping
-        
-        # Calculate stellar mass formed using input SFH (key difference: uses sfh parameter, not self.sfh)
-        m2 = (sfh[1:]  # Use input SFH array instead of self.sfh
-                * (1 + sf_slope / 2.0 * (tage + tq - 2 * t1))  # Trapezoidal rule correction
-                * sf_trunc  # Time interval duration
-            )  # Shape: (i,) - Stellar mass formed per time interval
 
-        # Linear interpolation parameters for SFH integration
+
+        # Calculate total stellar mass formed in each time interval
+        # Accounts for linear SFH variation within the interval via trapezoidal rule
+        m2 = (
+                sfh[1:]  # SFR at younger edge of interval
+                * (1 + sf_slope / 2.0 * (tage + tq - 2 * t1))  # Correction for linear SFH slope
+                * sf_trunc  # Multiply by time interval duration
+            )  # Shape: (i,) - Total stellar mass formed in each interval
+
+        # Calculate parameters for linear SFH interpolation within integration
         tprime = jnp.maximum(0.0, tage - sf_trunc)  # Shape: (i,) - Time offset for slope calculation
         a = 1 - sf_slope * tprime  # Shape: (i,) - Linear interpolation coefficient
 
-        # === REMAINDER OF ALGORITHM IDENTICAL TO calculate_ssp_weights ===
-        # The following sections implement the same SSP weight calculation algorithm:
-        # 1. SSP grid preparation 
-        # 2. Integration limit setup and broadcasting
-        # 3. Efficiency masking for sparse operations
-        # 4. Weight integration using intsfwght function
-        # 5. Edge contribution combination via finite differences
-        # 6. Mass normalization
-        # 7. Metallicity interpolation (using input zh instead of self.zh)
-        # See calculate_ssp_weights method for detailed comments on each section
-        
+
         # SSP-related computations
-        ssp_dt = jnp.diff(self.time_full)  # Time intervals in SSP (shape: (107,))
-        logage_lft = self.time_full[1:]    # Left edge of log-age bins (shape: (107,))
-        logage_rght = self.time_full[:-1]  # Right edge of log-age bins (shape: (107,))
+        ssp_dt = jnp.diff(self.ssp_ages_lgyr)  # Time intervals in SSP (shape: (j,))
+        logage_lft = self.ssp_ages_lgyr[1:]    # Left edge of log-age bins (shape: (j,))
+        logage_rght = self.ssp_ages_lgyr[:-1]  # Right edge of log-age bins (shape: (j,))
+
 
         # Broadcasting integration limits
-        tq_broadcasted = jnp.log10(tq)[:, None]  # Expand tq for broadcasting (shape: (9, 1))
-        tage_broadcasted = jnp.log10(tage)[:, None]  # Expand tage for broadcasting (shape: (9, 1))
+        tq_broadcasted = jnp.log10(tq)[:, None]  # Expand tq for broadcasting (shape: (i, 1))
+        tage_broadcasted = jnp.log10(tage)[:, None]  # Expand tage for broadcasting (shape: (i, 1))
+
 
         # Compute integration limits with broadcasting
-        tlimlo = jnp.clip(logage_lft[None, :], tq_broadcasted, tage_broadcasted)  # Shape: (9, 107)
-        tlimhi = jnp.clip(logage_rght[None, :], tq_broadcasted, tage_broadcasted)  # Shape: (9, 107)
+        tlimlo = jnp.clip(logage_lft[None, :], tq_broadcasted, tage_broadcasted)  # Shape: (i, j)
+        tlimhi = jnp.clip(logage_rght[None, :], tq_broadcasted, tage_broadcasted)  # Shape: (i, j)
+
 
         # Mask computation
-        j_indices = jnp.arange(len(self.time_full))  # Indices for SSP bins (shape: (108,))
-        jmin = jnp.clip(jnp.searchsorted(self.time_full, jnp.log10(t1)) - 1, 0, len(self.time_full) - 1)  # Shape: (9,)
-        jmax = jnp.clip(jnp.searchsorted(self.time_full, jnp.log10(t2)) + 2, 0, len(self.time_full) - 1)  # Shape: (9,)
+        j_indices = jnp.arange(len(self.ssp_ages_lgyr))  # Indices for SSP bins (shape: (j,))
+        jmin = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t1)) - 1, 0, len(self.ssp_ages_lgyr) - 1)  # Shape: (i,)
+        jmax = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t2)) + 2, 0, len(self.ssp_ages_lgyr) - 1)  # Shape: (i,)
+
 
         # Create mask for relevant SSP bins
-        mask = (j_indices >= jmin[:, None]) & (j_indices < jmax[:, None])  # Shape: (9, 108)
-        mask_lft = mask[:, 1:]  # Mask for left edges (shape: (9, 107))
-        mask_rght = mask[:, :-1]  # Mask for right edges (shape: (9, 107))
+        mask = (j_indices >= jmin[:, None]) & (j_indices < jmax[:, None])  # Shape: (i, n_time)
+        mask_lft = mask[:, 1:]  # Mask for left edges (shape: (i, j))
+        mask_rght = mask[:, :-1]  # Mask for right edges (shape: (i, j))
 
-        # Boadcast bin edges
-        logage_lft_broadcasted = logage_lft[None, :]  # Shape: (1, j), broadcast to (i, j)
-        logage_rght_broadcasted = logage_rght[None, :]  # Shape: (1, j), broadcast to (i, j)
+    
+        # Broadcast bin edges
+        logage_lft_broadcasted = logage_lft[None, :]  # broadcast to (1, j)
+        logage_rght_broadcasted = logage_rght[None, :]  # broadcast to (1, j)
+ 
 
-        a_broadcasted = a[:, None]  # Shape: (i, 1), broadcast to (i, j)
-        sf_slope_broadcasted = sf_slope[:, None]  # Shape: (i, 1), broadcast to (i, j)
+        a_broadcasted = a[:, None]  # broadcast to (i, 1)
+        sf_slope_broadcasted = sf_slope[:, None]  # broadcast to (i, 1)
+
 
         # Left weights  
-        intsfwght_lft = intsfwght(tlimhi, tlimlo, a_broadcasted, sf_slope_broadcasted, logage_lft_broadcasted)
+        intsfwght_lft = intsfwght(tlimhi, tlimlo, a_broadcasted, sf_slope_broadcasted, logage_lft_broadcasted) # Shape: (i, j)
         tmp_weights_lft = jnp.zeros_like(intsfwght_lft) - intsfwght_lft / ssp_dt[None, :]  # Shape: (i, j)
         tmp_weights_lft = jnp.where(mask_lft, tmp_weights_lft, 0.0)
 
+
         # Right weights
-        intsfwght_rght = intsfwght(tlimhi, tlimlo, a_broadcasted, sf_slope_broadcasted, logage_rght_broadcasted)
+        intsfwght_rght = intsfwght(tlimhi, tlimlo, a_broadcasted, sf_slope_broadcasted, logage_rght_broadcasted)  # Shape: (i, j)
         tmp_weights_rght = jnp.zeros_like(intsfwght_rght) + intsfwght_rght / ssp_dt[None, :]  # Shape: (i, j)
         tmp_weights_rght = jnp.where(mask_rght, tmp_weights_rght, 0.0)
 
+
         # Combine left and right weights
-        result = jnp.zeros((tmp_weights_lft.shape[0], tmp_weights_lft.shape[1]+1))  
-        w1 = result.at[:, :-1].add(tmp_weights_lft).at[:, 1:].add(tmp_weights_rght) # Shape: (i, j)
+        result = jnp.zeros((tmp_weights_lft.shape[0], tmp_weights_lft.shape[1]+1))  # Shape: (i, n_time)
+        w1 = result.at[:, :-1].add(tmp_weights_lft).at[:, 1:].add(tmp_weights_rght) # Shape: (i, n_time)
 
-        m1 = jnp.sum(w1, axis=1) #shape (9,)
-
-        sfh_weights = w1 * (m2[:, None] / m1[:, None])  # Shape: (j,)
+        m1 = jnp.sum(w1, axis=1) #shape (i,)
         
-        #if not hasattr(self, "zh"):
-        #    total_weights = sfh_weights.sum(axis=0)
-        #    total_weights = total_weights[None, :]
-        #else:
-        zbin = (zh[:-1] + zh[1:]) / 2 # Shape: (9,)  # Compute metallicity bin (zbin) from a simple average of adjacent metallicities
+        sfh_weights = w1 * (m2[:, None] / m1[:, None])  # Shape: (i, n_time)
+
+
+        zh = theta[self.zh_idx]  # Shape: (i,)
+        zbin = (zh[:-1] + zh[1:]) / 2 # Shape: (i,)  # Compute metallicity bin (zbin) from a simple average of adjacent metallicities
         k = jnp.clip(jnp.searchsorted(self.zlegend, zbin) - 1, 0, len(self.zlegend) - 2)  # Shape: (i,)
-        bin_size = jnp.log10(self.zlegend[k + 1]) - jnp.log10(self.zlegend[k])  # Shape: (i,)
+                
+        # Logarithmic bin size — protect against divide-by-zero
+        logz_k     = self.zlegend[k]
+        logz_k1    = self.zlegend[k + 1]
+        bin_size   = jnp.maximum(logz_k1 - logz_k, tiny_number) # Shape: (i,)
 
         dz = (jnp.log10(zbin) - jnp.log10(self.zlegend[k])) / bin_size  # Shape: (i,)
         dz = jnp.clip(dz, -1.0, 1.0)  # Clamping dz to avoid extrapolation
+        total_weights = jnp.zeros((len(self.sfh_times)-1, len(self.zlegend), len(self.ages))) # Shape: (i, n_z, n_time)
 
-        total_weights = jnp.zeros((len(self.sfh_times)-1, len(self.zlegend), len(self.ages)))
+        total_weights = total_weights.at[:, k].add((1 - dz[:, None]) * sfh_weights) # Shape: (i, n_z, n_time)
+        total_weights = total_weights.at[:, k + 1].add(dz[:, None] * sfh_weights) # Shape: (i, n_z, n_time)
+        total_weights = total_weights.sum(axis=0) #/(len(self.sfh_times)-1)  # Shape: (n_z, n_time)
 
-        total_weights = total_weights.at[:, k].add((1 - dz[:, None]) * sfh_weights)
-        total_weights = total_weights.at[:, k + 1].add(dz[:, None] * sfh_weights)
-        total_weights = total_weights.sum(axis=0)#/(len(self.sfh_times)-1)  # Shape: (n_z, n_time)
+        # See how much is going into each z bin:
+        z_weights = jnp.sum(total_weights, axis=(1))  # shape (n_z,)
+            
                 
         self.ssp_weights = total_weights
         self.mass_formed = m2
@@ -584,3 +781,5 @@ class CSPBasis:
         self.w1 = w1
         
         return total_weights
+    
+
