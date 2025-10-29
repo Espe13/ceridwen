@@ -1,29 +1,4 @@
-"""
-Composite Stellar Population (CSP) Module
 
-This module implements the CSP modeling framework for generating synthetic spectra
-from complex star formation and metallicity histories. It provides tools for:
-
-- Building CSPs from Simple Stellar Population (SSP) libraries
-- Handling time-dependent star formation and metallicity evolution  
-- Computing spectral weights through integration of stellar population models
-- Supporting both tabular and parametric stellar formation histories
-
-The core algorithm follows the approach of flexible stellar population synthesis,
-where CSPs are constructed by weighting and combining SSP spectra across age
-and metallicity grids based on the input star formation and chemical enrichment
-histories.
-
-Key classes:
-    CSPBasis: Main class for CSP spectrum generation and weight calculation
-
-Key functions:
-    add_sfh: Add star formation history to CSP model
-    add_zh: Add metallicity evolution history to CSP model  
-    intsfwght: Core integration function for stellar formation weights
-"""
-
-# JAX imports for high-performance numerical computing
 import jax.numpy as jnp  # JAX's numpy-compatible array operations
 from jax import jit, vmap      # Just-in-time compilation decorator for performance
 from ceridwen.dust import Dust, DiffuseDust  # Import Dust model for handling dust attenuation
@@ -266,87 +241,21 @@ class CSPBasis:
                 mypi = jnp.pi,
                 **init_neb_params)
 
-        if add_diffuse_dust:
-            self.diff_dust = DiffuseDust(diffuse_law)
-            diff_fit_dict = self.diff_dust.get_default_params()._asdict()
+        if add_diffuse_dust or add_dust:
+            self.set_attenuation_function(add_diffuse_dust, add_dust)
 
-            for k, v in diff_fit_dict.items():
-                if k not in theta_dict:
-                    theta_dict[k] = v
-
-            self.diff_param_names = list(diff_fit_dict.keys())
-            self.DiffDustParams = NamedTuple("DiffDustParams", [(name, float) for name in self.diff_param_names])
-
-            def attenuate_with_diffuse(wave, theta):
-                # --- Extract bin-based dust parameters
-                dust_param_values = tuple(theta[getattr(self, f"{name}_idx")] for name in self.dust_param_names)
-                dust_params = self.DustParams(*dust_param_values)
-                attn = self.dust_attn.compute_attenuation(wave, dust_params)  # shape (num_bins, len(wave))
-
-                # --- Extract diffuse dust parameters
-                diffuse_param_values = tuple(theta[getattr(self, f"{name}_idx")] for name in self.diff_param_names)
-                diffuse_params = self.DiffDustParams(*diffuse_param_values)
-                attn_diffuse = self.diff_dust.compute_attenuation(wave, diffuse_params)  # shape (1, len(wave))
-
-                return attn, attn_diffuse
-
-            self.attenuate_dust = attenuate_with_diffuse
-
-        else:
-
-            def attenuate_without_diffuse(wave, theta):
-                # --- Extract bin-based dust parameters
-                dust_param_values = tuple(theta[getattr(self, f"{name}_idx")] for name in self.dust_param_names)
-                dust_params = self.DustParams(*dust_param_values)
-                attn = self.dust_attn.compute_attenuation(wave, dust_params)  # shape (num_bins, len(wave))
-
-                # --- Dummy diffuse attenuation: shape (1, len(wave)), all ones
-                attn_diffuse = jnp.zeros((1, wave.shape[0]))
-
-                return attn, attn_diffuse
-
-            self.attenuate_dust = attenuate_without_diffuse
-
-        if add_dust:
-            # Initialize Dust model with provided parameters
-            self.dust_attn = Dust(**init_dust_params)
-            self.bin_low = jnp.array([edge[0] for edge in self.dust_attn.bin_edges])
-            self.bin_high = jnp.array([edge[1] for edge in self.dust_attn.bin_edges])
-
-            dust_fit_dict = self.dust_attn.get_default_fit_params()._asdict()
-            for k, v in dust_fit_dict.items():
-                if k not in theta_dict:
-                    theta_dict[k] = v
-
-            self.dust_param_names = list(dust_fit_dict.keys())
-            self.DustParams = NamedTuple("DustParams", [(name, float) for name in self.dust_param_names])
-
-            print(self.DustParams)
-
-            if add_dust_emission:
-                # Initialize DustEmission model for re-emission of absorbed light
-                self.dust_emi = DustEmission(spec_lambda=self.wave, dust_file=sps_home)
-
-                if add_neb:
-                    print('Get spectrum with dust attenuation, dust emission, and nebular emission')
-                    self.get_spectrum = self.get_spectrum_dattn_dem_neb
-                else:
-                    print('Get spectrum with dust attenuation and dust emission, but no nebular emission')
-                    self.get_spectrum = self.get_spectrum_dattn_dem_noneb
-            else:
-                if add_neb:
-                    print('Get spectrum with dust attenuation, but no dust emission or nebular emission')
-                    self.get_spectrum = self.get_spectrum_dattn_nodem_neb
-                else:
-                    print('Get spectrum with dust attenuation, but no dust emission or nebular emission')
-                    self.get_spectrum = self.get_spectrum_dattn_nodem_noneb
-        else:
-            if add_neb:
-                print('Get spectrum with no dust attenuation, but with nebular emission')
-                self.get_spectrum = self.get_spectrum_nodattn_nodem_neb
-            else:
-                print('Get spectrum with no dust attenuation, dust emission, or nebular emission')
-                self.get_spectrum = self.get_spectrum_nodattn_nodem_noneb
+        theta_dict = self.initialize_dust_components(
+                                                    add_dust,
+                                                    add_diffuse_dust,
+                                                    add_dust_emission,
+                                                    theta_dict,
+                                                    init_dust_params,
+                                                    diffuse_law,
+                                                    sps_home,
+                                                )
+   
+        self.configure_spectrum_model(add_dust, add_diffuse_dust, add_dust_emission, add_neb, sps_home)
+    
 
         # Initially set the SSP weight calculation method depending on metallicity history    
         if zh_const:
@@ -359,6 +268,218 @@ class CSPBasis:
         summary = self.initialize_model_structure(theta_dict)
         if verbose:
             pprint.pprint(summary.keys())
+
+    def set_attenuation_function(self, add_diffuse_dust, add_dust):
+        """
+        Define and assign the appropriate dust attenuation function based on model configuration.
+
+        Parameters
+        ----------
+        add_diffuse_dust : bool
+            Whether to include diffuse dust attenuation in addition to the primary dust model.
+        """
+
+        # --- Case 1: both binwise and diffuse dust are included ---
+        if add_diffuse_dust and add_dust: 
+            
+            def attenuate(wave, theta):
+                # binwise
+                dust_param_values = tuple(theta[getattr(self, f"{name}_idx")] for name in self.dust_param_names)
+                dust_params = self.DustParams(*dust_param_values)
+                attn = self.dust_attn.compute_attenuation(wave, dust_params)
+
+                # diffuse
+                diffuse_param_values = tuple(theta[getattr(self, f"{name}_idx")] for name in self.diff_param_names)
+                diffuse_params = self.DiffDustParams(*diffuse_param_values)
+                attn_diffuse = self.diff_dust.compute_attenuation(wave, diffuse_params)
+
+                return attn, attn_diffuse
+            
+            print("Using combined (binwise + diffuse) dust attenuation.")
+            self.attenuate_dust = attenuate
+
+        elif add_dust and not add_diffuse_dust:
+
+            def attenuate_without_diffuse(wave, theta):
+                # --- Extract bin-based dust parameters
+                dust_param_values = tuple(theta[getattr(self, f"{name}_idx")] for name in self.dust_param_names)
+                dust_params = self.DustParams(*dust_param_values)
+                attn = self.dust_attn.compute_attenuation(wave, dust_params)  # shape (num_bins, len(wave))
+
+                # --- Dummy diffuse attenuation: shape (1, len(wave)), all ones
+                attn_diffuse = jnp.zeros((1, wave.shape[0]))
+
+                return attn, attn_diffuse
+
+            print("Using only binwise dust attenuation.")
+            self.attenuate_dust = attenuate_without_diffuse
+
+        elif add_diffuse_dust and not add_dust:
+
+            self.bin_low = jnp.array([-jnp.inf])
+            self.bin_high = jnp.array([jnp.inf])
+
+            def attenuate_diffuse_only(wave, theta):
+                # --- Extract diffuse dust parameters
+                diffuse_param_values = tuple(theta[getattr(self, f"{name}_idx")] for name in self.diff_param_names)
+                diffuse_params = self.DiffDustParams(*diffuse_param_values)
+                attn_diffuse = self.diff_dust.compute_attenuation(wave, diffuse_params)
+
+                # --- Dummy binwise attenuation: shape (1, len(wave)), all ones
+                attn = jnp.zeros((1, wave.shape[0]))
+
+                return attn, attn_diffuse
+
+            print("Using only diffuse dust attenuation.")
+            
+            self.attenuate_dust = attenuate_diffuse_only
+        
+
+        else:
+            print('no attenuation from dust')
+
+            
+
+
+
+    def initialize_dust_components(
+        self,
+        add_dust: bool,
+        add_diffuse_dust: bool,
+        add_dust_emission: bool,
+        theta_dict: dict,
+        init_dust_params: dict,
+        diffuse_law: str,
+        sps_home: str,
+    ):
+        """
+        Initialize dust-related models and register their parameters.
+
+        Parameters
+        ----------
+        add_dust : bool
+            Whether to include a time-dependent dust attenuation model.
+        add_diffuse_dust : bool
+            Whether to include a diffuse dust attenuation component (time-independent).
+        add_dust_emission : bool
+            Whether to include dust re-emission of absorbed energy.
+        theta_dict : dict
+            Dictionary of parameter names and initial values (will be updated).
+        init_dust_params : dict
+            Parameters for initializing the Dust attenuation model.
+        diffuse_law : str
+            Name of the attenuation law for DiffuseDust.
+        sps_home : str
+            Path to the FSPS / dust emission data directory.
+        """
+
+        # --- 1. Initialize dust attenuation model ---
+        if add_dust:
+            print("Initializing Dust attenuation model...")
+            self.dust_attn = Dust(**init_dust_params)
+
+            # Store attenuation time-bin edges
+            self.bin_low = jnp.array([edge[0] for edge in self.dust_attn.bin_edges])
+            self.bin_high = jnp.array([edge[1] for edge in self.dust_attn.bin_edges])
+
+            # Register default fit parameters
+            dust_fit_dict = self.dust_attn.get_default_fit_params()._asdict()
+            for k, v in dust_fit_dict.items():
+                if k not in theta_dict:
+                    theta_dict[k] = v
+
+            self.dust_param_names = list(dust_fit_dict.keys())
+            self.DustParams = NamedTuple(
+                "DustParams", [(name, float) for name in self.dust_param_names]
+            )
+
+        # --- 2. Initialize diffuse dust model ---
+        if add_diffuse_dust:
+            print("Initializing DiffuseDust model...")
+            self.diff_dust = DiffuseDust(diffuse_law)
+
+            diff_fit_dict = self.diff_dust.get_default_params()._asdict()
+            for k, v in diff_fit_dict.items():
+                if k not in theta_dict:
+                    theta_dict[k] = v
+
+            self.diff_param_names = list(diff_fit_dict.keys())
+            self.DiffDustParams = NamedTuple(
+                "DiffDustParams", [(name, float) for name in self.diff_param_names]
+            )
+
+        # --- 3. Initialize dust emission model ---
+        if add_dust_emission:
+            if not add_diffuse_dust:
+                raise ValueError(
+                    "add_dust_emission=True requires add_diffuse_dust=True."
+                )
+            print("Initializing DustEmission model...")
+            self.dust_emi = DustEmission(spec_lambda=self.wave, dust_file=sps_home)
+
+            # Collect default parameters if your DustEmission defines them
+            if hasattr(self.dust_emi, "get_default_params"):
+                emi_fit_dict = self.dust_emi.get_default_params()._asdict()
+                for k, v in emi_fit_dict.items():
+                    if k not in theta_dict:
+                        theta_dict[k] = v
+
+                self.emi_param_names = list(emi_fit_dict.keys())
+                self.DustEmiParams = NamedTuple(
+                    "DustEmiParams", [(name, float) for name in self.emi_param_names]
+                )
+
+        # --- 4. Summary ---
+        print("Dust initialization complete.")
+        print(f"Parameters registered: {list(theta_dict.keys())}")
+
+        return theta_dict
+
+    def configure_spectrum_model(self, add_dust, add_diffuse_dust, add_dust_emission, add_neb, sps_home):
+        """
+        Configure which get_spectrum method to use depending on dust and nebular settings.
+        """
+
+        # --- Enforce dependency ---
+        if add_dust_emission and not add_diffuse_dust:
+            raise ValueError("add_dust_emission=True requires add_diffuse_dust=True.")
+
+        # --- Construct a descriptive key summarizing the configuration ---
+        if add_dust_emission:
+            base = "dattn_dem"
+            message = "Get spectrum with dust attenuation and dust emission"
+        elif (add_dust or add_diffuse_dust):  # includes both binwise-only and diffuse-only attenuation (since both call same methods)
+            base = "dattn_only"
+            message = "Get spectrum with dust attenuation only"
+        else:
+            base = "nodust"
+            message = "Get spectrum with no dust attenuation"
+
+        # --- Add nebular information ---
+        if add_neb:
+            key = f"{base}_neb"
+            message += " and nebular emission"
+        else:
+            key = f"{base}_noneb"
+            message += " and no nebular emission"
+
+        # --- Map to existing implementations ---
+        mapping = {
+            "nodust_neb":       self.get_spectrum_nodattn_nodem_neb,
+            "nodust_noneb":     self.get_spectrum_nodattn_nodem_noneb,
+            "dattn_only_neb":   self.get_spectrum_dattn_nodem_neb,
+            "dattn_only_noneb": self.get_spectrum_dattn_nodem_noneb,
+            "dattn_dem_neb":    self.get_spectrum_dattn_dem_neb,
+            "dattn_dem_noneb":  self.get_spectrum_dattn_dem_noneb,
+        }
+
+        # --- Assign the selected function ---
+        if key not in mapping:
+            raise KeyError(f"No spectrum method implemented for configuration '{key}'")
+        print('\n')
+        print(message)
+        self.get_spectrum = mapping[key]
+
 
     def initialize_model_structure(self, theta_dict: dict):
         """
@@ -379,7 +500,6 @@ class CSPBasis:
             - self.zh_is_scalar: bool
             - self.n_time: int
         """
-
 
         # --- Required base parameters
         self.sfh_times = theta_dict['lookback_time'] * 1e9  # Gyr → yr
@@ -523,7 +643,8 @@ class CSPBasis:
         spectrum_dust = jnp.sum(weights[:, :, None] * dusty_flux, axis=(0, 1))
 
         # apply diffuse dust, diffuse dust is not included, this is just multiplying with ones
-        self.spectrum = (spectrum_dust * jnp.exp(-attn_diffuse)) / (self.n_time - 1)
+        attenuated = spectrum_dust * jnp.exp(-attn_diffuse)
+        self.spectrum = jnp.reshape(attenuated, (-1,)) / (self.n_time - 1)
         return self.spectrum
     
     def get_spectrum_nodattn_nodem_neb(self):
@@ -832,6 +953,3 @@ class CSPBasis:
         self.w1 = w1
         
         return total_weights
-    
-
-
