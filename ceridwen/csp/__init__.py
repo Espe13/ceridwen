@@ -46,4 +46,5 @@ __all__ = [
     "add_sfh", 
     "add_zh",
     "intsfwght",
+    "fnun2flam"
 ]

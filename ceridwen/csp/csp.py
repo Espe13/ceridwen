@@ -303,7 +303,6 @@ class CSPBasis:
                 diffuse_params = self.DiffDustParams(*diffuse_param_values)
                 attn_diffuse = self.diff_dust.compute_attenuation(wave, diffuse_params)
 
-                print('attenuate shape', attn.shape, attn_diffuse.shape)
                 return attn, attn_diffuse
             print("Using combined (binwise + diffuse) dust attenuation.")
             self.attenuate_dust = attenuate
@@ -384,16 +383,15 @@ class CSPBasis:
             print("Initializing DustEmission model...")
             self.dust_emi = DustEmission(spec_lambda=self.wave, dust_file=sps_home)
 
-            if hasattr(self.dust_emi, "get_default_params"):
-                emi_fit_dict = self.dust_emi.get_default_params()._asdict()
-                for k, v in emi_fit_dict.items():
-                    if k not in theta_dict:
-                        theta_dict[k] = v
+            emi_fit_dict = self.dust_emi.get_default_params()._asdict()
+            for k, v in emi_fit_dict.items():
+                if k not in theta_dict:
+                    theta_dict[k] = v
 
-                self.emi_param_names = list(emi_fit_dict.keys())
-                self.DustEmiParams = NamedTuple(
-                    "DustEmiParams", [(name, float) for name in self.emi_param_names]
-                )
+            self.emi_param_names = list(emi_fit_dict.keys())
+            self.DustEmiParams = NamedTuple(
+                "DustEmiParams", [(name, float) for name in self.emi_param_names]
+            )
 
         print("Dust initialization complete.")
         return theta_dict
@@ -605,10 +603,10 @@ class CSPBasis:
         self.spec_attn = attenuated
         
         dust_emi_spectrum, self.mdust, self.tduste = self.dust_emi.compute_dust_emission(spec_attn=self.spec_attn, spec_dustfree=spectrum_dust_free,
-                                                                                        spec_lambda=self.wave, diffuse_curve=jnp.exp(-attn_diffuse),
-                                                                                        duste_qpah=sp.params['duste_qpah'],
-                                                                                        duste_umin=sp.params['duste_umin'],
-                                                                                        duste_gamma=sp.params['duste_gamma'])
+                                                                                spec_lambda=self.wave, diffuse_curve=jnp.exp(-attn_diffuse),
+                                                                                duste_qpah=theta[self.duste_qpah_idx],
+                                                                                duste_umin=theta[self.duste_umin_idx],
+                                                                                duste_gamma=theta[self.duste_gamma_idx])
         self.spectrum = dust_emi_spectrum
         return self.spectrum
         

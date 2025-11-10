@@ -116,7 +116,20 @@ class DustEmission:
         attr_str = "\n".join(f"  {k:<30}: {v}" for k, v in attributes.items() if v is not None)
         return f"\nDustEmission Model:\n{'='*50}\n{attr_str}\n{'='*50}"
 
+    def get_default_params(self):
+        """
+        Return a NamedTuple of default fit parameters, with names prefixed by 'diffuse_'.
+        """
+        from typing import NamedTuple, Any
 
+        defaults = {
+            "duste_qpah": self.duste_qpah,
+            "duste_umin": self.duste_umin,
+            "duste_gamma": self.duste_gamma
+        }
+        FitParams = NamedTuple("DustEmissionParams", [(k, Any) for k in defaults.keys()])
+        return FitParams(**defaults)
+    
     def load_dust_emission(self, dust_file=None, spec_lambda=None):
         
         # Use default paths if not provided
@@ -201,15 +214,10 @@ class DustEmission:
         tiny_number = 1e-70
         
         nu = clight * 1e10 / spec_lambda  # Hz
-        print('nu shape:', nu.shape)
-
 
         # --- Compute Lbol before and after attenuation ---
         lbold = jnp.trapezoid(spec_attn, nu)
         lboln = jnp.trapezoid(spec_dustfree, nu)
-
-        print('lbold:', lbold.shape)
-        print('lboln:', lboln.shape)
 
         # --- QPAH interpolation setup ---
         qlo = jnp.clip(jnp.searchsorted(self.qpaharr, duste_qpah) - 1, 0, self.nqpah_dustem - 2)
@@ -238,24 +246,15 @@ class DustEmission:
             dq * du * self.dustem2_dustem[:, qlo + 1, 2 * (ulo + 1) + 1] +
             (1 - dq) * du * self.dustem2_dustem[:, qlo, 2 * (ulo + 1) + 1]
         )
-        print('dustem2dustem', self.dustem2_dustem.shape)
+    
         # Combine both parts of P(U)dU
         mduste = (1 - gamma) * dumin + gamma * dumax
-        print('gamma ', gamma.shape)
-        print('dumin', dumin.shape)
-        print('dumax', dumax.shape)
         mduste = jnp.maximum(mduste, tiny_number)
-        print('mduste shape AFTER    MAX', mduste.shape)
         mduste = jnp.squeeze(mduste)
-
-        print('mduste shape:', mduste.shape)
 
 
         # Normalize the dust emission to match the absorbed luminosity
         labs = lboln - lbold
-        print('labs shape:', labs.shape)
-        print('nu shape:', nu.shape)
-        print('mduste shape:', mduste.shape)
         norm = jnp.trapezoid(mduste, nu)
         duste = mduste / norm * labs
         self.duste = jnp.maximum(duste, tiny_number)

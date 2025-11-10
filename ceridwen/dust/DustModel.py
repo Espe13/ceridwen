@@ -346,7 +346,22 @@ class DiffuseDust(Dust):
 
         FitParams = NamedTuple("DiffuseParams", [(k, Any) for k in defaults.keys()])
         return FitParams(**defaults)
+    
 
+    def compute_attenuation(self, wave, fit_params):
+        """
+        Compute the diffuse attenuation curve (single bin).
+
+        Parameters:
+            wave (jnp.ndarray): Wavelength array in Angstroms.
+            fit_params (NamedTuple): Parameters for the attenuation law.
+
+        Returns:
+            jnp.ndarray: shape (len(wave),) attenuation curve
+        """
+        # Always use the single law function (index 0)
+        return self.law_funcs[0](wave, fit_params)
+    
     def get_param_names(self):
         return list(self.law_params[0].keys())
 
