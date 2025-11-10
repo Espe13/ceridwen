@@ -5,6 +5,10 @@ from collections import defaultdict
 from sedpy_jax.attenuation_dust import ATTENUATION_LAWS
 
 
+import inspect
+from typing import Callable, Sequence
+
+
 class Dust:
     """
     JAX-compatible modular dust model that supports multiple attenuation laws per bin.
@@ -16,18 +20,16 @@ class Dust:
     Call `Dust.describe_attenuation_laws()` to list all available models.
     """
 
-    def __init__(self, bin_edges = [(-jnp.inf, -1.97)], laws = ['powerlaw'], diffuse_law="kriek_conroy"):
+    def __init__(self, bin_edges = [(-jnp.inf, -1.97)], laws = ['powerlaw']):
         """
         Parameters:
             bin_edges (list of tuple): Age bins in Gyr.
             laws (list of str): Attenuation law names (e.g., 'smc', 'kriek_conroy') for each bin.
-            diffuse_law (str): Law to apply multiplicatively as diffuse component.
         """
         assert len(bin_edges) == len(laws), "Must have one dust law per bin"
         self.bin_edges = jnp.array(bin_edges)
         self.num_bins = len(bin_edges)
         self.laws = laws
-        self.diffuse_law = diffuse_law
 
         self.law_names_resolved = []
         law_name_counter = defaultdict(int)
@@ -70,24 +72,38 @@ class Dust:
                 ignored_keys = list(defaults.keys())
                 print(f"[dust setup] Law '{name}' is used multiple times. Registered as '{resolved_name}'.")
                 print(f"             Use parameters: {', '.join(renamed_keys)}")
-                print(f"             Parameters like {', '.join(ignored_keys)} will be ignored, unless in the diffuse_params dict.")
+                print(f"             Parameters like {', '.join(ignored_keys)} will be ignored.")
 
                 # Rename parameters
                 param_dict = self._get_law_params(name)
                 param_dict = {f"{k}{number}": v for k, v in param_dict.items()}
 
-            self.law_names_resolved.append(resolved_name)
-            self.law_funcs.append(func)
-            self.law_params.append(param_dict)
+            sig = inspect.signature(func)
 
-        if diffuse_law is not None:
-            self.diffuse_params = self._get_law_params(diffuse_law)
-            self.diffuse_fn = self._get_law_fn(diffuse_law)
-            self.compute_attenuation = self._compute_with_diffuse
-        else:
-            self.diffuse_params = None
-            self.diffuse_fn = None
-            self.compute_attenuation = self._compute_no_diffuse
+            # Keep parameters after 'wave' and ignore *args/**kwargs
+            ordered_param_names = [
+                p.name for p in sig.parameters.values()
+                if p.name != "wave"
+                and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+            ]
+
+            ordered_param_names = [n for n in ordered_param_names if n in param_dict]
+
+            # Fallback: if signature-based detection fails, use param_dict keys (stably sorted)
+            if not ordered_param_names:
+                ordered_param_names = sorted(param_dict.keys())
+
+            missing = [n for n in ordered_param_names if n not in param_dict]
+            if missing:
+                raise ValueError(f"Parameters {missing} expected for '{resolved_name}' but not found in param_dict")
+
+            # Create the wrapped function (this is done in Python, not inside jit)
+            wrapped_func = make_law_wrapper(func, ordered_param_names)
+        
+
+            self.law_names_resolved.append(resolved_name)
+            self.law_funcs.append(wrapped_func)
+            self.law_params.append(param_dict)
 
     def _get_law_fn(self, name):
         try:
@@ -112,8 +128,6 @@ class Dust:
             f"Bin edges (Gyr)         : {format_array(self.bin_edges)}",
             f"Dust laws               : {', '.join(self.laws)}",
             f"Dust parameters        : {', '.join(map(str, self.law_params))}",
-            f"Diffuse dust law        : {self.diffuse_law}",
-            f"Diffuse parameters      : {self.diffuse_params}",
             "-" * 60,
         ]
 
@@ -130,47 +144,25 @@ class Dust:
             info.append("-" * 60)
 
         return "\n".join(info)
-    
-    def _compute_no_diffuse(self, wave, fit_params):
+
+
+    def compute_attenuation(self, wave, fit_params):
         """
         Compute bin-wise attenuation curves using the provided parameters.
 
         Parameters:
             wave (jnp.ndarray): Wavelength array in Angstroms.
-            fit_params (dict): Parameters for the attenuation laws.
+            fit_params (NamedTuple): Parameters for the attenuation laws.
         Returns:
             jnp.ndarray: shape (num_bins, len(wave)) attenuation per bin
         """
-        def curve_fn(i, wave, fit_params):
-            branch_fns = [partial(f, wave, **fit_params) for f in self.law_funcs]
-            return lax.switch(i, branch_fns)
 
-        curves = vmap(curve_fn, in_axes=(0, None, None))(jnp.arange(self.num_bins), wave, fit_params)
+        def curve_fn(i, wave):
+            return lax.switch(i, self.law_funcs, wave, fit_params)
 
+        curves = vmap(curve_fn, in_axes=(0, None))(jnp.arange(self.num_bins), wave)
         return curves
-    
-    def _compute_with_diffuse(self, wave, fit_params):
-        """
-        Compute bin-wise attenuation curves using the provided parameters.
 
-        Parameters:
-            wave (jnp.ndarray): Wavelength array in Angstroms.
-            fit_params (dict): Parameters for the attenuation laws. Must include a subdictionary "diffuse_params" for the diffuse law.
-        Returns:
-            jnp.ndarray: shape (num_bins, len(wave)) attenuation per bin
-        """
-        def curve_fn(i, wave, fit_params):
-            branch_fns = [partial(f, wave, **fit_params) for f in self.law_funcs]
-            return lax.switch(i, branch_fns)
-
-        curves = vmap(curve_fn, in_axes=(0, None, None))(jnp.arange(self.num_bins), wave, fit_params)
-
-        diffuse_curve = self.diffuse_fn(
-                wave, **fit_params["diffuse_params"])
-        
-
-        return curves, diffuse_curve
-    
     def display(self, fit_params=None):
         """
         Display the attenuation curves for each bin using matplotlib.
@@ -213,34 +205,43 @@ class Dust:
                 print(f"    {param:12s}: {desc}")
             print("-" * 70)
 
-    def get_default_fit_params(self):
-        """
-        Return a dictionary of default fit parameters based on chosen dust laws.
-        Returns:
-            dict: {
-                'tau': jnp.array([...]),
-                'index': jnp.array([...]),
-                'diffuse_tau': float,
-                'diffuse_index': float
-            }
-        """
+   
 
+    def get_default_fit_params(self):
+        from typing import NamedTuple, Any
+        """
+        Return a NamedTuple of default fit parameters based on chosen dust laws.
+        Returns:
+            NamedTuple: e.g. FitParams(tau_smc1=..., tau_smc2=..., dust_index=...)
+        """
         defaults = {}
 
         for law in self.law_names_resolved:
             for v, p in ATTENUATION_LAWS[law].get("defaults", {}).items():
                 defaults[v] = p
-            
-        if self.diffuse_law is not None:
-            diffuse_defaults = ATTENUATION_LAWS[self.diffuse_law].get("defaults", {})
-            defaults['diffuse_params'] = diffuse_defaults
 
-        return defaults
+        # Dynamically create a NamedTuple class with fields matching defaults
+        FitParams = NamedTuple("FitParams", [(k, Any) for k in defaults.keys()])
+        return FitParams(**defaults)
     
+    def get_param_names(self):
+        """
+        Return a list of all parameter names used in the dust laws.
+        Returns:
+            list of str: Parameter names.
+        """
+        param_names = []
+        for law in self.law_names_resolved:
+            param_names.extend(ATTENUATION_LAWS[law].get("params", {}).keys())
+        return param_names
 
 
-
-
+def make_law_wrapper(f, param_names):
+    """Return a JAX‑traceable wrapper that extracts given params from a NamedTuple."""
+    def wrapped(wave, fit_params):
+        args = tuple(getattr(fit_params, name) for name in param_names)
+        return f(wave, *args)
+    return wrapped
 
 
 # In case the same dust law is applied multiple times, this function takes care of the renaming.
@@ -280,11 +281,90 @@ def modify_function(func, number, defaults_dict=None):
     call_str = f"{func_name}({', '.join(call_params)}, **filtered_kwargs)"
 
     func_def = f"""
-def {new_func_name}({arg_str}):
-    filtered_kwargs = {{k: v for k, v in kwargs.items() if k not in {original_names!r}}}
-    return {call_str}
-"""
+        def {new_func_name}({arg_str}):
+            filtered_kwargs = {{k: v for k, v in kwargs.items() if k not in {original_names!r}}}
+            return {call_str}
+        """
 
     local_ns = {func_name: func}
     exec(func_def, local_ns)
     return local_ns[new_func_name]
+
+
+class DiffuseDust(Dust):
+    def __init__(self, law="kriek_conroy"):
+        """
+        A simplified dust model that applies one dust law to all ages (bin spans all time).
+        
+        Parameters:
+            law (str): Name of the attenuation law (must be in ATTENUATION_LAWS).
+        """
+        # Initialize parent class with one bin spanning all time
+        super().__init__(bin_edges=[(-jnp.inf, jnp.inf)], laws=[law])
+
+        # Rename all parameters in the single bin to use prefix 'diffuse_'
+        old_name = self.law_names_resolved[0]
+        param_dict = self.law_params[0]
+
+        # Create remapped version
+        self.diffuse_param_map = {}
+        renamed_param_dict = {}
+        for k, v in param_dict.items():
+            new_k = f"diffuse_{k}"
+            renamed_param_dict[new_k] = v
+            self.diffuse_param_map[new_k] = k
+
+        # Replace the first bin’s param dict with the renamed version
+        self.law_params[0] = renamed_param_dict
+
+        # Also update the wrapped function to use the renamed keys
+        func = ATTENUATION_LAWS[old_name]["func"]
+        sig = inspect.signature(func)
+
+        param_names = [
+            f"diffuse_{p.name}" for p in sig.parameters.values()
+            if p.name != "wave"
+            and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        ]
+
+        wrapped_func = make_law_wrapper(func, param_names)
+        self.law_funcs[0] = wrapped_func
+
+        # Save param name list for reference
+        self.dust_param_names = param_names
+
+    def get_default_params(self):
+        """
+        Return a NamedTuple of default fit parameters, with names prefixed by 'diffuse_'.
+        """
+        from typing import NamedTuple, Any
+
+        defaults = {}
+        law = self.law_names_resolved[0]
+        for k, v in ATTENUATION_LAWS[law].get("defaults", {}).items():
+            defaults[f"diffuse_{k}"] = v
+
+        FitParams = NamedTuple("DiffuseParams", [(k, Any) for k in defaults.keys()])
+        return FitParams(**defaults)
+    
+
+    def compute_attenuation(self, wave, fit_params):
+        """
+        Compute the diffuse attenuation curve (single bin).
+
+        Parameters:
+            wave (jnp.ndarray): Wavelength array in Angstroms.
+            fit_params (NamedTuple): Parameters for the attenuation law.
+
+        Returns:
+            jnp.ndarray: shape (len(wave),) attenuation curve
+        """
+        # Always use the single law function (index 0)
+        return self.law_funcs[0](wave, fit_params)
+    
+    def get_param_names(self):
+        return list(self.law_params[0].keys())
+
+    def __repr__(self):
+        base_repr = super().__repr__()
+        return base_repr.replace("Dust Model Configuration", "Diffuse Dust Model Configuration")
