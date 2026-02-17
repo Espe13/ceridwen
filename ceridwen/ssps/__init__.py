@@ -6,7 +6,7 @@ This subfolder contains modules and utilities for handling Simple Stellar Popula
 
 # Import the main components from ssp_data.py for easy access
 from .ssp_data import SSPData, collect_ssp_data, collect_ssp_data_wrapper
-from .ssp import SSPBasis
+#from .ssp import SSPBasis
 
 __all__ = ['SSPData', 'collect_ssp_data', 'collect_ssp_data_wrapper', 'SSPBasis', 'FastStepBasis', 'CSPSpecBasis']
 

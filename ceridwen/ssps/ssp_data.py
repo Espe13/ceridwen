@@ -243,7 +243,7 @@ def collect_ssp_data(**kwargs) -> typing.Tuple[jnp.ndarray, jnp.ndarray, jnp.nda
     ssp_lg_age_gyr = ssp.log_age - 9.0  # Convert log(age/yr) to log(age/Gyr)
 
     # Find youngest available age (log age = -4) to duplicate for zero-age SSP
-    age_minus_4_idx = np.where(ssp_lg_age_gyr == -4)[0][0]
+    #age_minus_4_idx = np.where(ssp_lg_age_gyr == -4)[0][0]
 
     # Collect SSP spectra for each metallicity bin
     # FSPS uses 1-based indexing for metallicity (zmet)
@@ -260,16 +260,16 @@ def collect_ssp_data(**kwargs) -> typing.Tuple[jnp.ndarray, jnp.ndarray, jnp.nda
     ssp_wave = jnp.array(_wave)  # Wavelength grid from last metallicity (same for all)
     ssp_flux = jnp.array(spectrum_collector)  # Shape: (n_met, n_ages, n_wave)
 
-    # Create zero-age SSP by duplicating youngest available template
+    # Create zero-age SSP by duplicating youngest available template # DO NOT DO THIS ANYMORE
     # This addresses FSPS limitation of not providing SSPs younger than ~10 Myr
-    duplicated_flux = ssp_flux[:, age_minus_4_idx, :]  # Extract log age = -4 template
+    #duplicated_flux = ssp_flux[:, age_minus_4_idx, :]  # Extract log age = -4 template
     
     # Insert artificial zero-age SSP at beginning of age grid
-    new_age = -6  # log10(1 Myr / 1 Gyr) = -6
-    ssp_lg_age_gyr = np.insert(ssp_lg_age_gyr, 0, new_age)
+    #new_age = -6  # log10(1 Myr / 1 Gyr) = -6
+    #ssp_lg_age_gyr = np.insert(ssp_lg_age_gyr, 0, new_age)
     
     # Insert duplicated flux at beginning of flux grid for all metallicities
-    ssp_flux = np.concatenate([duplicated_flux[:, np.newaxis, :], ssp_flux], axis=1)
+    #ssp_flux = np.concatenate([duplicated_flux[:, np.newaxis, :], ssp_flux], axis=1)
     
     # Final conversion to JAX arrays
     ssp_lg_age_gyr = jnp.array(ssp_lg_age_gyr)
@@ -277,11 +277,13 @@ def collect_ssp_data(**kwargs) -> typing.Tuple[jnp.ndarray, jnp.ndarray, jnp.nda
 
     # Calculate ionizing photon production rates for nebular modeling
     # Integrate flux shortward of Lyman limit (912 Å) to get ionizing photon rate
-    idx_ion = jnp.searchsorted(ssp_wave, 912.0)  # Find Lyman limit index
-    
-    ssp_flux_ion = ssp_flux[:, :, :idx_ion]  # Ionizing flux [L_sun Hz^-1]
-    ssp_wave_ion = ssp_wave[:idx_ion]         # Ionizing wavelengths [Å]
-    
+    LL = 912.0  # Å
+
+    mask = ssp_wave < LL                                  # (n_wave,)
+    ssp_wave_ion  = ssp_wave[mask]                        # (n_ion,)
+    ssp_flux_ion  = ssp_flux[..., mask]                   # (..., n_ion)
+
+        
     # Convert flux density to photon rate using E = hν = hc/λ
     # Q(H) = ∫ L_ν / (hν) dν = ∫ (L_ν λ / hc) dλ
     qq = jnp.trapezoid(ssp_flux_ion/ssp_wave_ion, x=ssp_wave_ion)  # [L_sun Å / Å]
@@ -326,3 +328,5 @@ def collect_ssp_data_wrapper(**kwargs) -> SSPData:
     
     # Package into immutable container for safe downstream use
     return SSPData(ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, log_qq)
+
+
