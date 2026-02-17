@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
+__pycache__
 
 # dirs
 animation/
 presentations/
+data/
+ceridwen.egg-info/

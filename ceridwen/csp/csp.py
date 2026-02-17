@@ -18,124 +18,6 @@ def fnu2flam(lam, fnu):
     c = 2.998e18  # Å/s
     return c * (fnu / (lam**2))
 
-def add_zh(zh, lookback_time=None, forward_time=None, tuniv=13.8):
-    """
-    Add a star formation history (SFH) for a CSP.
-    Parameters:
-        zh (array-like): The metallicity at the given ages.
-            Example: [0.1, 0.2, 0.3, 0.4]
-        
-        lookback_time (array-like, optional): Lookback times for the SFH in Gyr.
-            Example: [1.0, 2.0, 3.0, 4.0]
-        
-        forward_time (array-like, optional): Forward times (age of the universe) for the SFH in Gyr.
-            Example: [9.8, 10.8, 11.8, 12.8]
-        
-        tuniv (float, default 13.8): The age of the stellar population (in Gyr) for which to obtain a spectrum.
-            Default: 13.8 Gyr
-
-    Returns:
-        tuple: A tuple containing:
-            - sfh (jnp.ndarray): The star formation history array.
-            Example output: jnp.array([0.1, 0.2, 0.3, 0.4])
-            
-            - sfh_times (jnp.ndarray): The corresponding times (lookback or forward) for the SFH.
-            Example output with lookback_time: jnp.array([1.0, 2.0, 3.0, 4.0])
-            Example output with forward_time: jnp.array([1.0, 2.0, 3.0, 4.0]) (computed as tuniv - forward_time)
-
-    Usage:
-        >>> add_sfh(sfh=[0.1, 0.2, 0.3, 0.4], lookback_time=[1.0, 2.0, 3.0, 4.0])
-        >>> add_sfh(sfh=[0.1, 0.2, 0.3, 0.4], forward_time= [9.8, 10.8, 11.8, 12.8])
-    """
-    # Convert metallicity history to JAX array for efficient computation
-    zh = jnp.array(zh)  # Ensure zh is a JAX array
-
-    # Process time input - either lookback time (time before present) or forward time (age of universe)
-    if lookback_time is not None:
-        print('lookback time')  # Debug output for time mode
-        lookback_time = jnp.array(lookback_time)
-        # Convert from Gyr to years for internal calculations
-        zh_times = lookback_time*1e9  
-    elif forward_time is not None:
-        print('forward time')  # Debug output for time mode  
-        forward_time = jnp.array(forward_time)
-        # Convert forward time to lookback time: lookback = tuniv - forward_time
-        zh_times = tuniv*1e9 - forward_time*1e9  # Compute lookback time from forward time  
-        print(zh_times)  # Debug output for computed times
-    else:
-        # Neither time specification provided - this is an error condition
-        raise ValueError("Either 'lookback_time' or 'forward_time' must be provided.")
-    
-    # Note: This condition seems incorrect - zh_times should never be None at this point
-    if zh_times != None:
-        print('No times added for metallicity history, use lookback_time or forward_time of SFH')
-    
-    # Validate that metallicity and time arrays have consistent dimensions
-    if zh.shape != zh_times.shape:
-        raise ValueError(
-            f"Shape mismatch: zh has shape {zh.shape}, but zh_times has shape {zh_times.shape}."
-        )
-    
-    return zh, zh_times
-
-def add_sfh(sfh, lookback_time=None, forward_time=None, tuniv=13.8):
-    """
-    Add a star formation history (SFH) for a CSP.
-    Parameters:
-        sfh (array-like): The star formation rate in solar masses per year at the given ages.
-            Example: [0.1, 0.2, 0.3, 0.4]
-        
-        lookback_time (array-like, optional): Lookback times for the SFH in Gyr.
-            Example: [1.0, 2.0, 3.0, 4.0]
-        
-        forward_time (array-like, optional): Forward times (age of the universe) for the SFH in Gyr.
-            Example: [9.8, 10.8, 11.8, 12.8]
-        
-        tuniv (float, default 13.8): The age of the stellar population (in Gyr) for which to obtain a spectrum.
-            Default: 13.8 Gyr
-
-    Returns:
-        tuple: A tuple containing:
-            - sfh (jnp.ndarray): The star formation history array.
-            Example output: jnp.array([0.1, 0.2, 0.3, 0.4])
-            
-            - sfh_times (jnp.ndarray): The corresponding times (lookback or forward) for the SFH.
-            Example output with lookback_time: jnp.array([1.0, 2.0, 3.0, 4.0])
-            Example output with forward_time: jnp.array([1.0, 2.0, 3.0, 4.0]) (computed as tuniv - forward_time)
-
-    Usage:
-        >>> add_sfh(sfh=[0.1, 0.2, 0.3, 0.4], lookback_time=[1.0, 2.0, 3.0, 4.0])
-        >>> add_sfh(sfh=[0.1, 0.2, 0.3, 0.4], forward_time= [9.8, 10.8, 11.8, 12.8])
-    """
-    # Convert star formation history to JAX array for efficient computation
-    sfh = jnp.array(sfh)  # Ensure sfh is a JAX array
-
-    # Process time input - either lookback time (time before present) or forward time (age of universe)
-    if lookback_time is not None:
-        print('lookback time')  # Debug output for time mode
-        lookback_time = jnp.array(lookback_time)
-        # Convert from Gyr to years for internal calculations  
-        sfh_times = lookback_time*1e9  
-
-    elif forward_time is not None:
-        print('forward time')  # Debug output for time mode
-        forward_time = jnp.array(forward_time)
-        # Convert forward time to lookback time: lookback = tuniv - forward_time
-        sfh_times = tuniv*1e9 - forward_time*1e9  # Compute lookback time from forward time  
-        print(sfh_times)  # Debug output for computed times
-    else:
-        # Neither time specification provided - this is an error condition
-        raise ValueError("Either 'lookback_time' or 'forward_time' must be provided.")
-    
-    # Validate that star formation rate and time arrays have consistent dimensions
-    if sfh.shape != sfh_times.shape:
-        raise ValueError(
-            f"Shape mismatch: sfh has shape {sfh.shape}, but sfh_times has shape {sfh_times.shape}."
-        )
-    
-    
-    return sfh, sfh_times
-
 @jit
 def intsfwght(tlimhi, tlimlo, a_broadcasted, sf_slope_broadcasted, logage_broadcasted):
     """
@@ -188,9 +70,6 @@ def intsfwght(tlimhi, tlimlo, a_broadcasted, sf_slope_broadcasted, logage_broadc
     intsfwght = sfwght_hi - sfwght_lo
     return intsfwght
 
-
-
-
 class CSPBasis:
     """
     A class to wrap the CSP object, providing the spectrum of a CSP for a given SFH.
@@ -231,9 +110,7 @@ class CSPBasis:
 
         self.sps_home = sps_home  # Path to FSPS home directory for stellar population synthesis
 
-        if add_neb:
-            self.neb_model = NebularModel(sps_home=self.sps_home, csp_lambda=self.wave, nebular_smooth_init=2,
-                                          smooth_velocity=True, mypi = jnp.pi, **init_neb_params)
+
 
         if add_diffuse_dust or add_dust:
             self.set_attenuation_function(add_diffuse_dust, add_dust)
@@ -245,9 +122,10 @@ class CSPBasis:
                                                     theta_dict,
                                                     init_dust_params,
                                                     diffuse_law,
-                                                    sps_home,
-                                                )
-   
+                                                    sps_home)
+                                                    
+        theta_dict = self.initialize_neb(add_neb, theta_dict, init_neb_params, sps_home)
+
         self.configure_spectrum_model(add_dust, add_diffuse_dust, add_dust_emission, add_neb, sps_home)
     
         # SSP weight calculation method depending on metallicity history    
@@ -284,6 +162,17 @@ class CSPBasis:
 
         return params
         
+    @property
+    def all_params(self):
+        ordered = sorted(
+            self.params.items(),
+            key=lambda item: int(item[1]["pos"])
+        )
+
+        return {
+            name: self.theta_init[int(info["pos"])]
+            for name, info in ordered
+        }
     def set_attenuation_function(self, add_diffuse_dust, add_dust):
         """
         Define and assign the appropriate dust attenuation function based on model configuration.
@@ -342,8 +231,34 @@ class CSPBasis:
             print("Using only diffuse dust attenuation.")
             self.attenuate_dust = attenuate_diffuse_only
 
+    def initialize_neb(self, add_neb: bool, theta_dict: dict, init_neb_params: dict, sps_home: str) -> dict:
+        """
+        Initialize dust-related models and register their parameters.
+        """
+        if add_neb:
+            init_neb_params.update({'sps_home': sps_home, 'csp_lambda': self.wave})
+            print("Initializing Nebular Emission model...")
+            self.neb = NebularModel(**init_neb_params)
+
+            neb_fit_dict = self.neb.get_default_params()._asdict()
+            for k, v in neb_fit_dict.items():
+                if k not in theta_dict:
+                    theta_dict[k] = v
+
+            self.neb_param_names = list(neb_fit_dict.keys())
+            self.NebParams = NamedTuple(
+                "NebParams", [(name, float) for name in self.neb_param_names]
+            )
+
+            # Precompute static masks for ionizing flux and young ages
+            self.ion_mask = self.wave < 912.0  # (n_wave,)
+            self.young_age_mask = self.ssp_ages_lgyr < self.neb.nebem_age[-1] # (n_age,)
+            self.n_neb_ages = jnp.sum(self.young_age_mask)
+
+        return theta_dict
+
             
-    def initialize_dust_components( self, add_dust: bool, add_diffuse_dust: bool, add_dust_emission: bool,
+    def initialize_dust_components(self, add_dust: bool, add_diffuse_dust: bool, add_dust_emission: bool,
                                     theta_dict: dict, init_dust_params: dict, diffuse_law: str, sps_home: str) -> dict:
         """
         Initialize dust-related models and register their parameters.
@@ -414,7 +329,9 @@ class CSPBasis:
             message2 = ', without nebular contribution'
         if add_dust_emission:
             if not add_dust or not add_diffuse_dust:
-                raise Error('without dust attenuation no dust emission possible.')
+                raise ValueError(
+                    "Dust emission requires both dust attenuation and diffuse dust to be enabled."
+                )
             part3 = 'dustemi'
             message3 = ', and with dust emission.'
         else:
@@ -422,7 +339,7 @@ class CSPBasis:
             message3 = ', and without dust emission.'
         message = message1 + message2 + message3
         key = part1 + part2 + part3
-        mapping = key_message_map = {
+        mapping  = {
                 'dust_neb_dustemi':  self.get_spectrum_dattn_dem_neb,
                 'dust_neb_nodustemi': self.get_spectrum_dattn_nodem_neb,
                 'dust_noneb_dustemi': self.get_spectrum_dattn_dem_noneb,
@@ -550,8 +467,7 @@ class CSPBasis:
         Get the spectrum of the CSP with dust attenuation, dust emission, and nebular emission.
         """
         raise NotImplementedError("This method is not yet implemented.")
-
-    
+  
     def get_spectrum_dattn_nodem_neb(self):
         """
         Get the spectrum of the CSP with dust attenuation and nebular emission, but no dust emission.
@@ -577,7 +493,7 @@ class CSPBasis:
 
         # apply diffuse dust, diffuse dust is not included, this is just multiplying with ones
         attenuated = spectrum_dust * jnp.exp(-attn_diffuse)
-        self.spectrum = jnp.reshape(attenuated, (-1,)) / (self.n_time - 1)
+        self.spectrum = jnp.reshape(attenuated, (-1,))
         return self.spectrum
 
     def get_spectrum_dattn_dem_noneb(self, theta):
@@ -593,7 +509,7 @@ class CSPBasis:
         # add age bin dust attenuation
         atten_matrix = jnp.where(has_bin[:, None], jnp.exp(-attn[bin_indices]), jnp.ones_like(attn[0]))
         dusty_flux = self.flux * atten_matrix[None, :, :]
-        weights = self.calculate_ssp_weights(theta)/(self.n_time - 1)
+        weights = self.calculate_ssp_weights(theta)
 
         spectrum_dust_free = jnp.sum(weights[:, :, None] * self.flux, axis=(0, 1))
         spectrum_dust = jnp.sum(weights[:, :, None] * dusty_flux, axis=(0, 1))
@@ -609,17 +525,6 @@ class CSPBasis:
                                                                                 duste_gamma=theta[self.duste_gamma_idx])
         self.spectrum = dust_emi_spectrum
         return self.spectrum
-        
-    
-    def get_spectrum_nodattn_nodem_neb(self):
-        """
-        Get the spectrum of the CSP with nebular emission, but no dust attenuation or dust emission.
-        """
-        total_weights = self.calculate_ssp_weights()
-        # Compute the spectrum using the total_weights and the nebular model
-        # This is a placeholder implementation
-        raise NotImplementedError("This method is not yet implemented.")
-
 
     def get_spectrum_nodattn_nodem_noneb(self, theta):
         
@@ -629,13 +534,9 @@ class CSPBasis:
         
         total_weights = self.calculate_ssp_weights(theta=theta)
         
-        spectrum = jnp.sum(total_weights[:, :, None] * self.flux, axis=(0,1))  # Shape: (n_wave,)
-        self.spectrum = spectrum / (self.n_time - 1) # Normalize by the number of time bins
-
+        self.spectrum = jnp.sum(total_weights[:, :, None] * self.flux, axis=(0,1))  # Shape: (n_wave,)
         return self.spectrum
-
-
-    
+ 
 
     def calculate_ssp_weights_const_zh(self, theta):
         """
@@ -772,11 +673,9 @@ class CSPBasis:
         self.m1 = m1    
         self.m2 = m2
         self.w1 = w1
-        
+
         return total_weights
     
-
-
     def calculate_ssp_weights_var_zh(self, theta):
         """
         Calculate SSP weights for CSP spectrum generation.
@@ -917,4 +816,90 @@ class CSPBasis:
         self.m2 = m2
         self.w1 = w1
         
-        return total_weights
+        return total_weights/ (self.n_time - 1)
+
+    def get_spectrum_nodattn_nodem_nebwrong(self, theta):
+
+        total_weights = self.calculate_ssp_weights(theta=theta)  # (n_met, n_age)
+
+        logZ_gas  = jnp.squeeze(theta[self.gas_logz_idx])
+        logU      = jnp.squeeze(theta[self.gas_logu_idx])
+
+        age_weights = jnp.sum(total_weights, axis=0)  # (n_age,)
+        logQ_age = jnp.sum(total_weights * self.logqq, axis=0) / jnp.maximum(age_weights, tiny_number)  # (n_age,)
+
+        # Nebular: only evaluate for young ages within the CLOUDY grid
+        n = self.n_neb_ages
+
+        def neb_eval(logage, logQ):
+            return self.neb.evaluate(logZ=logZ_gas, logU=logU, logage=logage, logQ=logQ)
+
+        neb_cont, neb_lines = vmap(neb_eval)(self.ages[:n], logQ_age[:n])
+        neb_young = neb_cont + neb_lines  # (n, nspec)
+    
+        # Pad nebular flux to full age array
+        neb_flux = jnp.zeros_like(self.flux[0])  # (n_age, nspec)
+        neb_flux = neb_flux.at[:n].set(neb_young)
+
+        # Zero ionizing stellar flux for young SSPs
+        stellar_flux = jnp.where(
+            self.young_age_mask[None, :, None] & self.ion_mask[None, None, :],
+            0.0, self.flux
+        )  # (n_met, n_age, nspec)`
+
+        #self.nebular_fluxes = jnp.where(young_mask[:, None], self.nebular_fluxes_all, 0.0)   
+
+        # Weighted stellar spectrum
+        stellar_spec = jnp.sum(total_weights[:, :, None] * stellar_flux, axis=(0, 1))
+
+        # Weighted nebular spectrum
+        neb_spec = jnp.sum(age_weights[:, None] * neb_flux, axis=0)
+
+        return stellar_spec + neb_spec  
+
+
+    def get_spectrum_nodattn_nodem_neb(self, theta):
+
+        total_weights = self.calculate_ssp_weights(theta=theta)  # (n_met, n_age)
+
+        logZ_gas  = jnp.squeeze(theta[self.gas_logz_idx])
+        logU      = jnp.squeeze(theta[self.gas_logu_idx])
+
+        # Nebular: only evaluate for young ages within the CLOUDY grid
+        n = self.n_neb_ages
+
+        def neb_eval(logage, logQ):
+            return self.neb.evaluate(logZ=logZ_gas, logU=logU, logage=logage, logQ=logQ)
+
+        # Double vmap: inner over ages, outer over metallicities
+        # neb_eval takes scalar (logage, logQ) -> (nspec,), (nspec,)
+        # Inner vmap maps over age axis: (n,) ages, (n,) logQs -> (n, nspec)
+        # Outer vmap maps over metallicity axis of logQ: (n_met, n) -> (n_met, n, nspec)
+        neb_eval_ages = vmap(neb_eval)
+        neb_eval_met = vmap(neb_eval_ages, in_axes=(None, 0))
+
+        neb_cont, neb_lines = neb_eval_met(
+            self.ages[:n],  # (n,) — same ages for all metallicities, in log10(yr)
+            self.logqq[:, :n]        # (n_met, n) — logQ per metallicity and young age
+        )
+        # neb_cont, neb_lines: (n_met, n, nspec)
+        neb_young = neb_cont + neb_lines  # (n_met, n, nspec)
+
+        # Pad nebular flux to full age array
+        neb_flux = jnp.zeros_like(self.flux)  # (n_met, n_age, nspec)
+        neb_flux = neb_flux.at[:, :n].set(neb_young)
+
+        # Zero ionizing stellar flux for young SSPs
+        stellar_flux = jnp.where(
+            self.young_age_mask[None, :, None] & self.ion_mask[None, None, :],
+            0.0, self.flux
+        )  # (n_met, n_age, nspec)
+
+        # Weight combined (stellar + nebular) flux per SSP and sum
+        spectrum = jnp.sum(total_weights[:, :, None] * (stellar_flux + neb_flux), axis=(0, 1))
+        
+        self.total_weights = total_weights
+        self.spectrum = spectrum
+
+        return spectrum
+    
