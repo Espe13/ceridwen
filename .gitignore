@@ -1,9 +1,27 @@
 # macOS
 .DS_Store
-__pycache__
 
-# dirs
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+
+# Virtual environments
+venv/
+.env/
+
+# Project-specific
 animation/
 presentations/
 data/
 ceridwen.egg-info/
+figs/benchmarking
+figs/presentation
+GPU/GPU_run
+
+CLAUDE.md
