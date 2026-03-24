@@ -1,11 +1,11 @@
-# priors/__init__.py
-
 from .observation import (
     Observation,
-    Photometry
+    Photometry,
+    Spectrum,
 )
 
 __all__ = [
     "Observation",
-    "Photometry"
+    "Photometry",
+    "Spectrum",
 ]

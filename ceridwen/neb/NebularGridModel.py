@@ -1,20 +1,12 @@
-
 import jax.numpy as jnp
 from pathlib import Path
-from jax import vmap, jit
-#from jax.scipy.interpolate import interp1d
 import numpy as np
-from astropy.constants import c, h, L_sun
-import math
+import astropy.constants as const
 
-
-
-from pathlib import Path
-import jax.numpy as jnp
 
 class NebularModel:
-    def __init__(self, isoc_type, cloudy_dust, sps_home, csp_lambda,
-                smooth_velocity=True, nebnz=11, nebnage=10, nebnip=7, nebular_smooth_init=0.0):
+    def __init__(self, cloudy_dust, sps_home, csp_lambda,
+                 smooth_velocity=True, isoc_type = 'mist', nebnz=11, nebnage=10, nebnip=7, nebular_smooth_init=0.0):
         """
         Initializes a nebular emission model for use with stellar population synthesis output.
 
@@ -65,7 +57,7 @@ class NebularModel:
         self._load_lines()
 
         # Compute the minimum spectral resolution for each line (in Å)
-        self._compute_resolution_elements()
+        self._compute_resolution_elements_fsps()
 
         # Build Gaussian line profiles for all emission lines on the CSP wavelength grid
         self._build_gaussians()
@@ -136,7 +128,6 @@ class NebularModel:
             # Store line emission cube as a JAX array for GPU use
             self.nebem_line = jnp.asarray(line_cube)
 
-    
     def _compute_resolution_elements(self):
         '''Avoid delta function spikes in nebular lines when the broadening of the gaussian is smaller than the resolution element.'''
         # For each emission line, find the nearest wavelength index just below the line center
@@ -144,16 +135,19 @@ class NebularModel:
             jnp.searchsorted(self.csp_lambda, self.nebem_line_pos) - 1,
             1, self.nspec - 2 
         )
-        
+        self.neb_res_min = self.csp_lambda[idx + 1] - self.csp_lambda[idx]
         # Estimate the local spectral resolution element Δλ around each line
         dlam_pre = self.csp_lambda[idx + 1] - self.csp_lambda[idx]
-
         dlam = dlam_pre*2/2.355
-
-
         neb_res_min = jnp.maximum(dlam, self.neb_res_min*self.csp_lambda[idx]/const.c * 1e13)#sigma of the line angs
         # Store the minimum resolution per line as a JAX array
         self.neb_res_min = jnp.asarray(neb_res_min)
+
+    def _compute_resolution_elements_fsps(self):
+        '''Avoid delta function spikes in nebular lines when the broadening of the gaussian is smaller than the resolution element.'''
+        # For each emission line, find the nearest wavelength index just below the line center
+        idx = jnp.clip(jnp.searchsorted(self.csp_lambda, self.nebem_line_pos) - 1, 1, self.nspec - 2)
+        self.neb_res_min = self.csp_lambda[idx + 1] - self.csp_lambda[idx]
 
     def _build_gaussians(self):
         """
@@ -228,14 +222,8 @@ class NebularModel:
         
         # Combine lines
         line_spec = jnp.dot(self.gaussnebarr, line_flux)   # shape (nspec,)
-        self.linespec = line_spec  # Store for later use if needed
-        self.conflux = cont_flux  # Store for later use if needed
-        self.lineflux = line_flux  # Store for later use if needed
 
-        # Final SED
-        spec = cont_flux + line_spec  # both in erg/s/cm²/Å
-
-        return spec
+        return (cont_flux, line_spec)
 
 def locate(x, grid):
     return jnp.clip(jnp.searchsorted(grid, x) - 1, 0, grid.size - 2)   
@@ -270,3 +258,5 @@ def trilinear_interp(cube, z1, dz, a1, da, u1, du):
 
     # Weighted sum over the 8 corners
     return jnp.sum(w[:, None] * slices, axis=0)  # shape (nspec,)
+
+

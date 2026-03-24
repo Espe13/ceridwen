@@ -29,12 +29,7 @@ Usage:
 """
 
 # Import main classes and functions from the csp module
-from .csp import (
-    CSPBasis,      # Main CSP modeling class
-    add_sfh,       # Star formation history utility function  
-    add_zh,        # Metallicity history utility function
-    intsfwght,     # Core integration function (advanced users)
-)
+from .csp import CSPBasis
 
 # Package metadata
 __version__ = "1.0.0"
@@ -43,8 +38,6 @@ __author__ = "Amanda Stoffers"
 # Define what gets imported with "from ceridwen.csp import *"
 __all__ = [
     "CSPBasis",
-    "add_sfh", 
-    "add_zh",
     "intsfwght",
     "fnun2flam"
 ]
