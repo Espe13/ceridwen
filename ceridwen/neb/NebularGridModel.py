@@ -3,6 +3,45 @@ from pathlib import Path
 import numpy as np
 import astropy.constants as const
 
+CLIGHT_ANG_S   = 2.9979e18   # Å/s  (clight in FSPS)
+HPLANK_ERG_S   = 6.6261e-27  # erg·s
+LSUN_ERG_S     = 3.839e33    # erg/s per Lsun  (lsun in FSPS)
+LYMAN_LIMIT_AA = 912.0       # Å
+
+
+def _locate(x, grid):
+    """Index of the cell just below x; clipped to valid range."""
+    return jnp.clip(jnp.searchsorted(grid, x) - 1, 0, grid.size - 2)
+
+
+def _trilinear(cube, z1, dz, a1, da, u1, du):
+    """
+    Trilinear interpolation on cube with shape (..., nz, nage, nu).
+    Leading dimensions are broadcast independently; z1/a1/u1 are scalars.
+    """
+    w = jnp.array([
+        (1-dz)*(1-da)*(1-du),
+        (1-dz)*(1-da)*(  du),
+        (1-dz)*(  da)*(1-du),
+        (1-dz)*(  da)*(  du),
+        (  dz)*(1-da)*(1-du),
+        (  dz)*(1-da)*(  du),
+        (  dz)*(  da)*(1-du),
+        (  dz)*(  da)*(  du),
+    ])  # (8,)
+    slices = jnp.stack([
+        cube[..., z1,   a1,   u1  ],
+        cube[..., z1,   a1,   u1+1],
+        cube[..., z1,   a1+1, u1  ],
+        cube[..., z1,   a1+1, u1+1],
+        cube[..., z1+1, a1,   u1  ],
+        cube[..., z1+1, a1,   u1+1],
+        cube[..., z1+1, a1+1, u1  ],
+        cube[..., z1+1, a1+1, u1+1],
+    ], axis=0)  # (8, ..., nspec or nlines)
+    return jnp.sum(w.reshape((8,) + (1,)*(slices.ndim-1)) * slices, axis=0)
+
+
 
 class NebularModel:
     def __init__(self, cloudy_dust, sps_home, csp_lambda,
@@ -178,25 +217,22 @@ class NebularModel:
 
     def get_default_params(self):
         """
-        Return a NamedTuple of default nebular fit parameters.
+        Return a plain dict of default nebular fit parameters.
 
-        Defaults match FSPS: gas_logz=0.0 (solar), gas_logu=-2.0 (moderate ionization).
+        Defaults match FSPS: gas_logz=0.0 (solar), gas_logu=-2.0 (moderate
+        ionization).  Previously returned a NamedTuple; now returns a dict so
+        that it merges directly into the global theta dict without ``._asdict()``.
         """
-        from typing import NamedTuple, Any
-
-        defaults = {
-            'gas_logz': 0.0,
-            'gas_logu': -2.0,
+        return {
+            'gas_logz': jnp.asarray(0.0),
+            'gas_logu': jnp.asarray(-2.0),
         }
-
-        NebParams = NamedTuple("NebParams", [(k, Any) for k in defaults.keys()])
-        return NebParams(**defaults)
 
     def get_param_names(self):
         """Return a list of fittable nebular parameter names."""
         return ['gas_logz', 'gas_logu']
 
-    def evaluate(self, logZ, logU, logage, logQ):
+    def xxevaluate(self, logZ, logU, logage, logQ):
 
         # Locate and compute fractional offsets in grid
         z1 = locate(logZ, self.nebem_logz)
@@ -224,6 +260,61 @@ class NebularModel:
         line_spec = jnp.dot(self.gaussnebarr, line_flux)   # shape (nspec,)
 
         return (cont_flux, line_spec)
+    
+    
+    def evaluate(self, logZ, logU, logage, logQ):
+        """
+        Interpolate the nebular grid and return continuum + line spectra.
+
+        Parameters
+        ----------
+        logZ : scalar
+            log10(Z/Z_sun) of the gas.
+        logU : scalar
+            Ionisation parameter log10(U).
+        logage : scalar
+            log10(age / yr).
+        logQ : scalar
+            log10(Q(H0)) in photons/s.
+
+        Returns
+        -------
+        cont_flux : array (nspec,)   — nebular continuum in Lsun/Hz
+        line_spec : array (nspec,)   — emission lines in Lsun/Hz
+        line_lum  : array (nlines,)  — total luminosity per line in Lsun
+        """
+        # Locate grid cells and fractional offsets (no extrapolation)
+        z1 = _locate(logZ, self.nebem_logz)
+        dz = jnp.clip(
+            (logZ - self.nebem_logz[z1])
+            / (self.nebem_logz[z1 + 1] - self.nebem_logz[z1]),
+            0.0, 1.0,
+        )
+        u1 = _locate(logU, self.nebem_logu)
+        du = jnp.clip(
+            (logU - self.nebem_logu[u1])
+            / (self.nebem_logu[u1 + 1] - self.nebem_logu[u1]),
+            0.0, 1.0,
+        )
+        a1 = _locate(logage, self.nebem_age)
+        da = jnp.clip(
+            (logage - self.nebem_age[a1])
+            / (self.nebem_age[a1 + 1] - self.nebem_age[a1]),
+            0.0, 1.0,
+        )
+
+        # Trilinear interpolation in log-space
+        logcont_interp = _trilinear(self.nebem_cont, z1, dz, a1, da, u1, du)  # (nspec,)
+        logline_interp = _trilinear(self.nebem_line, z1, dz, a1, da, u1, du)  # (nlines,)
+
+        # Scale by Q — matches FSPS: 10**tmpnebcont * qq, 10**tmpnebline * qq
+        cont_flux = 10.0 ** (logcont_interp + logQ)    # Lsun/Hz, shape (nspec,)
+        line_lum  = 10.0 ** (logline_interp + logQ)    # Lsun,    shape (nlines,)
+
+        # Distribute line luminosity onto wavelength grid as L_ν Gaussians
+        line_spec = self.gaussnebarr @ line_lum         # (nspec,)
+
+        return cont_flux, line_spec#, line_lum
 
 def locate(x, grid):
     return jnp.clip(jnp.searchsorted(grid, x) - 1, 0, grid.size - 2)   

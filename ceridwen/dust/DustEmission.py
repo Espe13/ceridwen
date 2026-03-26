@@ -4,7 +4,11 @@ import jax
 import numpy as np
 from pathlib import Path
 
-import astropy.constants as const   
+
+# Physical constants (precomputed, no astropy lookup in hot path)
+CLIGHT_AA_S = 2.99792458e18        # speed of light in Angstrom/s
+MDUST_PREFACTOR = 3.21e-3 / (4.0 * jnp.pi)
+
 
 class DustEmission:
 
@@ -85,6 +89,16 @@ class DustEmission:
         # Load emission templates or model data from file
         self.load_dust_emission(dust_file, spec_lambda)
 
+        # ── Precomputed integration machinery (static, depends only on wavelength grid) ──
+        nu = CLIGHT_AA_S / jnp.asarray(spec_lambda)       # (n_wave,) Hz
+        dnu = jnp.diff(nu)
+        # Trapezoidal quadrature weights: trapezoid(f, nu) == dot(f, _trap_w)
+        self._trap_w = jnp.concatenate([
+            jnp.array([0.5 * dnu[0]]),
+            0.5 * (dnu[:-1] + dnu[1:]),
+            jnp.array([0.5 * dnu[-1]]),
+        ])
+
     def __repr__(self):
         """
         Custom string representation of the DustEmission object.
@@ -118,20 +132,19 @@ class DustEmission:
 
     def get_default_params(self):
         """
-        Return a NamedTuple of default fit parameters, with names prefixed by 'diffuse_'.
-        """
-        from typing import NamedTuple, Any
+        Return a plain dict of default dust-emission fit parameters.
 
-        defaults = {
-            "duste_qpah": self.duste_qpah,
-            "duste_umin": self.duste_umin,
-            "duste_gamma": self.duste_gamma
+        Previously returned a NamedTuple; now returns a dict so that it merges
+        directly into the global theta dict without ``._asdict()``.
+        """
+        return {
+            "duste_qpah": jnp.asarray(self.duste_qpah),
+            "duste_umin": jnp.asarray(self.duste_umin),
+            "duste_gamma": jnp.asarray(self.duste_gamma),
         }
-        FitParams = NamedTuple("DustEmissionParams", [(k, Any) for k in defaults.keys()])
-        return FitParams(**defaults)
-    
+
     def load_dust_emission(self, dust_file=None, spec_lambda=None):
-        
+
         # Use default paths if not provided
         if dust_file is None:
             dust_file = self.dust_file
@@ -143,7 +156,7 @@ class DustEmission:
             "DL07": (7, 1001, 22),
             "THEMIS": (11, 576, 37),
         }
-        
+
         nqpah_dustem, ndim_dustem, numin_dustem = dust_model_params[self.duste_model]
 
         # Initialize storage for interpolated spectra (JAX-compatible)
@@ -196,92 +209,80 @@ class DustEmission:
     def compute_dust_emission(self, spec_attn, spec_dustfree, spec_lambda, diffuse_curve,
                                         duste_qpah, duste_umin, duste_gamma):
         """
-        Compute dust emission using JAX-optimized vectorization for GPU acceleration.
+        Compute dust emission using precomputed trapezoidal weights for fast
+        integration.  All jnp.trapezoid calls are replaced with jnp.dot against
+        the static weight vector, and dead-code iterations are removed.
 
         Parameters:
             spec_attn (jnp.ndarray): Attenuated spectrum after dust absorption.
             spec_dustfree (jnp.ndarray): Stellar spectrum before attenuation.
             spec_lambda (jnp.ndarray): Wavelength array in Angstroms.
-            duste_qpah (float, optional): PAH fraction. Defaults to self.duste_qpah if None.
-            duste_umin (float, optional): Minimum U radiation field. Defaults to self.duste_umin if None.
-            duste_gamma (float, optional): Fraction of high U component. Defaults to self.duste_gamma if None.
+            diffuse_curve (jnp.ndarray): exp(-tau_diffuse), shape (1, n_wave) or (n_wave,).
+            duste_qpah (float): PAH fraction.
+            duste_umin (float): Minimum U radiation field.
+            duste_gamma (float): Fraction of high U component.
 
         Returns:
-            tuple: (Updated spectrum with dust emission added, Estimated dust mass)
+            tuple: (spectrum with dust emission, dust mass, total dust emission)
         """
+        tiny = 1e-70
+        w = self._trap_w                                # (n_wave,) precomputed
+        dc = diffuse_curve.ravel()                      # (n_wave,)
+        f_attn = spec_attn.ravel()                      # (n_wave,)
+        f_free = spec_dustfree.ravel()                  # (n_wave,)
 
-        clight = const.c.value  # m/s
-        tiny_number = 1e-70
-        
-        nu = clight * 1e10 / spec_lambda  # Hz
+        # --- Bolometric luminosities via dot product (replaces trapezoid) ---
+        lbold = jnp.dot(f_attn, w)
+        lboln = jnp.dot(f_free, w)
 
-        # --- Compute Lbol before and after attenuation ---
-        lbold = jnp.trapezoid(spec_attn, nu)
-        lboln = jnp.trapezoid(spec_dustfree, nu)
-
-        # --- QPAH interpolation setup ---
+        # --- QPAH bilinear interpolation index ---
         qlo = jnp.clip(jnp.searchsorted(self.qpaharr, duste_qpah) - 1, 0, self.nqpah_dustem - 2)
-        dq = (duste_qpah - self.qpaharr[qlo]) / (self.qpaharr[qlo + 1] - self.qpaharr[qlo])
-        dq = jnp.clip(dq, 0.0, 1.0)
+        dq  = jnp.clip((duste_qpah - self.qpaharr[qlo]) / (self.qpaharr[qlo + 1] - self.qpaharr[qlo]), 0, 1)
 
-        # --- Umin interpolation setup ---
+        # --- Umin bilinear interpolation index ---
         ulo = jnp.clip(jnp.searchsorted(self.uminarr, duste_umin) - 1, 0, self.numin_dustem - 2)
-        du = (duste_umin - self.uminarr[ulo]) / (self.uminarr[ulo + 1] - self.uminarr[ulo])
-        du = jnp.clip(du, 0.0, 1.0)
-    
-        # --- gamma limiting ---
+        du  = jnp.clip((duste_umin - self.uminarr[ulo]) / (self.uminarr[ulo + 1] - self.uminarr[ulo]), 0, 1)
+
         gamma = jnp.clip(duste_gamma, 0.0, 1.0)
 
-        # --- Bilinear interpolation ---
-        dumin = (
-            (1 - dq) * (1 - du) * self.dustem2_dustem[:, qlo, 2 * ulo] +
-            dq * (1 - du) * self.dustem2_dustem[:, qlo + 1, 2 * ulo] +
-            dq * du * self.dustem2_dustem[:, qlo + 1, 2 * (ulo + 1)] +
-            (1 - dq) * du * self.dustem2_dustem[:, qlo, 2 * (ulo + 1)] 
-        )
+        # --- Bilinear weights (computed once, used for both dumin and dumax) ---
+        w00 = (1 - dq) * (1 - du)
+        w10 = dq * (1 - du)
+        w01 = (1 - dq) * du
+        w11 = dq * du
 
-        dumax = (
-            (1 - dq) * (1 - du) * self.dustem2_dustem[:, qlo, 2 * ulo + 1] +
-            dq * (1 - du) * self.dustem2_dustem[:, qlo + 1, 2 * ulo + 1] +
-            dq * du * self.dustem2_dustem[:, qlo + 1, 2 * (ulo + 1) + 1] +
-            (1 - dq) * du * self.dustem2_dustem[:, qlo, 2 * (ulo + 1) + 1]
-        )
-    
-        # Combine both parts of P(U)dU
-        mduste = (1 - gamma) * dumin + gamma * dumax
-        mduste = jnp.maximum(mduste, tiny_number)
-        mduste = jnp.squeeze(mduste)
+        i_lo = 2 * ulo
+        i_hi = 2 * (ulo + 1)
 
+        D = self.dustem2_dustem           # (n_wave, n_qpah, n_umin*2)
 
-        # Normalize the dust emission to match the absorbed luminosity
-        labs = lboln - lbold
-        norm = jnp.trapezoid(mduste, nu)
-        duste = mduste / norm * labs
-        self.duste = jnp.maximum(duste, tiny_number)
+        dumin = (w00 * D[:, qlo, i_lo]     + w10 * D[:, qlo + 1, i_lo] +
+                 w11 * D[:, qlo + 1, i_hi] + w01 * D[:, qlo, i_hi])
 
+        dumax = (w00 * D[:, qlo, i_lo + 1]     + w10 * D[:, qlo + 1, i_lo + 1] +
+                 w11 * D[:, qlo + 1, i_hi + 1] + w01 * D[:, qlo, i_hi + 1])
 
-        # --- Two explicit self-absorption iterations ---
-        # Iteration 1
-        oduste_1 = duste
-        duste_1 = duste * diffuse_curve
-        tduste_1 = duste_1
-        lbold_1 =jnp.trapezoid(duste_1, nu)
-        lboln_1 =jnp.trapezoid(oduste_1, nu)
-        duste_1 = jnp.maximum(mduste / norm * (lboln_1 - lbold_1), tiny_number)
+        # --- Dust emission template (combine Umin and Umax parts of P(U)dU) ---
+        mduste = jnp.maximum((1 - gamma) * dumin + gamma * dumax, tiny).ravel()
+        norm   = jnp.dot(mduste, w)
+        mduste_norm = mduste / norm              # unit-luminosity template
 
-        # Iteration 2
-        oduste_2 = duste_1
-        duste_2 = duste_1 * diffuse_curve
-        tduste_2 = tduste_1 + duste_2
-        lbold_2 =jnp.trapezoid(duste_2, nu)
-        lboln_2 =jnp.trapezoid(oduste_2, nu)
-        duste_2 = jnp.maximum(mduste / norm * (lboln_2 - lbold_2), tiny_number)
+        # --- Initial emission from absorbed stellar luminosity ---
+        labs0  = lboln - lbold
+        duste0 = jnp.maximum(mduste_norm * labs0, tiny)
 
-        # Final results
-        specdust_final = spec_attn + tduste_2
+        # --- Self-absorption iteration 1 ---
+        duste0_atten = duste0 * dc
+        # Absorbed luminosity = integral of (duste0 - duste0*dc) = integral of duste0*(1-dc)
+        absorbed_1 = jnp.dot(duste0 * (1.0 - dc), w)
+        duste1 = jnp.maximum(mduste_norm * absorbed_1, tiny)
 
-        # Dust mass
-        mdust = 3.21e-3 / (4 * jnp.pi) * labs / norm
+        # --- Self-absorption iteration 2 (attenuate only; no further re-emission needed) ---
+        duste1_atten = duste1 * dc
 
-        return specdust_final, mdust, tduste_2
-    
+        # --- Final results ---
+        tduste = duste0_atten + duste1_atten
+        specdust = f_attn + tduste
+        mdust = MDUST_PREFACTOR * labs0 / norm
+
+        return specdust, mdust, tduste

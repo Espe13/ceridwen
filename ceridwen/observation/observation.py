@@ -645,3 +645,226 @@ class Spectrum(Observation):
             f"  masked pixels : {self.ndata - self.ndof} / {self.ndata}",
         ]
         return "\n".join(lines)
+
+
+# =====================================================================
+# Lines
+# =====================================================================
+
+class Lines(Observation):
+    """
+    Observed nebular emission-line fluxes.
+
+    Stores a set of emission-line fluxes together with their FSPS line-array
+    indices, vacuum rest-frame wavelengths, and per-line 1-sigma uncertainties.
+    The interface is deliberately compatible with
+    ``prospect.observation.Lines``: the ``line_ind`` attribute holds integer
+    indices into the FSPS ``emline_luminosity`` array, and the ``alias``
+    mapping exposes ``"line_inds"`` as an alias for ``line_ind`` so that
+    existing Prospector model code can address this object without modification.
+
+    Beyond Prospector, this class adds JAX-native ``chi_sq`` / ``residuals``
+    (JIT-compilable through a fitter), and ``mask_by_name`` / ``select_by_name``
+    helpers that operate on human-readable line names.
+
+    Parameters
+    ----------
+    line_ind : array-like of int
+        Indices of the observed lines in the FSPS emission-line array
+        (``$SPS_HOME/data/emlines_info.dat``).  Required.
+    line_names : list of str, optional
+        Human-readable names, one per line (e.g. ``"Halpha"``,
+        ``"[OIII]5007"``).  Required for ``mask_by_name`` and
+        ``select_by_name``.
+    wavelength : array-like of float, optional
+        Vacuum rest-frame wavelengths [Å], length = ``len(line_ind)``.
+    flux : array-like of float, optional
+        Observed line fluxes.  Units should be consistent with any model
+        prediction passed to ``chi_sq`` / ``residuals`` (typically
+        erg s⁻¹ cm⁻²).
+    uncertainty : array-like of float, optional
+        1-sigma line-flux uncertainties, same units as ``flux``.
+    mask : array-like of bool, optional
+        True for lines to include in chi-squared.  Defaults to all-True.
+
+    Examples
+    --------
+    >>> lines = Lines(
+    ...     line_ind   = [59, 63, 71],
+    ...     line_names = ["Hbeta", "[OIII]5007", "Halpha"],
+    ...     wavelength = [4861., 5007., 6563.],
+    ...     flux       = obs_fluxes,
+    ...     uncertainty= obs_unc,
+    ... )
+    >>> lines.mask_by_name(["[OIII]5007"])   # exclude one line
+    >>> chi2 = lines.chi_sq(model_fluxes)
+    >>> subset = lines.select_by_name(["Hbeta", "Halpha"])
+    """
+
+    _kind = "lines"
+    alias = dict(
+        spectrum   = "flux",
+        unc        = "uncertainty",
+        wavelength = "wavelength",
+        mask       = "mask",
+        line_inds  = "line_ind",     # Prospector-compatible alias
+    )
+    _meta = ("kind", "name")
+    _data = ("wavelength", "flux", "uncertainty", "mask", "line_ind")
+
+    def __init__(
+        self,
+        line_ind,
+        line_names  = None,
+        wavelength  = None,
+        name        = None,
+        **kwargs,
+    ):
+        if line_ind is None:
+            raise ValueError(
+                "line_ind is required: pass the indices of the observed lines "
+                "in the FSPS emline_luminosity array."
+            )
+        self.line_ind   = jnp.asarray(np.atleast_1d(line_ind), dtype=int)
+        self.line_names = list(line_names) if line_names is not None else None
+        self._wavelength = (
+            None if wavelength is None
+            else jnp.asarray(np.atleast_1d(wavelength), dtype=float)
+        )
+        super().__init__(name=name, **kwargs)
+
+    # ------------------------------------------------------------------
+    @property
+    def wavelength(self):
+        return self._wavelength
+
+    @wavelength.setter
+    def wavelength(self, value):
+        """Allow base-class ``rectify`` to set wavelength = None."""
+        self._wavelength = (
+            None if value is None
+            else jnp.asarray(np.atleast_1d(value), dtype=float)
+        )
+
+    # ------------------------------------------------------------------
+    def chi_sq(self, model_fluxes):
+        """
+        Chi-squared contribution from the observed line fluxes.
+
+        Parameters
+        ----------
+        model_fluxes : array-like, shape (n_lines,)
+            Predicted line fluxes, same units as ``self.flux``.
+
+        Returns
+        -------
+        chi2 : float
+        """
+        resid = (self.flux - jnp.asarray(model_fluxes, dtype=float)) / self.uncertainty
+        return float(jnp.sum(jnp.where(self.mask, resid**2, 0.0)))
+
+    def residuals(self, model_fluxes):
+        """
+        Per-line ``(data − model) / sigma``.  Masked lines are set to NaN.
+
+        Returns
+        -------
+        res : jnp.ndarray, shape (n_lines,)
+        """
+        res = (self.flux - jnp.asarray(model_fluxes, dtype=float)) / self.uncertainty
+        return jnp.where(self.mask, res, jnp.nan)
+
+    # ------------------------------------------------------------------
+    def mask_by_name(self, names):
+        """
+        Exclude lines whose name appears in ``names`` from chi-squared.
+
+        Sets ``self.mask[i] = False`` for all lines whose entry in
+        ``self.line_names`` matches any element of ``names``.  A no-op if
+        ``self.line_names`` is not set.
+
+        Parameters
+        ----------
+        names : list of str
+        """
+        if self.line_names is None:
+            return
+        names_set = set(names)
+        exclude = jnp.array(
+            [n in names_set for n in self.line_names], dtype=bool
+        )
+        self.mask = self.mask & ~exclude
+
+    def select_by_name(self, names):
+        """
+        Return a new ``Lines`` instance containing only the named lines.
+
+        Parameters
+        ----------
+        names : list of str
+            Must all be present in ``self.line_names``.
+
+        Returns
+        -------
+        Lines
+
+        Raises
+        ------
+        ValueError
+            If ``self.line_names`` is not set.
+        KeyError
+            If any element of ``names`` is absent from ``self.line_names``.
+        """
+        if self.line_names is None:
+            raise ValueError(
+                "line_names not set on this Lines object; "
+                "cannot select by name."
+            )
+        idx = []
+        for n in names:
+            if n not in self.line_names:
+                raise KeyError(
+                    f"Line '{n}' not found.  Available: {self.line_names}"
+                )
+            idx.append(self.line_names.index(n))
+        idx = np.array(idx)
+
+        def _pick(arr):
+            return None if arr is None else np.array(arr)[idx]
+
+        return Lines(
+            line_ind    = np.array(self.line_ind)[idx],
+            line_names  = [self.line_names[i] for i in idx],
+            wavelength  = _pick(self._wavelength),
+            flux        = _pick(self.flux),
+            uncertainty = _pick(self.uncertainty),
+            mask        = np.array(self.mask)[idx],
+            name        = self.name + "_sel",
+        )
+
+    # ------------------------------------------------------------------
+    def __str__(self):
+        n = len(self.line_ind)
+        if self.line_names is not None:
+            names_str = ", ".join(self.line_names[:6])
+            if n > 6:
+                names_str += f" … (+{n - 6} more)"
+        else:
+            names_str = f"{n} lines (no names set)"
+
+        if self._wavelength is not None:
+            wmin = float(jnp.min(self._wavelength))
+            wmax = float(jnp.max(self._wavelength))
+            wave_str = f"{wmin:.1f} – {wmax:.1f} Å"
+        else:
+            wave_str = "none"
+
+        text = [
+            f"Lines ({self.name})",
+            f"  n_lines       : {n}",
+            f"  ndof          : {self.ndof}",
+            f"  wavelength    : {wave_str}",
+            f"  line_names    : {names_str}",
+            f"  masked lines  : {n - self.ndof} / {n}",
+        ]
+        return "\n".join(text)
