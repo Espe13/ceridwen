@@ -25,3 +25,219 @@ figs/presentation
 GPU/GPU_run
 
 CLAUDE.md
+# ── session additions ─────────────────────────────────────────────────
+# Ceridwen's per-session safety backups
+*.pre-*-20*.bak
+*.bak
+
+# AI-tool artefacts
+.claude/
+**/.claude/
+CLAUDE_CODE_TASK.md
+**/HANDOFF_PROMPT.md
+**/DIAGNOSTIC_PROMPT.md
+**/AUDIT_*.md
+
+# Generated output directories / files
+figs/
+figures/
+my_fit/
+runs/out/
+**/fitSED_test_output/
+**/sampler_figures/
+**/predict_figures/
+ceridwen/csp/figures/
+ceridwen/observation/figures/
+notebooks/model/fig_*.png
+notebooks/model/*.pdf
+notebooks/neb/*.pdf
+notebooks/dust/*.pdf
+notebooks/neb/com.pdf
+notebooks/neb/neb_diagnostic.pdf
+ceridwen/observation/*.pdf
+nebular_dev_comparison.pdf
+
+# Local-only dev / scratch artefacts
+**/test_*copy*.ipynb
+**/* copy.ipynb
+**/*safe.py
+**/safe.py
+**/working_*.py
+ceridwen_architecture*.pptx
+ceridwen_observation_inference_api.html
+
+# Roadmap / docs not meant for the public repo
+ceridwen/ROADMAP.md
+ceridwen/Roadmap_Paper.md
+
+# Additional auto-generated development scratch scripts under csp/
+ceridwen/csp/big_comparison_svd.py
+ceridwen/csp/csp_svd.py
+ceridwen/csp/sfh_interp_diagnostic.py
+ceridwen/csp/test_predict.py
+ceridwen/csp/test_float32_neb_optimisation.py
+
+# These are dev comparison scripts that weren't part of this session
+ceridwen/observation/compare_lines_vs_prospector.py
+ceridwen/observation/compare_obs_vs_fsps.py
+ceridwen/observation/compare_spectrum_capabilities.py
+ceridwen/neb/NebularGridModelSVD.py
+ceridwen/dust/DustEmissionsafe.py
+
+# ── session additions ─────────────────────────────────────────────────
+# Ceridwen's per-session safety backups
+*.pre-*-20*.bak
+*.bak
+
+# AI-tool artefacts
+.claude/
+**/.claude/
+CLAUDE_CODE_TASK.md
+**/HANDOFF_PROMPT.md
+**/DIAGNOSTIC_PROMPT.md
+**/AUDIT_*.md
+
+# Generated output directories / files
+figs/
+figures/
+my_fit/
+runs/out/
+**/fitSED_test_output/
+**/sampler_figures/
+**/predict_figures/
+ceridwen/csp/figures/
+ceridwen/observation/figures/
+notebooks/model/fig_*.png
+notebooks/model/*.pdf
+notebooks/neb/*.pdf
+notebooks/dust/*.pdf
+notebooks/neb/com.pdf
+notebooks/neb/neb_diagnostic.pdf
+ceridwen/observation/*.pdf
+nebular_dev_comparison.pdf
+
+# Local-only dev / scratch artefacts
+**/test_*copy*.ipynb
+**/* copy.ipynb
+**/*safe.py
+**/safe.py
+**/working_*.py
+ceridwen_architecture*.pptx
+ceridwen_observation_inference_api.html
+
+# Roadmap / docs not meant for the public repo
+ceridwen/ROADMAP.md
+ceridwen/Roadmap_Paper.md
+
+# Additional auto-generated development scratch scripts under csp/
+ceridwen/csp/big_comparison_svd.py
+ceridwen/csp/csp_svd.py
+ceridwen/csp/sfh_interp_diagnostic.py
+ceridwen/csp/test_predict.py
+ceridwen/csp/test_float32_neb_optimisation.py
+
+# These are dev comparison scripts that weren't part of this session
+ceridwen/observation/compare_lines_vs_prospector.py
+ceridwen/observation/compare_obs_vs_fsps.py
+ceridwen/observation/compare_spectrum_capabilities.py
+ceridwen/neb/NebularGridModelSVD.py
+ceridwen/dust/DustEmissionsafe.py
+
+# ── session additions ─────────────────────────────────────────────────
+# Ceridwen's per-session safety backups
+*.pre-*-20*.bak
+*.bak
+
+# AI-tool artefacts
+.claude/
+**/.claude/
+CLAUDE_CODE_TASK.md
+**/HANDOFF_PROMPT.md
+**/DIAGNOSTIC_PROMPT.md
+**/AUDIT_*.md
+
+# Generated output directories / files
+figs/
+figures/
+my_fit/
+runs/out/
+**/fitSED_test_output/
+**/sampler_figures/
+**/predict_figures/
+ceridwen/csp/figures/
+ceridwen/observation/figures/
+notebooks/model/fig_*.png
+notebooks/model/*.pdf
+notebooks/neb/*.pdf
+notebooks/dust/*.pdf
+notebooks/neb/com.pdf
+notebooks/neb/neb_diagnostic.pdf
+ceridwen/observation/*.pdf
+nebular_dev_comparison.pdf
+
+# Local-only dev / scratch artefacts
+**/test_*copy*.ipynb
+**/* copy.ipynb
+**/*safe.py
+**/safe.py
+**/working_*.py
+ceridwen_architecture*.pptx
+ceridwen_observation_inference_api.html
+
+# Roadmap / docs not meant for the public repo
+ceridwen/ROADMAP.md
+ceridwen/Roadmap_Paper.md
+
+# Additional auto-generated development scratch scripts under csp/
+ceridwen/csp/big_comparison_svd.py
+ceridwen/csp/csp_svd.py
+ceridwen/csp/sfh_interp_diagnostic.py
+ceridwen/csp/test_predict.py
+ceridwen/csp/test_float32_neb_optimisation.py
+
+# These are dev comparison scripts that weren't part of this session
+ceridwen/observation/compare_lines_vs_prospector.py
+ceridwen/observation/compare_obs_vs_fsps.py
+ceridwen/observation/compare_spectrum_capabilities.py
+ceridwen/neb/NebularGridModelSVD.py
+ceridwen/dust/DustEmissionsafe.py
+
+# Session backups + AI-tool artefacts
+*.bak
+.claude/
+**/.claude/
+CLAUDE_CODE_TASK.md
+**/HANDOFF_PROMPT.md
+**/DIAGNOSTIC_PROMPT.md
+**/AUDIT_*.md
+**/ROADMAP*.md
+**/Roadmap*.md
+
+# Generated outputs
+figs/
+figures/
+my_fit/
+runs/
+**/figures/
+**/predict_figures/
+**/fitSED_test_output/
+**/sampler_figures/
+*.pdf
+*.pptx
+ceridwen_observation_inference_api.html
+
+# Local-only dev / scratch + benchmarks (not part of the package)
+scripts/
+notebooks/
+GPU/
+**/test_*copy*.ipynb
+**/*copy*.ipynb
+**/*safe.py
+**/*_svd.py
+**/compare_*.py
+**/*_comparison.py
+**/big_comparison*.py
+**/fsps_step_*.py
+**/sfh_interp_*.py
+**/test_float32_*.py
+**/test_predict.py

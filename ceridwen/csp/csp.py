@@ -30,6 +30,8 @@ parameters by name (``theta["log_jitter"]``).  This works transparently with
 the dict theta; no ``ThetaVector`` adapter is needed.
 """
 
+import math
+
 import jax.numpy as jnp
 from jax import jit, vmap
 import pprint
@@ -39,14 +41,15 @@ import astropy.constants as const
 from ceridwen.dust.DustModel import Dust, DiffuseDust
 from ceridwen.dust.DustEmission import DustEmission
 from ceridwen.neb.NebularGridModel import NebularModel
-from ceridwen.observation.observation import Photometry, Spectrum, Lines
+# Note: no Observation imports here.  Observation-type dispatch is handled by
+# the polymorphic obs.predict(spectrum, wave) method on each Observation
+# subclass, so CSPBasis.predict has zero isinstance/if branches.
 
 tiny_number = 1e-70
-LOG10E = jnp.log10(jnp.e)   # ≈ 0.4343, precomputed constant
-
-
-print('changed import!!!!')
-print()
+# Plain Python constant — avoid a module-level JIT call that can fail on
+# backends (e.g. Apple Metal) which do not support the configured float
+# precision at package import.
+LOG10E = math.log10(math.e)  # ≈ 0.4342944819032518
 
 
 # ---------------------------------------------------------------------------
@@ -124,12 +127,40 @@ class CSPBasis:
         add_dust=True,
         add_diffuse_dust=True,
         add_dust_emission=False,
+        add_igm=False,
+        igm_model="madau1995",
+        igm_factor=1.0,
         sps_home='/Users/amanda/Prospector/fsps',
         init_dust_params=None,
         diffuse_law='kriek_conroy',
         verbose=True,
+        sfh_interp='step',
         **kwargs,
     ):
+        """
+        sfh_interp : {'step', 'linear'}
+            Controls the SFH integration scheme used when computing SSP weights.
+
+            ``'step'`` (default) — piecewise-constant (FastStepBasis-style).
+                The SFR is held at the mean of the two endpoint values within
+                each SFH time bin.  The weight of each SSP age bin is the
+                product of that constant SFR and the linear-time overlap between
+                the SFH bin and the SSP age bin.  Weights are non-negative by
+                construction — no clipping is ever needed.
+
+            ``'linear'`` — piecewise-linear (original Ceridwen scheme).
+                Analytically integrates a linearly-interpolated SFH against the
+                SSP age bins in log-age space (``intsfwght``).  Higher-order
+                accurate, but can produce small negative weights for steep SFH
+                gradients, which are then clipped.  Kept for backwards
+                compatibility.
+
+        To switch at runtime::
+
+            csp.calculate_ssp_weights = csp.calculate_ssp_weights_const_zh_step
+            # or
+            csp.calculate_ssp_weights = csp.calculate_ssp_weights_const_zh
+        """
         if theta is None:
             theta = {'lookback_time': 13.8 - jnp.linspace(1e-2, 13.8, 100)}
         if init_neb_params is None:
@@ -138,7 +169,7 @@ class CSPBasis:
             init_dust_params = {'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']}
 
         # --- SSP grids (static, never part of theta) -----------------------
-        self.flux      = jnp.array(SSPData.ssp_flux)       # (n_z, n_age, n_wave)
+        self.flux      = jnp.array(SSPData.ssp_flux, dtype=jnp.float32)  # (n_z, n_age, n_wave)
         self.wave      = jnp.array(SSPData.ssp_wave)       # (n_wave,)
         self.ages      = jnp.array(SSPData.ssp_lg_age_gyr) # (n_age,)  log10(Gyr)
         self.zmet      = jnp.array(SSPData.ssp_lgmet)      # (n_z,)    log10(Z)
@@ -156,9 +187,53 @@ class CSPBasis:
         self._n_z   = len(self.zmet)
         self._n_age = len(self.ages)
 
+        # Precomputed SSP bin edges in linear years — retained for reference.
+        # _ssp_lo_yr is the younger (smaller) edge; _ssp_hi_yr is the older
+        # (larger) edge of each SSP age bin.
+        self._ssp_lo_yr = 10.0 ** self._logage_hi   # (n_age-1,)
+        self._ssp_hi_yr = 10.0 ** self._logage_lo   # (n_age-1,)
+
+        # Voronoi cell boundaries for the step-function weight scheme.
+        # Each SSP age POINT j owns the linear-time interval
+        #   [_ssp_voronoi_lo[j], _ssp_voronoi_hi[j]]
+        # where the boundaries are the midpoints to the neighbouring age points.
+        #
+        # This is the correct attribution for a piecewise-constant SFH: the
+        # weight at SSP j equals the SFR * (width of its Voronoi cell in yr).
+        # It matches what FSPS FastStepBasis does internally with ±ε offsets.
+        #
+        # Boundary handling:
+        #   - youngest SSP (j=0): lower bound set to 0.
+        #   - oldest  SSP (j=-1): upper bound set to 2× the last inter-point
+        #     spacing, which safely exceeds any realistic SFH extent.
+        _ssp_age_yr  = 10.0 ** self.ssp_ages_lgyr           # (n_age,) linear yr
+        _voro_mid    = 0.5 * (_ssp_age_yr[:-1] + _ssp_age_yr[1:])  # (n_age-1,)
+        _voro_hi_ext = _ssp_age_yr[-1] + (_ssp_age_yr[-1] - _ssp_age_yr[-2])
+        self._ssp_voronoi_lo = jnp.concatenate(
+            [jnp.zeros(1), _voro_mid]
+        )   # (n_age,)  — lower boundary of each Voronoi cell
+        self._ssp_voronoi_hi = jnp.concatenate(
+            [_voro_mid, jnp.array([_voro_hi_ext])]
+        )   # (n_age,)  — upper boundary of each Voronoi cell
+
         self.tuniv      = tuniv
         self.tiny_logt  = tiny_logt
         self.sps_home   = sps_home
+
+        # --- IGM attenuation model (optional) ------------------------------
+        # ``add_igm=False`` leaves ``self.igm`` as None; ``CSPBasis.predict``
+        # then skips the multiplicative step entirely (zero Python
+        # branches in the traced hot path — the ``is None`` is a
+        # compile-time decision).  When ``add_igm=True`` the model (by
+        # default Madau 1995, identical to FSPS's ``igm_absorb.f90``)
+        # is applied whenever ``theta['zred']`` is present, with
+        # optional runtime strength override via ``theta['igm_factor']``.
+        if add_igm:
+            from ..igm import make_igm_model
+            self.igm = make_igm_model(igm_model)
+        else:
+            self.igm = None
+        self.igm_factor = float(igm_factor)
 
         # --- Dust attenuation function (set before dust init) --------------
         if add_diffuse_dust or add_dust:
@@ -175,10 +250,26 @@ class CSPBasis:
             add_dust, add_diffuse_dust, add_dust_emission, add_neb, sps_home
         )
 
+        # --- SFH integration scheme selection ---------------------------------
+        # 'step'   → piecewise-constant, guaranteed non-negative (default)
+        # 'linear' → piecewise-linear log-age integration (original scheme)
+        if sfh_interp not in ('step', 'linear'):
+            raise ValueError(
+                f"sfh_interp must be 'step' or 'linear', got {sfh_interp!r}"
+            )
+        self.sfh_interp = sfh_interp
         if zh_const:
-            self.calculate_ssp_weights = self.calculate_ssp_weights_const_zh
+            if sfh_interp == 'step':
+                self.calculate_ssp_weights = self.calculate_ssp_weights_const_zh_step
+            else:
+                self.calculate_ssp_weights = self.calculate_ssp_weights_const_zh
         else:
-            self.calculate_ssp_weights = self.calculate_ssp_weights_var_zh
+            if sfh_interp == 'step':
+                self.calculate_ssp_weights = self.calculate_ssp_weights_var_zh_step
+            else:
+                self.calculate_ssp_weights = self.calculate_ssp_weights_var_zh
+        if verbose:
+            print(f"SFH integration scheme : {sfh_interp}")
 
         # --- Build theta_init dict -----------------------------------------
         self.initialize_model_structure(theta)
@@ -294,6 +385,16 @@ class CSPBasis:
             self.ion_mask    = self.wave < 912.0
             self.kill_ion    = self.young_mask[:, None] & self.ion_mask[None, :]
 
+            # Precompute young-age slices for efficient nebular evaluation.
+            # Instead of vmapping over all n_age=107 SSP ages and then
+            # zeroing out old ages with young_mask, we only evaluate the
+            # nebular model at the n_young ages where it is non-zero.
+            young_idx = jnp.where(self.young_mask)[0]
+            self._neb_young_idx   = young_idx
+            self._neb_n_young     = int(young_idx.shape[0])
+            self._neb_ages_young  = self.ssp_ages_lgyr[young_idx]   # log10(yr)
+            self._neb_logqq_young = self.logqq[:, young_idx]        # (n_z, n_young)
+
         return theta
 
     def initialize_dust_components(
@@ -393,9 +494,30 @@ class CSPBasis:
     # Public interface
     # -----------------------------------------------------------------------
 
-    def predict(self, theta, observations=None):
+    def predict(self, theta, observations):
         """
-        Compute a CSP spectrum and, optionally, project it onto observations.
+        Compute the CSP spectrum and project it onto every observation.
+
+        This method is the primary hot-path entry point for the sampler.
+        It is designed to be fully JAX JIT-compatible with zero Python
+        ``if`` / ``isinstance`` branches in the traced code path:
+
+        - ``get_spectrum(theta)`` is pure JAX.
+        - The Python ``for`` loop over ``observations`` is unrolled at
+          trace time because ``observations`` is a static Python list
+          (part of the closure, not a traced argument).
+        - ``obs.predict(spectrum, self.wave)`` dispatches through Python's
+          method resolution order (static at trace time) to the appropriate
+          subclass implementation — either a dense matrix–vector multiply
+          (``Spectrum``, ``Lines``) or a filter-set convolution
+          (``Photometry``).  The XLA kernel contains no conditional branches.
+
+        **Pre-condition:** every ``Observation`` in ``observations`` must have
+        had ``obs.setup_for_model(self.wave)`` called before the first JIT
+        trace.  ``SedModel.__init__`` does this automatically.
+
+        For a raw model spectrum without projection, use ``get_spectrum(theta)``
+        directly.
 
         Parameters
         ----------
@@ -403,121 +525,65 @@ class CSPBasis:
             Free-parameter dict.  Must contain at minimum ``"sfh"`` and the
             metallicity key (``"Z"`` or ``"zh"``), plus any dust / nebular
             parameters required by the active physics model.
-        observations : list of Observation, optional
-            If None, returns the raw model spectrum as an Array of shape
-            (n_wave,).  If provided, returns a dict keyed by ``obs.name``
-            for every observation in the list.  Each value has shape matching
-            the observation:
+        observations : list of Observation
+            Observations to project onto.  Must be the same Python objects
+            (same list structure, same types) on every call — changing the
+            list forces a retrace.
+
+        Returns
+        -------
+        predictions : dict[str, Array]
+            Keyed by ``obs.name`` for each observation.  Values:
 
             - ``Photometry`` → shape (n_filters,), synthetic AB maggies
-            - ``Spectrum``   → shape (n_pix,), model F_nu on the observed grid
-            - ``Lines``      → shape (n_lines,), Gaussian-aperture line fluxes
-
-        Returns
-        -------
-        spectrum : Array, shape (n_wave,)
-            Returned when ``observations is None``.
-        predictions : dict[str, Array]
-            Returned when ``observations`` is provided.
+            - ``Spectrum``   → shape (n_pix,), model F_nu interpolated onto
+              the observed pixel grid
+            - ``Lines``      → shape (n_lines,), Gaussian-aperture fluxes
         """
         spectrum = self.get_spectrum(theta=theta)
-        if observations is None:
-            return spectrum
-        return {obs.name: self._project_spectrum(spectrum, obs)
+
+        # Apply mass scaling here (once) rather than per-observation in
+        # model.predict().  CSP normalises SFH to 1 M_sun; logmass sets
+        # the physical amplitude.  Scaling the spectrum before projection
+        # avoids N_obs separate multiplications.
+        if "logmass" in theta:
+            # Keep in float32: the spectrum is already float32 from the
+            # forward model; cast the scalar to match.
+            mass_scale = jnp.float32(10.0 ** theta["logmass"][0])
+            spectrum = spectrum * mass_scale
+
+        # Redshift flux-norm factor.  ``zred`` is OPTIONAL in theta; when
+        # absent, the spectrum stays at the fiducial 10 pc / z=0 calibration
+        # that ``setup_for_model(..., zred=0.0)`` assumes, so every existing
+        # unit test is untouched.  When present, multiply by the
+        # cosmologically-correct (1+z) (10 pc / D_L(z))^2 scaling — one
+        # JAX-jittable scalar-scaling op, zero branches.
+        if "zred" in theta:
+            from ..cosmology import flux_factor_maggies
+            z_scalar = jnp.ravel(theta["zred"])[0]
+            spectrum = spectrum * jnp.float32(flux_factor_maggies(z_scalar))
+
+            # IGM attenuation — optional.  ``self.igm is None`` when
+            # constructed with ``add_igm=False`` and is a compile-time
+            # constant, so the whole block constant-folds out of the
+            # traced graph in that case.  When active, ``theta['igm_factor']``
+            # can override the default ``igm_factor`` attribute to let the
+            # sampler fit IGM strength.
+            if self.igm is not None:
+                if "igm_factor" in theta:
+                    ig_factor = jnp.ravel(theta["igm_factor"])[0]
+                else:
+                    ig_factor = jnp.float32(self.igm_factor)
+                transmission = self.igm.attenuation(
+                    self.wave, z_scalar, factor=ig_factor,
+                )
+                spectrum = spectrum * transmission.astype(spectrum.dtype)
+
+        # Python loop unrolled at trace time.  No Python branches inside
+        # the traced code; obs.predict() is a concrete method call resolved
+        # before XLA compilation.
+        return {obs.name: obs.predict(spectrum, self.wave)
                 for obs in observations}
-
-    # -----------------------------------------------------------------------
-    # Observation-projection helpers
-    # -----------------------------------------------------------------------
-
-    def _project_spectrum(self, spectrum, obs):
-        """
-        Project the model spectrum (on ``self.wave``) onto a single observation.
-
-        Parameters
-        ----------
-        spectrum : Array, shape (n_wave,)
-            Model spectrum in F_nu units (L_sun Hz^{-1} M_sun^{-1} as output
-            by ``get_spectrum``).
-        obs : Photometry | Spectrum | Lines
-            Observation object that defines the projection target.
-
-        Returns
-        -------
-        Array
-            Shape depends on ``obs`` type; see ``predict`` docstring.
-        """
-        if isinstance(obs, Photometry):
-            # Filter convolution via sedpy_jax FilterSet.
-            # get_maggies handles F_nu -> F_lambda conversion internally.
-            return obs.get_maggies(self.wave, spectrum)
-
-        elif isinstance(obs, Spectrum):
-            # Linear interpolation of the model onto the observed wavelength
-            # grid. jnp.interp clamps to boundary values outside the model
-            # range, which is the correct behaviour (model coverage should
-            # always exceed the spectral window).
-            return jnp.interp(obs.wavelength, self.wave, spectrum)
-
-        elif isinstance(obs, Lines):
-            return self._extract_line_fluxes(spectrum, obs)
-
-        else:
-            raise TypeError(
-                f"Unsupported observation type: {type(obs).__name__}.  "
-                "Expected Photometry, Spectrum, or Lines."
-            )
-
-    def _extract_line_fluxes(self, spectrum, lines_obs):
-        """
-        Extract emission-line fluxes from the model spectrum by Gaussian-
-        aperture integration centred on each line.
-
-        The aperture width is 200 km/s (1-sigma), sufficient to capture the
-        narrow-line profiles generated by ``NebularGridModel`` (~tens of km/s
-        intrinsic width broadened to the model wavelength grid resolution)
-        while rejecting adjacent continuum and neighbouring lines spaced by
-        more than ~600 km/s.
-
-        Parameters
-        ----------
-        spectrum : Array, shape (n_wave,)
-            Model spectrum in F_nu units.
-        lines_obs : Lines
-            Observed emission-line object.  ``lines_obs.wavelength`` holds the
-            vacuum rest-frame wavelengths [Å] of the lines to extract.
-
-        Returns
-        -------
-        Array, shape (n_lines,)
-            Integrated line flux for each line, in the same units as
-            ``spectrum * d_lambda`` (L_sun M_sun^{-1}).
-
-        Notes
-        -----
-        The Gaussian aperture weight is
-
-        .. math::
-
-            w_k(\\lambda) = \\exp\\!\\left[-\\frac{1}{2}
-            \\left(\\frac{\\lambda - \\lambda_k}{\\sigma_k}\\right)^2\\right],
-            \\qquad \\sigma_k = \\lambda_k \\cdot \\frac{\\sigma_v}{c}
-
-        with :math:`\\sigma_v = 200\\,\\text{km/s}`.  The flux is the
-        trapezoidal integral :math:`\\int w_k(\\lambda)\\,f_\\nu(\\lambda)\\,
-        \\mathrm{d}\\lambda`.  As long as the same aperture is applied to data
-        and model predictions, the choice of :math:`\\sigma_v` cancels in
-        the likelihood.
-        """
-        c_kms = 2.998e5        # km/s
-        sigma_v = 200.0        # km/s
-
-        def _flux_one(lam0):
-            sigma_aa = lam0 * (sigma_v / c_kms)
-            weights  = jnp.exp(-0.5 * ((self.wave - lam0) / sigma_aa) ** 2)
-            return jnp.trapz(weights * spectrum, self.wave)
-
-        return vmap(_flux_one)(lines_obs.wavelength)
 
     @property
     def all_params(self):
@@ -533,6 +599,7 @@ class CSPBasis:
             f"n_SSP_ages           : {len(self.ages)}",
             f"n_metallicities      : {len(self.zmet)}",
             f"wavelength range     : {float(self.wave.min()):.0f} – {float(self.wave.max()):.0f} Å",
+            f"SFH integration      : {self.sfh_interp}",
             "Parameters:",
         ]
         for k, v in self.theta_init.items():
@@ -590,10 +657,20 @@ class CSPBasis:
         w_lo = jnp.where(mask_lo, -I_lo / dlogage[None, :], 0.0)
         w_hi = jnp.where(mask_hi,  I_hi / dlogage[None, :], 0.0)
 
-        w1              = jnp.pad(w_lo, ((0, 0), (0, 1))) + jnp.pad(w_hi, ((0, 0), (1, 0)))
-        m1              = w1.sum(axis=1)
-        sfh_weights     = w1 * (m2 / m1)[:, None]
-        total_sfh_weights = sfh_weights.sum(axis=0)
+        w1 = jnp.pad(w_lo, ((0, 0), (0, 1))) + jnp.pad(w_hi, ((0, 0), (1, 0)))
+
+        # Physical constraint: SSP weights are masses formed — they must be
+        # non-negative.  The analytical log-age integration can produce small
+        # negative values for steep SFH slopes due to sign cancellation in
+        # intsfwght.  Clip to zero to enforce the physical bound, matching the
+        # FSPS convention where tabular-SFH weights are always non-negative.
+        w1 = jnp.maximum(0.0, w1)
+
+        # Guard m1 against zero (can occur if all weights in a bin were clipped)
+        # so that the m2/m1 mass-conservation rescaling does not produce NaN.
+        m1 = jnp.maximum(w1.sum(axis=1), 1e-30)
+        sfh_weights       = w1 * (m2 / m1)[:, None]
+        total_sfh_weights = jnp.maximum(0.0, sfh_weights.sum(axis=0))
 
         target_Z = theta["Z"]
         z_idx = jnp.clip(
@@ -602,7 +679,76 @@ class CSPBasis:
         )
         z1 = self.zmet[z_idx - 1]
         z2 = self.zmet[z_idx]
-        w  = (target_Z - z1) / (z2 - z1)
+        w  = jnp.clip((target_Z - z1) / (z2 - z1), 0.0, 1.0)
+
+        total_weights = jnp.zeros((self._n_z, self._n_age))
+        total_weights = total_weights.at[z_idx - 1].add((1 - w) * total_sfh_weights)
+        total_weights = total_weights.at[z_idx    ].add(      w  * total_sfh_weights)
+        return total_weights
+
+    def calculate_ssp_weights_const_zh_step(self, theta):
+        """
+        SSP weights for a constant metallicity history — piecewise-constant
+        (FastStepBasis-style) SFH integration.
+
+        Within each SFH time bin the SFR is held at the mean of the two
+        endpoint values.  The contribution of SFH bin *i* to SSP age bin *j*
+        is ``sfh_mid[i] * overlap_yr[i, j]``, where ``overlap_yr`` is the
+        intersection length (in yr) of the two bins on a linear-time axis.
+        All entries are non-negative by construction; no clipping is required.
+
+        Reads ``theta["sfh"]`` (shape ``(n_time,)``) and ``theta["Z"]``
+        (shape ``(1,)``, log10 Z/Zsun).
+        """
+        sfh = jnp.clip(theta["sfh"], 1e-30, None)
+
+        t_lo = self.sfh_times[1:]    # (n_bin,)  younger edge, yr
+        t_hi = self.sfh_times[:-1]   # (n_bin,)  older  edge, yr
+        dt   = t_hi - t_lo           # (n_bin,)  positive
+
+        # Constant SFR within each bin: mean of the two node values
+        sfh_mid = 0.5 * (sfh[:-1] + sfh[1:])   # (n_bin,) >= 0
+
+        # Physically correct mass per SFH bin under constant-SFR assumption
+        m2 = sfh_mid * dt                        # (n_bin,)
+
+        # Overlap in linear yr between each SFH bin and each SSP Voronoi cell.
+        #
+        # Each SSP age POINT j owns the Voronoi cell
+        #   [_ssp_voronoi_lo[j], _ssp_voronoi_hi[j]]
+        # whose boundaries are the linear-time midpoints to the neighbouring
+        # SSP age points.  Overlapping this cell with the SFH bin directly
+        # gives the correct mass attribution without any post-hoc splitting.
+        # This matches the FSPS FastStepBasis ±ε convention.
+        #
+        #   overlap[i, j] = max(0,
+        #       min(t_hi[i], voronoi_hi[j]) - max(t_lo[i], voronoi_lo[j]) )
+        #
+        overlap = jnp.maximum(
+            0.0,
+            jnp.minimum(t_hi[:, None], self._ssp_voronoi_hi[None, :])   # (n_bin, n_age)
+            - jnp.maximum(t_lo[:, None], self._ssp_voronoi_lo[None, :])
+        )
+
+        # Weight at each SSP age POINT: SFR * Voronoi overlap.  Non-negative
+        # by construction — no clipping or splitting needed.
+        w1 = sfh_mid[:, None] * overlap          # (n_bin, n_age)
+
+        # Mass-conserving rescale: force each SFH bin's weight sum to m2.
+        m1 = jnp.maximum(w1.sum(axis=1), 1e-30)
+        w1 = w1 * (m2 / m1)[:, None]            # (n_bin, n_age)
+
+        total_sfh_weights = w1.sum(axis=0)        # (n_age,)
+
+        # Metallicity interpolation (identical to the linear-scheme version)
+        target_Z = theta["Z"]
+        z_idx = jnp.clip(
+            jnp.searchsorted(self.zmet, target_Z, side='left'),
+            1, self._n_z - 1,
+        )
+        z1 = self.zmet[z_idx - 1]
+        z2 = self.zmet[z_idx]
+        w  = jnp.clip((target_Z - z1) / (z2 - z1), 0.0, 1.0)
 
         total_weights = jnp.zeros((self._n_z, self._n_age))
         total_weights = total_weights.at[z_idx - 1].add((1 - w) * total_sfh_weights)
@@ -656,8 +802,11 @@ class CSPBasis:
         w_lo = jnp.where(mask_lo, -I_lo / dlogage[None, :], 0.0)
         w_hi = jnp.where(mask_hi,  I_hi / dlogage[None, :], 0.0)
 
-        w1          = jnp.pad(w_lo, ((0, 0), (0, 1))) + jnp.pad(w_hi, ((0, 0), (1, 0)))
-        m1          = w1.sum(axis=1)
+        w1 = jnp.pad(w_lo, ((0, 0), (0, 1))) + jnp.pad(w_hi, ((0, 0), (1, 0)))
+
+        # Physical constraint — same rationale as in calculate_ssp_weights_const_zh.
+        w1 = jnp.maximum(0.0, w1)
+        m1 = jnp.maximum(w1.sum(axis=1), 1e-30)
         sfh_weights = w1 * (m2 / m1)[:, None]
 
         zh   = theta["zh"]
@@ -675,6 +824,59 @@ class CSPBasis:
         M     = M.at[rows, k + 1].add(dz)
         return M.T @ sfh_weights
 
+    def calculate_ssp_weights_var_zh_step(self, theta):
+        """
+        SSP weights for a time-varying metallicity history — piecewise-constant
+        (FastStepBasis-style) SFH integration.
+
+        Identical non-negativity guarantee as
+        ``calculate_ssp_weights_const_zh_step``, but distributes mass across
+        metallicity bins using the per-SFH-bin mean metallicity from
+        ``theta["zh"]`` (shape ``(n_time,)``, log10 Z/Zsun).
+
+        Reads ``theta["sfh"]`` (shape ``(n_time,)``) and ``theta["zh"]``
+        (shape ``(n_time,)``, log10 Z/Zsun at each lookback time).
+        """
+        sfh = jnp.clip(theta["sfh"], self.tiny_logt, None)
+
+        t_lo = self.sfh_times[1:]    # (n_bin,)  younger edge, yr
+        t_hi = self.sfh_times[:-1]   # (n_bin,)  older  edge, yr
+        dt   = t_hi - t_lo           # (n_bin,)  positive
+
+        # Constant SFR within each bin: mean of the two node values
+        sfh_mid = 0.5 * (sfh[:-1] + sfh[1:])   # (n_bin,) >= 0
+        m2      = sfh_mid * dt                   # (n_bin,)
+
+        # Voronoi-cell overlap — same scheme as calculate_ssp_weights_const_zh_step.
+        # Gives (n_bin, n_age) directly; no splitting required.
+        overlap = jnp.maximum(
+            0.0,
+            jnp.minimum(t_hi[:, None], self._ssp_voronoi_hi[None, :])   # (n_bin, n_age)
+            - jnp.maximum(t_lo[:, None], self._ssp_voronoi_lo[None, :])
+        )
+
+        w1    = sfh_mid[:, None] * overlap       # (n_bin, n_age)  >= 0
+
+        # Mass-conserving rescale
+        m1    = jnp.maximum(w1.sum(axis=1), 1e-30)
+        sfh_weights = w1 * (m2 / m1)[:, None]   # (n_bin, n_age)
+
+        # Per-SFH-bin mean metallicity (identical to the linear-scheme version)
+        zh   = theta["zh"]
+        zbin = 0.5 * (zh[:-1] + zh[1:])
+        k    = jnp.clip(jnp.searchsorted(self.zmet, zbin) - 1, 0, self._n_z - 2)
+
+        z0 = self.zmet[k]
+        z1 = self.zmet[k + 1]
+        dz = jnp.clip((zbin - z0) / jnp.maximum(z1 - z0, tiny_number), 0.0, 1.0)
+
+        n_bin = self.n_time - 1
+        rows  = jnp.arange(n_bin)
+        M     = jnp.zeros((n_bin, self._n_z))
+        M     = M.at[rows, k    ].add(1.0 - dz)
+        M     = M.at[rows, k + 1].add(dz)
+        return M.T @ sfh_weights   # (n_z, n_age)
+
     # -----------------------------------------------------------------------
     # Spectrum methods (all read theta["key"] directly)
     # -----------------------------------------------------------------------
@@ -686,34 +888,34 @@ class CSPBasis:
         logZ_gas = theta["gas_logz"]
         logU     = theta["gas_logu"]
 
-        def nebular_one(logage, logQ):
-            return self.neb.evaluate(
-                logZ=logZ_gas, logU=logU, logage=logage, logQ=logQ,
-            )
+        # Vectorized nebular evaluation: factored trilinear interpolation
+        # bilinear in (logZ, logU) then linear in age, batched over all
+        # young ages and SSP metallicities in a single call.
+        neb_young = self.neb.evaluate_batch(
+            logZ_gas, logU, self._neb_ages_young, self._neb_logqq_young
+        )
 
-        neb_cont, neb_lines = vmap(
-            lambda logQ_row: vmap(nebular_one)(self.ssp_ages_lgyr, logQ_row)
-        )(self.logqq)
-
-        neb_all = (neb_cont + neb_lines)[..., 0]                        # (n_z, n_age, n_wave)
-        neb_all = jnp.where(self.young_mask[None, :, None], neb_all, 0.0)
+        # Scatter young-age results back into the full (n_z, n_age, n_wave) array
+        n_z, n_age, n_wave = self.flux.shape
+        neb_all = jnp.zeros((n_z, n_age, n_wave), dtype=jnp.float32)
+        neb_all = neb_all.at[:, self._neb_young_idx, :].set(
+            neb_young.astype(jnp.float32))
 
         stellar_fluxes  = jnp.where(self.kill_ion[None, :, :], 0.0, self.flux)
-        combined_fluxes = stellar_fluxes + neb_all                      # (n_z, n_age, n_wave)
+        combined_fluxes = stellar_fluxes + neb_all                      # (n_z, n_age, n_wave) float32
 
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
-        M        = self._age_bin_mix.astype(attn.dtype)
-        tau_age  = jnp.einsum("ab,bw->aw", M, attn)
+        # Cast dust curves to float32 for the einsum — keeps the entire
+        # forward model in single precision until the likelihood.
+        M        = self._age_bin_mix
+        tau_age  = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age = jnp.exp(-tau_age)
 
-        spectrum = jnp.einsum("za,zaw,aw->w", W, combined_fluxes, attn_age)
-        spectrum = spectrum * jnp.exp(-attn_diffuse)
+        W_f32 = W.astype(jnp.float32)
+        spectrum = jnp.einsum("za,zaw,aw->w", W_f32, combined_fluxes, attn_age)
+        spectrum = spectrum * jnp.exp(-attn_diffuse.astype(jnp.float32))
 
-        self.total_weights      = W
-        self.nebular_fluxes_all = neb_all
-        self.stellar_fluxes     = stellar_fluxes
-        self.spectrum           = spectrum.reshape((-1,))
-        return self.spectrum
+        return spectrum.reshape((-1,))
 
     def get_spectrum_dattn_dem_neb(self, theta):
         """Dust attenuation + nebular emission + dust emission."""
@@ -722,34 +924,32 @@ class CSPBasis:
         logZ_gas = theta["gas_logz"]
         logU     = theta["gas_logu"]
 
-        def nebular_one(logage, logQ):
-            return self.neb.evaluate(
-                logZ=logZ_gas, logU=logU, logage=logage, logQ=logQ,
-            )
+        # Vectorized nebular evaluation (same factored trilinear as above)
+        neb_young = self.neb.evaluate_batch(
+            logZ_gas, logU, self._neb_ages_young, self._neb_logqq_young
+        )
 
-        neb_cont, neb_lines = vmap(
-            lambda logQ_row: vmap(nebular_one)(self.ssp_ages_lgyr, logQ_row)
-        )(self.logqq)
-
-        neb_all = (neb_cont + neb_lines)[..., 0]                        # (n_z, n_age, n_wave)
-        neb_all = jnp.where(self.young_mask[None, :, None], neb_all, 0.0)
+        n_z, n_age, n_wave = self.flux.shape
+        neb_all = jnp.zeros((n_z, n_age, n_wave), dtype=jnp.float32)
+        neb_all = neb_all.at[:, self._neb_young_idx, :].set(
+            neb_young.astype(jnp.float32))
 
         stellar_fluxes  = jnp.where(self.kill_ion[None, :, :], 0.0, self.flux)
-        combined_fluxes = stellar_fluxes + neb_all                      # (n_z, n_age, n_wave)
+        combined_fluxes = stellar_fluxes + neb_all                      # float32
 
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
-        M             = self._age_bin_mix.astype(attn.dtype)
-        tau_age       = jnp.einsum("ab,bw->aw", M, attn)
+        M             = self._age_bin_mix
+        tau_age       = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age      = jnp.exp(-tau_age)
-        diffuse_curve = jnp.exp(-attn_diffuse)
+        diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
 
-        spectrum_dust_free = jnp.einsum("za,zaw->w",       W, combined_fluxes)
-        attenuated         = jnp.einsum("za,zaw,aw->w",    W, combined_fluxes, attn_age)
+        W_f32 = W.astype(jnp.float32)
+        spectrum_dust_free = jnp.einsum("za,zaw->w",       W_f32, combined_fluxes)
+        attenuated         = jnp.einsum("za,zaw,aw->w",    W_f32, combined_fluxes, attn_age)
         attenuated         = attenuated * diffuse_curve
-        self.spec_attn     = attenuated
 
-        dust_emi_spectrum, self.mdust, self.tduste = self.dust_emi.compute_dust_emission(
-            spec_attn     = self.spec_attn,
+        dust_emi_spectrum, _mdust, _tduste = self.dust_emi.compute_dust_emission(
+            spec_attn     = attenuated,
             spec_dustfree = spectrum_dust_free,
             spec_lambda   = self.wave,
             diffuse_curve = diffuse_curve,
@@ -758,44 +958,38 @@ class CSPBasis:
             duste_gamma   = theta["duste_gamma"],
         )
 
-        self.total_weights      = W
-        self.nebular_fluxes_all = neb_all
-        self.stellar_fluxes     = stellar_fluxes
-        self.spectrum           = dust_emi_spectrum
-        return self.spectrum
+        return dust_emi_spectrum
 
     def get_spectrum_dattn_nodem_noneb(self, theta):
         """Dust attenuation, no nebular, no dust emission."""
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
 
-        M       = self._age_bin_mix.astype(attn.dtype)
-        tau_age = jnp.einsum("ab,bw->aw", M, attn)
+        M       = self._age_bin_mix
+        tau_age = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age= jnp.exp(-tau_age)
 
-        weights  = self.calculate_ssp_weights(theta)
+        weights  = self.calculate_ssp_weights(theta).astype(jnp.float32)
         spectrum = jnp.einsum("za,zaw,aw->w", weights, self.flux, attn_age)
-        spectrum *= jnp.exp(-attn_diffuse)
+        spectrum *= jnp.exp(-attn_diffuse.astype(jnp.float32))
 
-        self.spectrum = spectrum.reshape((-1,))
-        return self.spectrum
+        return spectrum.reshape((-1,))
 
     def get_spectrum_dattn_dem_noneb(self, theta):
         """Dust attenuation + dust emission, no nebular."""
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
 
-        M             = self._age_bin_mix.astype(attn.dtype)
-        tau_age       = jnp.einsum("ab,bw->aw", M, attn)
+        M             = self._age_bin_mix
+        tau_age       = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age      = jnp.exp(-tau_age)
-        diffuse_curve = jnp.exp(-attn_diffuse)
+        diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
 
-        weights           = self.calculate_ssp_weights(theta)
+        weights           = self.calculate_ssp_weights(theta).astype(jnp.float32)
         spectrum_dust_free= jnp.einsum("za,zaw->w", weights, self.flux)
         attenuated        = jnp.einsum("za,zaw,aw->w", weights, self.flux, attn_age)
         attenuated       *= diffuse_curve
-        self.spec_attn    = attenuated
 
-        dust_emi_spectrum, self.mdust, self.tduste = self.dust_emi.compute_dust_emission(
-            spec_attn      = self.spec_attn,
+        dust_emi_spectrum, _mdust, _tduste = self.dust_emi.compute_dust_emission(
+            spec_attn      = attenuated,
             spec_dustfree  = spectrum_dust_free,
             spec_lambda    = self.wave,
             diffuse_curve  = diffuse_curve,
@@ -803,17 +997,12 @@ class CSPBasis:
             duste_umin     = theta["duste_umin"],
             duste_gamma    = theta["duste_gamma"],
         )
-        self.spectrum = dust_emi_spectrum
-        return self.spectrum
+        return dust_emi_spectrum
 
     def get_spectrum_nodattn_nodem_noneb(self, theta):
         """Stellar continuum only — no dust, no nebular."""
-        weights       = self.calculate_ssp_weights(theta=theta)
-        self.spectrum = jnp.einsum("za,zaw->w", weights, self.flux)
-        return self.spectrum
-
-
-
+        weights  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
+        return jnp.einsum("za,zaw->w", weights, self.flux)
 
     def get_spectrum_nodattn_nodem_neb(self, theta):
         """Nebular emission only, no dust."""
@@ -822,32 +1011,19 @@ class CSPBasis:
         logZ_gas = theta["gas_logz"]
         logU = theta["gas_logu"]
 
-        def nebular_one(logage, logQ):
-            return self.neb.evaluate(
-                logZ=logZ_gas,
-                logU=logU,
-                logage=logage,
-                logQ=logQ,
-            )
+        # Vectorized nebular evaluation (factored trilinear)
+        neb_young = self.neb.evaluate_batch(
+            logZ_gas, logU, self._neb_ages_young, self._neb_logqq_young
+        )
 
-        # self.logqq assumed shape (n_z, n_age)
-        neb_cont, neb_lines = vmap(
-            lambda logQ_row: vmap(nebular_one)(self.ssp_ages_lgyr, logQ_row)
-        )(self.logqq)
+        n_z, n_age, n_wave = self.flux.shape
+        neb_all = jnp.zeros((n_z, n_age, n_wave), dtype=jnp.float32)
+        neb_all = neb_all.at[:, self._neb_young_idx, :].set(
+            neb_young.astype(jnp.float32))
 
-        neb_all = (neb_cont + neb_lines)[..., 0]   # (n_z, n_age, n_wave)
-
-        # Optional: suppress nebular emission for old ages
-        neb_all = jnp.where(self.young_mask[None, :, None], neb_all, 0.0)
-
-        # Optional: suppress stellar ionizing part if needed
+        # Suppress stellar ionizing part
         stellar_fluxes = jnp.where(self.kill_ion[None, :, :], 0.0, self.flux)
 
-        combined_fluxes = stellar_fluxes + neb_all
-        spectrum = jnp.einsum("za,zaw->w", W, combined_fluxes)
-
-        self.total_weights = W
-        self.nebular_fluxes_all = neb_all
-        self.stellar_fluxes = stellar_fluxes
-        self.spectrum = spectrum
-        return spectrum
+        combined_fluxes = stellar_fluxes + neb_all  # float32
+        W_f32 = W.astype(jnp.float32)
+        return jnp.einsum("za,zaw->w", W_f32, combined_fluxes)
