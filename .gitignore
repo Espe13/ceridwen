@@ -241,3 +241,50 @@ GPU/
 **/sfh_interp_*.py
 **/test_float32_*.py
 **/test_predict.py
+
+# ── Non-package trees ─────────────────────────────────────────────
+# Development notebooks, benchmarks, one-off dev scripts, output
+# directories — none of this is part of the importable package.
+GPU/
+forAmandaDir/
+notebooks/
+results/
+sampler/
+scripts/
+runs/
+my_fit/
+figs/
+figures/
+proof.png
+
+# Within the package, exclude dev-only scratch that predates packaging.
+ceridwen/csp/big_comparison*.py
+ceridwen/csp/*_svd.py
+ceridwen/csp/fsps_step_*.py
+ceridwen/csp/sfh_interp_*.py
+ceridwen/csp/likelihood_comparison.py
+ceridwen/csp/test_*.py
+ceridwen/csp/figures/
+ceridwen/csp/predict_figures/
+ceridwen/observation/compare_*.py
+ceridwen/observation/figures/
+ceridwen/observation/*.pdf
+ceridwen/dust/*safe.py
+ceridwen/neb/*SVD*.py
+
+# Session backups + AI artefacts
+*.bak
+.claude/
+**/.claude/
+CLAUDE_CODE_TASK.md
+**/HANDOFF_PROMPT.md
+**/DIAGNOSTIC_PROMPT.md
+**/AUDIT_*.md
+**/ROADMAP*.md
+**/Roadmap*.md
+
+# Auto-saved artefacts
+*.pptx
+*.autosave
+ceridwen_observation_inference_api.html
+nebular_dev_comparison.pdf

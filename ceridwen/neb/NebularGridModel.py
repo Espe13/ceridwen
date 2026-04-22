@@ -215,6 +215,111 @@ class NebularModel:
         self.gaussnebarr = jnp.stack([compute_line(i) for i in range(self.nebem_line_pos.shape[0])], axis=1)
         return self.gaussnebarr  # shape: (n_lambda, n_lines)
 
+    def evaluate_batch(self, logZ_gas, logU, ssp_ages_young, logqq_young):
+        """
+        Vectorized nebular evaluation for all (Z_ssp, age_young) pairs at a
+        single (logZ_gas, logU) point.
+
+        Replaces the nested ``vmap(vmap(evaluate))`` pattern with factored
+        array operations.  The trilinear interpolation on the CLOUDY cube is
+        decomposed as:
+
+        1. **Bilinear in (logZ, logU)** — done once, collapses two grid dims.
+        2. **Linear in age** — vectorized over all young ages simultaneously.
+        3. **Exponentiate + line projection** — batched over (Z_ssp, age).
+
+        The result is *numerically identical* to calling ``evaluate()`` in a
+        nested vmap, but avoids vmap dispatch overhead and is more
+        cache-friendly on GPU.
+
+        Parameters
+        ----------
+        logZ_gas : scalar or shape-(1,) array
+            Gas-phase log10(Z/Zsun).
+        logU : scalar or shape-(1,) array
+            Ionisation parameter log10(U).
+        ssp_ages_young : array, shape (n_young,)
+            log10(age/yr) for the young SSP ages.
+        logqq_young : array, shape (n_z_ssp, n_young)
+            log10(Q(H0)) for each SSP metallicity and young age.
+
+        Returns
+        -------
+        neb_young : array, shape (n_z_ssp, n_young, nspec)
+            Combined (continuum + line) nebular spectrum.
+        """
+        logZ_gas = jnp.squeeze(logZ_gas)
+        logU     = jnp.squeeze(logU)
+
+        # ── Step 1: locate (logZ, logU) in the CLOUDY grid (scalar) ──────
+        z1 = _locate(logZ_gas, self.nebem_logz)
+        dz = jnp.clip(
+            (logZ_gas - self.nebem_logz[z1])
+            / (self.nebem_logz[z1 + 1] - self.nebem_logz[z1]),
+            0.0, 1.0,
+        )
+        u1 = _locate(logU, self.nebem_logu)
+        du = jnp.clip(
+            (logU - self.nebem_logu[u1])
+            / (self.nebem_logu[u1 + 1] - self.nebem_logu[u1]),
+            0.0, 1.0,
+        )
+
+        # ── Step 2: bilinear in (Z, U) — collapse two grid dims ─────────
+        # nebem_cont shape: (nspec, nz, nage_cloudy, nu)
+        # After bilinear:   (nspec, nage_cloudy)
+        wzu = jnp.array([
+            (1 - dz) * (1 - du),
+            (1 - dz) *       du,
+                  dz  * (1 - du),
+                  dz  *       du,
+        ])  # (4,)
+
+        cont_zu = (wzu[0] * self.nebem_cont[:, z1,     :, u1    ] +
+                   wzu[1] * self.nebem_cont[:, z1,     :, u1 + 1] +
+                   wzu[2] * self.nebem_cont[:, z1 + 1, :, u1    ] +
+                   wzu[3] * self.nebem_cont[:, z1 + 1, :, u1 + 1])
+        # shape: (nspec, nage_cloudy)
+
+        line_zu = (wzu[0] * self.nebem_line[:, z1,     :, u1    ] +
+                   wzu[1] * self.nebem_line[:, z1,     :, u1 + 1] +
+                   wzu[2] * self.nebem_line[:, z1 + 1, :, u1    ] +
+                   wzu[3] * self.nebem_line[:, z1 + 1, :, u1 + 1])
+        # shape: (nlines, nage_cloudy)
+
+        # ── Step 3: linear in age — vectorized over young ages ───────────
+        a1 = jnp.clip(
+            jnp.searchsorted(self.nebem_age, ssp_ages_young) - 1,
+            0, self.nebem_age.shape[0] - 2,
+        )  # (n_young,)
+        da = jnp.clip(
+            (ssp_ages_young - self.nebem_age[a1])
+            / (self.nebem_age[a1 + 1] - self.nebem_age[a1]),
+            0.0, 1.0,
+        )  # (n_young,)
+
+        # cont_zu[:, a1] gathers age columns → (nspec, n_young)
+        logcont = (1 - da)[None, :] * cont_zu[:, a1] + da[None, :] * cont_zu[:, a1 + 1]
+        logline = (1 - da)[None, :] * line_zu[:, a1] + da[None, :] * line_zu[:, a1 + 1]
+        # shapes: (nspec, n_young), (nlines, n_young)
+
+        # ── Step 4: add logQ and exponentiate ────────────────────────────
+        # logqq_young shape: (n_z_ssp, n_young)
+        # Broadcasting: (nspec, n_young) + (n_z_ssp, 1, n_young) → (n_z_ssp, nspec, n_young)
+        cont_flux = 10.0 ** (logcont[None, :, :] + logqq_young[:, None, :])
+        line_lum  = 10.0 ** (logline[None, :, :] + logqq_young[:, None, :])
+        # shapes: (n_z_ssp, nspec, n_young), (n_z_ssp, nlines, n_young)
+
+        # ── Step 5: project lines onto wavelength grid ───────────────────
+        # gaussnebarr: (nspec, nlines)
+        # line_lum:    (n_z_ssp, nlines, n_young)
+        line_spec = jnp.einsum('wl,zly->zwy', self.gaussnebarr, line_lum)
+        # shape: (n_z_ssp, nspec, n_young)
+
+        # ── Step 6: combine and transpose to (n_z_ssp, n_young, nspec) ───
+        neb_total = cont_flux + line_spec
+        return neb_total.transpose(0, 2, 1)
+
     def get_default_params(self):
         """
         Return a plain dict of default nebular fit parameters.

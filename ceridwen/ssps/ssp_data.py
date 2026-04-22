@@ -186,6 +186,48 @@ class SSPData:
 
         return cls(ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, log_qq)
 
+    # ------------------------------------------------------------------
+    # Generation from FSPS (convenience classmethod)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_fsps(cls, save_to: str | None = None, **fsps_kwargs) -> "SSPData":
+        """
+        Build an :class:`SSPData` directly from FSPS.
+
+        Thin wrapper around :func:`collect_ssp_data_wrapper` that keeps
+        the construction API symmetric with :meth:`load`.  On a first
+        run (no cached ``.h5``) this is typically the entry point you
+        want — FSPS computes the full SSP grid (a few minutes on CPU)
+        and the result is optionally persisted for subsequent fits.
+
+        Parameters
+        ----------
+        save_to : str or Path, optional
+            If given, the generated grid is additionally written to
+            this path via :meth:`save` so subsequent calls can use
+            :meth:`load` instead of paying the FSPS build cost.
+        **fsps_kwargs
+            Forwarded to :class:`fsps.StellarPopulation`.  Common
+            choices: ``imf_type=1`` (Chabrier), ``add_neb_emission=True``,
+            ``sfh=0``.  See ``fsps.PARAMS.all_params`` for the full list.
+
+        Returns
+        -------
+        SSPData
+            Immutable SSP grid ready for :class:`ceridwen.csp.csp.CSPBasis`.
+
+        Examples
+        --------
+        >>> from ceridwen.ssps.ssp_data import SSPData
+        >>> ssp = SSPData.from_fsps(imf_type=1, save_to="ssp_data.h5")
+        >>> ssp = SSPData.load("ssp_data.h5")     # subsequent runs
+        """
+        data = collect_ssp_data_wrapper(**fsps_kwargs)
+        if save_to is not None:
+            data.save(save_to)
+        return data
+
 
 def collect_ssp_data(**kwargs) -> typing.Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
