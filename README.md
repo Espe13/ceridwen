@@ -1,4 +1,4 @@
-![Ceridwen Logo](CeridwenLogo.png)
+
 
 # Ceridwen
 
