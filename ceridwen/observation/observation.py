@@ -260,6 +260,54 @@ class Observation:
     def __repr__(self):
         return f"<{self.__class__.__name__} '{self.name}' ndof={self.ndof}>"
 
+    # ------------------------------------------------------------------
+    # display() — tabular, row-by-row view of the stored data
+    # ------------------------------------------------------------------
+    def display(self, max_rows: int = 80, return_str: bool = False,
+                file=None):
+        """Print a tabular summary of every datum stored in this
+        observation (flux, uncertainty, wavelength, mask, and any
+        subclass-specific columns like filter or line name).
+
+        Intended as a *sanity check* in fitting pipelines — call once
+        after building the observation and before launching the sampler
+        to confirm that the catalogue parsing + unit conversions
+        actually produced the expected values.
+
+        Parameters
+        ----------
+        max_rows : int, optional
+            Cap on the number of rows printed.  Long tables (e.g. a
+            Spectrum with 10 000 pixels) are head + tail truncated with
+            a ``...`` marker in the middle; short tables (Photometry,
+            Lines) are printed in full regardless of this limit as long
+            as ``n <= max_rows``.  Default 80.
+        return_str : bool, optional
+            If True, return the formatted string instead of printing.
+            Default False.
+        file : file-like, optional
+            Destination for the print when ``return_str=False``.
+            Default ``sys.stdout``.
+
+        Returns
+        -------
+        str or None
+            The formatted string if ``return_str=True``, else ``None``.
+        """
+        txt = self._display_str(max_rows=max_rows)
+        if return_str:
+            return txt
+        import sys as _sys
+        print(txt, file=file or _sys.stdout)
+        return None
+
+    def _display_str(self, max_rows: int = 80) -> str:
+        """Default table formatter — overridden by each subclass to add
+        the columns that matter for it (filter, line name, wavelength,
+        etc.).  The fall-through on the base class just returns the
+        :func:`__str__` summary, which is always available."""
+        return str(self)
+
     def __getitem__(self, item):
         k = self.alias.get(item, item)
         return getattr(self, k)
@@ -493,8 +541,32 @@ class Photometry(Observation):
     )
     _meta = ("kind", "name", "filternames")
 
-    def __init__(self, filters=[], name=None, **kwargs):
+    def __init__(self, filters=[], name=None, upper_limit=None, **kwargs):
+        """
+        Parameters
+        ----------
+        upper_limit : array-like of bool, shape (n_filters,), optional
+            Per-band non-detection flags.  If True for band ``i`` the
+            photometric likelihood treats that band as an upper limit:
+            a chi-squared penalty is applied *only* when the model flux
+            exceeds the observed value, i.e.
+
+            .. math::
+
+                \\chi^2_{\\rm UL}
+                    = \\left[\\max(m - d, 0) \\,/\\, \\sigma\\right]^2.
+
+            This mirrors the convention already used in
+            :class:`ceridwen.observation.Lines` and matches Prospector's
+            recommended treatment of non-detections (the simple flux=0,
+            sigma=1-sigma-limit approximation).  ``None`` (default) treats
+            every band as a positive detection.
+        """
         self.set_filters(filters)
+        self.upper_limit = (
+            None if upper_limit is None
+            else jnp.asarray(np.atleast_1d(upper_limit), dtype=bool)
+        )
         super().__init__(name=name, **kwargs)
 
     # ------------------------------------------------------------------
@@ -680,9 +752,81 @@ class Photometry(Observation):
         return self.get_maggies(wave_model, spectrum)
 
     # ------------------------------------------------------------------
+    def predict_at_redshift(self, spectrum_fnu_observed, wave_rest, zred):
+        """
+        Project an observer-frame F_nu spectrum through the filters when
+        the redshift is a *traced* (sampled) JAX scalar.
+
+        This is the free-redshift counterpart of :meth:`predict`.  The
+        GEMV fast path baked by :meth:`setup_for_model` assumes a single
+        Python-scalar ``zred`` was known at trace time and bakes the
+        observed-frame wavelength grid into the projection matrix
+        ``_T``; that path cannot be used for sampling.  Here the
+        observed-frame wavelength grid is reconstructed per-sample as
+        ``wave_obs = (1 + zred) * wave_rest`` and the spectrum is
+        projected via :meth:`FilterSet.get_sed_maggies` with the
+        traced ``sourcewave``.
+
+        Pre-condition: ``spectrum_fnu_observed`` is the observer-frame
+        F_nu, i.e. ``CSPBasis.predict`` has already multiplied by
+        ``flux_factor_maggies(zred)`` and (optionally) by the IGM
+        transmission.  This method only handles the wavelength-grid
+        bookkeeping and the filter integral.
+
+        Parameters
+        ----------
+        spectrum_fnu_observed : jax.Array, shape (n_wave,)
+            Observer-frame F_nu on the rest-frame model wavelength grid
+            (the standard ceridwen output of get_spectrum + mass +
+            flux-factor + IGM).
+        wave_rest : jax.Array, shape (n_wave,)
+            Rest-frame model wavelength grid [Å] (typically ``csp.wave``).
+        zred : jax.Array, scalar
+            Sampled redshift.  May be a traced array; the entire path
+            below is JIT-compatible and differentiable in ``zred``
+            (sedpy_jax's ``interp_source`` uses ``jnp.interp`` which
+            has a defined gradient w.r.t. its xp argument).
+
+        Returns
+        -------
+        jax.Array, shape (n_filters,)
+            Synthetic AB maggies in observer frame.
+
+        Notes
+        -----
+        - Cost is one filter interpolation + one trans-matrix dot per
+          sample, vs the single GEMV of the fixed-z path.  For a 14-d
+          NUTS / 4000-particle NS / 20 000-step SVI run on a 40 GB A100
+          this is ~10-20x slower than the GEMV but still saturates
+          the GPU.
+        - Numerically equivalent to ``setup_for_model(wave_rest, zred=z)
+          + predict(spectrum, wave_rest)`` evaluated at the same z, to
+          float32 precision.
+        - Works regardless of whether ``setup_for_model`` has been
+          called.  When both paths are wired (e.g. for compare-mode
+          plots), prefer the GEMV path for any fixed-z observation
+          and this method for any free-z observation.
+        """
+        if self.filterset is None:
+            raise ValueError("No FilterSet configured; call set_filters() first.")
+        _c = jnp.array(2.998e18, dtype=spectrum_fnu_observed.dtype)
+        wave_obs = (jnp.float32(1.0) + zred.astype(spectrum_fnu_observed.dtype)) \
+            * jnp.asarray(wave_rest, dtype=spectrum_fnu_observed.dtype)
+        flux_flam = jnp.asarray(spectrum_fnu_observed,
+                                 dtype=spectrum_fnu_observed.dtype) \
+            * _c / (wave_obs * wave_obs)
+        return self.filterset.get_sed_maggies(flux_flam, sourcewave=wave_obs)
+
+    # ------------------------------------------------------------------
     def chi_sq(self, model_maggies):
         """
         Chi-squared contribution from this photometric observation.
+
+        For bands flagged as upper limits (``self.upper_limit[i] = True``),
+        the contribution is one-sided: a penalty is applied only when the
+        model flux exceeds the observed upper-limit value.  Matches the
+        convention used in :class:`Lines` and Prospector's recommended
+        treatment of non-detections.
 
         Parameters
         ----------
@@ -693,18 +837,42 @@ class Photometry(Observation):
         -------
         chi2 : float
         """
-        resid = (self.flux - jnp.asarray(model_maggies, dtype=float)) / self.uncertainty
-        return float(jnp.sum(jnp.where(self.mask, resid**2, 0.0)))
+        mf    = jnp.asarray(model_maggies, dtype=float)
+        resid = (self.flux - mf) / self.uncertainty       # (data - model) / sigma
+
+        if self.upper_limit is not None:
+            # For upper-limit bands: only penalise when model > data,
+            # i.e. when resid < 0.  Identical to the Lines convention.
+            resid_sq = jnp.where(
+                self.upper_limit,
+                jnp.where(resid < 0.0, resid ** 2, 0.0),
+                resid ** 2,
+            )
+        else:
+            resid_sq = resid ** 2
+
+        return float(jnp.sum(jnp.where(self.mask, resid_sq, 0.0)))
 
     def residuals(self, model_maggies):
         """
         Per-filter (data − model) / sigma.  Masked filters are set to NaN.
+
+        For bands flagged as upper limits, residuals are clipped to 0 when
+        the model is safely below the limit (positive residual), so the
+        returned vector matches what enters ``chi_sq`` band-by-band.
 
         Returns
         -------
         res : jnp.ndarray, shape (n_filters,)
         """
         res = (self.flux - jnp.asarray(model_maggies, dtype=float)) / self.uncertainty
+
+        if self.upper_limit is not None:
+            res = jnp.where(
+                self.upper_limit & (res >= 0.0),
+                0.0,
+                res,
+            )
         return jnp.where(self.mask, res, jnp.nan)
 
     # ------------------------------------------------------------------
@@ -729,6 +897,48 @@ class Photometry(Observation):
             f"  masked filters: {len(self.filters) - self.ndof} / {len(self.filters)}",
         ]
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    def _display_str(self, max_rows: int = 80) -> str:
+        """Per-filter table: filter name, λ_eff, flux, σ, S/N, mask.
+
+        Filter units follow the ``Photometry`` contract (maggies);
+        ``wave_effective`` is pulled from each sedpy_jax ``Filter``."""
+        header = str(self)
+        flux = np.asarray(self.flux) if self.flux is not None else None
+        unc  = np.asarray(self.uncertainty) if self.uncertainty is not None else None
+        mask = np.asarray(self.mask)
+        n = len(self.filters)
+
+        if flux is None or n == 0:
+            return header + "\n  (no flux vector)"
+
+        ul = (np.asarray(self.upper_limit) if self.upper_limit is not None
+              else np.zeros(n, dtype=bool))
+
+        col = f"  {'#':<3}  {'filter':<28}  {'λ_eff [Å]':>12}  " \
+              f"{'flux [mag]':>14}  {'σ':>12}  {'S/N':>7}  {'mask':>5}  {'UL':>3}"
+        sep = "  " + "-" * (len(col) - 2)
+        out = [header, "", col, sep]
+
+        for i in range(n):
+            fname = self.filternames[i] if i < len(self.filternames) else "?"
+            try:
+                weff = float(self.filters[i].wave_effective)
+            except Exception:
+                weff = float("nan")
+            f = float(flux[i]) if i < len(flux) else float("nan")
+            u = float(unc[i])  if (unc is not None and i < len(unc)) else float("nan")
+            snr = (abs(f / u) if (u is not None and np.isfinite(u) and u > 0)
+                   else float("inf"))
+            m = bool(mask[i]) if i < len(mask) else False
+            ulim = bool(ul[i]) if i < len(ul) else False
+            ul_str = "UL" if ulim else "-"
+            out.append(
+                f"  {i:<3d}  {fname:<28}  {weff:>12.1f}  "
+                f"{f:>14.4e}  {u:>12.4e}  {snr:>7.2f}  {str(m):>5}  {ul_str:>3}"
+            )
+        return "\n".join(out)
 
 
 # =====================================================================
@@ -857,6 +1067,7 @@ class Spectrum(Observation):
         sky          = None,
         noise_floor  = 0.0,
         sigma_losvd  = None,
+        fit_sigma_smooth = False,
         **kwargs,
     ):
         """
@@ -909,6 +1120,20 @@ class Spectrum(Observation):
         self.sky             = (None if sky is None
                                 else jnp.asarray(sky, dtype=float))
         self.noise_floor     = float(noise_floor)
+        # ── Galaxy LOSVD (sigma_smooth in Prospector convention) ──────────
+        # When ``fit_sigma_smooth=False`` (default), ``sigma_losvd`` is
+        # baked into ``_predict_fn`` at ``setup_for_model`` time as a
+        # Python float -- the same fast-path closure that was always
+        # there.  When ``fit_sigma_smooth=True``, the closure instead
+        # accepts a runtime ``sigma_smooth`` jnp scalar (km/s) and the
+        # caller (CSPBasis.predict) passes ``theta["sigma_smooth"]``
+        # through.  In that fittable mode ``sigma_losvd`` is only used
+        # as the warmup / smoother-init value, so we default to the
+        # Prospector ``TemplateLibrary["spectral_smoothing"]`` init
+        # (200 km/s) when the user does not supply one.
+        self.fit_sigma_smooth = bool(fit_sigma_smooth)
+        if self.fit_sigma_smooth and sigma_losvd is None:
+            sigma_losvd = 200.0
         self.sigma_losvd     = (None if sigma_losvd is None
                                 else float(sigma_losvd))
 
@@ -1003,6 +1228,13 @@ class Spectrum(Observation):
         st         = self.smoothtype
         has_instr  = (st is not None) and (self.resolution is not None)
         has_losvd  = self.sigma_losvd is not None
+        # When the galaxy LOSVD is a free parameter, the closure has a
+        # runtime ``sigma_smooth`` argument; ``predict`` switches its
+        # signature accordingly.  When ``fit_sigma_smooth=True`` but
+        # ``sigma_losvd is None`` would have left ``has_losvd=False`` --
+        # the constructor injects the 200 km/s default in that case so
+        # we always have a valid smoother to build here.
+        fit_lo     = self.fit_sigma_smooth and has_losvd
 
         if not has_instr and not has_losvd:
             # No smoothing: pure interpolation via _H.
@@ -1048,19 +1280,33 @@ class Spectrum(Observation):
                     _sv       = _sv_losvd   # capture scalar before lambda
                     def _apply_losvd(spec_trim, _s=_losvd_sm, _v=_sv):
                         return _s(spec_trim, _v)
+                    # Runtime-sigma variant: takes (spec_trim, sigma_v)
+                    # and is differentiable w.r.t. sigma_v (sedpy_jax's
+                    # make_vel_smoother already supports this).
+                    def _apply_losvd_rt(spec_trim, sigma_v, _s=_losvd_sm):
+                        return _s(spec_trim, sigma_v)
                 else:
                     # LOSVD only: output goes directly to observed grid.
                     _losvd_sm = make_vel_smoother(_wm_trim, wo, inres=0.0)
                     _sv       = _sv_losvd
                     def _apply_losvd(spec_trim, _s=_losvd_sm, _v=_sv):
                         return _s(spec_trim, _v)
+                    def _apply_losvd_rt(spec_trim, sigma_v, _s=_losvd_sm):
+                        return _s(spec_trim, sigma_v)
 
             if has_instr:
                 if st == "vel":
                     # Constant velocity dispersion σ_v [km/s].
                     sigma_v   = float(self.resolution)
                     _instr_sm = make_vel_smoother(_wm_trim, wo, inres=self.inres)
-                    if has_losvd:
+                    if fit_lo:
+                        _Lrt = _apply_losvd_rt
+                        self._predict_fn = (
+                            lambda spec, sigma_lo, _sm=_instr_sm, _sv=sigma_v,
+                                   _L=_Lrt:
+                                _sm(_L(spec[_idx], sigma_lo), _sv)
+                        )
+                    elif has_losvd:
                         _L = _apply_losvd
                         self._predict_fn = (
                             lambda spec, _sm=_instr_sm, _sv=sigma_v, _L=_L:
@@ -1076,7 +1322,14 @@ class Spectrum(Observation):
                     # Constant resolving power R = λ/σ_λ = c/σ_v → σ_v = c/R.
                     sigma_v   = float(_CKMS / self.resolution)
                     _instr_sm = make_vel_smoother(_wm_trim, wo, inres=self.inres)
-                    if has_losvd:
+                    if fit_lo:
+                        _Lrt = _apply_losvd_rt
+                        self._predict_fn = (
+                            lambda spec, sigma_lo, _sm=_instr_sm, _sv=sigma_v,
+                                   _L=_Lrt:
+                                _sm(_L(spec[_idx], sigma_lo), _sv)
+                        )
+                    elif has_losvd:
                         _L = _apply_losvd
                         self._predict_fn = (
                             lambda spec, _sm=_instr_sm, _sv=sigma_v, _L=_L:
@@ -1092,7 +1345,14 @@ class Spectrum(Observation):
                     # Constant wavelength dispersion σ_λ [Å].
                     sigma_l   = float(self.resolution)
                     _instr_sm = make_wave_smoother(_wm_trim, wo, inres=self.inres)
-                    if has_losvd:
+                    if fit_lo:
+                        _Lrt = _apply_losvd_rt
+                        self._predict_fn = (
+                            lambda spec, sigma_lo, _sm=_instr_sm, _sl=sigma_l,
+                                   _L=_Lrt:
+                                _sm(_L(spec[_idx], sigma_lo), _sl)
+                        )
+                    elif has_losvd:
                         _L = _apply_losvd
                         self._predict_fn = (
                             lambda spec, _sm=_instr_sm, _sl=sigma_l, _L=_L:
@@ -1110,7 +1370,13 @@ class Spectrum(Observation):
                     res_obs        = np.asarray(self.resolution, dtype=np.float64)
                     sigma_lsf_trim = np.interp(_wm_trim, wo, res_obs)
                     _instr_sm      = make_lsf_smoother(_wm_trim, sigma_lsf_trim, wo)
-                    if has_losvd:
+                    if fit_lo:
+                        _Lrt = _apply_losvd_rt
+                        self._predict_fn = (
+                            lambda spec, sigma_lo, _sm=_instr_sm, _L=_Lrt:
+                                _sm(_L(spec[_idx], sigma_lo))
+                        )
+                    elif has_losvd:
                         _L = _apply_losvd
                         self._predict_fn = (
                             lambda spec, _sm=_instr_sm, _L=_L:
@@ -1131,16 +1397,23 @@ class Spectrum(Observation):
             else:
                 # LOSVD only (no instrumental smoothing); _apply_losvd
                 # already maps _wm_trim → wo (observed grid).
-                _L = _apply_losvd
-                self._predict_fn = lambda spec, _L=_L: _L(spec[_idx])
+                if fit_lo:
+                    _Lrt = _apply_losvd_rt
+                    self._predict_fn = (
+                        lambda spec, sigma_lo, _L=_Lrt:
+                            _L(spec[_idx], sigma_lo)
+                    )
+                else:
+                    _L = _apply_losvd
+                    self._predict_fn = lambda spec, _L=_L: _L(spec[_idx])
 
-    def predict(self, spectrum, wave_model):
+    def predict(self, spectrum, wave_model, sigma_smooth=None):
         """
         Project the model spectrum onto the observed pixel grid, applying
         instrumental smoothing if configured.
 
-        Calls ``_predict_fn(spectrum)`` which was constructed by
-        ``setup_for_model``.  Depending on ``self.smoothtype``:
+        Calls ``_predict_fn(spectrum[, sigma_smooth])`` which was constructed
+        by ``setup_for_model``.  Depending on ``self.smoothtype``:
 
         * ``None``  — pure linear interpolation (``_H @ spectrum``).
         * ``"vel"`` / ``"R"`` — constant-velocity FFT broadening then
@@ -1161,12 +1434,33 @@ class Spectrum(Observation):
         wave_model : jax.Array, shape (n_wave,)
             Model wavelength grid [Å] (accepted for interface consistency;
             the grid mapping was precomputed by ``setup_for_model``).
+        sigma_smooth : jax.Array scalar, optional
+            Runtime galaxy LOSVD [km/s] -- the Prospector ``sigma_smooth``
+            parameter.  Only consulted when this Spectrum was constructed
+            with ``fit_sigma_smooth=True``; ignored otherwise (the static
+            ``sigma_losvd`` baked at ``setup_for_model`` time is used
+            instead).  Passing the value from ``theta`` makes the LOSVD
+            differentiable and fittable inside JIT/SVI/NUTS.
 
         Returns
         -------
         jax.Array, shape (n_pix,)
             Model F_nu (smoothed and) interpolated onto ``self.wavelength``.
         """
+        if self.fit_sigma_smooth:
+            if sigma_smooth is None:
+                # Fall back to the constructor default; lets a caller
+                # invoke ``predict(spec, wave)`` for warmup / debugging
+                # even when the closure is the runtime-sigma variant.
+                sigma_smooth = self.sigma_losvd
+            # Pass sigma through without forcing a dtype -- JAX's
+            # dtype-promotion rules with jax_enable_x64=True will
+            # promote to float64 to match the cached smoother grids,
+            # giving the same precision the static fast path achieved.
+            # Forcing float32 here would round-trip-degrade the smoother
+            # output even when the user is fitting in double precision.
+            sv = jnp.asarray(sigma_smooth).reshape(())
+            return self._predict_fn(spectrum, sv)
         return self._predict_fn(spectrum)
 
     # ------------------------------------------------------------------
@@ -1428,6 +1722,65 @@ class Spectrum(Observation):
         ]
         return "\n".join(lines)
 
+    # ------------------------------------------------------------------
+    def _display_str(self, max_rows: int = 20) -> str:
+        """Per-pixel table: index, wavelength, flux, σ, mask.  Long
+        spectra (more than ``max_rows`` pixels) are head/tail truncated
+        with a ``...`` marker in the middle.  A summary row appended at
+        the end reports min / median / max flux and the mean S/N over
+        unmasked pixels — the row view is for spot-checking values;
+        these aggregates give the first-pass sanity check."""
+        header = str(self)
+        if self._wavelength is None or self.flux is None:
+            return header + "\n  (no wavelength / flux vector)"
+
+        wave = np.asarray(self._wavelength)
+        flux = np.asarray(self.flux)
+        unc  = (np.asarray(self.uncertainty)
+                if self.uncertainty is not None
+                else np.full_like(flux, np.nan))
+        mask = np.asarray(self.mask)
+        n    = len(wave)
+
+        col = f"  {'i':<6}  {'λ [Å]':>12}  {'flux':>14}  {'σ':>14}  {'mask':>5}"
+        sep = "  " + "-" * (len(col) - 2)
+        out = [header, "", col, sep]
+
+        def _row(i):
+            w = float(wave[i])
+            f = float(flux[i]) if i < len(flux) else float("nan")
+            u = float(unc[i])  if i < len(unc)  else float("nan")
+            m = bool(mask[i])  if i < len(mask) else False
+            return (f"  {i:<6d}  {w:>12.2f}  {f:>14.4e}  "
+                    f"{u:>14.4e}  {str(m):>5}")
+
+        if n <= max_rows:
+            idxs = list(range(n))
+        else:
+            head = list(range(max_rows // 2))
+            tail = list(range(n - max_rows // 2, n))
+            idxs = head + [None] + tail  # None → ellipsis row
+
+        for i in idxs:
+            if i is None:
+                out.append("  ...")
+            else:
+                out.append(_row(i))
+
+        # Aggregate stats over unmasked pixels — quick sanity numbers.
+        good = mask.astype(bool) & np.isfinite(flux) & np.isfinite(unc)
+        if good.any():
+            f_lo, f_md, f_hi = np.percentile(flux[good], [0, 50, 100])
+            snr_mean = float(np.nanmean(np.abs(flux[good] / unc[good])))
+            out.append(sep)
+            out.append(
+                f"  [stats over {int(good.sum())}/{n} unmasked, "
+                f"finite pixels]  "
+                f"flux min/med/max = {f_lo:.3e} / {f_md:.3e} / {f_hi:.3e}  "
+                f"mean |S/N| = {snr_mean:.2f}"
+            )
+        return "\n".join(out)
+
 
 # =====================================================================
 # Lines
@@ -1521,12 +1874,17 @@ class Lines(Observation):
         wavelength  = None,
         name        = None,
         upper_limit = None,
+        fit_sigma_v = False,
         **kwargs,
     ):
         if line_ind is None:
             raise ValueError(
                 "line_ind is required: pass the indices of the observed lines "
                 "in the FSPS emline_luminosity array."
+            )
+        if wavelength is None:
+            raise ValueError(
+                "wavelength is required: pass the wavelengths of the observed lines."
             )
         self.line_ind   = jnp.asarray(np.atleast_1d(line_ind), dtype=int)
         self.line_names = list(line_names) if line_names is not None else None
@@ -1538,6 +1896,17 @@ class Lines(Observation):
             None if upper_limit is None
             else jnp.asarray(np.atleast_1d(upper_limit), dtype=bool)
         )
+        # When ``fit_sigma_v=False`` (default), ``setup_for_model`` builds
+        # a static (n_lines, n_wave) Gaussian-aperture matrix ``_W`` whose
+        # value gets constant-folded into the XLA graph -- the fast path.
+        # When ``True``, setup_for_model instead caches the static *pieces*
+        # (observed-frame line centres ``_lam0_obs``, observed-frame model
+        # grid ``_wm_obs``, trapezoidal quadrature weights ``_dlam``, and
+        # the per-line ``c / λ_obs^2`` normalisation ``_norm``); ``predict``
+        # then rebuilds ``W`` per call from a runtime ``sigma_v`` argument.
+        # Cost is one (n_lines, n_wave) exp() + GEMV per evaluation --
+        # negligible on a GPU.  ``predict`` is differentiable in ``sigma_v``.
+        self.fit_sigma_v = bool(fit_sigma_v)
         super().__init__(name=name, **kwargs)
 
     # ------------------------------------------------------------------
@@ -1616,11 +1985,6 @@ class Lines(Observation):
         wm   = opz * wm_rest
         lam0 = opz * lam0_rest
 
-        # Gaussian weight matrix: W[k, j] = exp(-0.5 ((wm_j - lam0_k) / sigma_k)^2)
-        sigma_aa = lam0 * (sigma_v / c_kms)           # (n_lines,)
-        diff     = wm[None, :] - lam0[:, None]         # (n_lines, n_wave)
-        W        = np.exp(-0.5 * (diff / sigma_aa[:, None]) ** 2)
-
         # Trapezoidal quadrature weights along the (observed-frame) model
         # wavelength axis.  At zred > 0 these pick up one factor of
         # (1 + zred) naturally — this is the dlambda_obs = (1+z) dlambda_rest
@@ -1631,21 +1995,79 @@ class Lines(Observation):
         dlam[0]     = 0.5 * (wm[1]  - wm[0])
         dlam[-1]    = 0.5 * (wm[-1] - wm[-2])
 
-        # Absorb dlam into the weight matrix.
-        W = (W * dlam[None, :]).astype(np.float32)     # (n_lines, n_wave)
+        # Absolute-flux normalisation.  Without this per-line factor,
+        # ``_W @ F_nu`` returns ``F_line * lambda_obs**2 / c`` (units:
+        # erg s^-1 cm^-2 Hz^-1 * A — a mixed-unit "aperture proxy"), NOT
+        # the integrated line flux in erg s^-1 cm^-2.  The raw proxy is
+        # fine if you feed *both* data and model through the same
+        # aperture (the docstring's "calibration cancels" regime), but
+        # catalogue emission-line tables almost always quote already-
+        # reduced integrated line fluxes in erg s^-1 cm^-2 — so we
+        # normalise once here and have ``_W @ spectrum`` return flux
+        # in the catalogue's own unit system.
+        #
+        # Derivation: FSPS Cloudy lines are added to the spectrum with
+        # a Gaussian of width sigma_v_model = nebular_smooth_init km/s
+        # (floor of ~2 pixel widths).  This is typically narrower than
+        # the sigma_v = 200 km/s aperture used here.  In the narrow-
+        # model-line limit the aperture integral reduces to
+        #   _W @ F_nu ≈ F_line * lambda_obs^2 / c .
+        # Multiplying each row by c / lambda_obs^2 restores
+        #   _W @ F_nu ≈ F_line [erg s^-1 cm^-2] ,
+        # letting observed data in the same units be passed in directly
+        # as ``Lines.flux``.
+        c_aa_s = 2.998e18                          # speed of light [Å/s]
+        norm = c_aa_s / (lam0 ** 2)                # (n_lines,)
 
-        # Store as a JAX constant (XLA constant-folds at trace time).
-        self._W = jnp.array(W)
+        if self.fit_sigma_v:
+            # Cache the pieces needed to rebuild ``W`` per call.  Only
+            # exp(...) + a couple of broadcasted multiplies depend on
+            # the runtime ``sigma_v``; the rest are static (n_lines,)
+            # or (n_wave,) arrays that get XLA-constant-folded.
+            #
+            # Stored in float64 so the per-call W matches the bit-for-bit
+            # static path (which also computes in float64 and only casts
+            # to float32 at the very end).  The cached arrays are O(n_wave)
+            # / O(n_lines), so the extra ~80 kB is negligible; the only
+            # heavy op (the exp) runs in the default JAX precision.
+            self._wm_obs        = jnp.asarray(wm,   dtype=jnp.float64)   # (n_wave,)
+            self._lam0_obs      = jnp.asarray(lam0, dtype=jnp.float64)   # (n_lines,)
+            self._dlam_obs      = jnp.asarray(dlam, dtype=jnp.float64)   # (n_wave,)
+            self._norm_obs      = jnp.asarray(norm, dtype=jnp.float64)   # (n_lines,)
+            self._c_kms         = jnp.asarray(c_kms, dtype=jnp.float64)
+            self._sigma_v_default = float(sigma_v)
+            # Don't build _W -- predict will rebuild it per call.
+            self._W = None
+        else:
+            # Fast path: bake W into a static (n_lines, n_wave) JAX
+            # constant.  XLA constant-folds at trace time.
+            diff     = wm[None, :] - lam0[:, None]         # (n_lines, n_wave)
+            sigma_aa = lam0 * (sigma_v / c_kms)            # (n_lines,)
+            W = np.exp(-0.5 * (diff / sigma_aa[:, None]) ** 2)
+            W = (W * dlam[None, :]).astype(np.float32)     # (n_lines, n_wave)
+            W = (W * norm[:, None].astype(np.float32))
+            self._W = jnp.array(W)
 
-    def predict(self, spectrum, wave_model):
+    def predict(self, spectrum, wave_model, sigma_v=None):
         """
         Extract emission-line fluxes from the model spectrum via Gaussian-
         aperture integration.
 
-        Computes ``_W @ spectrum`` where ``_W`` is the precomputed
-        (n_lines, n_wave) weight matrix.  On GPU this is a single GEMV call.
+        Two paths:
 
-        Must call ``setup_for_model(wave_model)`` before this method.
+        * **Fast path** (``fit_sigma_v=False``): computes ``_W @ spectrum``
+          where ``_W`` was precomputed once in ``setup_for_model``.  On
+          GPU this is a single GEMV; XLA constant-folds ``_W`` into the
+          compiled graph.
+        * **Fittable path** (``fit_sigma_v=True``): rebuilds
+          ``W[k, j] = exp(-½ ((λ_j - λ_{0,k}) / σ_k(σ_v))²) · dλ_j · c/λ_{0,k}²``
+          per call from a runtime ``sigma_v`` jnp scalar (km/s), then
+          contracts ``W @ spectrum``.  Cost is one (n_lines, n_wave)
+          ``exp`` and a GEMV per evaluation; for the JADES setup
+          n_lines ≲ 10 and n_wave ≈ 6000, so ~10⁵ flops -- negligible
+          on an A100.  Differentiable in ``sigma_v``.
+
+        Must call ``setup_for_model(wave_model, sigma_v=...)`` first.
 
         Parameters
         ----------
@@ -1653,13 +2075,33 @@ class Lines(Observation):
             Model spectrum in F_nu units.
         wave_model : jax.Array, shape (n_wave,)
             Accepted for interface consistency; not used inside this method.
+        sigma_v : jax.Array scalar, optional
+            Runtime Gaussian-aperture width [km/s].  Only consulted when
+            this Lines instance was constructed with ``fit_sigma_v=True``;
+            ignored otherwise.  If ``fit_sigma_v=True`` and ``sigma_v`` is
+            not passed, the constructor-time default
+            (``setup_for_model``'s ``sigma_v`` kwarg) is used -- handy
+            for warmup calls outside JIT.
 
         Returns
         -------
         jax.Array, shape (n_lines,)
             Gaussian-aperture integrated flux for each line.
         """
-        return self._W @ spectrum
+        if not self.fit_sigma_v:
+            return self._W @ spectrum
+        if sigma_v is None:
+            sigma_v = self._sigma_v_default
+        sv       = jnp.asarray(sigma_v).reshape(()).astype(self._lam0_obs.dtype)
+        sigma_aa = self._lam0_obs * (sv / self._c_kms)                # (n_lines,)
+        diff     = self._wm_obs[None, :] - self._lam0_obs[:, None]    # (n_lines, n_wave)
+        # Build W in cached precision (float64) then cast to float32
+        # at the contraction -- matches the bit-for-bit output of the
+        # static path (``_W = jnp.float32(...)``) at the same sigma_v.
+        W        = jnp.exp(-0.5 * (diff / sigma_aa[:, None]) ** 2)
+        W        = W * self._dlam_obs[None, :]
+        W        = W * self._norm_obs[:, None]
+        return W.astype(spectrum.dtype) @ spectrum
 
     # ------------------------------------------------------------------
     def chi_sq(self, model_fluxes):
@@ -1813,3 +2255,47 @@ class Lines(Observation):
             f"  masked lines  : {n - self.ndof} / {n}",
         ]
         return "\n".join(text)
+
+    # ------------------------------------------------------------------
+    def _display_str(self, max_rows: int = 80) -> str:
+        """Per-line table: #, line name, FSPS idx (1-based), λ, flux,
+        σ, S/N, mask.  Used as a sanity check after building a Lines
+        observation — all emission-line mysteries (missing lines,
+        swapped FSPS indices, wrong units) show up here."""
+        header = str(self)
+        if self.flux is None or len(self.line_ind) == 0:
+            return header + "\n  (no line vector)"
+
+        inds  = np.asarray(self.line_ind)
+        flux  = np.asarray(self.flux)
+        unc   = (np.asarray(self.uncertainty)
+                 if self.uncertainty is not None
+                 else np.full_like(flux, np.nan))
+        mask  = np.asarray(self.mask)
+        waves = (np.asarray(self._wavelength)
+                 if self._wavelength is not None
+                 else np.full(len(inds), np.nan))
+        names = (self.line_names if self.line_names is not None
+                 else [f"line_{i}" for i in range(len(inds))])
+
+        col = (f"  {'#':<3}  {'line_name':<28}  {'idx':>4}  "
+               f"{'λ [Å]':>10}  {'flux':>14}  {'σ':>14}  "
+               f"{'S/N':>7}  {'mask':>5}")
+        sep = "  " + "-" * (len(col) - 2)
+        out = [header, "", col, sep]
+
+        for i in range(len(inds)):
+            name = names[i] if i < len(names) else "?"
+            idx  = int(inds[i])
+            w    = float(waves[i]) if i < len(waves) else float("nan")
+            f    = float(flux[i])
+            u    = float(unc[i]) if i < len(unc) else float("nan")
+            snr  = (abs(f / u) if np.isfinite(u) and u > 0
+                    else float("inf"))
+            m    = bool(mask[i]) if i < len(mask) else False
+            out.append(
+                f"  {i:<3d}  {name:<28}  {idx:>4d}  "
+                f"{w:>10.2f}  {f:>14.4e}  {u:>14.4e}  "
+                f"{snr:>7.2f}  {str(m):>5}"
+            )
+        return "\n".join(out)

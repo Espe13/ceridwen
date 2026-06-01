@@ -81,12 +81,12 @@ def logsfr_ratios_to_sfh(
     sfh_times_yr=None,
 ):
     """
-    Convert log-ratios of consecutive SFR bins to a normalised SFH weight
+    Convert log-ratios of consecutive SFR bins to a unit-mass SFH weight
     vector.
 
     Parameters
     ----------
-    logsfr_ratios : array_like, shape (n − 1,)
+    logsfr_ratios : array_like, shape (n - 1,)
         Log10 ratios of consecutive SFR bins.
         ``logsfr_ratios[i] = log10( SFR[i] / SFR[i+1] )``.
         Positive values mean the SFR *decreases* with time (earlier burst);
@@ -94,23 +94,44 @@ def logsfr_ratios_to_sfh(
     sfh_times_yr : array_like, shape (n,), optional
         Lookback-time grid in years (same as ``CSPBasis.sfh_times``).
         When provided, trapezoidal integration weights are used for
-        normalisation so that total stellar mass is conserved.
-        If *None*, equal-weight normalisation is applied.
+        normalisation so that the integral of the SFH equals 1 Msun.
+        If *None*, the discrete sum is used instead.
 
     Returns
     -------
     sfh : jnp.ndarray, shape (n,)
-        Normalised SFH weight vector suitable for ``theta["sfh"]``.
+        Unit-mass SFH weight vector suitable for ``theta["sfh"]``.
 
     Notes
     -----
-    The normalisation satisfies ``sum(sfh * w) / sum(w) = 1`` where ``w``
-    are the standard trapezoidal quadrature weights (half-width at
-    boundaries), which ensures that the trapezoidal integral of the SFH
-    over the lookback-time grid equals the total lookback time.  This
-    is consistent with the piecewise-constant mass integral used by
+    The normalisation enforces ``sum(sfh * w) = 1`` where ``w`` are
+    the standard trapezoidal quadrature weights (half-width at
+    boundaries), so that the trapezoidal integral of the SFH over the
+    lookback-time grid equals **1 Msun**:
+
+    .. math::
+        \\int_0^{t_{\\rm univ}} \\mathrm{SFR}(t)\\,dt = 1\\;\\mathrm{M_\\odot}.
+
+    The total stellar mass of the model is then set by
+    ``theta["logmass"]`` (applied as a multiplicative ``10**logmass``
+    inside ``CSPBasis.predict``), matching the Prospector / FSPS
+    convention.
+
+    This is consistent with the per-bin mass integral
+    ``m2 = sfh_mid * dt`` computed inside
     ``CSPBasis.calculate_ssp_weights_const_zh_step`` and the
-    piecewise-linear integral used by ``calculate_ssp_weights_const_zh``.
+    piecewise-linear integral used by
+    ``calculate_ssp_weights_const_zh``: on a shared node grid the
+    trapezoid sum here and the midpoint sum there are algebraically
+    identical, so no compensating rescale is needed inside the CSP.
+
+    JAX compatibility
+    -----------------
+    The function is fully JIT-compatible: every operation is a
+    ``jnp`` primitive on traced arrays, the ``sfh_times_yr is not
+    None`` branch resolves at trace time (it is a Python-level check
+    on the closure argument, not a runtime decision on a traced
+    value), and there are no data-dependent shapes.
     """
     ratios  = jnp.asarray(logsfr_ratios, dtype=float)            # (n-1,)
     # Anchor log10(SFR[0]) = 0, then cumulate the negative ratios
@@ -121,18 +142,23 @@ def logsfr_ratios_to_sfh(
     if sfh_times_yr is not None:
         times = jnp.asarray(sfh_times_yr, dtype=float)            # (n,)
         dt    = jnp.abs(jnp.diff(times))                          # (n-1,)
-        # Standard trapezoidal quadrature weights:
+        # Standard trapezoidal quadrature weights (yr):
         #   w[0]   = 0.5 * dt[0]
         #   w[i]   = 0.5 * (dt[i-1] + dt[i])   for 0 < i < n-1
         #   w[n-1] = 0.5 * dt[n-2]
         w_lo  = jnp.concatenate([jnp.zeros(1), dt])               # (n,)
         w_hi  = jnp.concatenate([dt, jnp.zeros(1)])               # (n,)
         w     = 0.5 * (w_lo + w_hi)                               # (n,)
-        total = jnp.sum(sfr * w)
-        sfh   = sfr * (jnp.sum(w) / total)
+        # Unit-mass normalisation: ∫SFR dt = sum(sfr * w) = 1 Msun.
+        # The previous convention sfh = sfr * sum(w) / total made the
+        # *mean* SFR equal 1 Msun/yr, which left an implicit factor of
+        # t_universe[yr] (~1.4e10) in the spectrum and biased every
+        # logmass estimate by ~10 dex at z=0 (less at higher z).
+        total_mass = jnp.sum(sfr * w)
+        sfh   = sfr / total_mass
     else:
-        n   = sfr.shape[0]
-        sfh = sfr * (float(n) / jnp.sum(sfr))
+        # Discrete fallback: sum(sfh) = 1.
+        sfh = sfr / jnp.sum(sfr)
 
     return sfh
 

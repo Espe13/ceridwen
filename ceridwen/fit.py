@@ -163,8 +163,18 @@ def fitSED(
     # ── Attach observations if provided ───────────────────────────────
     if observations is not None:
         model.observations = list(observations)
+        # Forward model.zred so the per-observation projection matrices
+        # (Photometry._T, Spectrum._H, Lines._W) are baked at the
+        # *observed-frame* wavelength grid (1+z) * wave_rest.  Calling
+        # setup_for_model(...) with the default zred=0 here would clobber
+        # the correctly-redshifted projection that SedModel.__init__
+        # built (model.py L200), so any non-zero fixed redshift would
+        # silently degrade to a rest-frame filter integral while
+        # CSPBasis.predict still applied flux_factor_maggies(z).  At
+        # z ~ 2.7 that produces 10-20 sigma photometric residuals
+        # because the filters sample the wrong intrinsic wavelengths.
         for obs in model.observations:
-            obs.setup_for_model(model.csp.wave)
+            obs.setup_for_model(model.csp.wave, zred=model.zred)
 
     if not model.observations:
         raise ValueError("No observations attached to model.")
@@ -373,15 +383,36 @@ def write_result_h5(
                 og.attrs["smoothtype"] = str(obs.smoothtype)
             if hasattr(obs, "filternames"):
                 og.attrs["filternames"] = json.dumps(obs.filternames)
+            # Persist FSPS line names for Lines observations so that PPC /
+            # plotting code can label rows without needing the cluster's
+            # FSPS install.  Before this attr existed, the laptop fallback
+            # in plot_ppc.py had to placeholder labels as "line_0", "line_1",
+            # ... because HDF5 only carried wavelengths.
+            if hasattr(obs, "line_names") and obs.line_names is not None:
+                og.attrs["line_names"] = json.dumps(list(obs.line_names))
+            if hasattr(obs, "line_ind") and obs.line_ind is not None:
+                og.create_dataset("line_ind", data=np.asarray(obs.line_ind))
 
         # ── /model ────────────────────────────────────────────────────
         mod_grp = f.create_group("model")
 
-        # Parameter names as variable-length strings
+        # Parameter names as variable-length strings.  Write the
+        # canonical list from result.param_names (which the sampler
+        # built from theta_init.keys() — matching the per-parameter
+        # sample datasets we create below) rather than model.param_names
+        # (which can silently drift if a caller appends to theta_init
+        # after SedModel.__init__ without also touching param_names —
+        # the symptom is parameters that get sampled and converge but
+        # never appear in corner / trace plots).
         dt = h5py.string_dtype()
+        canonical_names = (
+            list(result.param_names)
+            if getattr(result, "param_names", None)
+            else list(model.param_names)
+        )
         mod_grp.create_dataset(
             "param_names",
-            data=np.array(model.param_names, dtype=object),
+            data=np.array(canonical_names, dtype=object),
             dtype=dt,
         )
 
@@ -445,6 +476,20 @@ def write_result_h5(
         samp_grp.attrs["wall_time_s"] = result.wall_time_s
         samp_grp.attrs["n_likelihood_calls"] = result.n_likelihood_calls
         samp_grp.attrs["n_samples"] = int(result.log_likelihoods.shape[0])
+        # Persist chain layout so post-hoc trace plots can reshape the
+        # flat (n_chains * n_per_chain, ...) sample arrays back into
+        # (n_chains, n_per_chain, ...).  Pulled from result.raw which
+        # the BlackJAX-NUTS adapter populates with the actual run-time
+        # values.  Absent for nested sampling (single-chain by design).
+        if isinstance(result.raw, dict):
+            if "num_chains" in result.raw:
+                samp_grp.attrs["num_chains"] = int(result.raw["num_chains"])
+            if "num_samples" in result.raw:
+                samp_grp.attrs["num_samples_per_chain"] = int(
+                    result.raw["num_samples"]
+                )
+            if "num_warmup" in result.raw:
+                samp_grp.attrs["num_warmup"] = int(result.raw["num_warmup"])
 
     if verbose:
         size_mb = path.stat().st_size / 1024**2

@@ -32,15 +32,19 @@ the dict theta; no ``ThetaVector`` adapter is needed.
 
 import math
 
+import numpy as np
 import jax.numpy as jnp
 from jax import jit, vmap
 import pprint
 
 import astropy.constants as const
 
+from sedpy_jax.smoothing import make_vel_smoother
+
 from ceridwen.dust.DustModel import Dust, DiffuseDust
 from ceridwen.dust.DustEmission import DustEmission
-from ceridwen.neb.NebularGridModel import NebularModel
+from ceridwen.neb.NebularGridModel            import NebularModel
+from ceridwen.neb.NebularGridModel_fsps_match import NebularModelFSPSMatch
 # Note: no Observation imports here.  Observation-type dispatch is handled by
 # the polymorphic obs.predict(spectrum, wave) method on each Observation
 # subclass, so CSPBasis.predict has zero isinstance/if branches.
@@ -63,9 +67,16 @@ def fnu2flam(lam, fnu):
 
 
 
-@jit
 def intsfwght(t_hi, t_lo, a, slope, logage):
-    """Integrated SFH weight between log-time limits."""
+    """Integrated SFH weight between log-time limits.
+
+    Pure JAX helper. Called only from ``get_spectrum_*`` which is itself
+    inlined into the outer ``@jax.jit`` lnprobfn (see
+    ``MultiObservationLikelihood.make_lnprobfn``), so an inner ``@jit`` here
+    is redundant — JAX would just inline it. Dropping the decorator saves a
+    compile-cache slot and clarifies that this is not a separate JIT
+    boundary; behaviour is unchanged.
+    """
 
     def F(t):
         x = 10.0**t
@@ -93,7 +104,10 @@ class CSPBasis:
     Parameters
     ----------
     SSPData : SSPData
-        Frozen dataclass with SSP grids (wave, flux, ages, zmet, logqq).
+        Frozen dataclass with SSP grids (wave, flux, ages, zmet).  The
+        nebular model computes its own ionising-photon rate from
+        ``SSPData.ssp_flux`` at construction time, so ``log_qq`` is no
+        longer carried in the SSP grid container.
     theta : dict
         Initial parameter values.  Must contain ``"sfh"`` and
         ``"lookback_time"``.  All other keys are optional.
@@ -124,6 +138,7 @@ class CSPBasis:
         zh_const=False,
         add_neb=True,
         init_neb_params=None,
+        nebemlineinspec=False,
         add_dust=True,
         add_diffuse_dust=True,
         add_dust_emission=False,
@@ -135,6 +150,7 @@ class CSPBasis:
         diffuse_law='kriek_conroy',
         verbose=True,
         sfh_interp='step',
+        sigma_losvd_kms=300.0,
         **kwargs,
     ):
         """
@@ -173,7 +189,9 @@ class CSPBasis:
         self.wave      = jnp.array(SSPData.ssp_wave)       # (n_wave,)
         self.ages      = jnp.array(SSPData.ssp_lg_age_gyr) # (n_age,)  log10(Gyr)
         self.zmet      = jnp.array(SSPData.ssp_lgmet)      # (n_z,)    log10(Z)
-        self.logqq     = jnp.array(SSPData.log_qq)         # (n_z, n_age)
+        # ``log_qq`` is no longer stored on SSPData.  The nebular model
+        # computes the ionising-photon rate from ``self.flux`` internally
+        # (see ``initialize_neb`` and ``NebularModel.compute_log_qq``).
         self.zlegend   = 10 ** self.zmet                   # linear metallicity
         self.ssp_ages_lgyr = self.ages + 9                 # log10(yr)
 
@@ -219,6 +237,21 @@ class CSPBasis:
         self.tuniv      = tuniv
         self.tiny_logt  = tiny_logt
         self.sps_home   = sps_home
+        # Prospector-style ``nebemlineinspec`` switch.  It governs ONE
+        # thing only: the default of the single-array public
+        # ``get_spectrum(theta)``.  When False (default), that call
+        # returns the line-free continuum (stellar + nebular continuum);
+        # when True it returns continuum + emission lines.
+        #
+        # It does NOT affect ``predict`` or ``get_spectrum_components``:
+        # those always compute the full ``(continuum, lines)``
+        # decomposition, because the observations must always see the
+        # lines -- Photometry at true strength, Spectrum / Lines scaled by
+        # ``eline_scaling``.  To obtain a spectrum with or without the
+        # emission lines explicitly, pass ``include_lines=`` to
+        # ``get_spectrum`` or use ``get_spectrum_components``.  Mirrors
+        # FSPS's ``nebemlineinspec`` parameter.
+        self.nebemlineinspec = bool(nebemlineinspec)
 
         # --- IGM attenuation model (optional) ------------------------------
         # ``add_igm=False`` leaves ``self.igm`` as None; ``CSPBasis.predict``
@@ -245,6 +278,15 @@ class CSPBasis:
             theta, init_dust_params, diffuse_law, sps_home,
         )
         theta = self.initialize_neb(add_neb, theta, init_neb_params, sps_home)
+
+        # Pre-compute the FFT-domain Gaussian kernel for the FSPS-default
+        # LOSVD smoothing.  Matches ``prospect/models/sedmodel.py``::
+        # ``losvd_smoothing`` (sigma_smooth default 300 km/s on rest-frame
+        # 912 < lambda < 25000 AA, velocity-space Gaussian convolution).
+        # Must be done BEFORE configure_spectrum_model so the wrap can
+        # see whether to install the smoother.
+        self.sigma_losvd_kms = float(sigma_losvd_kms)
+        self._setup_losvd_kernel()
 
         self.configure_spectrum_model(
             add_dust, add_diffuse_dust, add_dust_emission, add_neb, sps_home
@@ -301,9 +343,29 @@ class CSPBasis:
         self.n_time = self.sfh_times.size
 
         sfh = jnp.atleast_1d(jnp.asarray(theta['sfh'], dtype=float))
-        assert sfh.shape == (self.n_time,), (
-            f"'sfh' shape {sfh.shape} must match 'lookback_time' length {self.n_time}"
-        )
+        # ``sfh`` may carry either of two conventions:
+        #
+        # 1. FastStepBasis (prospector-compatible) — one SFR value per
+        #    bin, length ``n_time - 1``.  ``calculate_ssp_weights_*_step``
+        #    uses each entry directly, with no inter-edge averaging.
+        # 2. Node-based legacy — one SFR value per lookback grid point,
+        #    length ``n_time``.  ``calculate_ssp_weights_*_step``
+        #    averages consecutive entries to recover per-bin SFR.
+        #
+        # We accept both shapes here and store the convention as a flag
+        # the weight calculators consult.  Same parameter numbers
+        # therefore mean the same physical SFH between ceridwen and
+        # prospector when the FastStepBasis convention is used.
+        if sfh.shape == (self.n_time,):
+            self.sfh_per_bin = False
+        elif sfh.shape == (self.n_time - 1,):
+            self.sfh_per_bin = True
+        else:
+            raise AssertionError(
+                f"'sfh' shape {sfh.shape} must be either "
+                f"({self.n_time},)  (node-based, legacy)  or "
+                f"({self.n_time - 1},)  (per-bin, FastStepBasis)."
+            )
 
         # --- Metallicity mode detection ------------------------------------
         self.zh_is_scalar = None
@@ -369,9 +431,28 @@ class CSPBasis:
 
     def initialize_neb(self, add_neb, theta, init_neb_params, sps_home):
         if add_neb:
-            init_neb_params.update({'sps_home': sps_home, 'csp_lambda': self.wave})
-            print("Initializing Nebular Emission model...")
-            self.neb = NebularModel(**init_neb_params)
+            # Hand the SSP fluxes and ages over to the nebular model so
+            # it can compute an internally self-consistent ionising-photon
+            # rate that matches the FSPS run-time formula.  ``log_qq`` is
+            # no longer carried on ``SSPData``; the nebular model is the
+            # single source of truth for it.
+            #
+            # ``match_fsps`` is the only ceridwen-specific knob that
+            # is consumed here rather than forwarded to NebularModel.
+            # When True, ceridwen uses the FSPS-bug-replicating variant
+            # (both cubes interpolated on the line-cube axes) so output
+            # matches FSPS to better than 0.5%.  When False (default),
+            # ceridwen uses the physically strict per-cube-axis variant.
+            match_fsps = init_neb_params.pop('match_fsps', False)
+            init_neb_params.update({
+                'sps_home':       sps_home,
+                'csp_lambda':     self.wave,
+                'ssp_flux':       self.flux,
+                'ssp_ages_lgyr':  self.ssp_ages_lgyr,
+            })
+            NebClass = NebularModelFSPSMatch if match_fsps else NebularModel
+            print(f"Initializing Nebular Emission model ({NebClass.__name__})...")
+            self.neb = NebClass(**init_neb_params)
 
             # get_default_params() now returns a plain dict
             neb_defaults = self.neb.get_default_params()
@@ -380,20 +461,18 @@ class CSPBasis:
                     theta[k] = v
             self.neb_param_names = list(neb_defaults.keys())
 
-            young_thresh     = jnp.log10(21.0e6 / 1.0e9)
-            self.young_mask  = self.ages < young_thresh
+            # Restrict nebular emission to SSPs whose age lies inside the
+            # CLOUDY grid (FSPS does:  DO t=1,nti  where  nti is the index
+            # of nebem_age(nebnage)).
+            self.young_mask  = jnp.asarray(self.neb.young_mask)
             self.ion_mask    = self.wave < 912.0
             self.kill_ion    = self.young_mask[:, None] & self.ion_mask[None, :]
 
-            # Precompute young-age slices for efficient nebular evaluation.
-            # Instead of vmapping over all n_age=107 SSP ages and then
-            # zeroing out old ages with young_mask, we only evaluate the
-            # nebular model at the n_young ages where it is non-zero.
-            young_idx = jnp.where(self.young_mask)[0]
+            young_idx = self.neb.young_idx
             self._neb_young_idx   = young_idx
             self._neb_n_young     = int(young_idx.shape[0])
-            self._neb_ages_young  = self.ssp_ages_lgyr[young_idx]   # log10(yr)
-            self._neb_logqq_young = self.logqq[:, young_idx]        # (n_z, n_young)
+            self._neb_ages_young  = self.ssp_ages_lgyr[young_idx]      # log10(yr)
+            self._neb_logqq_young = self.neb.log_qq[:, young_idx]      # (n_z, n_young)
 
         return theta
 
@@ -452,6 +531,102 @@ class CSPBasis:
         # Normalise rows that fall in a bin; already float32 — no later casting needed.
         self._age_bin_mix = jnp.where(row_sum > 0, M / row_sum, M)
 
+    # ------------------------------------------------------------------ #
+    # LOSVD smoothing (FSPS / prospector default)
+    # ------------------------------------------------------------------ #
+    def _setup_losvd_kernel(self):
+        """Pre-compute the LOSVD smoothing infrastructure.
+
+        Mirrors the FSPS / Prospector source-side ``losvd_smoothing``:
+        a velocity-space Gaussian of standard deviation
+        ``sigma_losvd_kms`` applied to the rest-frame
+        ``912 < lambda < 25000 AA`` window of the stellar SED, BEFORE
+        any observation projection (filter convolution, line aperture
+        integration, spectrum LSF convolution).  Same single-call
+        design Prospector uses in
+        ``prospect.models.sedmodel.SedModel.predict`` (cf. the
+        ``self._smooth_spec = self.losvd_smoothing(...)`` cache near
+        the top of ``predict()``), so all observation arms share one
+        already-smoothed source spectrum and the convolution cost is
+        paid once per likelihood call.
+
+        Implementation.  Delegates to
+        ``sedpy_jax.smoothing.make_vel_smoother``, which is the same
+        factory the observation layer (``ceridwen.observation``)
+        already uses for the Spectrum-side LOSVD + LSF chain.  This
+        guarantees numerical parity between the CSP-side and
+        observation-side smoothings, future-proofs the path (sigma_v
+        is a runtime argument of the returned closure, so promoting
+        it to a ``theta`` tracer for free sigma_v fitting is a
+        one-line change), and inherits any future optimisations in
+        sedpy_jax for free.
+
+        Stores:
+            ``self._losvd_kernel_fft``  -- sentinel kept as ``None``
+                (disabled) or any non-``None`` value (enabled).  The
+                wrap in ``configure_spectrum_model`` keys on this
+                attribute name to decide whether to install the
+                ``__losvd_smoothed`` wrap on ``get_spectrum``.
+            ``self._losvd_smoother`` -- the JIT-friendly closure
+                returned by ``make_vel_smoother(wave_window,
+                wave_window, inres=0.0)``.  Operates on the in-window
+                rest-frame subset of ``self.wave`` only.
+            ``self._losvd_idx`` -- static int32 JAX index array used
+                to gather the in-window pixels at apply time and
+                scatter the smoothed result back into the full
+                ``self.wave`` grid.
+        """
+        if self.sigma_losvd_kms <= 0.0:
+            self._losvd_kernel_fft = None
+            return
+
+        wave_np = np.asarray(self.wave, dtype=np.float64)
+        in_band_np = (wave_np > 912.0) & (wave_np < 25000.0)
+        if not in_band_np.any():
+            self._losvd_kernel_fft = None
+            return
+
+        idx_native_np = np.flatnonzero(in_band_np)
+        wave_window = wave_np[idx_native_np]
+        # ``inres=0`` because the FSPS BPASS native resolution is
+        # already baked into ``self.wave``; there is no separate
+        # library-resolution kernel to subtract in quadrature on the
+        # source side (instrument LSF / library-res deconvolution
+        # belongs to the Spectrum projection, not here).
+        self._losvd_smoother = make_vel_smoother(
+            wave_window, wave_window, inres=0.0,
+        )
+        self._losvd_idx = jnp.asarray(idx_native_np)
+        # Sentinel for configure_spectrum_model: any non-None value
+        # enables the wrap on get_spectrum.
+        self._losvd_kernel_fft = True
+
+    def _apply_losvd(self, spectrum):
+        """Apply the LOSVD smoother to ``spectrum``.
+
+        JIT-safe: the gating is on ``self._losvd_kernel_fft is None``,
+        which is a Python-static property of the CSPBasis object set
+        at construction time, so the compiled XLA graph is fixed once
+        per CSPBasis instance.  Inside the branch, all ops act on
+        tracers.
+
+        Pixels outside the rest-frame 912-25000 AA window pass through
+        unchanged (Prospector parity: see
+        ``sedmodel.losvd_smoothing``'s ``sel`` / ``outspec[sel] = sm``
+        pattern).
+        """
+        if self._losvd_kernel_fft is None:
+            return spectrum
+        # Gather in-window pixels, smooth via the sedpy_jax closure,
+        # scatter back into the full native grid.  ``sigma_losvd_kms``
+        # is a Python float here; promoting it to a JAX tracer for
+        # free-sigma fitting is a one-line change to thread it in
+        # from theta.
+        spec_window = spectrum[self._losvd_idx]
+        smoothed = self._losvd_smoother(spec_window, self.sigma_losvd_kms)
+        return spectrum.at[self._losvd_idx].set(
+            smoothed.astype(spectrum.dtype))
+
     def configure_spectrum_model(
         self, add_dust, add_diffuse_dust, add_dust_emission, add_neb, sps_home
     ):
@@ -484,7 +659,20 @@ class CSPBasis:
             'nodust_noneb_nodustemi':  'stellar continuum only',
         }
         print(f"Spectrum model: {label[key]}")
-        self.get_spectrum = mapping[key]
+        raw_get_spectrum = mapping[key]
+        if self._losvd_kernel_fft is None:
+            # Smoothing disabled (sigma=0 or non-log-uniform wave grid):
+            # use the raw spectrum without wrapping.
+            self.get_spectrum = raw_get_spectrum
+        else:
+            def get_spectrum_smoothed(theta, *, include_lines=None,
+                                       _raw=raw_get_spectrum):
+                spec = _raw(theta, include_lines=include_lines)
+                return self._apply_losvd(spec)
+            get_spectrum_smoothed.__name__ = (
+                f"{raw_get_spectrum.__name__}__losvd_smoothed"
+            )
+            self.get_spectrum = get_spectrum_smoothed
 
     # -----------------------------------------------------------------------
     # initialize_model_structure: build theta_init as a dict
@@ -493,6 +681,32 @@ class CSPBasis:
     # -----------------------------------------------------------------------
     # Public interface
     # -----------------------------------------------------------------------
+
+    def get_spectrum_components(self, theta):
+        """Return the canonical ``(continuum, lines)`` line decomposition.
+
+        Both arrays are on the rest-frame model grid ``self.wave`` and are
+        *unscaled* -- mass / redshift / IGM factors are applied downstream
+        by ``predict`` and ``get_line_spec``, exactly as for ``get_spectrum``.
+
+        - ``continuum`` -- the line-free spectrum (stellar continuum +
+          nebular *continuum*), dust-attenuated.  Identical to
+          ``get_spectrum(theta, include_lines=False)``.
+        - ``lines`` -- the broadened nebular emission-line component alone,
+          carried through the same dust attenuation, so the full SED is
+          recovered as ``continuum + lines``.
+
+        This is the single source of truth for "spectrum with vs. without
+        emission lines": ``predict`` builds the photometry and slit spectra
+        from it and ``get_line_spec`` returns its ``lines`` term.
+        ``nebemlineinspec`` does not affect this method -- it only sets the
+        default of the single-array public ``get_spectrum``.  With
+        ``add_neb=False`` there is no nebular module and ``lines`` is
+        identically zero.
+        """
+        continuum = self.get_spectrum(theta=theta, include_lines=False)
+        full      = self.get_spectrum(theta=theta, include_lines=True)
+        return continuum, full - continuum
 
     def predict(self, theta, observations):
         """
@@ -517,7 +731,8 @@ class CSPBasis:
         trace.  ``SedModel.__init__`` does this automatically.
 
         For a raw model spectrum without projection, use ``get_spectrum(theta)``
-        directly.
+        directly; for the separate line-free continuum and emission-line
+        component, use ``get_spectrum_components(theta)``.
 
         Parameters
         ----------
@@ -540,35 +755,160 @@ class CSPBasis:
               the observed pixel grid
             - ``Lines``      → shape (n_lines,), Gaussian-aperture fluxes
         """
-        spectrum = self.get_spectrum(theta=theta)
+        # Decompose the model SED once into its line-free continuum and the
+        # broadened emission-line component (see get_spectrum_components),
+        # then build the two observer-facing spectra from that single
+        # decomposition:
+        #
+        #   spectrum_phot -- continuum + emission lines at TRUE strength.
+        #                    Photometry captures the full field of view, so
+        #                    it always sees the intrinsic line flux.
+        #   spectrum_slit -- continuum + (eline_scaling / 100) * lines.
+        #                    Spectrum and Lines are slit-measured and lose
+        #                    flux; eline_scaling is the aperture correction
+        #                    (a percentage; 100 = no loss).  Absent from
+        #                    theta -> factor 1.0, so spectrum_slit equals
+        #                    spectrum_phot.
+        #
+        # nebemlineinspec is intentionally NOT consulted here: it governs
+        # only the default of the single-array public get_spectrum.  The
+        # observations must always see the lines, so predict always uses
+        # the full (continuum, lines) decomposition.  All key checks are
+        # Python-static so the branches fold out at trace time.
+        spectrum_cont, line_component = self.get_spectrum_components(theta)
 
-        # Apply mass scaling here (once) rather than per-observation in
-        # model.predict().  CSP normalises SFH to 1 M_sun; logmass sets
-        # the physical amplitude.  Scaling the spectrum before projection
-        # avoids N_obs separate multiplications.
+        spectrum_phot = spectrum_cont + line_component       # lines unscaled
+        if "eline_scaling" in theta:
+            eline_factor = jnp.ravel(theta["eline_scaling"])[0] / jnp.float32(100.0)
+            spectrum_slit = (spectrum_cont
+                             + eline_factor.astype(spectrum_cont.dtype)
+                               * line_component)
+        else:
+            spectrum_slit = spectrum_phot
+
+        # Mass + redshift + IGM scaling: identical multiplicative factors
+        # for both spectra.  Each factor is computed once and applied to
+        # both, so there is no duplicated work.
         if "logmass" in theta:
-            # Keep in float32: the spectrum is already float32 from the
-            # forward model; cast the scalar to match.
             mass_scale = jnp.float32(10.0 ** theta["logmass"][0])
-            spectrum = spectrum * mass_scale
+            spectrum_phot = spectrum_phot * mass_scale
+            spectrum_slit = spectrum_slit * mass_scale
 
-        # Redshift flux-norm factor.  ``zred`` is OPTIONAL in theta; when
-        # absent, the spectrum stays at the fiducial 10 pc / z=0 calibration
-        # that ``setup_for_model(..., zred=0.0)`` assumes, so every existing
-        # unit test is untouched.  When present, multiply by the
-        # cosmologically-correct (1+z) (10 pc / D_L(z))^2 scaling — one
-        # JAX-jittable scalar-scaling op, zero branches.
         if "zred" in theta:
             from ..cosmology import flux_factor_maggies
             z_scalar = jnp.ravel(theta["zred"])[0]
-            spectrum = spectrum * jnp.float32(flux_factor_maggies(z_scalar))
+            ff = jnp.float32(flux_factor_maggies(z_scalar))
+            spectrum_phot = spectrum_phot * ff
+            spectrum_slit = spectrum_slit * ff
+            if self.igm is not None:
+                if "igm_factor" in theta:
+                    ig_factor = jnp.ravel(theta["igm_factor"])[0]
+                else:
+                    ig_factor = jnp.float32(self.igm_factor)
+                transmission = self.igm.attenuation(
+                    self.wave, z_scalar, factor=ig_factor,
+                ).astype(spectrum_phot.dtype)
+                spectrum_phot = spectrum_phot * transmission
+                spectrum_slit = spectrum_slit * transmission
 
-            # IGM attenuation — optional.  ``self.igm is None`` when
-            # constructed with ``add_igm=False`` and is a compile-time
-            # constant, so the whole block constant-folds out of the
-            # traced graph in that case.  When active, ``theta['igm_factor']``
-            # can override the default ``igm_factor`` attribute to let the
-            # sampler fit IGM strength.
+        # Project: Photometry sees the full-field-of-view spectrum;
+        # Spectrum and Lines (slit-measured) see the eline_scaling-corrected
+        # spectrum.  ``isinstance`` is resolved statically at trace time.
+        #
+        # Free-redshift dispatch:
+        #   When ``obs.free_z`` is True AND ``"zred"`` was sampled (so a
+        #   traced JAX scalar exists in theta), we route Photometry obs
+        #   through ``predict_at_redshift`` instead of the GEMV fast path.
+        #   The fast path's projection matrix ``_T`` was baked at a single
+        #   Python-scalar setup zred and cannot be reused per-sample; the
+        #   free-z path recomputes the observed-frame wavelength grid
+        #   ``wave_obs = (1+z)*wave_rest`` per sample, interpolates the
+        #   spectrum onto the filter grid via ``sedpy_jax.interp_source``
+        #   (JAX-native, JIT-safe, differentiable in z), and dots with the
+        #   precomputed filter transmission matrix.
+        #
+        #   Both ``obs.free_z`` (Python attribute, static at trace time)
+        #   and the ``"zred" in theta`` check are Python-level, so the
+        #   branch resolves at trace time and the compiled XLA graph
+        #   contains exactly one of the two paths -- no runtime cond.
+        from ..observation.observation import (
+            Photometry as _Photometry,
+            Spectrum   as _Spectrum,
+            Lines      as _Lines,
+        )
+        out = {}
+        free_z_in_theta = "zred" in theta
+        # Velocity-broadening dispatch.
+        #
+        # Each Observation subclass carries a static Python flag set at
+        # construction:
+        #   Spectrum.fit_sigma_smooth -- when True, the runtime stellar
+        #       LOSVD (Prospector convention: ``sigma_smooth`` [km/s])
+        #       is pulled from ``theta`` and threaded into the closure
+        #       that ``Spectrum.setup_for_model`` built.
+        #   Lines.fit_sigma_v -- when True, the runtime Gaussian-aperture
+        #       width ``sigma_v_lines`` [km/s] is pulled from theta and
+        #       used to rebuild the (n_lines, n_wave) weight matrix per
+        #       call.
+        # When the flag is False, the obs.predict signature is unchanged
+        # and the static fast path is preserved bit-for-bit.  The
+        # ``isinstance`` + ``getattr`` checks resolve at trace time, so
+        # the compiled XLA graph contains only the chosen path.
+        for obs in observations:
+            spec_for_obs = (spectrum_phot if isinstance(obs, _Photometry)
+                            else spectrum_slit)
+            if (isinstance(obs, _Photometry)
+                    and getattr(obs, "free_z", False)
+                    and free_z_in_theta):
+                out[obs.name] = obs.predict_at_redshift(
+                    spec_for_obs, self.wave, jnp.ravel(theta["zred"])[0]
+                )
+            elif (isinstance(obs, _Spectrum)
+                  and getattr(obs, "fit_sigma_smooth", False)
+                  and "sigma_smooth" in theta):
+                out[obs.name] = obs.predict(
+                    spec_for_obs, self.wave,
+                    sigma_smooth=jnp.ravel(theta["sigma_smooth"])[0],
+                )
+            elif (isinstance(obs, _Lines)
+                  and getattr(obs, "fit_sigma_v", False)
+                  and "sigma_v_lines" in theta):
+                out[obs.name] = obs.predict(
+                    spec_for_obs, self.wave,
+                    sigma_v=jnp.ravel(theta["sigma_v_lines"])[0],
+                )
+            else:
+                out[obs.name] = obs.predict(spec_for_obs, self.wave)
+        return out
+
+    # -----------------------------------------------------------------------
+    # Line-only spectrum (prospector-style)
+    # -----------------------------------------------------------------------
+
+    def get_line_spec(self, theta):
+        """Return the broadened-emission-line component of the model spectrum.
+
+        Computed as ``get_spectrum(include_lines=True) - get_spectrum(include_lines=False)``,
+        which gives the contribution of the nebular lines alone -- the
+        prospector-style "line-only" spectrum.  Mass + redshift + IGM
+        scaling are applied identically to ``CSPBasis.predict`` so the
+        output is at the same physical scale as the observation arrays.
+
+        ``add_neb=False`` makes this return zero (no nebular module).
+        """
+        if not hasattr(self, "neb") or self.neb is None:
+            return jnp.zeros_like(self.wave)
+
+        _continuum, line_only = self.get_spectrum_components(theta)
+
+        # Mirror the mass + zred + IGM scaling block of CSPBasis.predict.
+        if "logmass" in theta:
+            mass_scale = jnp.float32(10.0 ** theta["logmass"][0])
+            line_only = line_only * mass_scale
+        if "zred" in theta:
+            from ..cosmology import flux_factor_maggies
+            z_scalar = jnp.ravel(theta["zred"])[0]
+            line_only = line_only * jnp.float32(flux_factor_maggies(z_scalar))
             if self.igm is not None:
                 if "igm_factor" in theta:
                     ig_factor = jnp.ravel(theta["igm_factor"])[0]
@@ -577,13 +917,13 @@ class CSPBasis:
                 transmission = self.igm.attenuation(
                     self.wave, z_scalar, factor=ig_factor,
                 )
-                spectrum = spectrum * transmission.astype(spectrum.dtype)
-
-        # Python loop unrolled at trace time.  No Python branches inside
-        # the traced code; obs.predict() is a concrete method call resolved
-        # before XLA compilation.
-        return {obs.name: obs.predict(spectrum, self.wave)
-                for obs in observations}
+                line_only = line_only * transmission.astype(line_only.dtype)
+        # Apply eline_scaling/100 multiplier so the line-only spectrum is
+        # consistent with the Lines.predict line fluxes produced by predict().
+        if "eline_scaling" in theta:
+            line_only = line_only * (jnp.ravel(theta["eline_scaling"])[0]
+                                       / jnp.float32(100.0))
+        return line_only
 
     @property
     def all_params(self):
@@ -691,14 +1031,23 @@ class CSPBasis:
         SSP weights for a constant metallicity history — piecewise-constant
         (FastStepBasis-style) SFH integration.
 
-        Within each SFH time bin the SFR is held at the mean of the two
-        endpoint values.  The contribution of SFH bin *i* to SSP age bin *j*
-        is ``sfh_mid[i] * overlap_yr[i, j]``, where ``overlap_yr`` is the
-        intersection length (in yr) of the two bins on a linear-time axis.
-        All entries are non-negative by construction; no clipping is required.
+        ``sfh`` is interpreted per the convention recorded in
+        ``self.sfh_per_bin`` at ``initialize_model_structure`` time:
 
-        Reads ``theta["sfh"]`` (shape ``(n_time,)``) and ``theta["Z"]``
-        (shape ``(1,)``, log10 Z/Zsun).
+        * ``sfh_per_bin = True``   — ``sfh`` already carries one SFR
+          value per bin (length ``n_bin = n_time - 1``).  This matches
+          prospector's FastStepBasis exactly.
+        * ``sfh_per_bin = False``  — ``sfh`` carries one value per
+          lookback node (length ``n_time``); we average consecutive
+          values to recover the per-bin SFR (legacy node convention).
+
+        The contribution of SFH bin *i* to SSP age bin *j* is
+        ``sfh_per_bin[i] * overlap_yr[i, j]``, where ``overlap_yr`` is
+        the intersection length (in yr) of the two bins on a linear-
+        time axis.  All entries are non-negative by construction; no
+        clipping is required.
+
+        Reads ``theta["sfh"]`` and ``theta["Z"]``.
         """
         sfh = jnp.clip(theta["sfh"], 1e-30, None)
 
@@ -706,8 +1055,13 @@ class CSPBasis:
         t_hi = self.sfh_times[:-1]   # (n_bin,)  older  edge, yr
         dt   = t_hi - t_lo           # (n_bin,)  positive
 
-        # Constant SFR within each bin: mean of the two node values
-        sfh_mid = 0.5 * (sfh[:-1] + sfh[1:])   # (n_bin,) >= 0
+        # FastStepBasis match: per-bin SFR direct, no inter-edge
+        # averaging.  Falls back to the node-based midpoint convention
+        # when the legacy shape is detected at init time.
+        if self.sfh_per_bin:
+            sfh_mid = sfh                            # (n_bin,)
+        else:
+            sfh_mid = 0.5 * (sfh[:-1] + sfh[1:])     # (n_bin,)
 
         # Physically correct mass per SFH bin under constant-SFR assumption
         m2 = sfh_mid * dt                        # (n_bin,)
@@ -843,9 +1197,15 @@ class CSPBasis:
         t_hi = self.sfh_times[:-1]   # (n_bin,)  older  edge, yr
         dt   = t_hi - t_lo           # (n_bin,)  positive
 
-        # Constant SFR within each bin: mean of the two node values
-        sfh_mid = 0.5 * (sfh[:-1] + sfh[1:])   # (n_bin,) >= 0
-        m2      = sfh_mid * dt                   # (n_bin,)
+        # FastStepBasis match: per-bin SFR direct, falling back to the
+        # node-based midpoint convention only when sfh has the legacy
+        # length n_time.  See calculate_ssp_weights_const_zh_step for
+        # the same logic with const-Z.
+        if self.sfh_per_bin:
+            sfh_mid = sfh                          # (n_bin,)
+        else:
+            sfh_mid = 0.5 * (sfh[:-1] + sfh[1:])   # (n_bin,)
+        m2      = sfh_mid * dt                     # (n_bin,)
 
         # Voronoi-cell overlap — same scheme as calculate_ssp_weights_const_zh_step.
         # Gives (n_bin, n_age) directly; no splitting required.
@@ -881,27 +1241,64 @@ class CSPBasis:
     # Spectrum methods (all read theta["key"] directly)
     # -----------------------------------------------------------------------
 
-    def get_spectrum_dattn_nodem_neb(self, theta):
-        """Dust attenuation + nebular emission, no dust emission."""
-        W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
-
+    # -----------------------------------------------------------------------
+    # Nebular helper: compute the (n_z, n_age, n_wave) nebular array, with or
+    # without the broadened emission lines.  Used by every `_neb` variant
+    # below.  ``include_lines`` defaults to ``self.nebemlineinspec`` for
+    # external callers (matching the prospector switch), but ``csp.predict``
+    # forces ``include_lines=True`` so that ``Lines.predict``'s
+    # Gaussian-aperture integration still sees the lines in the spectrum.
+    # -----------------------------------------------------------------------
+    def _build_neb_array(self, theta, *, include_lines):
+        """Return ``(n_z, n_age, n_wave)`` nebular array with or without lines."""
         logZ_gas = theta["gas_logz"]
         logU     = theta["gas_logu"]
-
-        # Vectorized nebular evaluation: factored trilinear interpolation
-        # bilinear in (logZ, logU) then linear in age, batched over all
-        # young ages and SSP metallicities in a single call.
-        neb_young = self.neb.evaluate_batch(
-            logZ_gas, logU, self._neb_ages_young, self._neb_logqq_young
+        cont_young, line_young = self.neb.evaluate_batch(
+            logZ_gas, logU, self._neb_ages_young, self._neb_logqq_young,
+            return_components=True,
         )
-
-        # Scatter young-age results back into the full (n_z, n_age, n_wave) array
+        neb_young = cont_young + line_young if include_lines else cont_young
         n_z, n_age, n_wave = self.flux.shape
         neb_all = jnp.zeros((n_z, n_age, n_wave), dtype=jnp.float32)
         neb_all = neb_all.at[:, self._neb_young_idx, :].set(
             neb_young.astype(jnp.float32))
+        return neb_all
 
-        stellar_fluxes  = jnp.where(self.kill_ion[None, :, :], 0.0, self.flux)
+    def get_spectrum_dattn_nodem_neb(self, theta, *, include_lines=None):
+        """Dust attenuation + nebular emission, no dust emission.
+
+        ``include_lines``:
+          None (default) -> use ``self.nebemlineinspec``.
+          True / False  -> override (csp.predict always passes True).
+        """
+        if include_lines is None:
+            include_lines = self.nebemlineinspec
+        W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
+
+        neb_all = self._build_neb_array(theta, include_lines=include_lines)
+
+        # Lyman / ionising-photon escape fraction (prospector-equivalent
+        # ``frac_obrun``).  When present in theta:
+        #   * fraction (1 - f_esc) of ionising photons is absorbed in the
+        #     HII region and reprocessed → nebular continuum + lines,
+        #     so the nebular grid amplitude scales by (1 - f_esc).
+        #   * fraction f_esc of the stellar ionising flux escapes and is
+        #     restored to the spectrum (the kill_ion mask zeroed it
+        #     out by default, assuming f_esc = 0).
+        # Absent → defaults to f_esc = 0, which collapses to the
+        # legacy behaviour bit-for-bit (no kill-ion restoration, no
+        # nebular scaling).  The check is a Python-static dict-key
+        # lookup so this fold-out is free at trace time.
+        if "frac_obrun" in theta:
+            f_esc = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
+            stellar_fluxes  = jnp.where(
+                self.kill_ion[None, :, :],
+                f_esc * self.flux,                        # restore frac_obrun
+                self.flux,
+            )
+            neb_all = neb_all * (jnp.float32(1.0) - f_esc)
+        else:
+            stellar_fluxes = jnp.where(self.kill_ion[None, :, :], 0.0, self.flux)
         combined_fluxes = stellar_fluxes + neb_all                      # (n_z, n_age, n_wave) float32
 
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
@@ -911,30 +1308,46 @@ class CSPBasis:
         tau_age  = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age = jnp.exp(-tau_age)
 
+        # FSPS-style OB-runaway dust escape (``add_dust.f90`` L93-94).
+        # A fraction ``frac_obrun`` of the young-star flux bypasses the
+        # birth-cloud (``attn_age``) attenuation, while still passing
+        # through the diffuse component below.  This is the second
+        # physical effect of FSPS's ``frac_obrun`` knob -- the first
+        # (LyC escape into the spectrum + ``Q`` scaling) is applied
+        # above.  Old SSP ages already have ``attn_age = 1`` (no
+        # birth-cloud bin assignment), so the mix is a no-op for them.
+        # When ``frac_obrun`` is absent or 0, this expression is
+        # identically ``attn_age`` -- bit-for-bit backward compatible.
+        if "frac_obrun" in theta:
+            fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
+            attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
+
         W_f32 = W.astype(jnp.float32)
         spectrum = jnp.einsum("za,zaw,aw->w", W_f32, combined_fluxes, attn_age)
         spectrum = spectrum * jnp.exp(-attn_diffuse.astype(jnp.float32))
 
         return spectrum.reshape((-1,))
 
-    def get_spectrum_dattn_dem_neb(self, theta):
+    def get_spectrum_dattn_dem_neb(self, theta, *, include_lines=None):
         """Dust attenuation + nebular emission + dust emission."""
+        if include_lines is None:
+            include_lines = self.nebemlineinspec
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
 
-        logZ_gas = theta["gas_logz"]
-        logU     = theta["gas_logu"]
+        neb_all = self._build_neb_array(theta, include_lines=include_lines)
 
-        # Vectorized nebular evaluation (same factored trilinear as above)
-        neb_young = self.neb.evaluate_batch(
-            logZ_gas, logU, self._neb_ages_young, self._neb_logqq_young
-        )
-
-        n_z, n_age, n_wave = self.flux.shape
-        neb_all = jnp.zeros((n_z, n_age, n_wave), dtype=jnp.float32)
-        neb_all = neb_all.at[:, self._neb_young_idx, :].set(
-            neb_young.astype(jnp.float32))
-
-        stellar_fluxes  = jnp.where(self.kill_ion[None, :, :], 0.0, self.flux)
+        # Lyman / ionising-photon escape fraction.  See the long
+        # comment on this block in get_spectrum_dattn_nodem_neb above.
+        if "frac_obrun" in theta:
+            f_esc = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
+            stellar_fluxes  = jnp.where(
+                self.kill_ion[None, :, :],
+                f_esc * self.flux,
+                self.flux,
+            )
+            neb_all = neb_all * (jnp.float32(1.0) - f_esc)
+        else:
+            stellar_fluxes = jnp.where(self.kill_ion[None, :, :], 0.0, self.flux)
         combined_fluxes = stellar_fluxes + neb_all                      # float32
 
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
@@ -942,6 +1355,12 @@ class CSPBasis:
         tau_age       = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age      = jnp.exp(-tau_age)
         diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
+
+        # FSPS-style OB-runaway dust escape (``add_dust.f90`` L93-94).
+        # See the long comment in ``get_spectrum_dattn_nodem_neb``.
+        if "frac_obrun" in theta:
+            fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
+            attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
 
         W_f32 = W.astype(jnp.float32)
         spectrum_dust_free = jnp.einsum("za,zaw->w",       W_f32, combined_fluxes)
@@ -960,13 +1379,24 @@ class CSPBasis:
 
         return dust_emi_spectrum
 
-    def get_spectrum_dattn_nodem_noneb(self, theta):
-        """Dust attenuation, no nebular, no dust emission."""
+    def get_spectrum_dattn_nodem_noneb(self, theta, *, include_lines=None):
+        """Dust attenuation, no nebular, no dust emission.
+
+        ``include_lines`` is accepted but ignored: there is no nebular
+        emission to include / exclude when ``add_neb=False``.
+        """
+        _ = include_lines
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
 
         M       = self._age_bin_mix
         tau_age = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age= jnp.exp(-tau_age)
+
+        # FSPS-style OB-runaway dust escape (``add_dust.f90`` L93-94).
+        # See the long comment in ``get_spectrum_dattn_nodem_neb``.
+        if "frac_obrun" in theta:
+            fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
+            attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
 
         weights  = self.calculate_ssp_weights(theta).astype(jnp.float32)
         spectrum = jnp.einsum("za,zaw,aw->w", weights, self.flux, attn_age)
@@ -974,14 +1404,21 @@ class CSPBasis:
 
         return spectrum.reshape((-1,))
 
-    def get_spectrum_dattn_dem_noneb(self, theta):
-        """Dust attenuation + dust emission, no nebular."""
+    def get_spectrum_dattn_dem_noneb(self, theta, *, include_lines=None):
+        """Dust attenuation + dust emission, no nebular.  ``include_lines`` accepted but ignored."""
+        _ = include_lines
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
 
         M             = self._age_bin_mix
         tau_age       = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age      = jnp.exp(-tau_age)
         diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
+
+        # FSPS-style OB-runaway dust escape (``add_dust.f90`` L93-94).
+        # See the long comment in ``get_spectrum_dattn_nodem_neb``.
+        if "frac_obrun" in theta:
+            fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
+            attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
 
         weights           = self.calculate_ssp_weights(theta).astype(jnp.float32)
         spectrum_dust_free= jnp.einsum("za,zaw->w", weights, self.flux)
@@ -999,30 +1436,32 @@ class CSPBasis:
         )
         return dust_emi_spectrum
 
-    def get_spectrum_nodattn_nodem_noneb(self, theta):
-        """Stellar continuum only — no dust, no nebular."""
+    def get_spectrum_nodattn_nodem_noneb(self, theta, *, include_lines=None):
+        """Stellar continuum only — no dust, no nebular.  ``include_lines`` ignored."""
+        _ = include_lines
         weights  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
         return jnp.einsum("za,zaw->w", weights, self.flux)
 
-    def get_spectrum_nodattn_nodem_neb(self, theta):
+    def get_spectrum_nodattn_nodem_neb(self, theta, *, include_lines=None):
         """Nebular emission only, no dust."""
+        if include_lines is None:
+            include_lines = self.nebemlineinspec
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
 
-        logZ_gas = theta["gas_logz"]
-        logU = theta["gas_logu"]
+        neb_all = self._build_neb_array(theta, include_lines=include_lines)
 
-        # Vectorized nebular evaluation (factored trilinear)
-        neb_young = self.neb.evaluate_batch(
-            logZ_gas, logU, self._neb_ages_young, self._neb_logqq_young
-        )
-
-        n_z, n_age, n_wave = self.flux.shape
-        neb_all = jnp.zeros((n_z, n_age, n_wave), dtype=jnp.float32)
-        neb_all = neb_all.at[:, self._neb_young_idx, :].set(
-            neb_young.astype(jnp.float32))
-
-        # Suppress stellar ionizing part
-        stellar_fluxes = jnp.where(self.kill_ion[None, :, :], 0.0, self.flux)
+        # Suppress stellar ionizing part — with the optional
+        # frac_obrun escape fraction (see get_spectrum_dattn_nodem_neb).
+        if "frac_obrun" in theta:
+            f_esc = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
+            stellar_fluxes = jnp.where(
+                self.kill_ion[None, :, :],
+                f_esc * self.flux,
+                self.flux,
+            )
+            neb_all = neb_all * (jnp.float32(1.0) - f_esc)
+        else:
+            stellar_fluxes = jnp.where(self.kill_ion[None, :, :], 0.0, self.flux)
 
         combined_fluxes = stellar_fluxes + neb_all  # float32
         W_f32 = W.astype(jnp.float32)

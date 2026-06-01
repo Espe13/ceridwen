@@ -168,6 +168,16 @@ class Madau1995(IGMModel):
     _A_METAL = 0.0017    # metal blanketing coefficient for Ly-α
 
     def tau(self, lam_rest, zred):
+        # Clamp z >= 0: the Madau 1995 fitting formulae are undefined
+        # for negative redshifts, and both VI ELBO training and NUTS
+        # leapfrog steps can transiently explore ``z < 0``.  Without
+        # this guard ``(1+z)^0.46`` at ``z < -1`` raises a power of a
+        # negative base, producing NaN that then poisons the entire VI
+        # gradient — causing 100 % divergences in the downstream NUTS
+        # sampling.  Clamping at 0 keeps the trace finite; any proposal
+        # with ``z < 0`` is still rejected by whichever prior / Jacobian
+        # is in play.
+        zred = jnp.maximum(zred, 0.0)
         lam  = lam_rest
         z1   = 1.0 + zred
         lobs = lam * z1

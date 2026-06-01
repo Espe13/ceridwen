@@ -211,7 +211,15 @@ class SedModel:
         # and bake the resulting flux factor into a static JAX scalar.
         # The sampled path (when zred is free) continues to use the
         # native differentiable backend, so NUTS gradients still work.
-        if self.zred != 0.0:
+        # Only seed theta_init['zred'] when there is no user-supplied
+        # ``zred`` transform.  If the user registered transforms={"zred": ...}
+        # they are explicitly injecting zred at predict time from a
+        # fixed external value; adding zred to theta_init on top would
+        # let NUTS sample it unconstrained (no prior -> no bounds -> the
+        # leapfrog integrator can push it into z < -1, where E(z) =
+        # sqrt(Ω_m(1+z)^3 + ...) goes imaginary and the log-posterior
+        # becomes NaN on the very first step).
+        if self.zred != 0.0 and "zred" not in self.transforms:
             self.theta_init.setdefault("zred", jnp.array([self.zred]))
             try:
                 from ..cosmology import (
@@ -284,10 +292,12 @@ class SedModel:
 
         **Mass scaling** — if ``"logmass"`` is present in ``theta``, the
         spectrum is multiplied by ``10 ** logmass`` inside ``csp.predict()``
-        *before* projection.  The CSP internally normalises the SFH to unit
-        total mass (1 M⊙), so this factor sets the physical amplitude for a
-        galaxy with stellar mass ``M = 10^logmass`` M⊙.  Scaling once before
-        projection is more efficient than scaling each observation separately.
+        *before* projection.  The ``logsfr_ratios_to_sfh`` transform
+        normalises the SFH so that the trapezoidal integral of SFR over
+        the lookback grid equals 1 M⊙ (Prospector / FSPS convention), so
+        this factor sets the physical amplitude for a galaxy with stellar
+        mass ``M = 10^logmass`` M⊙.  Scaling once before projection is
+        more efficient than scaling each observation separately.
 
         Parameters
         ----------
@@ -454,7 +464,10 @@ class SedModel:
                 "Mass scaling",
                 "-" * 40,
                 "  logmass ∈ free params → predicted flux × 10^logmass",
-                "  (SFH is normalised to 1 M⊙; logmass sets the physical amplitude)",
+                "  (SFH transform `logsfr_ratios_to_sfh` enforces "
+                "∫SFR dt = 1 M⊙;",
+                "   logmass therefore equals log10 of the total formed "
+                "stellar mass.)",
                 "  Convention matches Prospector / FSPS.",
             ]
 

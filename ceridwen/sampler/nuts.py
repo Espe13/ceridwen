@@ -431,6 +431,12 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             print(f"\n  Warmup ({self.num_warmup} steps, "
                   f"adapting step size + {'dense' if self.dense_mass else 'diagonal'} mass matrix)...")
 
+        # ``max_num_doublings`` forwards through window_adaptation to
+        # the wrapped blackjax.nuts kernel used during warmup; it caps
+        # the per-step leapfrog count at 2**max_num_doublings.  Without
+        # this the BlackJAX default of 10 (→ 1024 leapfrog steps) was
+        # silently active even if the user passed a smaller value, and
+        # at small adapted step sizes one NUTS iteration took seconds.
         warmup = blackjax.window_adaptation(
             blackjax.nuts,
             logposterior_flat,
@@ -438,6 +444,7 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             initial_step_size=self.initial_step_size,
             progress_bar=self.verbose,
             is_mass_matrix_diagonal=not self.dense_mass,
+            max_num_doublings=self.max_num_doublings,
         )
 
         warmup_key, sample_key = jax.random.split(rng_key)
@@ -477,6 +484,10 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         #    Run chains sequentially with a cached XLA kernel.
         #    The lax.scan compiles once on Chain 1 and is reused.
         # ==============================================================
+        # Note: ``parameters`` from window_adaptation already carries
+        # ``max_num_doublings`` (it was forwarded into the adaptation
+        # above), so we must not pass it a second time or we hit
+        # ``TypeError: got multiple values for keyword argument``.
         nuts_kernel = blackjax.nuts(
             logposterior_flat,
             **parameters,
@@ -828,12 +839,16 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             print(f"  log p_z(0) = {_lp0:.3f}")
 
         # ── Warmup (step size + optional diagonal mass) ────────────────
+        # Cap per-step leapfrog count via max_num_doublings — without
+        # this kwarg, blackjax silently uses its default of 10 and a
+        # tiny adapted step size translates into seconds per NUTS iter.
         warmup = blackjax.window_adaptation(
             blackjax.nuts, logpost_z,
             target_acceptance_rate=self.target_acceptance,
             initial_step_size=self.initial_step_size,
             progress_bar=self.verbose,
             is_mass_matrix_diagonal=not self.dense_mass,
+            max_num_doublings=self.max_num_doublings,
         )
 
         t_start = time.perf_counter()
@@ -853,7 +868,12 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         # distribution (paper Sec. 4.1.2): z_c ~ N(0, I) (which induces
         # independent q(x) draws through the map).
         init_zs = jax.random.normal(init_key, (self.num_chains, n_dims))
-        nuts_full = blackjax.nuts(logpost_z, **parameters)
+        # ``parameters`` already contains ``max_num_doublings`` because
+        # window_adaptation was called with it — don't double-pass.
+        nuts_full = blackjax.nuts(
+            logpost_z,
+            **parameters,
+        )
         init_states = jax.vmap(nuts_full.init)(init_zs)
         kernel = nuts_full.step
 

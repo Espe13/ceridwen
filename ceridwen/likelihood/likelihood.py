@@ -259,6 +259,127 @@ def lnlike_diag_gaussian(
 
 
 # ===========================================================================
+# Pure kernel  --  diagonal Gaussian with per-datum upper-limit support
+# ===========================================================================
+
+def lnlike_diag_gaussian_with_upper_limits(
+    y               : Array,
+    mu              : Array,
+    inv_var         : Array,
+    log_det         : Array,
+    mask            : Array,
+    is_upper_limit  : Array,
+) -> tuple[Array, LikelihoodOutput]:
+    r"""
+    Diagonal Gaussian log-likelihood with per-datum upper-limit support.
+
+    Photometric or line-flux data points flagged as upper limits do not
+    constrain the model from below: only model predictions that *exceed*
+    the observed upper-limit value pay a chi-squared penalty.  This matches
+    Prospector's recommended treatment for non-detections (see
+    :ref:`prospector FAQ on upper limits
+    <https://prospect.readthedocs.io/en/latest/faq.html#what-do-i-do-about-upper-limits>`)
+    and the existing convention used in
+    :class:`ceridwen.observation.Lines` for emission-line non-detections.
+
+    Per-datum log-likelihood
+    ------------------------
+    Let
+
+    .. math::
+
+        \chi_i = (y_i - \mu_i) \,/\, \sigma_{\mathrm{eff},i}.
+
+    For a **detection** (``is_upper_limit[i] = False``):
+
+    .. math::
+
+        \ell_i = -\tfrac{1}{2}\chi_i^2 \;-\; \log\!\det_i
+
+    For an **upper limit** (``is_upper_limit[i] = True``):
+
+    .. math::
+
+        \ell_i^{\mathrm{UL}}
+            = -\tfrac{1}{2}\bigl[\max(\mu_i - y_i,\,0)\bigr]^2 \,
+                \sigma_{\mathrm{eff},i}^{-2} \;-\; \log\!\det_i.
+
+    The :math:`\max(\mu_i - y_i, 0)` clip means that any model prediction
+    consistent with -- or below -- the observed upper limit incurs no penalty.
+    The log-determinant is retained on both branches so the absolute
+    log-likelihood remains a proper Gaussian normalisation (NS log Z stays
+    interpretable); ``log_det`` does not depend on theta and contributes a
+    fixed offset to model-comparison statistics.
+
+    Parameters
+    ----------
+    y : Array, shape (n_data,)
+        Observed data.  For detections this is the measured flux; for upper
+        limits this is the upper-limit value (e.g. 1-sigma, 2-sigma, etc.;
+        the convention is whatever the user used).
+    mu : Array, shape (n_data,)
+        Model prediction.
+    inv_var : Array, shape (n_data,)
+        Effective inverse variance ``1 / sigma_eff^2`` from the noise model.
+    log_det : Array, shape (n_data,)
+        Per-datum log-normalisation ``0.5 * log(2 pi sigma_eff^2)``.
+    mask : Array of bool, shape (n_data,)
+        ``True`` for data points (detections OR upper limits) that contribute
+        to the likelihood.  ``False`` removes the datum entirely.
+    is_upper_limit : Array of bool, shape (n_data,)
+        ``True`` marks band ``i`` as an upper limit (one-sided chi-squared);
+        ``False`` treats it as a normal detection (two-sided Gaussian).
+
+    Returns
+    -------
+    lnl_total : Array, scalar
+        Total log-likelihood (sum over unmasked data).
+    aux : LikelihoodOutput
+        Per-datum diagnostics.  ``aux.chi`` is set to the *signed* normalised
+        residual on both branches; ``aux.lnl_pointwise`` reflects the
+        one-sided clip on upper-limit bands so the chi^2 reported by
+        downstream tooling matches the actual likelihood contribution.
+
+    Notes
+    -----
+    The kernel is pure JAX, JIT-safe, vmap-safe, and differentiable in
+    ``mu``, ``inv_var``, and ``log_det``.  The :math:`\max(\cdot, 0)` clip is
+    implemented with :func:`jnp.maximum`, which has a defined sub-gradient
+    at zero (it returns 0) so HMC / NUTS / SVI gradient paths remain valid.
+    """
+    resid     = y - mu                                # (y - mu)
+    sqrt_iv   = jnp.sqrt(inv_var)
+    chi       = resid * sqrt_iv                       # signed normalised residual
+
+    # Detection branch: full chi^2.
+    chi2_det  = chi ** 2
+
+    # Upper-limit branch: penalty only when mu > y, i.e. resid < 0.
+    # Equivalent to (max(mu - y, 0) / sigma_eff)^2 == max(-chi, 0)^2.
+    chi2_ul   = jnp.maximum(-chi, 0.0) ** 2
+
+    chi2_used = jnp.where(is_upper_limit, chi2_ul, chi2_det)
+    lnl_i     = -0.5 * chi2_used - log_det
+
+    # Zero-out masked contributions (preserves shapes for jnp.where).
+    lnl_masked   = jnp.where(mask, lnl_i,  0.0)
+    resid_masked = jnp.where(mask, resid,  0.0)
+    chi_masked   = jnp.where(mask, chi,    0.0)
+
+    lnl_total = jnp.sum(lnl_masked)
+    ndof      = jnp.sum(mask)
+
+    aux = LikelihoodOutput(
+        lnl_total     = lnl_total,
+        lnl_pointwise = lnl_masked,
+        residuals     = resid_masked,
+        chi           = chi_masked,
+        ndof          = ndof,
+    )
+    return lnl_total, aux
+
+
+# ===========================================================================
 # Abstract base class
 # ===========================================================================
 
@@ -498,6 +619,167 @@ jax.tree_util.register_pytree_node(
     DiagonalGaussianLikelihood,
     flatten_func   = lambda lh: ([], (lh.noise_model,)),
     unflatten_func = lambda aux, _: DiagonalGaussianLikelihood(
+        noise_model=aux[0]
+    ),
+)
+
+
+# ===========================================================================
+# Diagonal Gaussian likelihood with per-datum upper-limit support
+# ===========================================================================
+
+@dataclass(frozen=True)
+class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
+    r"""
+    Diagonal Gaussian log-likelihood that honours per-datum upper-limit flags.
+
+    Identical in interface to :class:`DiagonalGaussianLikelihood`, except that
+    ``__call__`` and ``make_lnprobfn`` additionally consume an
+    ``is_upper_limit`` boolean array that marks each datum as either a normal
+    detection (two-sided Gaussian) or an upper limit (one-sided chi-squared,
+    no penalty when ``mu_i <= y_i``).
+
+    The likelihood kernel used is
+    :func:`lnlike_diag_gaussian_with_upper_limits` -- see that function for
+    the per-datum mathematical form and gradient behaviour.
+
+    When ``is_upper_limit`` is ``None`` or all-``False``, this class reduces
+    bit-for-bit to :class:`DiagonalGaussianLikelihood`.  The intended use is
+    therefore drop-in replacement: callers who do not have non-detections pay
+    no performance penalty (the ``jnp.where`` on a constant mask is folded
+    away at trace time).
+
+    Parameters
+    ----------
+    noise_model : DiagonalNoiseModel
+        Noise model instance (default: bare observational sigma, no nuisance
+        parameters).  Identical role to :class:`DiagonalGaussianLikelihood`.
+
+    Examples
+    --------
+    Construct an upper-limit-aware photometric likelihood and evaluate it:
+
+    >>> from ceridwen.likelihood import (
+    ...     DiagonalGaussianLikelihoodWithUpperLimits,
+    ...     DiagonalNoiseModel,
+    ... )
+    >>> lhood = DiagonalGaussianLikelihoodWithUpperLimits()
+    >>> # Three bands; the third is a 1-sigma upper limit at 5.0 nJy.
+    >>> y          = jnp.array([12.3,  8.1,  5.0])
+    >>> sigma_obs  = jnp.array([ 0.5,  0.4,  5.0])
+    >>> mu         = jnp.array([12.1,  8.4,  3.2])   # model below the limit
+    >>> mask       = jnp.array([True, True, True])
+    >>> is_ul      = jnp.array([False, False, True])
+    >>> lnl, aux   = lhood(y, mu, sigma_obs, mask, is_upper_limit=is_ul)
+
+    The third datum contributes zero penalty because ``mu < y``; switch the
+    third element of ``mu`` to ``7.0`` (exceeds the upper limit) and the
+    contribution becomes
+    ``-0.5 * ((7.0 - 5.0) / 5.0)^2 - log_det``.
+    """
+
+    noise_model: DiagonalNoiseModel = field(
+        default_factory=DiagonalNoiseModel
+    )
+
+    # ------------------------------------------------------------------
+    def __call__(
+        self,
+        y               : Array,
+        mu              : Array,
+        sigma_obs       : Array,
+        mask            : Array,
+        params          : Optional[dict[str, Array]] = None,
+        is_upper_limit  : Optional[Array]            = None,
+    ) -> tuple[Array, LikelihoodOutput]:
+        """
+        Evaluate the upper-limit-aware Gaussian log-likelihood.
+
+        Parameters
+        ----------
+        y, mu, sigma_obs, mask : Array
+            See :class:`DiagonalGaussianLikelihood.__call__`.
+        params : dict, optional
+            Noise-model nuisance parameters (passed through to
+            ``noise_model.compute``).
+        is_upper_limit : Array of bool, shape (n_data,), optional
+            Per-datum upper-limit flags.  ``None`` is equivalent to an
+            all-``False`` array (every datum is a detection).
+
+        Returns
+        -------
+        lnl_total : Array, scalar
+        aux : LikelihoodOutput
+        """
+        noise_out: NoiseModelOutput = self.noise_model.compute(
+            sigma_obs, mu, mask, params
+        )
+        if is_upper_limit is None:
+            is_upper_limit = jnp.zeros_like(mask, dtype=bool)
+        return lnlike_diag_gaussian_with_upper_limits(
+            y, mu, noise_out.inv_var, noise_out.log_det, mask, is_upper_limit,
+        )
+
+    # ------------------------------------------------------------------
+    def make_lnprobfn(
+        self,
+        observations : Any,
+        model        : Any,
+        prior        : Any,
+    ) -> Callable[[dict[str, Array]], Array]:
+        """
+        Build a JIT-compiled log-posterior that consumes the observation's
+        ``upper_limit`` array (if present) and applies one-sided chi-squared
+        to flagged data points.
+
+        Falls back to an all-``False`` array of the appropriate shape when
+        ``observations.upper_limit`` is ``None`` or missing -- making this
+        method a drop-in replacement for the standard
+        :class:`DiagonalGaussianLikelihood.make_lnprobfn`.
+
+        Parameters
+        ----------
+        observations : Observation
+            Single observation with ``.flux``, ``.uncertainty``, ``.mask``,
+            and optionally ``.upper_limit``.
+        model, prior : object
+            See :class:`DiagonalGaussianLikelihood.make_lnprobfn`.
+        """
+        y         : Array = observations.flux
+        sigma_obs : Array = observations.uncertainty
+        mask      : Array = observations.mask
+        is_ul = getattr(observations, "upper_limit", None)
+        if is_ul is None:
+            is_ul = jnp.zeros_like(mask, dtype=bool)
+        else:
+            is_ul = jnp.asarray(is_ul, dtype=bool)
+        noise_model = self.noise_model
+
+        @jax.jit
+        def lnprobfn(theta: dict[str, Array]) -> Array:
+            mu = model.predict(theta)
+            noise_out = noise_model.compute(sigma_obs, mu, mask, theta)
+            lnl, _    = lnlike_diag_gaussian_with_upper_limits(
+                y, mu, noise_out.inv_var, noise_out.log_det, mask, is_ul,
+            )
+            lnp = prior.log_prob(theta)
+            return lnl + lnp
+
+        return lnprobfn
+
+    # ------------------------------------------------------------------
+    def __repr__(self) -> str:
+        return (
+            f"DiagonalGaussianLikelihoodWithUpperLimits("
+            f"noise_model={self.noise_model!r})"
+        )
+
+
+# PyTree: identical structure to DiagonalGaussianLikelihood.
+jax.tree_util.register_pytree_node(
+    DiagonalGaussianLikelihoodWithUpperLimits,
+    flatten_func   = lambda lh: ([], (lh.noise_model,)),
+    unflatten_func = lambda aux, _: DiagonalGaussianLikelihoodWithUpperLimits(
         noise_model=aux[0]
     ),
 )

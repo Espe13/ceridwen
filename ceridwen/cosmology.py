@@ -149,6 +149,16 @@ def E_of_z(z: Array, cosmo: Cosmology = DEFAULT_COSMO) -> Array:
     :class:`astropy.cosmology.FlatLambdaCDM` with the same cosmological
     parameters to < 0.1% on :math:`D_L(z)` for :math:`z \le 10`.
 
+    The input is clamped to ``z >= 0`` before use.  VI ELBO training
+    and NUTS leapfrog steps can transiently explore ``z < 0`` while
+    the proposal is being built, and at ``z < -1`` the radicand
+    :math:`\Omega_m(1+z)^3 + \Omega_r(1+z)^4 + \Omega_\Lambda` can go
+    negative, giving ``sqrt(negative) = NaN``.  A single NaN in the
+    ELBO gradient poisons the entire TriL map and causes 100%
+    divergences downstream.  Clamping at 0 keeps the trace finite;
+    the proposal is still rejected by whatever prior / transform is
+    in play.
+
     The formula is identical to astropy's ``efunc`` implementation
     modulo the massive-neutrino approximation; structurally
 
@@ -159,6 +169,7 @@ def E_of_z(z: Array, cosmo: Cosmology = DEFAULT_COSMO) -> Array:
     which is the form astropy uses to factor out one ``(1+z)^3`` for
     numerical stability at high z.
     """
+    z = jnp.maximum(z, 0.0)
     opz = 1.0 + z
     return jnp.sqrt(
         opz * opz * opz * (cosmo.Or0 * opz + cosmo.Om0_eff)
@@ -277,6 +288,16 @@ def flux_factor(z: Array, cosmo: Cosmology = DEFAULT_COSMO,
 
 _MAGGIES_D_FID_PC = 10.0  # absolute-magnitude convention, 10 pc
 
+# L_sun [erg s^-1] / (4 pi (10 pc)^2 [cm^2]) = 3.827e33 / 1.197e40 = 3.197e-7.
+# This is the bare luminosity -> flux_at_10_pc conversion; the ceridwen CSP
+# returns spectra in L_sun Hz^-1 M_sun^-1 (the FSPS convention), but the
+# downstream filter projection via sedpy_jax expects flux in erg s^-1 cm^-2 Hz^-1
+# at the observer.  Applying this constant once inside ``flux_factor_maggies``
+# closes the unit gap: after multiplication, the ceridwen forward model
+# produces observed-frame maggies directly (assuming sedpy_jax's internal
+# ``trans`` matrix follows the standard sedpy AB-zero-point convention).
+_LSUN_HZ_TO_FNU_CGS_AT_10PC = 3.1967965e-7   # erg s^-1 cm^-2 Hz^-1 per L_sun Hz^-1
+
 
 def flux_factor_maggies(z, cosmo: Cosmology = DEFAULT_COSMO,
                         n_nodes: int = 128,
@@ -309,11 +330,16 @@ def flux_factor_maggies(z, cosmo: Cosmology = DEFAULT_COSMO,
         provided and the package is installed.
     """
     dL_pc = 1e6 * luminosity_distance_mpc(z, cosmo, n_nodes, backend=backend)
-    # Avoid 0/0 at z = 0: when z is exactly zero, dL is zero by integration;
-    # fall through to the algebraic limit ff(0) = 1.
-    safe_dL = jnp.where(dL_pc > 0, dL_pc, 1.0)
-    ff_nonzero = (1.0 + z) * (_MAGGIES_D_FID_PC / safe_dL) ** 2
-    return jnp.where(dL_pc > 0, ff_nonzero, 1.0)
+    # Avoid 0/0 at z = 0: when z is exactly zero, D_L is zero by integration;
+    # the algebraic limit is "source at 10 pc", so the distance ratio becomes 1.
+    safe_dL = jnp.where(dL_pc > 0, dL_pc, float(_MAGGIES_D_FID_PC))
+    ff_distance = (1.0 + z) * (_MAGGIES_D_FID_PC / safe_dL) ** 2
+    # Close the L_sun/Hz -> erg/s/cm^2/Hz gap so downstream filter projection
+    # via sedpy_jax lands in the AB zero-point frame used by the Photometry
+    # data side.  Without this, ceridwen's predicted maggies are ~3e-7 x the
+    # true values and any fit against real photometry pushes logmass straight
+    # against its prior's upper bound.
+    return ff_distance * _LSUN_HZ_TO_FNU_CGS_AT_10PC
 
 
 def have_astropy() -> bool:

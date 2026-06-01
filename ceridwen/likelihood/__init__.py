@@ -10,7 +10,9 @@ from .likelihood import (
     LikelihoodOutput,
     LikelihoodBase,
     lnlike_diag_gaussian,
+    lnlike_diag_gaussian_with_upper_limits,
     DiagonalGaussianLikelihood,
+    DiagonalGaussianLikelihoodWithUpperLimits,
     MultiObservationLikelihood,
     make_lnprobfn,
 )
@@ -29,7 +31,9 @@ __all__ = [
     "LikelihoodOutput",
     "LikelihoodBase",
     "lnlike_diag_gaussian",
+    "lnlike_diag_gaussian_with_upper_limits",
     "DiagonalGaussianLikelihood",
+    "DiagonalGaussianLikelihoodWithUpperLimits",
     "MultiObservationLikelihood",
     "make_lnprobfn",
     # theta adapter
