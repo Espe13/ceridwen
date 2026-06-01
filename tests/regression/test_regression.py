@@ -74,3 +74,14 @@ def test_category_matches_baseline(category, fresh):
             act[finite], exp[finite], atol=ATOL, rtol=RTOL,
             err_msg=f"{category}/{key} changed beyond tolerance",
         )
+
+
+def test_emit_visual_report(fresh):
+    """Write the human-readable comparison figures (baseline vs current +
+    residuals) to tests/regression/figures/ so the run can be eyeballed, and
+    assert every category matches to <=1e-6 max relative residual."""
+    from plot_regression import make_all_figures
+
+    summary = make_all_figures(fresh)
+    bad = {k: v for k, v in summary.items() if v > 1e-6}
+    assert not bad, f"categories exceeding 1e-6 max relative residual: {bad}"

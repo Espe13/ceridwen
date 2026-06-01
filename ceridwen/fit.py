@@ -53,6 +53,9 @@ from typing import Any, Callable, Sequence
 import jax
 import jax.numpy as jnp
 import numpy as np
+import logging
+
+logger = logging.getLogger("ceridwen")
 
 Array = jax.Array
 
@@ -190,13 +193,22 @@ def fitSED(
     )
     _t_likelihood = time.perf_counter() - _t0_likelihood
 
+    # Route verbose diagnostics through the package logger (item 20).
     if verbose:
-        print(f"ceridwen.fitSED")
-        print(f"  Sampler     : {sampler}")
-        print(f"  Parameters  : {model.param_names}  ({sum(int(jnp.size(v)) for v in model.theta_init.values())} dims)")
-        print(f"  Observations: {list(keys)}")
-        print(f"  Output      : {output_path}")
-        print(f"  Likelihood build: {_t_likelihood:.3f} s")
+        logger.setLevel(logging.INFO)
+        if not logger.handlers:
+            _handler = logging.StreamHandler()
+            _handler.setFormatter(logging.Formatter("%(message)s"))
+            logger.addHandler(_handler)
+            logger.propagate = False
+
+    if verbose:
+        logger.info(f"ceridwen.fitSED")
+        logger.info(f"  Sampler     : {sampler}")
+        logger.info(f"  Parameters  : {model.param_names}  ({sum(int(jnp.size(v)) for v in model.theta_init.values())} dims)")
+        logger.info(f"  Observations: {list(keys)}")
+        logger.info(f"  Output      : {output_path}")
+        logger.info(f"  Likelihood build: {_t_likelihood:.3f} s")
 
     # ── Configure sampler ─────────────────────────────────────────────
     _t0_adapter = time.perf_counter()
@@ -207,7 +219,7 @@ def fitSED(
     _t_adapter = time.perf_counter() - _t0_adapter
 
     if verbose:
-        print(f"  Adapter build:    {_t_adapter:.3f} s")
+        logger.info(f"  Adapter build:    {_t_adapter:.3f} s")
 
     # ── Run ────────────────────────────────────────────────────────────
     _t0_sampler = time.perf_counter()
@@ -215,7 +227,7 @@ def fitSED(
     _t_sampler = time.perf_counter() - _t0_sampler
 
     if verbose:
-        print(f"\n{result.summary()}")
+        logger.info(f"\n{result.summary()}")
 
     # ── Write HDF5 ────────────────────────────────────────────────────
     _t0_h5 = time.perf_counter()
@@ -224,12 +236,12 @@ def fitSED(
 
     if verbose:
         _t_total = _t_likelihood + _t_adapter + _t_sampler + _t_h5
-        print(f"\n  fitSED timing breakdown:")
-        print(f"    Likelihood build : {_t_likelihood:>8.3f} s")
-        print(f"    Adapter build    : {_t_adapter:>8.3f} s")
-        print(f"    Sampler run      : {_t_sampler:>8.1f} s")
-        print(f"    HDF5 write       : {_t_h5:>8.3f} s")
-        print(f"    Total fitSED     : {_t_total:>8.1f} s")
+        logger.info(f"\n  fitSED timing breakdown:")
+        logger.info(f"    Likelihood build : {_t_likelihood:>8.3f} s")
+        logger.info(f"    Adapter build    : {_t_adapter:>8.3f} s")
+        logger.info(f"    Sampler run      : {_t_sampler:>8.1f} s")
+        logger.info(f"    HDF5 write       : {_t_h5:>8.3f} s")
+        logger.info(f"    Total fitSED     : {_t_total:>8.1f} s")
 
     return result
 
@@ -266,7 +278,7 @@ def _build_adapter(sampler: str, model, sampler_kwargs: dict, verbose: bool,
         if bounds is None:
             bounds = _detect_bounds(model)
             if verbose and bounds:
-                print(f"  Auto-detected bounded priors: {bounds}")
+                logger.info(f"  Auto-detected bounded priors: {bounds}")
 
         # The adapter's own __init__ already applies VI-aware defaults
         # (shorter warmup, larger initial step size, diagonal mass
@@ -493,7 +505,7 @@ def write_result_h5(
 
     if verbose:
         size_mb = path.stat().st_size / 1024**2
-        print(f"  Wrote {path}  ({size_mb:.1f} MB)")
+        logger.info(f"  Wrote {path}  ({size_mb:.1f} MB)")
 
 
 def read_result_h5(path: str | Path) -> dict:

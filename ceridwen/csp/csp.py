@@ -682,7 +682,7 @@ class CSPBasis:
     # Public interface
     # -----------------------------------------------------------------------
 
-    def get_spectrum_components(self, theta):
+    def get_spectrum_components(self, theta: dict) -> tuple:
         """Return the canonical ``(continuum, lines)`` line decomposition.
 
         Both arrays are on the rest-frame model grid ``self.wave`` and are
@@ -708,7 +708,7 @@ class CSPBasis:
         full      = self.get_spectrum(theta=theta, include_lines=True)
         return continuum, full - continuum
 
-    def predict(self, theta, observations):
+    def predict(self, theta: dict, observations: list) -> dict:
         """
         Compute the CSP spectrum and project it onto every observation.
 

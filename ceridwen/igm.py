@@ -148,6 +148,12 @@ class Madau1995(IGMModel):
 
     name = "madau1995"
 
+    # Source of the tabulation below: Madau (1995), ApJ 441, 18 (eqs. 12-16),
+    # as transcribed in FSPS's ``src/igm_absorb.f90`` (arrays ``lyw`` /
+    # ``lycoeff`` and the Lyman limit ``lylim``).  Reproduced verbatim so
+    # ceridwen's IGM attenuation matches FSPS's Madau mode bit-for-bit.  (The
+    # more modern Inoue+ 2014 prescription is a different model, not used here.)
+    #
     # Lyman-series rest wavelengths [Å] — 17 transitions, Ly-α first.
     _LYW = jnp.asarray([
         1215.67, 1025.72,  972.537, 949.743, 937.803,

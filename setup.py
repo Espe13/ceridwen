@@ -9,7 +9,9 @@ setup(
     packages=find_packages(where="."), 
     include_package_data=True,
     install_requires=[
-        'jax',
+        # JAX >= 0.4.30 required: the code uses jnp.trapezoid, the modern
+        # jax.tree_util namespace, and post-2024 PRNG conventions.
+        'jax>=0.4.30',
         'matplotlib',
         'numpy',
         'scipy',

@@ -29,46 +29,48 @@ def make_law_wrapper(f, param_names):
 # the parameters so they do not collide in a shared theta dict.
 
 def modify_function(func, number, defaults_dict=None):
-    func_name = func.__name__
+    """Return a parameter-renamed wrapper of ``func`` (no ``exec``).
+
+    When the same attenuation law is used for multiple age bins, its parameters
+    are suffixed with the bin ``number`` so they do not collide in the shared
+    theta dict (e.g. ``tau_pow`` → ``tau_pow{number}``).  The returned wrapper
+    is invoked *positionally* by :func:`make_law_wrapper`
+    (``func(wave, *args)``); the renaming is purely so that
+    ``inspect.signature`` reports the suffixed names (which :class:`Dust` reads
+    to build the per-bin parameter-extraction list).  We therefore forward the
+    positional arguments unchanged and attach a renamed ``__signature__``.
+
+    This replaces a former ``exec``-of-a-source-string implementation that was
+    fragile, hostile to static analysis, and in fact broken: the source string
+    was indented, so ``exec`` raised ``IndentationError`` for every reused law.
+    The single-law path never calls this function and is unaffected.
+    """
     sig = inspect.signature(func)
 
-    new_func_name = f"{func_name}{number}"
-
     new_params = []
-    call_params = []
-    original_names = []
     for name, param in sig.parameters.items():
         if param.kind == param.VAR_KEYWORD:
             continue
-        new_name = f"{name}{number}" if name != "wave" else "wave"
-        original_names.append(name)
-
+        new_name = name if name == "wave" else f"{name}{number}"
         if param.default is not inspect.Parameter.empty:
-            default_val = repr(param.default)
+            default = param.default
         elif defaults_dict and name in defaults_dict:
-            default_val = repr(defaults_dict[name])
+            default = defaults_dict[name]
         else:
-            default_val = None
+            default = inspect.Parameter.empty
+        new_params.append(param.replace(name=new_name, default=default))
+    new_params.append(inspect.Parameter("kwargs", inspect.Parameter.VAR_KEYWORD))
+    new_sig = sig.replace(parameters=new_params)
 
-        if default_val is not None:
-            new_params.append(f"{new_name}={default_val}")
-        else:
-            new_params.append(new_name)
+    def wrapper(wave, *args, **kwargs):
+        # make_law_wrapper calls positionally: wrapper(wave, *param_values).
+        # Forward positionally to the original law; the parameter renaming is
+        # only for the dict-key lookup, not for this call.
+        return func(wave, *args)
 
-        call_params.append(f"{name}={new_name}")
-
-    arg_str = ", ".join(new_params + ["**kwargs"])
-    call_str = f"{func_name}({', '.join(call_params)}, **filtered_kwargs)"
-
-    func_def = f"""
-        def {new_func_name}({arg_str}):
-            filtered_kwargs = {{k: v for k, v in kwargs.items() if k not in {original_names!r}}}
-            return {call_str}
-        """
-
-    local_ns = {func_name: func}
-    exec(func_def, local_ns)
-    return local_ns[new_func_name]
+    wrapper.__name__ = wrapper.__qualname__ = f"{func.__name__}{number}"
+    wrapper.__signature__ = new_sig
+    return wrapper
 
 
 class Dust:
