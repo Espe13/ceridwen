@@ -950,6 +950,125 @@ class CSPBasis:
     # SSP weight calculation (core; identical maths to csp.py)
     # -----------------------------------------------------------------------
 
+    def _ssp_weights(self, theta, *, zh_mode, sfh_mode):
+        """Unified SSP-weight kernel consolidating the four
+        ``calculate_ssp_weights_{const,var}_zh{,_step}`` methods.
+
+        Parameters
+        ----------
+        zh_mode : {"const", "var"}
+            ``"const"`` — single constant metallicity from ``theta["Z"]``
+            (shape ``(1,)``); ``"var"`` — time-varying metallicity from
+            ``theta["zh"]`` (shape ``(n_time,)``).
+        sfh_mode : {"linear", "step"}
+            ``"linear"`` — analytic log-age integration of a piecewise-linear
+            SFH via :func:`intsfwght`; ``"step"`` — piecewise-constant SFH via
+            SSP-Voronoi-cell overlap (FastStepBasis-style).
+
+        Reproduces each of the four original methods bit-for-bit, including
+        their distinct ``sfh`` floors (``const`` → ``1e-30``; ``var`` →
+        ``self.tiny_logt``) and the ``const``-mode ``maximum(0, .)`` on the
+        summed weights.  In particular the ``var`` + ``linear`` combination
+        preserves the original's behaviour for exactly-zero SFR nodes (the
+        ``self.tiny_logt`` floor does not clip a zero, so ``slope`` divides by
+        zero — a pre-existing latent issue, intentionally NOT altered here so
+        this consolidation introduces zero numerical change).
+        """
+        # Per-mode SFH floor (matches the originals exactly).
+        floor = 1e-30 if zh_mode == "const" else self.tiny_logt
+        sfh = jnp.clip(theta["sfh"], floor, None)
+
+        t_lo = self.sfh_times[1:]
+        t_hi = self.sfh_times[:-1]
+        dt   = t_hi - t_lo
+
+        if sfh_mode == "linear":
+            slope = jnp.diff(sfh) / ((t_lo - t_hi) * sfh[1:])
+            m2    = sfh[1:] * (1.0 + 0.5 * slope * (t_hi + t_lo - 2.0 * t_lo)) * dt
+
+            tprime = jnp.maximum(0.0, t_hi - dt)
+            a      = 1.0 - slope * tprime
+
+            logage_lo = self._logage_lo
+            logage_hi = self._logage_hi
+            dlogage   = self._dlogage
+            j         = self._j_range
+            n_ssp     = self.ssp_ages_lgyr.size
+
+            log_t_lo = jnp.log10(jnp.clip(t_lo, self._age_clip_lo, self._age_clip_hi))[:, None]
+            log_t_hi = jnp.log10(jnp.clip(t_hi, self._age_clip_lo, self._age_clip_hi))[:, None]
+
+            L = jnp.clip(logage_lo[None, :], log_t_lo, log_t_hi)
+            R = jnp.clip(logage_hi[None, :], log_t_lo, log_t_hi)
+
+            jmin = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t_lo)) - 1, 0, n_ssp - 1)
+            jmax = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t_hi)) + 2, 0, n_ssp - 1)
+
+            mask    = (j[None, :] >= jmin[:, None]) & (j[None, :] < jmax[:, None])
+            mask_lo = mask[:, 1:]
+            mask_hi = mask[:, :-1]
+
+            A = a[:, None]
+            S = slope[:, None]
+
+            I_lo = intsfwght(R, L, A, S, logage_lo[None, :])
+            I_hi = intsfwght(R, L, A, S, logage_hi[None, :])
+
+            w_lo = jnp.where(mask_lo, -I_lo / dlogage[None, :], 0.0)
+            w_hi = jnp.where(mask_hi,  I_hi / dlogage[None, :], 0.0)
+
+            w1 = jnp.pad(w_lo, ((0, 0), (0, 1))) + jnp.pad(w_hi, ((0, 0), (1, 0)))
+            w1 = jnp.maximum(0.0, w1)
+        else:  # sfh_mode == "step"
+            if self.sfh_per_bin:
+                sfh_mid = sfh
+            else:
+                sfh_mid = 0.5 * (sfh[:-1] + sfh[1:])
+            m2 = sfh_mid * dt
+
+            overlap = jnp.maximum(
+                0.0,
+                jnp.minimum(t_hi[:, None], self._ssp_voronoi_hi[None, :])
+                - jnp.maximum(t_lo[:, None], self._ssp_voronoi_lo[None, :])
+            )
+            w1 = sfh_mid[:, None] * overlap
+
+        m1          = jnp.maximum(w1.sum(axis=1), 1e-30)
+        sfh_weights = w1 * (m2 / m1)[:, None]
+
+        if zh_mode == "const":
+            total_sfh_weights = jnp.maximum(0.0, sfh_weights.sum(axis=0))
+
+            target_Z = theta["Z"]
+            z_idx = jnp.clip(
+                jnp.searchsorted(self.zmet, target_Z, side='left'),
+                1, self._n_z - 1,
+            )
+            z1 = self.zmet[z_idx - 1]
+            z2 = self.zmet[z_idx]
+            w  = jnp.clip((target_Z - z1) / (z2 - z1), 0.0, 1.0)
+
+            total_weights = jnp.zeros((self._n_z, self._n_age))
+            total_weights = total_weights.at[z_idx - 1].add((1 - w) * total_sfh_weights)
+            total_weights = total_weights.at[z_idx    ].add(      w  * total_sfh_weights)
+            return total_weights
+
+        # zh_mode == "var"
+        zh   = theta["zh"]
+        zbin = 0.5 * (zh[:-1] + zh[1:])
+        k    = jnp.clip(jnp.searchsorted(self.zmet, zbin) - 1, 0, self._n_z - 2)
+
+        z0 = self.zmet[k]
+        z1 = self.zmet[k + 1]
+        dz = jnp.clip((zbin - z0) / jnp.maximum(z1 - z0, tiny_number), 0.0, 1.0)
+
+        n_bin = self.n_time - 1
+        rows  = jnp.arange(n_bin)
+        M     = jnp.zeros((n_bin, self._n_z))
+        M     = M.at[rows, k    ].add(1.0 - dz)
+        M     = M.at[rows, k + 1].add(dz)
+        return M.T @ sfh_weights
+
     def calculate_ssp_weights_const_zh(self, theta):
         """
         SSP weights for a constant metallicity history.
