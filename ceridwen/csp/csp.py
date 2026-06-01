@@ -755,6 +755,19 @@ class CSPBasis:
               the observed pixel grid
             - ``Lines``      → shape (n_lines,), Gaussian-aperture fluxes
         """
+        spectrum_phot, spectrum_slit = self._assemble_observer_spectra(theta)
+        spectrum_phot, spectrum_slit = self._apply_mass_redshift_igm(
+            spectrum_phot, spectrum_slit, theta
+        )
+        return self._project_observations(
+            spectrum_phot, spectrum_slit, observations, theta
+        )
+
+    def _assemble_observer_spectra(self, theta):
+        """Build the photometry- and slit-facing spectra from the single
+        ``(continuum, lines)`` decomposition.  Mechanical extraction from
+        :meth:`predict`; byte-for-byte identical logic.
+        """
         # Decompose the model SED once into its line-free continuum and the
         # broadened emission-line component (see get_spectrum_components),
         # then build the two observer-facing spectra from that single
@@ -786,6 +799,12 @@ class CSPBasis:
         else:
             spectrum_slit = spectrum_phot
 
+        return spectrum_phot, spectrum_slit
+
+    def _apply_mass_redshift_igm(self, spectrum_phot, spectrum_slit, theta):
+        """Apply mass, redshift (flux factor) and IGM multiplicative scaling
+        to both observer spectra.  Mechanical extraction from :meth:`predict`.
+        """
         # Mass + redshift + IGM scaling: identical multiplicative factors
         # for both spectra.  Each factor is computed once and applied to
         # both, so there is no duplicated work.
@@ -811,6 +830,13 @@ class CSPBasis:
                 spectrum_phot = spectrum_phot * transmission
                 spectrum_slit = spectrum_slit * transmission
 
+        return spectrum_phot, spectrum_slit
+
+    def _project_observations(self, spectrum_phot, spectrum_slit, observations, theta):
+        """Project the scaled spectra onto each Observation, returning the
+        ``{obs.name: prediction}`` dict.  Mechanical extraction from
+        :meth:`predict`.
+        """
         # Project: Photometry sees the full-field-of-view spectrum;
         # Spectrum and Lines (slit-measured) see the eline_scaling-corrected
         # spectrum.  ``isinstance`` is resolved statically at trace time.
