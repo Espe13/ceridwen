@@ -9,7 +9,7 @@ except (ImportError, RuntimeError):
     fsps = None  # Ensure fsps is handled correctly
 
 
-__all__ = ["SSPBasis", "FastStepBasis", "CSPSpecBasis"]
+__all__ = ["SSPBasis", "FastStepBasis"]
 
 
 class SSPBasis:
@@ -142,13 +142,23 @@ class FastStepBasis(SSPBasis):
     Subclass of SSPBasis that implements a "nonparameteric" SFH.
     """
 
-    @jit
     def get_galaxy_spectrum(self, **params) -> Tuple[jnp.ndarray, jnp.ndarray, float]:
         """
         Construct the tabular SFH and feed it to the SSP.
+
+        Not JIT-compiled: the body calls into FSPS Fortran
+        (``self.ssp.set_tabular_sfh`` / ``self.ssp.get_spectrum``), which is
+        not JAX-traceable, so a ``@jit`` here cannot work — in fact the
+        previous bound-method ``@jit`` made this method *uncallable* (``self``
+        was passed as a would-be abstract array and the trace raised
+        immediately, so neither the FSPS path nor the validation below ever
+        executed).  The only purely-numerical part, :meth:`convert_sfh`, is
+        JIT-compiled on its own below.  The age-bin validation therefore runs
+        on concrete arrays in this (un-jitted) method, which is the correct
+        place for a data-validation guard.
         """
         self.update(**params)
-        if jnp.min(jnp.diff(10 ** self.params['agebins'])) < 1e6:
+        if float(jnp.min(jnp.diff(10 ** jnp.asarray(self.params['agebins'])))) < 1e6:
             raise ValueError("Minimum age bin spacing must be at least 1 million years.")
 
         mtot = jnp.sum(self.params['mass'])
@@ -159,10 +169,15 @@ class FastStepBasis(SSPBasis):
         return jnp.array(wave), jnp.array(spec) / mtot, self.ssp.stellar_mass / mtot
 
     @staticmethod
-    @jit
     def convert_sfh(agebins, mformed, epsilon=1e-4, maxage=None) -> Tuple[jnp.ndarray, jnp.ndarray, float]:
         """
         Calculate a tabular SFH based on age bins and formed masses.
+
+        Not JIT-compiled: ``jnp.unique`` below has a value-dependent output
+        size, which raises ``ConcretizationTypeError`` under ``jax.jit`` (the
+        previous ``@jit`` made this helper uncallable).  It is only ever called
+        from the un-jitted :meth:`get_galaxy_spectrum` (which itself wraps FSPS
+        Fortran), so there is no hot path that benefits from compiling it.
         """
         agebins_yrs = 10 ** jnp.array(agebins).T
         dt = agebins_yrs[1, :] - agebins_yrs[0, :]

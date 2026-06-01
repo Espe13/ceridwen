@@ -67,6 +67,7 @@ Usage::
 from __future__ import annotations
 
 import pprint
+from functools import cached_property
 from typing import Any, Callable, Sequence
 
 import jax
@@ -332,11 +333,16 @@ class SedModel:
         For vectorised evaluation over many parameter draws, prefer
         :meth:`predict_vmap`.
         """
-        # _predict_jit is lazily built on first call to avoid tracing at
-        # __init__ time (observations may not be set up yet).
-        if not hasattr(self, '_predict_jit_fn'):
-            self._predict_jit_fn = jax.jit(self.predict)
+        # Built once on first access via cached_property (avoids tracing at
+        # __init__ time, before observations are set up) and cached on the
+        # instance thereafter.  Semantically identical to the previous
+        # hasattr-lazy attribute, but robust under subclassing and explicit
+        # about the jit boundary.
         return self._predict_jit_fn(theta)
+
+    @cached_property
+    def _predict_jit_fn(self) -> Callable[[dict[str, Array]], dict[str, Array]]:
+        return jax.jit(self.predict)
 
     def predict_vmap(
         self,
@@ -357,9 +363,11 @@ class SedModel:
             Each value has a leading batch dimension, e.g.
             ``{"optical_spec": (N, n_pix)}``.
         """
-        if not hasattr(self, '_predict_vmap_fn'):
-            self._predict_vmap_fn = jax.jit(jax.vmap(self.predict))
         return self._predict_vmap_fn(theta_batch)
+
+    @cached_property
+    def _predict_vmap_fn(self) -> Callable[[dict[str, Array]], dict[str, Array]]:
+        return jax.jit(jax.vmap(self.predict))
 
     # ------------------------------------------------------------------
     # Prior
