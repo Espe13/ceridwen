@@ -1070,291 +1070,35 @@ class CSPBasis:
         return M.T @ sfh_weights
 
     def calculate_ssp_weights_const_zh(self, theta):
+        """Constant-metallicity, piecewise-linear SFH weights.
+
+        Thin wrapper over :meth:`_ssp_weights`; reads ``theta["sfh"]``
+        (shape ``(n_time,)``) and ``theta["Z"]`` (shape ``(1,)``, log10 Z/Zsun).
         """
-        SSP weights for a constant metallicity history.
-
-        Reads ``theta["sfh"]`` (shape ``(n_time,)``) and ``theta["Z"]``
-        (shape ``(1,)``, log10 Z/Zsun).
-        """
-        sfh = jnp.clip(theta["sfh"], 1e-30, None)
-
-        t_lo = self.sfh_times[1:]
-        t_hi = self.sfh_times[:-1]
-        dt   = t_hi - t_lo
-
-        slope = jnp.diff(sfh) / ((t_lo - t_hi) * sfh[1:])
-        m2    = sfh[1:] * (1.0 + 0.5 * slope * (t_hi + t_lo - 2.0 * t_lo)) * dt
-
-        tprime = jnp.maximum(0.0, t_hi - dt)
-        a      = 1.0 - slope * tprime
-
-        logage_lo = self._logage_lo
-        logage_hi = self._logage_hi
-        dlogage   = self._dlogage
-        j         = self._j_range
-        n_ssp     = self.ssp_ages_lgyr.size
-
-        log_t_lo = jnp.log10(jnp.clip(t_lo, self._age_clip_lo, self._age_clip_hi))[:, None]
-        log_t_hi = jnp.log10(jnp.clip(t_hi, self._age_clip_lo, self._age_clip_hi))[:, None]
-
-        L = jnp.clip(logage_lo[None, :], log_t_lo, log_t_hi)
-        R = jnp.clip(logage_hi[None, :], log_t_lo, log_t_hi)
-
-        jmin = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t_lo)) - 1, 0, n_ssp - 1)
-        jmax = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t_hi)) + 2, 0, n_ssp - 1)
-
-        mask    = (j[None, :] >= jmin[:, None]) & (j[None, :] < jmax[:, None])
-        mask_lo = mask[:, 1:]
-        mask_hi = mask[:, :-1]
-
-        A = a[:, None]
-        S = slope[:, None]
-
-        I_lo = intsfwght(R, L, A, S, logage_lo[None, :])
-        I_hi = intsfwght(R, L, A, S, logage_hi[None, :])
-
-        w_lo = jnp.where(mask_lo, -I_lo / dlogage[None, :], 0.0)
-        w_hi = jnp.where(mask_hi,  I_hi / dlogage[None, :], 0.0)
-
-        w1 = jnp.pad(w_lo, ((0, 0), (0, 1))) + jnp.pad(w_hi, ((0, 0), (1, 0)))
-
-        # Physical constraint: SSP weights are masses formed — they must be
-        # non-negative.  The analytical log-age integration can produce small
-        # negative values for steep SFH slopes due to sign cancellation in
-        # intsfwght.  Clip to zero to enforce the physical bound, matching the
-        # FSPS convention where tabular-SFH weights are always non-negative.
-        w1 = jnp.maximum(0.0, w1)
-
-        # Guard m1 against zero (can occur if all weights in a bin were clipped)
-        # so that the m2/m1 mass-conservation rescaling does not produce NaN.
-        m1 = jnp.maximum(w1.sum(axis=1), 1e-30)
-        sfh_weights       = w1 * (m2 / m1)[:, None]
-        total_sfh_weights = jnp.maximum(0.0, sfh_weights.sum(axis=0))
-
-        target_Z = theta["Z"]
-        z_idx = jnp.clip(
-            jnp.searchsorted(self.zmet, target_Z, side='left'),
-            1, self._n_z - 1,
-        )
-        z1 = self.zmet[z_idx - 1]
-        z2 = self.zmet[z_idx]
-        w  = jnp.clip((target_Z - z1) / (z2 - z1), 0.0, 1.0)
-
-        total_weights = jnp.zeros((self._n_z, self._n_age))
-        total_weights = total_weights.at[z_idx - 1].add((1 - w) * total_sfh_weights)
-        total_weights = total_weights.at[z_idx    ].add(      w  * total_sfh_weights)
-        return total_weights
+        return self._ssp_weights(theta, zh_mode="const", sfh_mode="linear")
 
     def calculate_ssp_weights_const_zh_step(self, theta):
+        """Constant-metallicity, piecewise-constant (FastStepBasis-style) SFH
+        weights.  Thin wrapper over :meth:`_ssp_weights`.  Reads
+        ``theta["sfh"]`` and ``theta["Z"]``.
         """
-        SSP weights for a constant metallicity history — piecewise-constant
-        (FastStepBasis-style) SFH integration.
-
-        ``sfh`` is interpreted per the convention recorded in
-        ``self.sfh_per_bin`` at ``initialize_model_structure`` time:
-
-        * ``sfh_per_bin = True``   — ``sfh`` already carries one SFR
-          value per bin (length ``n_bin = n_time - 1``).  This matches
-          prospector's FastStepBasis exactly.
-        * ``sfh_per_bin = False``  — ``sfh`` carries one value per
-          lookback node (length ``n_time``); we average consecutive
-          values to recover the per-bin SFR (legacy node convention).
-
-        The contribution of SFH bin *i* to SSP age bin *j* is
-        ``sfh_per_bin[i] * overlap_yr[i, j]``, where ``overlap_yr`` is
-        the intersection length (in yr) of the two bins on a linear-
-        time axis.  All entries are non-negative by construction; no
-        clipping is required.
-
-        Reads ``theta["sfh"]`` and ``theta["Z"]``.
-        """
-        sfh = jnp.clip(theta["sfh"], 1e-30, None)
-
-        t_lo = self.sfh_times[1:]    # (n_bin,)  younger edge, yr
-        t_hi = self.sfh_times[:-1]   # (n_bin,)  older  edge, yr
-        dt   = t_hi - t_lo           # (n_bin,)  positive
-
-        # FastStepBasis match: per-bin SFR direct, no inter-edge
-        # averaging.  Falls back to the node-based midpoint convention
-        # when the legacy shape is detected at init time.
-        if self.sfh_per_bin:
-            sfh_mid = sfh                            # (n_bin,)
-        else:
-            sfh_mid = 0.5 * (sfh[:-1] + sfh[1:])     # (n_bin,)
-
-        # Physically correct mass per SFH bin under constant-SFR assumption
-        m2 = sfh_mid * dt                        # (n_bin,)
-
-        # Overlap in linear yr between each SFH bin and each SSP Voronoi cell.
-        #
-        # Each SSP age POINT j owns the Voronoi cell
-        #   [_ssp_voronoi_lo[j], _ssp_voronoi_hi[j]]
-        # whose boundaries are the linear-time midpoints to the neighbouring
-        # SSP age points.  Overlapping this cell with the SFH bin directly
-        # gives the correct mass attribution without any post-hoc splitting.
-        # This matches the FSPS FastStepBasis ±ε convention.
-        #
-        #   overlap[i, j] = max(0,
-        #       min(t_hi[i], voronoi_hi[j]) - max(t_lo[i], voronoi_lo[j]) )
-        #
-        overlap = jnp.maximum(
-            0.0,
-            jnp.minimum(t_hi[:, None], self._ssp_voronoi_hi[None, :])   # (n_bin, n_age)
-            - jnp.maximum(t_lo[:, None], self._ssp_voronoi_lo[None, :])
-        )
-
-        # Weight at each SSP age POINT: SFR * Voronoi overlap.  Non-negative
-        # by construction — no clipping or splitting needed.
-        w1 = sfh_mid[:, None] * overlap          # (n_bin, n_age)
-
-        # Mass-conserving rescale: force each SFH bin's weight sum to m2.
-        m1 = jnp.maximum(w1.sum(axis=1), 1e-30)
-        w1 = w1 * (m2 / m1)[:, None]            # (n_bin, n_age)
-
-        total_sfh_weights = w1.sum(axis=0)        # (n_age,)
-
-        # Metallicity interpolation (identical to the linear-scheme version)
-        target_Z = theta["Z"]
-        z_idx = jnp.clip(
-            jnp.searchsorted(self.zmet, target_Z, side='left'),
-            1, self._n_z - 1,
-        )
-        z1 = self.zmet[z_idx - 1]
-        z2 = self.zmet[z_idx]
-        w  = jnp.clip((target_Z - z1) / (z2 - z1), 0.0, 1.0)
-
-        total_weights = jnp.zeros((self._n_z, self._n_age))
-        total_weights = total_weights.at[z_idx - 1].add((1 - w) * total_sfh_weights)
-        total_weights = total_weights.at[z_idx    ].add(      w  * total_sfh_weights)
-        return total_weights
+        return self._ssp_weights(theta, zh_mode="const", sfh_mode="step")
 
     def calculate_ssp_weights_var_zh(self, theta):
+        """Time-varying-metallicity, piecewise-linear SFH weights.
+
+        Thin wrapper over :meth:`_ssp_weights`; reads ``theta["sfh"]``
+        (shape ``(n_time,)``) and ``theta["zh"]`` (shape ``(n_time,)``,
+        log10 Z/Zsun at each lookback time).
         """
-        SSP weights for a time-varying metallicity history.
-
-        Reads ``theta["sfh"]`` (shape ``(n_time,)``) and ``theta["zh"]``
-        (shape ``(n_time,)``, log10 Z/Zsun at each lookback time).
-        """
-        sfh = jnp.clip(theta["sfh"], self.tiny_logt, None)
-
-        t_lo = self.sfh_times[1:]
-        t_hi = self.sfh_times[:-1]
-        dt   = t_hi - t_lo
-
-        slope = jnp.diff(sfh) / ((t_lo - t_hi) * sfh[1:])
-        m2    = sfh[1:] * (1.0 + 0.5 * slope * (t_hi + t_lo - 2.0 * t_lo)) * dt
-
-        tprime = jnp.maximum(0.0, t_hi - dt)
-        a      = 1.0 - slope * tprime
-
-        logage_lo = self._logage_lo
-        logage_hi = self._logage_hi
-        dlogage   = self._dlogage
-        j         = self._j_range
-        n_ssp     = self.ssp_ages_lgyr.size
-
-        log_t_lo = jnp.log10(jnp.clip(t_lo, self._age_clip_lo, self._age_clip_hi))[:, None]
-        log_t_hi = jnp.log10(jnp.clip(t_hi, self._age_clip_lo, self._age_clip_hi))[:, None]
-
-        L = jnp.clip(logage_lo[None, :], log_t_lo, log_t_hi)
-        R = jnp.clip(logage_hi[None, :], log_t_lo, log_t_hi)
-
-        jmin = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t_lo)) - 1, 0, n_ssp - 1)
-        jmax = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t_hi)) + 2, 0, n_ssp - 1)
-
-        mask    = (j[None, :] >= jmin[:, None]) & (j[None, :] < jmax[:, None])
-        mask_lo = mask[:, 1:]
-        mask_hi = mask[:, :-1]
-
-        A = a[:, None]
-        S = slope[:, None]
-
-        I_lo = intsfwght(R, L, A, S, logage_lo[None, :])
-        I_hi = intsfwght(R, L, A, S, logage_hi[None, :])
-
-        w_lo = jnp.where(mask_lo, -I_lo / dlogage[None, :], 0.0)
-        w_hi = jnp.where(mask_hi,  I_hi / dlogage[None, :], 0.0)
-
-        w1 = jnp.pad(w_lo, ((0, 0), (0, 1))) + jnp.pad(w_hi, ((0, 0), (1, 0)))
-
-        # Physical constraint — same rationale as in calculate_ssp_weights_const_zh.
-        w1 = jnp.maximum(0.0, w1)
-        m1 = jnp.maximum(w1.sum(axis=1), 1e-30)
-        sfh_weights = w1 * (m2 / m1)[:, None]
-
-        zh   = theta["zh"]
-        zbin = 0.5 * (zh[:-1] + zh[1:])
-        k    = jnp.clip(jnp.searchsorted(self.zmet, zbin) - 1, 0, self._n_z - 2)
-
-        z0 = self.zmet[k]
-        z1 = self.zmet[k + 1]
-        dz = jnp.clip((zbin - z0) / jnp.maximum(z1 - z0, tiny_number), 0.0, 1.0)
-
-        n_bin = self.n_time - 1
-        rows  = jnp.arange(n_bin)
-        M     = jnp.zeros((n_bin, self._n_z))
-        M     = M.at[rows, k    ].add(1.0 - dz)
-        M     = M.at[rows, k + 1].add(dz)
-        return M.T @ sfh_weights
+        return self._ssp_weights(theta, zh_mode="var", sfh_mode="linear")
 
     def calculate_ssp_weights_var_zh_step(self, theta):
+        """Time-varying-metallicity, piecewise-constant (FastStepBasis-style)
+        SFH weights.  Thin wrapper over :meth:`_ssp_weights`.  Reads
+        ``theta["sfh"]`` and ``theta["zh"]``.
         """
-        SSP weights for a time-varying metallicity history — piecewise-constant
-        (FastStepBasis-style) SFH integration.
-
-        Identical non-negativity guarantee as
-        ``calculate_ssp_weights_const_zh_step``, but distributes mass across
-        metallicity bins using the per-SFH-bin mean metallicity from
-        ``theta["zh"]`` (shape ``(n_time,)``, log10 Z/Zsun).
-
-        Reads ``theta["sfh"]`` (shape ``(n_time,)``) and ``theta["zh"]``
-        (shape ``(n_time,)``, log10 Z/Zsun at each lookback time).
-        """
-        sfh = jnp.clip(theta["sfh"], self.tiny_logt, None)
-
-        t_lo = self.sfh_times[1:]    # (n_bin,)  younger edge, yr
-        t_hi = self.sfh_times[:-1]   # (n_bin,)  older  edge, yr
-        dt   = t_hi - t_lo           # (n_bin,)  positive
-
-        # FastStepBasis match: per-bin SFR direct, falling back to the
-        # node-based midpoint convention only when sfh has the legacy
-        # length n_time.  See calculate_ssp_weights_const_zh_step for
-        # the same logic with const-Z.
-        if self.sfh_per_bin:
-            sfh_mid = sfh                          # (n_bin,)
-        else:
-            sfh_mid = 0.5 * (sfh[:-1] + sfh[1:])   # (n_bin,)
-        m2      = sfh_mid * dt                     # (n_bin,)
-
-        # Voronoi-cell overlap — same scheme as calculate_ssp_weights_const_zh_step.
-        # Gives (n_bin, n_age) directly; no splitting required.
-        overlap = jnp.maximum(
-            0.0,
-            jnp.minimum(t_hi[:, None], self._ssp_voronoi_hi[None, :])   # (n_bin, n_age)
-            - jnp.maximum(t_lo[:, None], self._ssp_voronoi_lo[None, :])
-        )
-
-        w1    = sfh_mid[:, None] * overlap       # (n_bin, n_age)  >= 0
-
-        # Mass-conserving rescale
-        m1    = jnp.maximum(w1.sum(axis=1), 1e-30)
-        sfh_weights = w1 * (m2 / m1)[:, None]   # (n_bin, n_age)
-
-        # Per-SFH-bin mean metallicity (identical to the linear-scheme version)
-        zh   = theta["zh"]
-        zbin = 0.5 * (zh[:-1] + zh[1:])
-        k    = jnp.clip(jnp.searchsorted(self.zmet, zbin) - 1, 0, self._n_z - 2)
-
-        z0 = self.zmet[k]
-        z1 = self.zmet[k + 1]
-        dz = jnp.clip((zbin - z0) / jnp.maximum(z1 - z0, tiny_number), 0.0, 1.0)
-
-        n_bin = self.n_time - 1
-        rows  = jnp.arange(n_bin)
-        M     = jnp.zeros((n_bin, self._n_z))
-        M     = M.at[rows, k    ].add(1.0 - dz)
-        M     = M.at[rows, k + 1].add(dz)
-        return M.T @ sfh_weights   # (n_z, n_age)
+        return self._ssp_weights(theta, zh_mode="var", sfh_mode="step")
 
     # -----------------------------------------------------------------------
     # Spectrum methods (all read theta["key"] directly)
