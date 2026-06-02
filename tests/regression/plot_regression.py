@@ -81,6 +81,9 @@ def _draw_panel(host, cat, key, e, a, cx, x):
 
     e = np.asarray(e, float).ravel()
     a = np.asarray(a, float).ravel()
+    # residual masked to finite entries (avoids inf-inf warnings at e.g. z=0)
+    both = np.isfinite(a) & np.isfinite(e)
+    diff = np.where(both, a - np.where(both, e, 0.0), np.nan)
     resid = _rel_resid(a, e)
     is_bar = e.size <= 6
     use_x = x if (x is not None and x.size == e.size and not is_bar) else None
@@ -91,12 +94,12 @@ def _draw_panel(host, cat, key, e, a, cx, x):
         axt.bar(idx - w / 2, e, w, color="#1f77b4", alpha=0.5, label="baseline")
         axt.bar(idx + w / 2, a, w, facecolor="none", edgecolor="#d62728",
                 linewidth=1.5, label="current")
-        axb.bar(idx, a - e, 0.6, color="#555")
+        axb.bar(idx, diff, 0.6, color="#555")
     else:
         xx = use_x if use_x is not None else np.arange(e.size)
         axt.plot(xx, e, color="#1f77b4", lw=2.6, alpha=0.45, label="baseline")
         axt.plot(xx, a, color="#d62728", lw=0.9, ls="--", label="current")
-        axb.plot(xx, a - e, color="#555", lw=0.8)
+        axb.plot(xx, diff, color="#555", lw=0.8)
         # wide-dynamic-range, strictly positive spectra read best on log-log
         finite = np.isfinite(e)
         if cx == "wave":

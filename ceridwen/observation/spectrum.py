@@ -520,6 +520,16 @@ class Spectrum(Observation):
         jax.Array, shape (n_pix,)
             Model F_nu (smoothed and) interpolated onto ``self.wavelength``.
         """
+        # Clear error instead of a cryptic AttributeError on the projection
+        # closure if setup was skipped.  ``hasattr`` is a static Python check,
+        # so inside a jit trace it resolves at compile time (no hot-path cost).
+        if not hasattr(self, "_predict_fn"):
+            raise RuntimeError(
+                "Spectrum.predict() called before setup_for_model(): the "
+                "projection/smoothing closure has not been built. Call "
+                "spec.setup_for_model(wave_model) once (before the first "
+                "predict / JIT trace)."
+            )
         if self.fit_sigma_smooth:
             if sigma_smooth is None:
                 # Fall back to the constructor default; lets a caller

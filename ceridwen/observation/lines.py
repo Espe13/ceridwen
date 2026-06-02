@@ -319,6 +319,15 @@ class Lines(Observation):
         jax.Array, shape (n_lines,)
             Gaussian-aperture integrated flux for each line.
         """
+        # Clear error instead of a cryptic AttributeError if setup was skipped.
+        # ``hasattr`` is static, so this is free inside a jit trace.
+        if not hasattr(self, "_W"):
+            raise RuntimeError(
+                "Lines.predict() called before setup_for_model(): the Gaussian "
+                "aperture weight matrix has not been built. Call "
+                "lines.setup_for_model(wave_model, sigma_v=...) once (before the "
+                "first predict / JIT trace)."
+            )
         if not self.fit_sigma_v:
             return self._W @ spectrum
         if sigma_v is None:

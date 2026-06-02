@@ -31,6 +31,7 @@ the dict theta; no ``ThetaVector`` adapter is needed.
 """
 
 import math
+import warnings
 
 import numpy as np
 import jax.numpy as jnp
@@ -300,6 +301,7 @@ class CSPBasis:
                 f"sfh_interp must be 'step' or 'linear', got {sfh_interp!r}"
             )
         self.sfh_interp = sfh_interp
+        self.zh_const = bool(zh_const)
         if zh_const:
             if sfh_interp == 'step':
                 self.calculate_ssp_weights = self.calculate_ssp_weights_const_zh_step
@@ -319,6 +321,11 @@ class CSPBasis:
         if verbose:
             print("\nCSPBasis (dict theta) — registered parameters:")
             pprint.pprint({k: v.shape for k, v in self.theta_init.items()})
+
+        # Early (construction-time) warning if the initial parameters already
+        # sit outside the interpolation grids (silent edge-clamping).  Cheap,
+        # non-jitted; users can re-run check_param_ranges() on sampled theta.
+        self.check_param_ranges(self.theta_init)
 
 
 
@@ -367,7 +374,57 @@ class CSPBasis:
                 f"({self.n_time - 1},)  (per-bin, FastStepBasis)."
             )
 
-        # --- Metallicity mode detection ------------------------------------
+        # --- Static SFH sanity (construction-time; non-jitted) -------------
+        # A NaN/Inf SFH silently propagates to a NaN spectrum, and an all- or
+        # partly-negative SFH is silently clipped to >=0 (≈zero flux), so flag
+        # both here rather than letting them pass into the hot path unnoticed.
+        sfh_np = np.asarray(sfh)
+        if not np.all(np.isfinite(sfh_np)):
+            raise ValueError(
+                "theta['sfh'] contains non-finite (NaN/Inf) values; this would "
+                "silently produce a NaN spectrum."
+            )
+        if np.any(sfh_np < 0):
+            warnings.warn(
+                "theta['sfh'] contains negative values. SFR is clipped to >=0 "
+                "internally, so negative bins contribute ~zero flux (no error is "
+                "raised at evaluation time).",
+                stacklevel=3,
+            )
+
+        # --- Metallicity mode detection + validation -----------------------
+        # The metallicity key MUST match the zh_const mode chosen at __init__.
+        # A mismatch otherwise constructs silently and only fails later with a
+        # cryptic KeyError deep inside a jitted get_spectrum/predict trace.
+        if self.zh_const:
+            if 'Z' not in theta:
+                raise ValueError(
+                    "zh_const=True requires a constant metallicity theta['Z'] "
+                    "(shape-(1,) array, log10 Z/Zsun); none was provided. Either "
+                    "add theta['Z'], or construct with zh_const=False and provide "
+                    "a time-varying theta['zh'] of shape (n_time,)."
+                )
+            if 'zh' in theta:
+                warnings.warn(
+                    "zh_const=True but theta also contains 'zh'; 'zh' is ignored "
+                    "in constant-metallicity mode (only 'Z' is used).",
+                    stacklevel=3,
+                )
+        else:
+            if 'zh' not in theta:
+                raise ValueError(
+                    "zh_const=False requires a time-varying metallicity history "
+                    "theta['zh'] of shape (n_time,) (log10 Z/Zsun); none was "
+                    "provided. Either add theta['zh'], or construct with "
+                    "zh_const=True and provide a scalar theta['Z']."
+                )
+            if 'Z' in theta:
+                warnings.warn(
+                    "zh_const=False but theta also contains 'Z'; 'Z' is ignored "
+                    "in time-varying-metallicity mode (only 'zh' is used).",
+                    stacklevel=3,
+                )
+
         self.zh_is_scalar = None
         if 'zh' in theta:
             zh = jnp.atleast_1d(jnp.asarray(theta['zh'], dtype=float))
@@ -377,6 +434,18 @@ class CSPBasis:
             Z = jnp.atleast_1d(jnp.asarray(theta['Z'], dtype=float))
             assert Z.shape == (1,), "'Z' must be a scalar (wrapped in shape-(1,) array)"
             self.zh_is_scalar = True
+
+        # P5 (safe warning): the var-zh *linear* weight kernel divides by the
+        # per-node SFR, so an exactly-zero SFR node yields NaN in that mode.
+        if (not self.zh_const) and self.sfh_interp == 'linear' and np.any(sfh_np == 0):
+            warnings.warn(
+                "zh_const=False with sfh_interp='linear' and exactly-zero SFR "
+                "node(s): the time-varying-metallicity linear weight kernel "
+                "divides by the SFR and will return NaN for those nodes. Use a "
+                "tiny positive floor (e.g. 1e-10) instead of 0, or use "
+                "sfh_interp='step' (which is non-negative by construction).",
+                stacklevel=3,
+            )
 
         # --- Build theta_init: all params except lookback_time -------------
         self.theta_init = {}
@@ -391,6 +460,91 @@ class CSPBasis:
 
         # Ordered list of parameter names (for printing / sampling setup)
         self.param_names = list(self.theta_init.keys())
+
+        # Recognized theta keys (for the trace-time typo guard).  Everything
+        # the physics consumes is already in param_names (dust/neb defaults were
+        # merged into theta before this point); the rest are optional
+        # runtime-only scalars read by predict / get_line_spec.
+        self._known_theta_keys = set(self.param_names) | {
+            'lookback_time', 'Z', 'zh',
+            'logmass', 'zred', 'igm_factor', 'eline_scaling',
+            'sigma_smooth', 'sigma_v_lines',
+        }
+
+    # -----------------------------------------------------------------------
+    # Defensive helpers (all NON-jitted or trace-time-only; zero hot-path cost)
+    # -----------------------------------------------------------------------
+
+    def _warn_unknown_theta_keys(self, theta):
+        """Warn about theta keys the model does not consume (usually typos).
+
+        This inspects only the dict *keys* — static Python strings that are part
+        of the PyTree structure — so when called inside a ``jax.jit`` trace it
+        executes exactly once at compile time and adds **nothing** to the
+        compiled hot path.  Unknown keys are otherwise silently ignored, so a
+        typo like ``logmas`` for ``logmass`` would quietly drop the parameter.
+        """
+        unknown = [k for k in theta if k not in self._known_theta_keys]
+        if unknown:
+            warnings.warn(
+                f"CSPBasis received unrecognized theta key(s) {sorted(unknown)} "
+                f"which are SILENTLY IGNORED (likely a typo). Recognized keys: "
+                f"{sorted(self._known_theta_keys)}.",
+                stacklevel=3,
+            )
+
+    def check_param_ranges(self, theta=None, warn=True):
+        """Diagnostic (NON-jitted): list parameters that fall outside the
+        interpolation grids, where the model silently clamps to the nearest
+        grid edge and thus hides extrapolation.
+
+        Intended to be called once on your theta (or theta bounds) before a
+        fit; it is never invoked from the hot path.  Returns the list of
+        human-readable messages (and emits them as warnings when ``warn``).
+        """
+        if theta is None:
+            theta = self.theta_init
+        msgs = []
+
+        zlo, zhi = float(self.zmet.min()), float(self.zmet.max())
+        for key in ('Z', 'zh'):
+            if key in theta:
+                v = np.asarray(theta[key], float)
+                if v.size and (np.nanmin(v) < zlo or np.nanmax(v) > zhi):
+                    msgs.append(
+                        f"theta['{key}'] has values outside the SSP metallicity "
+                        f"grid [{zlo:.3f}, {zhi:.3f}]; these are silently clamped "
+                        f"to the nearest grid edge. NOTE: this grid is in the "
+                        f"same units as SSPData.ssp_lgmet (log10 of absolute "
+                        f"metallicity), NOT log10(Z/Zsun) -- so Z=0.0 is out of "
+                        f"range; use a value within the printed bounds."
+                    )
+
+        # Nebular gas parameters vs the CLOUDY grid, if the neb model exposes
+        # its axis arrays (defensive: skipped if the attribute names differ).
+        neb = getattr(self, 'neb', None)
+        if neb is not None:
+            for key, attrs in (
+                ('gas_logz', ('logZ_grid', 'logz_grid', '_logZ', 'nebem_logz')),
+                ('gas_logu', ('logU_grid', 'logu_grid', '_logU', 'nebem_logu')),
+            ):
+                if key in theta:
+                    grid = next((getattr(neb, a) for a in attrs if hasattr(neb, a)),
+                                None)
+                    if grid is not None:
+                        g = np.asarray(grid, float)
+                        glo, ghi = float(g.min()), float(g.max())
+                        v = np.asarray(theta[key], float)
+                        if v.size and (np.nanmin(v) < glo or np.nanmax(v) > ghi):
+                            msgs.append(
+                                f"theta['{key}'] outside the nebular grid "
+                                f"[{glo:.3f}, {ghi:.3f}]; silently clamped."
+                            )
+
+        if warn:
+            for m in msgs:
+                warnings.warn(m, stacklevel=2)
+        return msgs
 
     # -----------------------------------------------------------------------
     # Dust / nebular initialisation helpers
@@ -704,6 +858,10 @@ class CSPBasis:
         ``add_neb=False`` there is no nebular module and ``lines`` is
         identically zero.
         """
+        # Trace-time-only typo guard (operates on static dict keys; costs
+        # nothing in the compiled hot path).  Covers predict(), which routes
+        # through here.
+        self._warn_unknown_theta_keys(theta)
         continuum = self.get_spectrum(theta=theta, include_lines=False)
         full      = self.get_spectrum(theta=theta, include_lines=True)
         return continuum, full - continuum
