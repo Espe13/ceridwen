@@ -4,8 +4,12 @@ Dict-based CSPBasis:
 The parameter vector theta is kept as a plain Python/JAX dict at all times:
 
     theta = {
-        "sfh":               jnp.zeros(100),   # shape (n_time,)
-        "Z":                 jnp.array([0.0]),  # log10 Z/Zsun, scalar
+        "sfh":               jnp.zeros(100),   # shape (n_time,), linear SFR
+        "Z":                 jnp.array([-1.85]),# log10 ABSOLUTE metallicity
+                                                # (ssp_lgmet grid units), scalar
+                                                # — NOT log10 Z/Zsun. Use "zh"
+                                                # (same units, shape (n_time,))
+                                                # for a metallicity history.
         "gas_logz":          jnp.array([0.0]),
         "gas_logu":          jnp.array([-2.0]),
         "tau_pow":           jnp.array([1.0]),
@@ -400,9 +404,10 @@ class CSPBasis:
             if 'Z' not in theta:
                 raise ValueError(
                     "zh_const=True requires a constant metallicity theta['Z'] "
-                    "(shape-(1,) array, log10 Z/Zsun); none was provided. Either "
-                    "add theta['Z'], or construct with zh_const=False and provide "
-                    "a time-varying theta['zh'] of shape (n_time,)."
+                    "(shape-(1,) array, log10 absolute metallicity in ssp_lgmet "
+                    "grid units); none was provided. Either add theta['Z'], or "
+                    "construct with zh_const=False and provide a time-varying "
+                    "theta['zh'] of shape (n_time,)."
                 )
             if 'zh' in theta:
                 warnings.warn(
@@ -414,7 +419,8 @@ class CSPBasis:
             if 'zh' not in theta:
                 raise ValueError(
                     "zh_const=False requires a time-varying metallicity history "
-                    "theta['zh'] of shape (n_time,) (log10 Z/Zsun); none was "
+                    "theta['zh'] of shape (n_time,) (log10 absolute metallicity "
+                    "in ssp_lgmet grid units, same as theta['Z']); none was "
                     "provided. Either add theta['zh'], or construct with "
                     "zh_const=True and provide a scalar theta['Z']."
                 )
@@ -435,17 +441,6 @@ class CSPBasis:
             assert Z.shape == (1,), "'Z' must be a scalar (wrapped in shape-(1,) array)"
             self.zh_is_scalar = True
 
-        # P5 (safe warning): the var-zh *linear* weight kernel divides by the
-        # per-node SFR, so an exactly-zero SFR node yields NaN in that mode.
-        if (not self.zh_const) and self.sfh_interp == 'linear' and np.any(sfh_np == 0):
-            warnings.warn(
-                "zh_const=False with sfh_interp='linear' and exactly-zero SFR "
-                "node(s): the time-varying-metallicity linear weight kernel "
-                "divides by the SFR and will return NaN for those nodes. Use a "
-                "tiny positive floor (e.g. 1e-10) instead of 0, or use "
-                "sfh_interp='step' (which is non-negative by construction).",
-                stacklevel=3,
-            )
 
         # --- Build theta_init: all params except lookback_time -------------
         self.theta_init = {}
@@ -1149,17 +1144,37 @@ class CSPBasis:
             SFH via :func:`intsfwght`; ``"step"`` — piecewise-constant SFH via
             SSP-Voronoi-cell overlap (FastStepBasis-style).
 
-        Reproduces each of the four original methods bit-for-bit, including
-        their distinct ``sfh`` floors (``const`` → ``1e-30``; ``var`` →
-        ``self.tiny_logt``) and the ``const``-mode ``maximum(0, .)`` on the
-        summed weights.  In particular the ``var`` + ``linear`` combination
-        preserves the original's behaviour for exactly-zero SFR nodes (the
-        ``self.tiny_logt`` floor does not clip a zero, so ``slope`` divides by
-        zero — a pre-existing latent issue, intentionally NOT altered here so
-        this consolidation introduces zero numerical change).
+        Units (identical across all four combinations)
+        -----------------------------------------------
+        * Metallicity — ``theta["Z"]`` (const) and ``theta["zh"]`` (var) are
+          BOTH ``log10`` of the *absolute* metallicity, on the SSP grid
+          ``self.zmet`` (== ``SSPData.ssp_lgmet``).  ``Z`` is a single scalar;
+          ``zh`` is one value per lookback-time node — same unit, different
+          shape.
+        * SFR — ``theta["sfh"]`` is a *linear* star-formation rate, floored
+          identically at ``1e-30`` in every mode.
+
+        The ``const``-mode ``maximum(0, .)`` clamp on the summed weights is
+        retained.  ``const``-mode output is bit-for-bit identical to the
+        original methods (it already used the ``1e-30`` floor); ``var``-mode now
+        shares that floor, which makes the SFR units consistent and removes the
+        original var-zh divide-by-zero NaN for (near-)zero SFR nodes.
         """
-        # Per-mode SFH floor (matches the originals exactly).
-        floor = 1e-30 if zh_mode == "const" else self.tiny_logt
+        # Single SFR floor, identical for EVERY (zh_mode, sfh_mode) combination,
+        # so all four weight calculations consume the star-formation-rate
+        # history in exactly the same units (linear SFR) with the same
+        # regularisation.  ``1e-30`` is a tiny positive floor that keeps the
+        # var-zh linear slope (which divides by the per-node SFR) finite.
+        #
+        # (The original var-zh methods floored with ``self.tiny_logt`` = -70, a
+        # log10-time constant mistakenly reused as a linear-SFR floor; that left
+        # near-zero / exactly-zero SFR nodes effectively unclipped, so const-zh
+        # and var-zh weighted the SAME SFR history differently and var-zh
+        # returned NaN for exactly-zero nodes.  Flooring identically at 1e-30
+        # makes the units consistent and removes the NaN.  const-zh is
+        # unchanged — it already used 1e-30 — so every committed baseline is
+        # bit-for-bit identical.)
+        floor = 1e-30
         sfh = jnp.clip(theta["sfh"], floor, None)
 
         t_lo = self.sfh_times[1:]
@@ -1257,7 +1272,9 @@ class CSPBasis:
         """Constant-metallicity, piecewise-linear SFH weights.
 
         Thin wrapper over :meth:`_ssp_weights`; reads ``theta["sfh"]``
-        (shape ``(n_time,)``) and ``theta["Z"]`` (shape ``(1,)``, log10 Z/Zsun).
+        (shape ``(n_time,)``, linear SFR) and ``theta["Z"]`` (shape ``(1,)``,
+        log10 absolute metallicity on the ``self.zmet`` / ``ssp_lgmet`` grid —
+        NOT log10 Z/Zsun).  Same units as the var-zh variants' ``theta["zh"]``.
         """
         return self._ssp_weights(theta, zh_mode="const", sfh_mode="linear")
 
@@ -1272,8 +1289,10 @@ class CSPBasis:
         """Time-varying-metallicity, piecewise-linear SFH weights.
 
         Thin wrapper over :meth:`_ssp_weights`; reads ``theta["sfh"]``
-        (shape ``(n_time,)``) and ``theta["zh"]`` (shape ``(n_time,)``,
-        log10 Z/Zsun at each lookback time).
+        (shape ``(n_time,)``, linear SFR) and ``theta["zh"]`` (shape
+        ``(n_time,)``, log10 absolute metallicity at each lookback time, on the
+        ``self.zmet`` / ``ssp_lgmet`` grid — NOT log10 Z/Zsun).  Identical units
+        to the const-zh variants' ``theta["Z"]``.
         """
         return self._ssp_weights(theta, zh_mode="var", sfh_mode="linear")
 

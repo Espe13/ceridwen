@@ -57,11 +57,17 @@ prefer `predict`/`get_spectrum_components`.
   per-bin/FastStepBasis. Wrong lengths raise a clear `AssertionError`; the two
   valid lengths switch interpretation silently — make sure you know which you
   mean.
-- **`var_zh` + a zero-SFR node** with `sfh_interp='linear'` → `NaN` (the linear
-  kernel divides by the per-node SFR). **Now warned**; use a tiny positive floor
-  or `sfh_interp='step'` (non-negative by construction). *(The NaN itself is a
-  latent numerical bug preserved bit-for-bit by the Phase-4 refactor; fixing the
-  number is a behavioural change held for sign-off.)*
+- **Metallicity & SFR units are now identical across all four
+  `calculate_ssp_weights_*` calculations.** Metallicity (`theta["Z"]` for
+  constant-Z, `theta["zh"]` for time-varying) is `log10` of the *absolute*
+  metallicity on the `self.zmet` / `ssp_lgmet` grid in **every** variant; the
+  SFR history `theta["sfh"]` is a linear rate floored identically at `1e-30`
+  everywhere. Previously `var_zh` floored SFR with `self.tiny_logt = -70` (a
+  log10-time constant), so it weighted the same SFR history differently from
+  `const_zh` and returned **NaN** for (near-)zero SFR nodes. That is fixed:
+  `const_zh` output is unchanged (it already used `1e-30`), `var_zh` now shares
+  the floor, and `const_zh == var_zh` for a constant metallicity history
+  (regression-tested in `test_misuse.py`).
 - `lookback_time` is **static** (baked at construction). Changing it in `theta`
   at predict time has no effect.
 
