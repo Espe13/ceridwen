@@ -289,3 +289,6 @@ CLAUDE_CODE_TASK.md
 *.autosave
 ceridwen_observation_inference_api.html
 nebular_dev_comparison.pdf
+
+# Deploy stamp written by jades_full/push_ceridwen_to_tursa.sh (regenerated each push)
+ceridwen/_buildstamp.py

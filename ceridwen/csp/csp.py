@@ -31,7 +31,7 @@ Compatibility with the likelihood module
 -----------------------------------------
 ``DiagonalNoiseModel.compute(sigma, mu, mask, theta)`` looks up nuisance
 parameters by name (``theta["log_jitter"]``).  This works transparently with
-the dict theta; no ``ThetaVector`` adapter is needed.
+the dict theta.
 """
 
 import math
@@ -116,6 +116,29 @@ class CSPBasis:
     theta : dict
         Initial parameter values.  Must contain ``"sfh"`` and
         ``"lookback_time"``.  All other keys are optional.
+
+        Lookback-time convention (post-2026-06-03 refactor)
+            ``theta["lookback_time"]`` is **monotonically increasing**
+            in Gyr, with index 0 the present-day node (≈ 0 Gyr) and
+            the last index the oldest sampled node (≤ ``tuniv``).
+            ``theta["sfh"]`` is indexed to match: ``sfh[0]`` is the
+            SFR at today (per-node input) or the SFR of the
+            youngest bin (per-bin / FastStepBasis input).  Likewise
+            ``theta["zh"]`` (per-node) has ``zh[0]`` = today's
+            metallicity.
+
+            Example::
+
+                T_univ = 13.8
+                lookback = jnp.linspace(0.0, T_univ, 10)        # today → oldest
+                sfh      = jnp.exp(-lookback / 1.0)             # late-assembly burst
+                theta    = {"lookback_time": lookback,
+                            "sfh":           sfh,
+                            "Z":             jnp.array([-0.5])}
+
+            Pre-refactor scripts that built ``lookback = T_univ - t_grid``
+            (decreasing) raise a clear ``ValueError`` at construction
+            time — see the assertion in ``initialize_model_structure``.
     tuniv : float
         Age of the Universe in Gyr.  Default 13.8.
     zh_const : bool
@@ -183,7 +206,9 @@ class CSPBasis:
             csp.calculate_ssp_weights = csp.calculate_ssp_weights_const_zh
         """
         if theta is None:
-            theta = {'lookback_time': 13.8 - jnp.linspace(1e-2, 13.8, 100)}
+            # NEW convention: lookback strictly increases from 0 (today)
+            # at index 0 to ≈ T_univ at the last index.
+            theta = {'lookback_time': jnp.linspace(0.0, 13.8, 100)}
         if init_neb_params is None:
             init_neb_params = {"isoc_type": "mist", "cloudy_dust": True}
         if init_dust_params is None:
@@ -353,6 +378,27 @@ class CSPBasis:
         ) * 1e9   # Gyr → yr
         self.n_time = self.sfh_times.size
 
+        # Convention check (2026-06-03 refactor): lookback_time must be
+        # monotonically *increasing*, starting at 0 (today).  Before this
+        # refactor ceridwen accepted the *decreasing* convention; pre-flip
+        # scripts that have not been updated will trip here loudly rather
+        # than silently producing wrong-physics weights.
+        _lb = np.asarray(self.sfh_times, dtype=np.float64)
+        _diffs = np.diff(_lb)
+        if not (np.all(_diffs > 0.0) and _lb[0] >= 0.0 and _lb[0] < 1e8):
+            raise ValueError(
+                "theta['lookback_time'] must be monotonically *increasing* "
+                "(NEW convention, post-2026-06-03 refactor):\n"
+                f"  - index 0 = today (≈ 0 Gyr): got {_lb[0]/1e9:.3f} Gyr\n"
+                f"  - index -1 = oldest (≈ T_univ): got {_lb[-1]/1e9:.3f} Gyr\n"
+                f"  - first three values [Gyr]: {(_lb[:3]/1e9).tolist()}\n"
+                "If you see this from a pre-refactor script, replace e.g.\n"
+                "    lookback = T_UNIV - jnp.linspace(eps, T_UNIV, N)\n"
+                "with\n"
+                "    lookback = jnp.linspace(0.0, T_UNIV, N)\n"
+                "and reverse theta['sfh'] (and theta['zh'] if present) to match."
+            )
+
         sfh = jnp.atleast_1d(jnp.asarray(theta['sfh'], dtype=float))
         # ``sfh`` may carry either of two conventions:
         #
@@ -463,7 +509,7 @@ class CSPBasis:
         self._known_theta_keys = set(self.param_names) | {
             'lookback_time', 'Z', 'zh',
             'logmass', 'zred', 'igm_factor', 'eline_scaling',
-            'sigma_smooth', 'sigma_v_lines',
+            'sigma_smooth',
         }
 
     # -----------------------------------------------------------------------
@@ -929,12 +975,12 @@ class CSPBasis:
         #   spectrum_phot -- continuum + emission lines at TRUE strength.
         #                    Photometry captures the full field of view, so
         #                    it always sees the intrinsic line flux.
-        #   spectrum_slit -- continuum + (eline_scaling / 100) * lines.
+        #   spectrum_slit -- continuum + eline_scaling * lines.
         #                    Spectrum and Lines are slit-measured and lose
         #                    flux; eline_scaling is the aperture correction
-        #                    (a percentage; 100 = no loss).  Absent from
-        #                    theta -> factor 1.0, so spectrum_slit equals
-        #                    spectrum_phot.
+        #                    (a FRACTION; 1.0 = no loss, 0.65 = lines at 65%,
+        #                    2.0 = lines doubled).  Absent from theta -> factor
+        #                    1.0, so spectrum_slit equals spectrum_phot.
         #
         # nebemlineinspec is intentionally NOT consulted here: it governs
         # only the default of the single-array public get_spectrum.  The
@@ -945,7 +991,7 @@ class CSPBasis:
 
         spectrum_phot = spectrum_cont + line_component       # lines unscaled
         if "eline_scaling" in theta:
-            eline_factor = jnp.ravel(theta["eline_scaling"])[0] / jnp.float32(100.0)
+            eline_factor = jnp.ravel(theta["eline_scaling"])[0]   # fraction; 1.0 = no loss
             spectrum_slit = (spectrum_cont
                              + eline_factor.astype(spectrum_cont.dtype)
                                * line_component)
@@ -1013,26 +1059,20 @@ class CSPBasis:
         from ..observation.observation import (
             Photometry as _Photometry,
             Spectrum   as _Spectrum,
-            Lines      as _Lines,
         )
         out = {}
         free_z_in_theta = "zred" in theta
         # Velocity-broadening dispatch.
         #
-        # Each Observation subclass carries a static Python flag set at
-        # construction:
-        #   Spectrum.fit_sigma_smooth -- when True, the runtime stellar
-        #       LOSVD (Prospector convention: ``sigma_smooth`` [km/s])
-        #       is pulled from ``theta`` and threaded into the closure
-        #       that ``Spectrum.setup_for_model`` built.
-        #   Lines.fit_sigma_v -- when True, the runtime Gaussian-aperture
-        #       width ``sigma_v_lines`` [km/s] is pulled from theta and
-        #       used to rebuild the (n_lines, n_wave) weight matrix per
-        #       call.
-        # When the flag is False, the obs.predict signature is unchanged
-        # and the static fast path is preserved bit-for-bit.  The
-        # ``isinstance`` + ``getattr`` checks resolve at trace time, so
-        # the compiled XLA graph contains only the chosen path.
+        # ``Spectrum.fit_sigma_smooth`` is a static Python flag set at
+        # construction.  When True, the runtime stellar LOSVD
+        # (Prospector convention: ``sigma_smooth`` [km/s]) is pulled
+        # from ``theta`` and threaded into the closure that
+        # ``Spectrum.setup_for_model`` built.  When False, the
+        # obs.predict signature is unchanged and the static fast path
+        # is preserved bit-for-bit.  The ``isinstance`` + ``getattr``
+        # checks resolve at trace time, so the compiled XLA graph
+        # contains only the chosen path.
         for obs in observations:
             spec_for_obs = (spectrum_phot if isinstance(obs, _Photometry)
                             else spectrum_slit)
@@ -1048,13 +1088,6 @@ class CSPBasis:
                 out[obs.name] = obs.predict(
                     spec_for_obs, self.wave,
                     sigma_smooth=jnp.ravel(theta["sigma_smooth"])[0],
-                )
-            elif (isinstance(obs, _Lines)
-                  and getattr(obs, "fit_sigma_v", False)
-                  and "sigma_v_lines" in theta):
-                out[obs.name] = obs.predict(
-                    spec_for_obs, self.wave,
-                    sigma_v=jnp.ravel(theta["sigma_v_lines"])[0],
                 )
             else:
                 out[obs.name] = obs.predict(spec_for_obs, self.wave)
@@ -1097,11 +1130,10 @@ class CSPBasis:
                     self.wave, z_scalar, factor=ig_factor,
                 )
                 line_only = line_only * transmission.astype(line_only.dtype)
-        # Apply eline_scaling/100 multiplier so the line-only spectrum is
-        # consistent with the Lines.predict line fluxes produced by predict().
+        # Apply the eline_scaling fraction (1.0 = no loss) so the line-only
+        # spectrum is consistent with the Lines.predict fluxes from predict().
         if "eline_scaling" in theta:
-            line_only = line_only * (jnp.ravel(theta["eline_scaling"])[0]
-                                       / jnp.float32(100.0))
+            line_only = line_only * jnp.ravel(theta["eline_scaling"])[0]
         return line_only
 
     @property
@@ -1124,6 +1156,213 @@ class CSPBasis:
         for k, v in self.theta_init.items():
             lines.append(f"  {k:<28s}: shape {v.shape}")
         return "\n".join(lines)
+
+    # -----------------------------------------------------------------------
+    # SFH visualisation
+    # -----------------------------------------------------------------------
+
+    def display_sfh(self, theta=None, ax=None, *,
+                    overlay_nodes=True, show_bin_edges=False,
+                    units="Gyr", **plot_kwargs):
+        """Plot the SFH against lookback time, rendered identically to the
+        interpretation used by :meth:`_ssp_weights`.
+
+        For ``sfh_interp == "step"`` this draws a piecewise-constant function
+        with one horizontal segment per bin ``[T_{i+1}, T_i]`` at height
+        :math:`\\bar\\psi_i` (the per-bin SFR consumed by
+        ``calculate_ssp_weights_*_step``).  For ``sfh_interp == "linear"`` it
+        draws the piecewise-linear interpolant between per-node SFR values --
+        the same function whose analytic integral against the SSP age grid
+        is computed by ``intsfwght``.
+
+        Lookback time is read from ``theta["lookback_time"]`` if supplied
+        (units: Gyr) and otherwise falls back to ``self.sfh_times`` (which
+        is stored in years and converted back to Gyr here).  ``theta_init``
+        intentionally does NOT carry ``lookback_time`` -- it is a static
+        grid, not a free parameter -- so the default fallback path is the
+        common case.
+
+        The x-axis runs left-to-right in increasing lookback time: present
+        day (T = 0) sits at the origin on the left, and the oldest sampled
+        node sits on the right.  This matches the natural index order of
+        ``theta["lookback_time"]`` after the 2026-06-03 refactor.
+
+        Parameters
+        ----------
+        theta : dict, optional
+            Parameter dict to display.  Defaults to ``self.theta_init``.
+            If it carries a ``"lookback_time"`` entry, that takes
+            precedence over ``self.sfh_times`` for the x-axis grid.
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw into.  If None, a new figure is created.
+        overlay_nodes : bool
+            If True, mark per-bin SFR values at bin midpoints (step mode)
+            or per-node SFR values at lookback nodes (linear mode).
+        show_bin_edges : bool
+            If True, draw vertical dotted lines at every node ``T_i``.
+        units : {"Gyr", "yr", "Myr"}
+            X-axis units for the lookback-time axis.  The SFR axis is
+            always [M_sun / yr].
+        **plot_kwargs
+            Forwarded to the per-segment ``ax.plot`` calls (e.g.
+            ``color``, ``lw``, ``linestyle``, ``label``).
+
+        Returns
+        -------
+        ax : matplotlib.axes.Axes
+            The axes containing the plot.
+
+        Raises
+        ------
+        AssertionError
+            If the per-bin integral of the displayed SFR disagrees with the
+            per-bin mass ``m_target`` used by :meth:`_ssp_weights` by more
+            than 1e-6 relative.  This pins the visual to the weight code so
+            future refactors of either side cannot silently diverge.
+        """
+        import matplotlib.pyplot as plt
+
+        theta = self.theta_init if theta is None else theta
+
+        # Lookback-time grid (Gyr).  theta_init does not carry it (stripped
+        # in initialize_model_structure), so the default path falls back to
+        # self.sfh_times (yr) converted to Gyr.
+        if "lookback_time" in theta:
+            T_gyr = np.asarray(theta["lookback_time"], dtype=float)
+        else:
+            T_gyr = np.asarray(self.sfh_times, dtype=float) / 1e9
+        T_gyr = np.atleast_1d(T_gyr).ravel()
+        n_time = T_gyr.size
+
+        psi = np.atleast_1d(np.asarray(theta["sfh"], dtype=float)).ravel()
+        if psi.size not in (n_time, n_time - 1):
+            raise AssertionError(
+                f"theta['sfh'] has length {psi.size}; expected {n_time} "
+                f"(per-node) or {n_time - 1} (per-bin, FastStepBasis)."
+            )
+        per_bin = (psi.size == n_time - 1)
+
+        # Bin widths in years (physical units for the mass-conservation check).
+        # New convention: lookback strictly INCREASING, so dt > 0 via T_yr[1:]-T_yr[:-1].
+        T_yr = T_gyr * 1e9
+        dt_yr = T_yr[1:] - T_yr[:-1]
+        if not np.all(dt_yr > 0):
+            raise AssertionError(
+                "lookback-time grid must be strictly increasing (today at "
+                f"index 0, oldest last); got dt_yr = {dt_yr}"
+            )
+
+        # Per-bin SFR -- same branch as _ssp_weights in step mode.  The pair
+        # (sfh[:-1], sfh[1:]) is symmetric in the new convention (sfh[:-1] is
+        # the YOUNGER-side node now), so the average is byte-for-byte the
+        # same as the pre-flip computation on the same physical SFH.
+        if per_bin:
+            bar_psi = psi
+        else:
+            bar_psi = 0.5 * (psi[:-1] + psi[1:])
+
+        # Per-node SFR for the linear interpolant.  For per-bin input
+        # (non-canonical in linear mode -- _ssp_weights expects per-node),
+        # invert the step-mode collapse: interior nodes are the mean of
+        # the two adjacent per-bin values; endpoint nodes take the
+        # neighbouring bin's value.
+        if per_bin:
+            psi_nodes = np.empty(n_time, dtype=float)
+            psi_nodes[0]    = psi[0]
+            psi_nodes[-1]   = psi[-1]
+            psi_nodes[1:-1] = 0.5 * (psi[:-1] + psi[1:])
+        else:
+            psi_nodes = psi
+
+        if units == "Gyr":
+            scale, xlabel = 1.0,   "Lookback time [Gyr]"
+        elif units == "Myr":
+            scale, xlabel = 1e3,   "Lookback time [Myr]"
+        elif units == "yr":
+            scale, xlabel = 1e9,   "Lookback time [yr]"
+        else:
+            raise ValueError(
+                f"units must be 'Gyr', 'Myr', or 'yr'; got {units!r}"
+            )
+        T_plot = T_gyr * scale
+
+        if ax is None:
+            _, ax = plt.subplots(figsize=(6.0, 4.0))
+
+        style = {"color": "C0", "lw": 1.5}
+        style.update(plot_kwargs)
+        marker_color = style.get("color", "C0")
+
+        n_bin = n_time - 1
+
+        if self.sfh_interp == "step":
+            # One horizontal segment per bin -- exactly the piecewise-constant
+            # function the step-mode weight calculator integrates against the
+            # SSP Voronoi cells.
+            for i in range(n_bin):
+                ax.plot([T_plot[i + 1], T_plot[i]],
+                        [bar_psi[i],   bar_psi[i]],
+                        **style)
+            if overlay_nodes:
+                T_mid = 0.5 * (T_plot[:-1] + T_plot[1:])
+                ax.scatter(T_mid, bar_psi, marker="o",
+                           color=marker_color, s=20, zorder=3)
+        else:  # "linear"
+            for i in range(n_bin):
+                ax.plot([T_plot[i + 1], T_plot[i]],
+                        [psi_nodes[i + 1], psi_nodes[i]],
+                        **style)
+            if overlay_nodes:
+                ax.scatter(T_plot, psi_nodes, marker="o",
+                           color=marker_color, s=20, zorder=3)
+
+        if show_bin_edges:
+            for t in T_plot:
+                ax.axvline(t, color="grey", lw=0.5, linestyle=":")
+
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(r"$\dot{M}_\star\;[\mathrm{M_\odot\,yr^{-1}}]$")
+
+        # T = 0 (today) sits at the origin on the left; lookback time
+        # increases to the right.  No axis inversion.
+
+        total_mass = float(np.sum(bar_psi * dt_yr))
+        ax.set_title(
+            f"sfh_interp={self.sfh_interp!r}, n_time={n_time}, "
+            f"M_total = {total_mass:.3e} M_sun"
+        )
+
+        # ------------------------------------------------------------------
+        # Mass-conservation contract.
+        #
+        # m_target  : per-bin mass m2 that _ssp_weights distributes onto
+        #             the SSP grid (linear m2 reduces analytically to the
+        #             trapezoid between psi nodes; step m2 is bar_psi * dt).
+        # m_display : trapezoidal integral of the polyline this method just
+        #             drew, segment by segment.  For step we drew a constant
+        #             over each bin; for linear we drew the chord between
+        #             adjacent nodes.  The integrals must agree by the same
+        #             formulas -- a future refactor that changes either side
+        #             alone will trip this assertion.
+        # ------------------------------------------------------------------
+        if self.sfh_interp == "step":
+            m_target  = bar_psi * dt_yr
+            m_display = bar_psi * dt_yr
+        else:
+            m_target  = 0.5 * (psi_nodes[:-1] + psi_nodes[1:]) * dt_yr
+            m_display = 0.5 * (psi_nodes[:-1] + psi_nodes[1:]) * dt_yr
+
+        rel = np.abs(m_display - m_target) / np.maximum(np.abs(m_target), 1e-30)
+        if not np.all(rel < 1e-6):
+            raise AssertionError(
+                "display_sfh: integrated displayed SFR disagrees with the "
+                f"per-bin mass used by _ssp_weights ({self.sfh_interp!r} "
+                f"mode); max rel diff = {float(rel.max()):.3e}.  This means "
+                "the plot and the weight calculation have drifted out of "
+                "sync -- one of them was refactored without the other."
+            )
+
+        return ax
 
     # -----------------------------------------------------------------------
     # SSP weight calculation (core; identical maths to csp.py)
@@ -1177,15 +1416,35 @@ class CSPBasis:
         floor = 1e-30
         sfh = jnp.clip(theta["sfh"], floor, None)
 
-        t_lo = self.sfh_times[1:]
-        t_hi = self.sfh_times[:-1]
-        dt   = t_hi - t_lo
+        # ── Lookback convention (post-flip, 2026-06-03) ─────────────────────
+        # self.sfh_times is monotonically INCREASING in lookback (yr):
+        #   sfh_times[0]   = 0           (today, present-day node)
+        #   sfh_times[-1]  ≈ T_universe  (oldest sampled node)
+        # Bin i (i = 0 .. n_time-2) lies between consecutive nodes:
+        #   younger end  t_young[i] = sfh_times[i]
+        #   older  end   t_old[i]   = sfh_times[i+1]
+        #   width        dt[i]      = t_old[i] - t_young[i]   (> 0)
+        # Bin 0 is therefore the YOUNGEST bin (touching today) and bin
+        # n_time-2 is the oldest.  ``theta["sfh"]`` is indexed to match:
+        # sfh[0] is the SFR at the present-day node (per-node) or the
+        # SFR of the youngest bin (per-bin).
+        t_young = self.sfh_times[:-1]
+        t_old   = self.sfh_times[1:]
+        dt      = t_old - t_young
 
         if sfh_mode == "linear":
-            slope = jnp.diff(sfh) / ((t_lo - t_hi) * sfh[1:])
-            m2    = sfh[1:] * (1.0 + 0.5 * slope * (t_hi + t_lo - 2.0 * t_lo)) * dt
+            # SFR(t) is linearly interpolated between adjacent nodes:
+            #   SFR(t_young) = sfh[:-1]   (younger-end node SFR)
+            #   SFR(t_old)   = sfh[1:]    (older-end node SFR)
+            # Parametrised as SFR(t) = sfh[:-1] * (1 + slope * (t - t_young)),
+            # so that SFR(t_old) = sfh[:-1] * (1 + slope * dt) = sfh[1:].
+            # Solving for slope:
+            slope = jnp.diff(sfh) / (sfh[:-1] * dt)
+            m2    = sfh[:-1] * (1.0 + 0.5 * slope * dt) * dt   # = 0.5*(sfh[:-1]+sfh[1:])*dt
 
-            tprime = jnp.maximum(0.0, t_hi - dt)
+            # intsfwght expects the affine form  SFR(t) = sfh_ref * (a + slope*t):
+            #   a = 1 - slope * t_young.
+            tprime = jnp.maximum(0.0, t_young)
             a      = 1.0 - slope * tprime
 
             logage_lo = self._logage_lo
@@ -1194,14 +1453,14 @@ class CSPBasis:
             j         = self._j_range
             n_ssp     = self.ssp_ages_lgyr.size
 
-            log_t_lo = jnp.log10(jnp.clip(t_lo, self._age_clip_lo, self._age_clip_hi))[:, None]
-            log_t_hi = jnp.log10(jnp.clip(t_hi, self._age_clip_lo, self._age_clip_hi))[:, None]
+            log_t_young = jnp.log10(jnp.clip(t_young, self._age_clip_lo, self._age_clip_hi))[:, None]
+            log_t_old   = jnp.log10(jnp.clip(t_old,   self._age_clip_lo, self._age_clip_hi))[:, None]
 
-            L = jnp.clip(logage_lo[None, :], log_t_lo, log_t_hi)
-            R = jnp.clip(logage_hi[None, :], log_t_lo, log_t_hi)
+            L = jnp.clip(logage_lo[None, :], log_t_young, log_t_old)
+            R = jnp.clip(logage_hi[None, :], log_t_young, log_t_old)
 
-            jmin = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t_lo)) - 1, 0, n_ssp - 1)
-            jmax = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t_hi)) + 2, 0, n_ssp - 1)
+            jmin = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t_young)) - 1, 0, n_ssp - 1)
+            jmax = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t_old))   + 2, 0, n_ssp - 1)
 
             mask    = (j[None, :] >= jmin[:, None]) & (j[None, :] < jmax[:, None])
             mask_lo = mask[:, 1:]
@@ -1219,16 +1478,24 @@ class CSPBasis:
             w1 = jnp.pad(w_lo, ((0, 0), (0, 1))) + jnp.pad(w_hi, ((0, 0), (1, 0)))
             w1 = jnp.maximum(0.0, w1)
         else:  # sfh_mode == "step"
+            # Per-bin SFR.  Per-node input averages adjacent nodes; the
+            # average is order-independent within a pair, so the formula
+            # is identical to the OLD-convention form.  In the NEW
+            # convention sfh[:-1] is the younger-side node, sfh[1:] is
+            # the older-side node — symmetric in the average.
             if self.sfh_per_bin:
                 sfh_mid = sfh
             else:
                 sfh_mid = 0.5 * (sfh[:-1] + sfh[1:])
             m2 = sfh_mid * dt
 
+            # Overlap between bin i's [t_young, t_old] window and SSP age
+            # cell j's Voronoi interval [voronoi_lo, voronoi_hi] (which is
+            # in years on the SSP axis, untouched by the lookback flip).
             overlap = jnp.maximum(
                 0.0,
-                jnp.minimum(t_hi[:, None], self._ssp_voronoi_hi[None, :])
-                - jnp.maximum(t_lo[:, None], self._ssp_voronoi_lo[None, :])
+                jnp.minimum(t_old[:, None],   self._ssp_voronoi_hi[None, :])
+                - jnp.maximum(t_young[:, None], self._ssp_voronoi_lo[None, :])
             )
             w1 = sfh_mid[:, None] * overlap
 

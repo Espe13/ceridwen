@@ -105,7 +105,6 @@ class Lines(Observation):
         wavelength  = None,
         name        = None,
         upper_limit = None,
-        fit_sigma_v = False,
         **kwargs,
     ):
         if line_ind is None:
@@ -127,17 +126,6 @@ class Lines(Observation):
             None if upper_limit is None
             else jnp.asarray(np.atleast_1d(upper_limit), dtype=bool)
         )
-        # When ``fit_sigma_v=False`` (default), ``setup_for_model`` builds
-        # a static (n_lines, n_wave) Gaussian-aperture matrix ``_W`` whose
-        # value gets constant-folded into the XLA graph -- the fast path.
-        # When ``True``, setup_for_model instead caches the static *pieces*
-        # (observed-frame line centres ``_lam0_obs``, observed-frame model
-        # grid ``_wm_obs``, trapezoidal quadrature weights ``_dlam``, and
-        # the per-line ``c / λ_obs^2`` normalisation ``_norm``); ``predict``
-        # then rebuilds ``W`` per call from a runtime ``sigma_v`` argument.
-        # Cost is one (n_lines, n_wave) exp() + GEMV per evaluation --
-        # negligible on a GPU.  ``predict`` is differentiable in ``sigma_v``.
-        self.fit_sigma_v = bool(fit_sigma_v)
         super().__init__(name=name, **kwargs)
 
     # ------------------------------------------------------------------
@@ -201,6 +189,11 @@ class Lines(Observation):
             lines spaced by more than ~600 km/s.  The same aperture is applied
             to both model and data so the absolute calibration cancels in the
             likelihood.
+
+            ``sigma_v`` is a construction-time hyperparameter; it is not part
+            of ``theta`` and is not differentiable through ``predict``.
+            Catalogued line fluxes are single scalars per line and carry no
+            shape information, so HMC cannot constrain it.
         """
         wm_rest = np.asarray(wave_model,        dtype=np.float64)   # (n_wave,)
         lam0_rest = np.asarray(self._wavelength, dtype=np.float64)   # (n_lines,)
@@ -250,53 +243,21 @@ class Lines(Observation):
         c_aa_s = 2.998e18                          # speed of light [Å/s]
         norm = c_aa_s / (lam0 ** 2)                # (n_lines,)
 
-        if self.fit_sigma_v:
-            # Cache the pieces needed to rebuild ``W`` per call.  Only
-            # exp(...) + a couple of broadcasted multiplies depend on
-            # the runtime ``sigma_v``; the rest are static (n_lines,)
-            # or (n_wave,) arrays that get XLA-constant-folded.
-            #
-            # Stored in float64 so the per-call W matches the bit-for-bit
-            # static path (which also computes in float64 and only casts
-            # to float32 at the very end).  The cached arrays are O(n_wave)
-            # / O(n_lines), so the extra ~80 kB is negligible; the only
-            # heavy op (the exp) runs in the default JAX precision.
-            self._wm_obs        = jnp.asarray(wm,   dtype=jnp.float64)   # (n_wave,)
-            self._lam0_obs      = jnp.asarray(lam0, dtype=jnp.float64)   # (n_lines,)
-            self._dlam_obs      = jnp.asarray(dlam, dtype=jnp.float64)   # (n_wave,)
-            self._norm_obs      = jnp.asarray(norm, dtype=jnp.float64)   # (n_lines,)
-            self._c_kms         = jnp.asarray(c_kms, dtype=jnp.float64)
-            self._sigma_v_default = float(sigma_v)
-            # Don't build _W -- predict will rebuild it per call.
-            self._W = None
-        else:
-            # Fast path: bake W into a static (n_lines, n_wave) JAX
-            # constant.  XLA constant-folds at trace time.
-            diff     = wm[None, :] - lam0[:, None]         # (n_lines, n_wave)
-            sigma_aa = lam0 * (sigma_v / c_kms)            # (n_lines,)
-            W = np.exp(-0.5 * (diff / sigma_aa[:, None]) ** 2)
-            W = (W * dlam[None, :]).astype(np.float32)     # (n_lines, n_wave)
-            W = (W * norm[:, None].astype(np.float32))
-            self._W = jnp.array(W)
+        # Bake W into a static (n_lines, n_wave) JAX constant.  XLA
+        # constant-folds at trace time.
+        diff     = wm[None, :] - lam0[:, None]         # (n_lines, n_wave)
+        sigma_aa = lam0 * (sigma_v / c_kms)            # (n_lines,)
+        W = np.exp(-0.5 * (diff / sigma_aa[:, None]) ** 2)
+        W = (W * dlam[None, :]).astype(np.float32)     # (n_lines, n_wave)
+        W = (W * norm[:, None].astype(np.float32))
+        self._W = jnp.array(W)
 
-    def predict(self, spectrum, wave_model, sigma_v=None):
+    def predict(self, spectrum, wave_model):
         """
         Extract emission-line fluxes from the model spectrum via Gaussian-
-        aperture integration.
-
-        Two paths:
-
-        * **Fast path** (``fit_sigma_v=False``): computes ``_W @ spectrum``
-          where ``_W`` was precomputed once in ``setup_for_model``.  On
-          GPU this is a single GEMV; XLA constant-folds ``_W`` into the
-          compiled graph.
-        * **Fittable path** (``fit_sigma_v=True``): rebuilds
-          ``W[k, j] = exp(-½ ((λ_j - λ_{0,k}) / σ_k(σ_v))²) · dλ_j · c/λ_{0,k}²``
-          per call from a runtime ``sigma_v`` jnp scalar (km/s), then
-          contracts ``W @ spectrum``.  Cost is one (n_lines, n_wave)
-          ``exp`` and a GEMV per evaluation; for the JADES setup
-          n_lines ≲ 10 and n_wave ≈ 6000, so ~10⁵ flops -- negligible
-          on an A100.  Differentiable in ``sigma_v``.
+        aperture integration: computes ``_W @ spectrum`` where ``_W`` was
+        precomputed once in ``setup_for_model``.  On GPU this is a single
+        GEMV; XLA constant-folds ``_W`` into the compiled graph.
 
         Must call ``setup_for_model(wave_model, sigma_v=...)`` first.
 
@@ -306,42 +267,20 @@ class Lines(Observation):
             Model spectrum in F_nu units.
         wave_model : jax.Array, shape (n_wave,)
             Accepted for interface consistency; not used inside this method.
-        sigma_v : jax.Array scalar, optional
-            Runtime Gaussian-aperture width [km/s].  Only consulted when
-            this Lines instance was constructed with ``fit_sigma_v=True``;
-            ignored otherwise.  If ``fit_sigma_v=True`` and ``sigma_v`` is
-            not passed, the constructor-time default
-            (``setup_for_model``'s ``sigma_v`` kwarg) is used -- handy
-            for warmup calls outside JIT.
 
         Returns
         -------
         jax.Array, shape (n_lines,)
             Gaussian-aperture integrated flux for each line.
         """
-        # Clear error instead of a cryptic AttributeError if setup was skipped.
-        # ``hasattr`` is static, so this is free inside a jit trace.
         if not hasattr(self, "_W"):
             raise RuntimeError(
-                "Lines.predict() called before setup_for_model(): the Gaussian "
-                "aperture weight matrix has not been built. Call "
-                "lines.setup_for_model(wave_model, sigma_v=...) once (before the "
-                "first predict / JIT trace)."
+                "Lines.predict() called before setup_for_model(): the "
+                "Gaussian aperture weight matrix has not been built. "
+                "Call lines.setup_for_model(wave_model, sigma_v=...) "
+                "once before the first predict / JIT trace."
             )
-        if not self.fit_sigma_v:
-            return self._W @ spectrum
-        if sigma_v is None:
-            sigma_v = self._sigma_v_default
-        sv       = jnp.asarray(sigma_v).reshape(()).astype(self._lam0_obs.dtype)
-        sigma_aa = self._lam0_obs * (sv / self._c_kms)                # (n_lines,)
-        diff     = self._wm_obs[None, :] - self._lam0_obs[:, None]    # (n_lines, n_wave)
-        # Build W in cached precision (float64) then cast to float32
-        # at the contraction -- matches the bit-for-bit output of the
-        # static path (``_W = jnp.float32(...)``) at the same sigma_v.
-        W        = jnp.exp(-0.5 * (diff / sigma_aa[:, None]) ** 2)
-        W        = W * self._dlam_obs[None, :]
-        W        = W * self._norm_obs[:, None]
-        return W.astype(spectrum.dtype) @ spectrum
+        return self._W @ spectrum
 
     # ------------------------------------------------------------------
     def chi_sq(self, model_fluxes):

@@ -54,11 +54,15 @@ class Spectrum(Observation):
         Default ``None`` (no smoothing, backward-compatible).
     inres : float, optional
         Intrinsic resolution of the model library, subtracted in quadrature
-        before applying the target smoothing.  Units match ``smoothtype``
-        (km/s for vel/R, Å for lambda).  Default 0.0.
+        before applying the target smoothing.  Units match ``smoothtype``:
+        km/s for vel/R, Å for lambda/lsf.  Default 0.0.
     calibration : array-like, shape (n_pix,), optional
         Multiplicative flux-calibration vector (model × calibration ≈ data).
-        Stored for use by a fitter; not applied internally.
+        When set, it is applied as a per-pixel multiplicative correction to
+        the model inside ``chi_sq``, ``residuals``, and ``log_likelihood``
+        (and inside the noise-floor inflation in ``_effective_sigma``).
+        For the alternative analytic-marginalisation path, see
+        ``fit_polynomial_calibration``.
     logify_spectrum : bool
         If True, ``chi_sq`` and ``residuals`` operate in log-flux space
         (residuals are Δln f / σ_ln f).
@@ -175,7 +179,7 @@ class Spectrum(Observation):
             Intrinsic (library) resolution of the input model spectrum,
             subtracted in quadrature before applying the target smoothing.
             Units must match ``smoothtype``: km/s for "vel"/"R", Å for
-            "lambda".  Ignored for "lsf" mode.  Default 0.0.
+            "lambda"/"lsf".  Default 0.0.
         """
         # Store wavelength via the property setter so subclasses can override.
         self._wavelength    = (
@@ -442,7 +446,8 @@ class Spectrum(Observation):
                     # the *observed* pixel grid.  Interpolate to trimmed grid.
                     res_obs        = np.asarray(self.resolution, dtype=np.float64)
                     sigma_lsf_trim = np.interp(_wm_trim, wo, res_obs)
-                    _instr_sm      = make_lsf_smoother(_wm_trim, sigma_lsf_trim, wo)
+                    _instr_sm      = make_lsf_smoother(_wm_trim, sigma_lsf_trim, wo,
+                                                       inres=self.inres)
                     if fit_lo:
                         _Lrt = _apply_losvd_rt
                         self._predict_fn = (
@@ -587,23 +592,31 @@ class Spectrum(Observation):
         in_range  = (self._wavelength >= wave_min) & (self._wavelength <= wave_max)
         self.mask = self.mask & ~in_range
 
-    def mask_lines(self, line_waves, dv=1000.0):
+    def mask_lines(self, line_waves, dv=1000.0, zred=0.0):
         """
         Mask spectral lines by zeroing the mask within ±dv km/s of each line.
 
         Parameters
         ----------
         line_waves : array-like
-            Rest-frame central wavelengths [Å].
+            Rest-frame central wavelengths [Å]; redshifted internally by
+            (1 + ``zred``) before masking against the observed-frame pixel
+            grid.
         dv : float
             Half-width to mask on each side [km/s].  Default 1000 km/s.
+        zred : float
+            Redshift to apply to ``line_waves``.  Default 0.0 (preserves
+            pre-fix behaviour for callers already passing observed-frame
+            wavelengths).
         """
         if self._wavelength is None:
             return
         c_kms = 2.998e5   # km/s
-        for lam0 in np.asarray(line_waves).ravel():
-            dlam = lam0 * dv / c_kms
-            self.mask_wavelength_range(float(lam0 - dlam), float(lam0 + dlam))
+        opz   = 1.0 + float(zred)
+        for lam0_rest in np.asarray(line_waves).ravel():
+            lam0_obs = opz * float(lam0_rest)
+            dlam     = lam0_obs * dv / c_kms
+            self.mask_wavelength_range(lam0_obs - dlam, lam0_obs + dlam)
 
     # ------------------------------------------------------------------
     def _sky_corrected_data(self):
@@ -623,10 +636,16 @@ class Spectrum(Observation):
 
     def _compute_residuals(self, model_flux):
         """
-        Internal: (sky-subtracted data − model) / sigma_eff, per pixel.
-        Accounts for sky subtraction and noise-floor inflation.
+        Internal: (sky-subtracted data − calibration × model) / sigma_eff,
+        per pixel.  Accounts for sky subtraction, multiplicative flux
+        calibration, and noise-floor inflation (which is referenced to the
+        *calibrated* model amplitude).
         """
         mf    = jnp.asarray(model_flux, dtype=float)
+        # Static Python branch — same pattern as ``self.sky``; keeps the JIT
+        # trace branch-free.
+        if self.calibration is not None:
+            mf = self.calibration * mf
         data  = self._sky_corrected_data()
         sigma = self._effective_sigma(mf)
         if self.logify_spectrum:
@@ -680,8 +699,11 @@ class Spectrum(Observation):
                 -\\tfrac{1}{2}\\sum_{i\\,\\in\\,\\rm mask} r_i^2
                 + \\log p_{\\rm GP}(\\mathbf{r} \\mid \\mathrm{GP})
 
-        where :math:`r_i = (d_i - m_i)/\\sigma_{\\rm eff,i}` and the GP term
-        is zero if no noise model is set.
+        where :math:`r_i = ((d_i - s_i) - c_i m_i)/\\sigma_{\\rm eff,i}`
+        (sky :math:`s_i` and calibration :math:`c_i` are optional; the
+        noise floor in :math:`\\sigma_{\\rm eff,i}` is scaled against the
+        calibrated model :math:`c_i m_i` when ``calibration`` is set), and
+        the GP term is zero if no noise model is set.
 
         Parameters
         ----------

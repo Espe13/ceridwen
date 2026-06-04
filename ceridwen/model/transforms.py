@@ -89,8 +89,14 @@ def logsfr_ratios_to_sfh(
     logsfr_ratios : array_like, shape (n - 1,)
         Log10 ratios of consecutive SFR bins.
         ``logsfr_ratios[i] = log10( SFR[i] / SFR[i+1] )``.
-        Positive values mean the SFR *decreases* with time (earlier burst);
-        negative values mean the SFR *increases* (late assembly).
+
+        Under the post-2026-06-03 lookback-time convention (index 0 =
+        today, last index = oldest), ``SFR[0]`` is the most-recent SFR
+        and ``SFR[i+1]`` is at a slightly older lookback time.  Positive
+        ``logsfr_ratios[i]`` therefore mean ``SFR[i] > SFR[i+1]``, i.e.
+        the SFR is *higher today than in the past* — a late-assembly
+        history; negative values mean an earlier burst with the SFR
+        declining toward the present.
     sfh_times_yr : array_like, shape (n,), optional
         Lookback-time grid in years (same as ``CSPBasis.sfh_times``).
         When provided, trapezoidal integration weights are used for

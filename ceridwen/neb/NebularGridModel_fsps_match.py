@@ -272,7 +272,28 @@ class NebularModelFSPSMatch:
         line_spec = self.gaussnebarr @ line_lum
         return cont_flux, line_spec
 
-    def evaluate_batch(self, logZ_gas, logU, ssp_ages_young, logqq_young):
+    def evaluate_batch(self, logZ_gas, logU, ssp_ages_young, logqq_young,
+                       return_components=False):
+        """Trilinear interpolation of the (continuum + line) nebular grid
+        onto a batch of young SSP ages.
+
+        Parameters
+        ----------
+        return_components : bool
+            If True, return ``(continuum, lines)`` as separate
+            ``(n_z, n_young, n_wave)`` arrays — required by
+            ``CSPBasis._build_neb_array`` to honour ``nebemlineinspec=False``
+            (continuum-only output).  If False (default), return the fused
+            ``continuum + lines`` array.
+
+        Notes
+        -----
+        The match-fsps variant interpolates BOTH cubes against the line
+        cube's ``(logZ, age, logU)`` axes; that is the FSPS bug this class
+        reproduces.  The split between continuum and lines is purely the
+        ``cont_flux`` vs ``line_spec`` decomposition introduced here so that
+        downstream ``nebemlineinspec`` plumbing has something to gate.
+        """
         logZ_gas = jnp.squeeze(logZ_gas)
         logU     = jnp.squeeze(logU)
 
@@ -313,6 +334,12 @@ class NebularModelFSPSMatch:
         cont_flux = jnp.power(10.0, log_cont[None, :, :] + logqq_young[:, None, :])
         line_lum  = jnp.power(10.0, log_line[None, :, :] + logqq_young[:, None, :])
         line_spec = jnp.einsum('wl,zly->zwy', self.gaussnebarr, line_lum)
+
+        if return_components:
+            # (n_z, n_wave, n_young) -> (n_z, n_young, n_wave) to match the
+            # axis order CSPBasis expects.
+            return cont_flux.transpose(0, 2, 1), line_spec.transpose(0, 2, 1)
+
         neb_total = cont_flux + line_spec
         return neb_total.transpose(0, 2, 1)
 

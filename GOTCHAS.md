@@ -81,7 +81,10 @@ prefer `predict`/`get_spectrum_components`.
 - **All-zero uncertainties** → `AssertionError: no valid unmasked data points`
   (clear) at setup.
 - **Unknown filter name** → `FileNotFoundError` naming the missing `.par` file.
-- `eline_scaling` is a **percentage** (100 = no aperture loss), not a fraction.
+- `eline_scaling` is a **fraction / direct multiplier** on the model emission
+  lines: `1.0` = no aperture loss, `0.65` = lines at 65%, `2.0` = lines doubled.
+  (It was previously a percentage where 100 = no loss; changed to 1.0 for
+  intuitiveness.)
 
 ## 6. Environment & data consistency (not auto-guarded — check yourself)
 
