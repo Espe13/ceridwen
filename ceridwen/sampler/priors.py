@@ -152,7 +152,7 @@ class Uniform(Prior):
     
     @property
     def range(self):
-        # Good plotting range is simply the interval itself
+        # Plotting range is the interval itself
         return self.params["low"], self.params["high"]
     
     @property

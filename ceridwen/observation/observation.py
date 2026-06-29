@@ -1,10 +1,9 @@
 """Backward-compatible shim.
 
-The Observation containers were split (review 2026-06-01) into
-``base.py`` (Observation), ``gp.py`` (GaussianProcess), ``photometry.py``
-(Photometry), ``spectrum.py`` (Spectrum) and ``lines.py`` (Lines).  Importing
-from the historical path ``ceridwen.observation.observation`` still works via
-these re-exports, so no downstream import needs to change.
+The Observation containers live in ``base.py`` (Observation), ``gp.py``
+(GaussianProcess), ``photometry.py`` (Photometry), ``spectrum.py``
+(Spectrum) and ``lines.py`` (Lines).  Importing from
+``ceridwen.observation.observation`` still works via these re-exports.
 """
 from .gp import GaussianProcess
 from .base import Observation

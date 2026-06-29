@@ -15,6 +15,7 @@ import jax
 import jax.numpy as jnp
 
 from misuse_report import run_scenarios, make_misuse_figure, _good_csp
+from _gridfixture import require_test_grid
 
 
 def test_all_user_mistakes_caught():
@@ -53,10 +54,9 @@ def _weight_csp(zh_const, sfh, sfh_interp):
     from ceridwen.ssps.ssp_data import SSPData
     from ceridwen.csp.csp import CSPBasis
     import pathlib
-    ssp = SSPData.load(str(pathlib.Path(__file__).resolve().parent.parent.parent
-                           / "ceridwen" / "data" / "test_data" / "ssp_data.h5"))
+    ssp = SSPData.load(str(require_test_grid()))
     T = 13.8
-    lb = T - jnp.linspace(1e-2, T, 10)
+    lb = jnp.linspace(0.0, T, 10)   # NEW lookback convention
     Zc = -1.85
     theta = {"lookback_time": lb, "sfh": sfh}
     theta["Z" if zh_const else "zh"] = (jnp.array([Zc]) if zh_const
@@ -73,7 +73,7 @@ def test_weight_calcs_share_metallicity_and_sfr_units():
     const-zh and var-zh must therefore yield identical SSP-weight matrices, in
     both the linear and step SFH schemes."""
     T = 13.8
-    lb = T - jnp.linspace(1e-2, T, 10)
+    lb = jnp.linspace(0.0, T, 10)   # NEW lookback convention
     sfh = jnp.exp(-0.5 * ((lb - 0.05) / 0.03) ** 2) + 0.7 * jnp.exp(-0.5 * ((lb - 11.) / 0.8) ** 2)
 
     for sfh_interp in ("linear", "step"):
@@ -98,7 +98,7 @@ def test_var_zh_zero_sfr_is_finite():
     """var-zh with an exactly-zero SFR node must produce finite weights (the
     unified 1e-30 SFR floor; previously NaN via the tiny_logt mis-floor)."""
     T = 13.8
-    lb = T - jnp.linspace(1e-2, T, 10)
+    lb = jnp.linspace(0.0, T, 10)   # NEW lookback convention
     sfh = (jnp.exp(-0.5 * ((lb - 0.05) / 0.03) ** 2)
            + 0.7 * jnp.exp(-0.5 * ((lb - 11.) / 0.8) ** 2)).at[3].set(0.0)
     for sfh_interp in ("linear", "step"):
@@ -106,6 +106,35 @@ def test_var_zh_zero_sfr_is_finite():
         w = (cv.calculate_ssp_weights_var_zh(dict(cv.theta_init)) if sfh_interp == "linear"
              else cv.calculate_ssp_weights_var_zh_step(dict(cv.theta_init)))
         assert np.all(np.isfinite(np.asarray(w))), f"var-zh NaN with zero SFR ({sfh_interp})"
+
+
+def test_eline_scaling_is_a_fraction():
+    """eline_scaling is a direct multiplier on the model emission lines:
+    1.0 == no offset (== omitting it), 2.0 doubles, 0.65 -> 65%."""
+    import os, pathlib
+    if "SPS_HOME" not in os.environ:
+        import pytest
+        pytest.skip("SPS_HOME not set (nebular model needs FSPS grids)")
+    from ceridwen.ssps.ssp_data import SSPData
+    from ceridwen.csp.csp import CSPBasis
+    ssp = SSPData.load(str(require_test_grid()))
+    T = 13.8
+    lb = jnp.linspace(0.0, T, 10)   # NEW lookback convention
+    sfh = jnp.exp(-0.5 * ((lb - 0.05) / 0.03) ** 2) + 0.7 * jnp.exp(-0.5 * ((lb - 11.) / 0.8) ** 2)
+    csp = CSPBasis(ssp, theta={"lookback_time": lb, "sfh": sfh, "Z": jnp.array([-1.85])},
+                   tuniv=T, zh_const=True, add_dust=False, add_diffuse_dust=False,
+                   add_dust_emission=False, add_neb=True, add_igm=False,
+                   init_neb_params={"isoc_type": "mist", "cloudy_dust": False},
+                   sps_home=os.environ["SPS_HOME"], verbose=False, sfh_interp="linear")
+    th = dict(csp.theta_init, gas_logz=jnp.array([0.0]), gas_logu=jnp.array([-2.0]))
+    L0 = np.asarray(csp.get_line_spec(th))
+    scale = 1e-10 * (np.max(np.abs(L0)) + 1e-30)
+    np.testing.assert_allclose(np.asarray(csp.get_line_spec({**th, "eline_scaling": jnp.array([1.0])})),
+                               L0, rtol=1e-6, atol=scale)
+    np.testing.assert_allclose(np.asarray(csp.get_line_spec({**th, "eline_scaling": jnp.array([2.0])})),
+                               2.0 * L0, rtol=1e-6, atol=scale)
+    np.testing.assert_allclose(np.asarray(csp.get_line_spec({**th, "eline_scaling": jnp.array([0.65])})),
+                               0.65 * L0, rtol=1e-6, atol=scale)
 
 
 def test_typo_key_warns_once_at_trace_but_still_runs():

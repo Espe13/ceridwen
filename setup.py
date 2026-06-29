@@ -1,24 +1,6 @@
-from setuptools import setup, find_packages
+# All package metadata now lives in pyproject.toml ([project] table).
+# This shim exists only so that legacy tooling / `pip install -e .` on older
+# pip versions still works; setuptools reads the metadata from pyproject.toml.
+from setuptools import setup
 
-setup(
-    name='ceridwen',
-    version='0.1.0',
-    description="SED fitting with HMC",
-    author='Amanda Stoffers',
-    author_email="aas208@cam.ac.uk",
-    packages=find_packages(where="."), 
-    include_package_data=True,
-    install_requires=[
-        # JAX >= 0.4.30 required: the code uses jnp.trapezoid, the modern
-        # jax.tree_util namespace, and post-2024 PRNG conventions.
-        'jax>=0.4.30',
-        'matplotlib',
-        'numpy',
-        'scipy',
-    ],
-    python_requires=">=3.10",
-        classifiers=[
-        "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
-    ],
-)
+setup()

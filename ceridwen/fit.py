@@ -193,7 +193,7 @@ def fitSED(
     )
     _t_likelihood = time.perf_counter() - _t0_likelihood
 
-    # Route verbose diagnostics through the package logger (item 20).
+    # Route verbose diagnostics through the package logger.
     if verbose:
         logger.setLevel(logging.INFO)
         if not logger.handlers:
@@ -395,11 +395,9 @@ def write_result_h5(
                 og.attrs["smoothtype"] = str(obs.smoothtype)
             if hasattr(obs, "filternames"):
                 og.attrs["filternames"] = json.dumps(obs.filternames)
-            # Persist FSPS line names for Lines observations so that PPC /
-            # plotting code can label rows without needing the cluster's
-            # FSPS install.  Before this attr existed, the laptop fallback
-            # in plot_ppc.py had to placeholder labels as "line_0", "line_1",
-            # ... because HDF5 only carried wavelengths.
+            # Persist FSPS line names for Lines observations so PPC / plotting
+            # code can label rows without needing an FSPS install (HDF5 would
+            # otherwise carry only wavelengths).
             if hasattr(obs, "line_names") and obs.line_names is not None:
                 og.attrs["line_names"] = json.dumps(list(obs.line_names))
             if hasattr(obs, "line_ind") and obs.line_ind is not None:

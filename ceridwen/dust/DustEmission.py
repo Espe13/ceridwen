@@ -134,8 +134,7 @@ class DustEmission:
         """
         Return a plain dict of default dust-emission fit parameters.
 
-        Previously returned a NamedTuple; now returns a dict so that it merges
-        directly into the global theta dict without ``._asdict()``.
+        Returned as a dict so it merges directly into the global theta dict.
         """
         return {
             "duste_qpah": jnp.asarray(self.duste_qpah),
@@ -210,8 +209,8 @@ class DustEmission:
                                         duste_qpah, duste_umin, duste_gamma):
         """
         Compute dust emission using precomputed trapezoidal weights for fast
-        integration.  All jnp.trapezoid calls are replaced with jnp.dot against
-        the static weight vector, and dead-code iterations are removed.
+        integration (bolometric luminosities via jnp.dot against the static
+        weight vector).
 
         Parameters:
             spec_attn (jnp.ndarray): Attenuated spectrum after dust absorption.

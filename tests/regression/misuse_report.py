@@ -16,8 +16,13 @@ Run:  python tests/regression/misuse_report.py
 from __future__ import annotations
 
 import os
+import sys
 import warnings
 import pathlib
+
+# Make the shared test helper importable when run as a standalone script
+# (under pytest, tests/conftest.py already puts tests/ on sys.path).
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
@@ -33,14 +38,16 @@ from ceridwen.ssps.ssp_data import SSPData
 from ceridwen.csp.csp import CSPBasis
 from ceridwen.observation.observation import Photometry, Spectrum, Lines
 
+from _gridfixture import require_test_grid
+
 HERE = pathlib.Path(__file__).resolve().parent
 FIG_DIR = HERE / "figures"
 REPO = HERE.parent.parent
-SSP = str(REPO / "ceridwen" / "data" / "test_data" / "ssp_data.h5")
+SSP = str(require_test_grid())
 
 _ssp = SSPData.load(SSP)
 _T = 13.8
-_lb = _T - jnp.linspace(1e-2, _T, 10)
+_lb = jnp.linspace(0.0, _T, 10)   # NEW convention: today @ idx 0
 _sfr = jnp.exp(-0.5 * ((_lb - 0.05) / 0.03) ** 2) + 0.7 * jnp.exp(-0.5 * ((_lb - 11.) / 0.8) ** 2)
 
 

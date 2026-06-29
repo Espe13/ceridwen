@@ -9,18 +9,26 @@ from typing import Callable, Sequence
 
 
 # ---------------------------------------------------------------------------
-# make_law_wrapper — dict edition
+# make_law_wrapper
 #
-# The original version used getattr(fit_params, name) which required a
-# NamedTuple.  The dict version uses fit_params[name], which works with any
-# plain Python/JAX dict and is fully traceable inside jax.lax.switch because
-# the string key is a static Python value resolved at trace time.
+# Extracts named params from a plain dict (``fit_params[name]``), which is
+# fully traceable inside jax.lax.switch because the string key is a static
+# Python value resolved at trace time.
 # ---------------------------------------------------------------------------
 
-def make_law_wrapper(f, param_names):
-    """Return a JAX-traceable wrapper that extracts named params from a dict."""
+def make_law_wrapper(f, param_names, defaults=None):
+    """Return a JAX-traceable wrapper that extracts named params from a dict.
+
+    Parameters missing from ``fit_params`` fall back to ``defaults`` (the
+    registry defaults), so a law parameter can be pinned via theta without
+    breaking older suites whose theta dicts never carried it.  The
+    membership test is a static Python check resolved at trace time.
+    """
+    defaults = defaults or {}
+
     def wrapped(wave, fit_params):
-        args = tuple(fit_params[name] for name in param_names)
+        args = tuple(fit_params[name] if name in fit_params else defaults[name]
+                     for name in param_names)
         return f(wave, *args)
     return wrapped
 
@@ -40,9 +48,6 @@ def modify_function(func, number, defaults_dict=None):
     to build the per-bin parameter-extraction list).  We therefore forward the
     positional arguments unchanged and attach a renamed ``__signature__``.
 
-    This replaces a former ``exec``-of-a-source-string implementation that was
-    fragile, hostile to static analysis, and in fact broken: the source string
-    was indented, so ``exec`` raised ``IndentationError`` for every reused law.
     The single-law path never calls this function and is unaffected.
     """
     sig = inspect.signature(func)
@@ -77,9 +82,7 @@ class Dust:
     """
     JAX-compatible modular dust model that supports multiple attenuation laws per bin.
 
-    Parameters are now passed as plain dicts (``dict[str, Array]``) rather than
-    NamedTuples.  This is the only interface change relative to the original
-    DustModel.py; all computation is identical.
+    Parameters are passed as plain dicts (``dict[str, Array]``).
 
     Call ``Dust.describe_attenuation_laws()`` to list all available models.
     """
@@ -149,7 +152,8 @@ class Dust:
                     f"Parameters {missing} expected for '{resolved_name}' but not found in param_dict"
                 )
 
-            wrapped_func = make_law_wrapper(func, ordered_param_names)
+            law_defaults = ATTENUATION_LAWS.get(resolved_name, {}).get("defaults", {})
+            wrapped_func = make_law_wrapper(func, ordered_param_names, law_defaults)
 
             self.law_names_resolved.append(resolved_name)
             self.law_funcs.append(wrapped_func)
@@ -246,8 +250,8 @@ class Dust:
         Return a plain dict of default fit parameters.
 
         Keys are the parameter names used in the active dust laws; values are
-        JAX scalars.  Previously returned a NamedTuple; now returns a dict so
-        that it can be merged directly into the global theta dict.
+        JAX scalars.  Returned as a dict so it merges directly into the global
+        theta dict.
         """
         defaults = {}
         for law in self.law_names_resolved:

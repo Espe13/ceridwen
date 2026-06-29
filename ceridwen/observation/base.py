@@ -1,21 +1,12 @@
 """
-ceridwen/observation/observation.py
-====================================
-Data containers for observed SEDs.
+ceridwen/observation/base.py
+============================
+Abstract base class for observed SEDs.
 
-Classes
--------
-Observation
-    Abstract base class.  Stores flux, uncertainty, mask, noise model.
-
-Photometry(Observation)
-    Broadband photometry in AB maggies.  Uses a sedpy_jax FilterSet for
-    filter-convolution of model spectra.
-
-Spectrum(Observation)
-    Spectroscopic observation.  Stores a dense wavelength array, optional
-    resolution and calibration vectors, and helper methods for masking,
-    chi-squared computation, and synthetic photometry.
+Defines :class:`Observation`, which stores flux, uncertainty, mask, and an
+optional noise model, and the GPU/JIT projection interface
+(``setup_for_model`` / ``predict``) that the concrete subclasses
+(``Photometry``, ``Spectrum``, ``Lines``) override.
 """
 
 import json

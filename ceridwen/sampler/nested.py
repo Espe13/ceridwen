@@ -60,6 +60,7 @@ Usage
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, Callable, Optional
 
@@ -119,6 +120,8 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         num_delete      : Optional[int] = None,
         logZ_tol        : float = -3.0,
         verbose         : bool  = True,
+        checkpoint_interval_s : float = 1200.0,
+        checkpoint_dir        : Optional[str] = None,
     ):
         self.priors          = dict(priors)
         self.num_live        = int(num_live)
@@ -126,6 +129,19 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         self._num_delete      = num_delete         # None → num_live // 2
         self.logZ_tol        = float(logZ_tol)
         self.verbose         = bool(verbose)
+        # Periodic checkpointing.  Every ``checkpoint_interval_s`` seconds
+        # (default 1200 = 20 min; <= 0 disables) the accumulated dead points
+        # are finalised against the current live ensemble and dumped to disk,
+        # so a run killed by the scheduler wall-time, a node failure, or any
+        # mid-run crash still yields a recoverable (partial) posterior --
+        # BlackJAX provides no native checkpointing.  The destination is
+        # resolved at run time from ``checkpoint_dir`` ->
+        # $CERIDWEN_CHECKPOINT_DIR -> $CERIDWEN_RESCUE_DIR; when none is set
+        # checkpointing is silently skipped (no surprise writes).  The same
+        # snapshot format is written once more at convergence as the rescue
+        # pickle, so :meth:`load_checkpoint` recovers either.
+        self.checkpoint_interval_s = float(checkpoint_interval_s)
+        self._checkpoint_dir       = checkpoint_dir
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -179,6 +195,91 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
             particles[name] = prior.sample(sub, shape=(self.num_live, *expected_shape))
 
         return particles
+
+    # ------------------------------------------------------------------
+    # Checkpoint / rescue helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _finalise_dead(live, dead_list, ns_utils):
+        """Merge the live ensemble into the accumulated dead points and return
+        ``(positions_dict, loglikelihood, loglikelihood_birth)``.
+
+        Version-aware over BlackJAX ``finalise`` (0.1.0b0 has no
+        ``update_info`` kwarg) and over the dead-point layout (older dict
+        ``particles`` vs v3 ``StateWithLogLikelihood``).  Shared by the
+        end-of-run path and the periodic checkpoints so the finalise logic
+        lives in ONE place.
+        """
+        import inspect as _inspect
+        if "update_info" in _inspect.signature(ns_utils.finalise).parameters:
+            dead = ns_utils.finalise(live, dead_list, update_info=False)
+        else:
+            dead = ns_utils.finalise(live, dead_list)
+        _dp = dead.particles
+        if isinstance(_dp, dict):
+            return _dp, dead.loglikelihood, dead.loglikelihood_birth
+        if hasattr(_dp, "position"):
+            return _dp.position, _dp.loglikelihood, _dp.loglikelihood_birth
+        positions = dead.position if hasattr(dead, "position") else _dp
+        return positions, dead.loglikelihood, dead.loglikelihood_birth
+
+    def _resolve_ckpt_dir(self):
+        """Checkpoint destination: explicit arg -> $CERIDWEN_CHECKPOINT_DIR ->
+        $CERIDWEN_RESCUE_DIR -> None (disabled)."""
+        return (self._checkpoint_dir
+                or os.environ.get("CERIDWEN_CHECKPOINT_DIR")
+                or os.environ.get("CERIDWEN_RESCUE_DIR"))
+
+    def _dump_snapshot(self, ckpt_dir, live, dead_list, ns_utils, logZ,
+                       *, tag, partial):
+        """Atomically pickle a finalised snapshot of the run so far.
+
+        Format matches the end-of-run rescue pickle:
+        ``{positions, loglikelihood, loglikelihood_birth, logZ, n_dead,
+        partial}``.  ``partial=True`` marks a mid-run checkpoint (the run had
+        not converged).  Best-effort: never let a checkpoint break the run.
+        Atomic via write-to-temp + os.replace so a kill mid-write cannot
+        corrupt an existing checkpoint.
+        """
+        try:
+            import pickle as _pickle
+            import numpy as _np
+            pos, logl, logl_birth = self._finalise_dead(live, dead_list,
+                                                        ns_utils)
+            os.makedirs(ckpt_dir, exist_ok=True)
+            fname = (f"ns_raw_dead_{os.getpid()}.pkl" if tag == "rescue"
+                     else f"ns_checkpoint_{os.getpid()}.pkl")
+            path = os.path.join(ckpt_dir, fname)
+            tmp = path + ".tmp"
+            with open(tmp, "wb") as fh:
+                _pickle.dump({
+                    "positions": {k: _np.asarray(v) for k, v in pos.items()},
+                    "loglikelihood": _np.asarray(logl),
+                    "loglikelihood_birth": _np.asarray(logl_birth),
+                    "logZ": float(logZ),
+                    "n_dead": int(_np.asarray(logl).shape[0]),
+                    "partial": bool(partial),
+                }, fh)
+            os.replace(tmp, path)
+            return path
+        except Exception as exc:                                  # noqa: BLE001
+            print(f"  [{tag}] WARNING: snapshot failed: {exc}")
+            return None
+
+    @staticmethod
+    def load_checkpoint(path):
+        """Load a checkpoint / rescue pickle written by this adapter.
+
+        Returns the dict ``{positions, loglikelihood, loglikelihood_birth,
+        logZ, n_dead, partial}``.  A ``partial=True`` snapshot is a usable
+        (under-converged) posterior from a run killed before convergence ---
+        feed ``positions`` + ``loglikelihood`` + ``loglikelihood_birth`` to
+        ``anesthetic.NestedSamples`` exactly as the end-of-run path does.
+        """
+        import pickle as _pickle
+        with open(path, "rb") as fh:
+            return _pickle.load(fh)
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -303,6 +404,14 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         n_like_calls = 0
         t_start      = time.perf_counter()
 
+        # Periodic-checkpoint bookkeeping (see __init__).
+        _ckpt_dir   = self._resolve_ckpt_dir()
+        _ckpt_on    = bool(_ckpt_dir) and self.checkpoint_interval_s > 0
+        _last_ckpt  = t_start
+        if _ckpt_on and self.verbose:
+            print(f"  [checkpoint] every {self.checkpoint_interval_s:.0f} s "
+                  f"-> {_ckpt_dir}", flush=True)
+
         desc = "NS  (starting)"
         try:
             desc = f"NS  logZ={_get_logZ(live):.1f}"
@@ -346,6 +455,17 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
                 except AttributeError:
                     pass
 
+                # Periodic checkpoint: finalise + dump a partial snapshot so a
+                # wall-time kill / node crash mid-run is recoverable.
+                if _ckpt_on and (time.perf_counter() - _last_ckpt
+                                 >= self.checkpoint_interval_s):
+                    _p = self._dump_snapshot(
+                        _ckpt_dir, live, dead_list, ns_utils,
+                        _get_logZ(live), tag="checkpoint", partial=True)
+                    _last_ckpt = time.perf_counter()
+                    if _p and self.verbose:
+                        print(f"  [checkpoint] iter {_iter}: {_p}", flush=True)
+
         wall_time = time.perf_counter() - t_start
         if self.verbose:
             print(
@@ -354,30 +474,25 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
             )
 
         # ── Merge live points into dead set ───────────────────────────────
-        # update_info=False avoids tree_map over update metadata that
-        # some BlackJAX versions do not populate on NSInfo.
-        dead = ns_utils.finalise(live, dead_list, update_info=False)
+        # Version-aware finalise + dead-point unpack (see _finalise_dead).
+        # The ``update_info`` kwarg only exists in newer BlackJAX; 0.1.0b0
+        # ships ``finalise(live, dead)`` with no such param, so passing it
+        # unconditionally raises ``TypeError`` only AFTER convergence,
+        # losing a multi-hour run.  The guard lives in _finalise_dead so it
+        # (and the periodic-checkpoint path) cannot drift.
+        _dead_positions, _dead_logl, _dead_logl_birth = self._finalise_dead(
+            live, dead_list, ns_utils)
 
-        # ── Unpack dead-point structure ───────────────────────────────────
-        # finalise() returns an object whose layout depends on version:
-        #   older: dead.particles = dict,  dead.loglikelihood, ...
-        #   v3:    dead.particles = StateWithLogLikelihood
-        #             .position (dict), .loglikelihood, .loglikelihood_birth
-        _dp = dead.particles
-        if isinstance(_dp, dict):
-            _dead_positions      = _dp
-            _dead_logl           = dead.loglikelihood
-            _dead_logl_birth     = dead.loglikelihood_birth
-        elif hasattr(_dp, "position"):
-            # v3 StateWithLogLikelihood
-            _dead_positions      = _dp.position
-            _dead_logl           = _dp.loglikelihood
-            _dead_logl_birth     = _dp.loglikelihood_birth
-        else:
-            # last resort: assume dead itself has the fields
-            _dead_positions      = dead.position if hasattr(dead, "position") else _dp
-            _dead_logl           = dead.loglikelihood
-            _dead_logl_birth     = dead.loglikelihood_birth
+        # ── Rescue pickle ─────────────────────────────────────────────────
+        # Dump the finalised dead points so any failure further down the save
+        # path (anesthetic, evidence, the caller's I/O) is recoverable rather
+        # than discarding a multi-hour run.  Same format as the periodic
+        # checkpoints; loadable via load_checkpoint().  partial=False marks a
+        # fully-converged snapshot.
+        _rescue_dir = self._resolve_ckpt_dir()
+        if _rescue_dir:
+            self._dump_snapshot(_rescue_dir, live, dead_list, ns_utils,
+                                _get_logZ(live), tag="rescue", partial=False)
 
         # ── Evidence & importance weights (anesthetic preferred) ─────────
         log_Z        = float(_get_logZ(live))
@@ -453,5 +568,9 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
             n_likelihood_calls    = n_like_calls,
             wall_time_s           = wall_time,
             sampler_name          = "blackjax.nss",
-            raw                   = dead,
+            raw                   = {
+                "positions": _dead_positions,
+                "loglikelihood": _dead_logl,
+                "loglikelihood_birth": _dead_logl_birth,
+            },
         )

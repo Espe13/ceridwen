@@ -25,17 +25,39 @@ Everything is written against `jax.numpy` with `@jit` and `vmap`/`pmap` in mind:
 
 ## Installation
 
+Requires Python ≥ 3.10.
+
 ```bash
 git clone https://github.com/Espe13/ceridwen.git
 cd ceridwen
 pip install -e .
 ```
 
-Required: Python ≥ 3.10, `jax`, `jaxlib`, `numpy`, `scipy`, `matplotlib`. Strongly recommended: `h5py`, `astropy`, `blackjax` (for NUTS / nested sampling), `optax` (for VI training).
+This installs everything needed to `import ceridwen`, build the forward model,
+and run the default NUTS / nested samplers: `jax`, `jaxlib`, `numpy`, `scipy`,
+`matplotlib`, `h5py`, `astropy`, `sedpy-jax`, `tensorflow-probability`,
+`blackjax`, and `tqdm` are all pulled in automatically.
 
-External dependencies outside PyPI:
-- [FSPS](https://github.com/cconroy20/fsps) with the `python-fsps` wrapper, for building SSP grids
-- [sedpy_jax](https://github.com/Espe13/sedpy_jax) for filter convolutions
+Optional features live behind extras:
+
+```bash
+pip install -e ".[vi]"      # optax — variational-inference (NeuTra) preconditioning
+pip install -e ".[nested]"  # anesthetic — nested-sampling evidence + corner plots
+pip install -e ".[grids]"   # python-fsps — generate SSP grids from FSPS (see Step 0)
+pip install -e ".[all]"     # everything above, plus the test suite
+```
+
+External (non-PyPI) requirement — **needed to run Ceridwen, not just to build
+grids**:
+- [FSPS](https://github.com/cconroy20/fsps) — the `[grids]` extra installs the
+  `python-fsps` wrapper, but FSPS itself (the compiled library + its data
+  files) must be installed separately and `$SPS_HOME` set to its root. FSPS is
+  required to build the SSP cache (Step 0) **and at runtime**: the CLOUDY
+  nebular grids and Draine & Li dust-emission templates are read from
+  `$SPS_HOME` whenever `add_neb=True` or `add_dust_emission=True`.
+
+See [`examples/quickstart.py`](examples/quickstart.py) for a complete,
+runnable fit (mock SDSS photometry, end to end) once FSPS is set up.
 
 ---
 

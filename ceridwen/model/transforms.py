@@ -90,7 +90,7 @@ def logsfr_ratios_to_sfh(
         Log10 ratios of consecutive SFR bins.
         ``logsfr_ratios[i] = log10( SFR[i] / SFR[i+1] )``.
 
-        Under the post-2026-06-03 lookback-time convention (index 0 =
+        Under the lookback-time convention (index 0 =
         today, last index = oldest), ``SFR[0]`` is the most-recent SFR
         and ``SFR[i+1]`` is at a slightly older lookback time.  Positive
         ``logsfr_ratios[i]`` therefore mean ``SFR[i] > SFR[i+1]``, i.e.
@@ -156,10 +156,10 @@ def logsfr_ratios_to_sfh(
         w_hi  = jnp.concatenate([dt, jnp.zeros(1)])               # (n,)
         w     = 0.5 * (w_lo + w_hi)                               # (n,)
         # Unit-mass normalisation: ∫SFR dt = sum(sfr * w) = 1 Msun.
-        # The previous convention sfh = sfr * sum(w) / total made the
-        # *mean* SFR equal 1 Msun/yr, which left an implicit factor of
-        # t_universe[yr] (~1.4e10) in the spectrum and biased every
-        # logmass estimate by ~10 dex at z=0 (less at higher z).
+        # GOTCHA: normalise to total mass, NOT mean SFR — dividing by
+        # sum(w) instead would leave an implicit factor of t_universe[yr]
+        # (~1.4e10) in the spectrum and bias every logmass estimate by
+        # ~10 dex at z=0 (less at higher z).
         total_mass = jnp.sum(sfr * w)
         sfh   = sfr / total_mass
     else:

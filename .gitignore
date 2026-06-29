@@ -292,3 +292,23 @@ nebular_dev_comparison.pdf
 
 # Deploy stamp written by jades_full/push_ceridwen_to_tursa.sh (regenerated each push)
 ceridwen/_buildstamp.py
+
+# Local-only developer comment archive (rationale stripped from package; keep off GitHub)
+DEV_COMMENT_ARCHIVE.md
+
+# --- research / paper / dev-process artefacts (not part of the package) ---
+/Method_Paper/
+/test/
+/CHANGES.md
+/CLAUDE_CODE_PROMPT*.md
+/REVIEW.md
+/RELEASE_CHECKLIST.md
+/appendix_*.tex
+/appendix_forward_model_flow_preview.png
+/notes_*.md
+ceridwen/DEV_ROADMAP.md
+tests/validation/
+tests/regression/big_comparison_*.txt
+tests/regression/parameter_effects_*.txt
+tests/regression/_weights_oldref.npz
+tests/regression/baselines/params.pkl

@@ -1,8 +1,7 @@
 """
 ceridwen/observation/gp.py
 ==========================
-Split out of the former monolithic ``observation.py`` (review 2026-06-01).
-Class body is byte-identical to the original.
+Gaussian Process noise model for spectral residuals.
 """
 
 import json

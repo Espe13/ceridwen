@@ -41,9 +41,14 @@ API differs):
 """
 from __future__ import annotations
 
+import json
 import os
 import pathlib
-import pickle
+import sys
+
+# Make the shared test helper importable when this file is run as a standalone
+# script (under pytest, tests/conftest.py already puts tests/ on sys.path).
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 # Force CPU + float64 determinism for the reference comparison.
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
@@ -58,19 +63,21 @@ HERE = pathlib.Path(__file__).resolve().parent
 BASELINE_DIR = HERE / "baselines"
 REPO_ROOT = HERE.parent.parent
 
-SSP_FILE = str(REPO_ROOT / "ceridwen" / "data" / "test_data" / "ssp_data.h5")
+from _gridfixture import require_test_grid
+
+SSP_FILE = str(require_test_grid())
 SPS_HOME = os.environ.get("SPS_HOME", str(pathlib.Path.home() / "Prospector" / "fsps"))
 
 
 # --------------------------------------------------------------------------- #
-#  Fixed parameter definitions (also pickled for model rebuilds)
+#  Fixed parameter definitions (also written to params.json as a record)
 # --------------------------------------------------------------------------- #
 def fixed_params() -> dict:
     """All scalar / array constants that define the baseline evaluations."""
     T_UNIV = 13.8
     N_TIME = 10
     t_grid = jnp.linspace(1e-2, T_UNIV, N_TIME)
-    lookback = T_UNIV - t_grid
+    lookback = jnp.linspace(0.0, T_UNIV, N_TIME)   # NEW convention
 
     def gaussian_burst(tau, center, width, amp=1.0):
         return amp * jnp.exp(-0.5 * ((tau - center) / width) ** 2)
@@ -297,9 +304,18 @@ def main():
     for category, arrays in baselines.items():
         np.savez(BASELINE_DIR / f"{category}.npz", **arrays)
         print(f"  wrote {category}.npz  ({', '.join(arrays.keys())})")
-    with open(BASELINE_DIR / "params.pkl", "wb") as f:
-        pickle.dump(fixed_params(), f)
-    print(f"  wrote params.pkl")
+    # Record the fixed parameters in a transparent, version-stable format.
+    # Nothing reads this back at test time (fixed_params() is called directly);
+    # it is a human-readable provenance record, so JSON beats a pickle.
+    def _jsonable(v):
+        if isinstance(v, (jnp.ndarray, np.ndarray)):
+            return np.asarray(v).tolist()
+        return v
+
+    params_json = {k: _jsonable(v) for k, v in fixed_params().items()}
+    with open(BASELINE_DIR / "params.json", "w") as f:
+        json.dump(params_json, f, indent=2)
+    print(f"  wrote params.json")
     print(f"\nBaselines written to {BASELINE_DIR}")
 
 

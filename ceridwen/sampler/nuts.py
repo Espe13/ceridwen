@@ -131,9 +131,9 @@ def _build_transforms(bounds: dict[str, tuple[float, float]],
             hi_list.append(jnp.full(size, b))
             bounded_list.append(jnp.ones(size, dtype=bool))
         else:
-            # Use dummy finite bounds (0, 1) so the sigmoid branch
-            # never produces inf * 0 = nan.  The result is discarded
-            # by jnp.where, but JAX traces both branches for gradients.
+            # Dummy finite bounds (0, 1) so the sigmoid branch never
+            # produces inf * 0 = nan.  The result is discarded by
+            # jnp.where, but JAX traces both branches for gradients.
             lo_list.append(jnp.full(size, 0.0))
             hi_list.append(jnp.full(size, 1.0))
             bounded_list.append(jnp.zeros(size, dtype=bool))
@@ -211,8 +211,8 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
     num_warmup : int, optional
         Number of warmup (adaptation) steps per chain.  Default 1500
         for native NUTS.  When ``vi`` is set, warmup defaults to 200;
-        50 is insufficient in practice (434 divergences observed on a
-        14-D SED posterior — the dual-averaging adapter overshoots).
+        very short warmup lets the dual-averaging adapter overshoot and
+        produce many divergences on a ~14-D SED posterior.
     num_samples : int, optional
         Number of post-warmup posterior draws per chain.  Default 2000.
     num_chains : int, optional
@@ -224,9 +224,8 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         is :math:`\\mathcal{O}(1)`, and dual averaging is slow to shrink
         from 1.0.
     target_acceptance : float, optional
-        Target acceptance probability for dual averaging.  Default 0.95
-        (was 0.9; tightened based on Apr 2026 run showing 434/626
-        divergences at 0.9 with VI-preconditioned NUTS).
+        Target acceptance probability for dual averaging.  Default 0.95;
+        higher values reduce divergences in VI-preconditioned NUTS.
     max_num_doublings : int, optional
         Maximum tree depth (2^max_num_doublings leapfrog steps).
         Default 10.
@@ -431,12 +430,12 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             print(f"\n  Warmup ({self.num_warmup} steps, "
                   f"adapting step size + {'dense' if self.dense_mass else 'diagonal'} mass matrix)...")
 
-        # ``max_num_doublings`` forwards through window_adaptation to
-        # the wrapped blackjax.nuts kernel used during warmup; it caps
-        # the per-step leapfrog count at 2**max_num_doublings.  Without
-        # this the BlackJAX default of 10 (→ 1024 leapfrog steps) was
-        # silently active even if the user passed a smaller value, and
-        # at small adapted step sizes one NUTS iteration took seconds.
+        # ``max_num_doublings`` forwards through window_adaptation to the
+        # wrapped blackjax.nuts kernel used during warmup; it caps the
+        # per-step leapfrog count at 2**max_num_doublings.  Must be passed
+        # explicitly — BlackJAX otherwise falls back to its default of 10
+        # (→ 1024 leapfrog steps), and at small adapted step sizes one
+        # NUTS iteration can take seconds.
         warmup = blackjax.window_adaptation(
             blackjax.nuts,
             logposterior_flat,
@@ -484,10 +483,9 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         #    Run chains sequentially with a cached XLA kernel.
         #    The lax.scan compiles once on Chain 1 and is reused.
         # ==============================================================
-        # Note: ``parameters`` from window_adaptation already carries
-        # ``max_num_doublings`` (it was forwarded into the adaptation
-        # above), so we must not pass it a second time or we hit
-        # ``TypeError: got multiple values for keyword argument``.
+        # ``parameters`` from window_adaptation already carries
+        # ``max_num_doublings``, so it must not be passed a second time
+        # here (``TypeError: got multiple values for keyword argument``).
         nuts_kernel = blackjax.nuts(
             logposterior_flat,
             **parameters,
@@ -839,9 +837,9 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             print(f"  log p_z(0) = {_lp0:.3f}")
 
         # ── Warmup (step size + optional diagonal mass) ────────────────
-        # Cap per-step leapfrog count via max_num_doublings — without
-        # this kwarg, blackjax silently uses its default of 10 and a
-        # tiny adapted step size translates into seconds per NUTS iter.
+        # Cap per-step leapfrog count via max_num_doublings; without it
+        # blackjax defaults to 10 and a tiny adapted step size translates
+        # into seconds per NUTS iteration.
         warmup = blackjax.window_adaptation(
             blackjax.nuts, logpost_z,
             target_acceptance_rate=self.target_acceptance,
@@ -868,8 +866,8 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         # distribution (paper Sec. 4.1.2): z_c ~ N(0, I) (which induces
         # independent q(x) draws through the map).
         init_zs = jax.random.normal(init_key, (self.num_chains, n_dims))
-        # ``parameters`` already contains ``max_num_doublings`` because
-        # window_adaptation was called with it — don't double-pass.
+        # ``parameters`` already contains ``max_num_doublings`` — don't
+        # double-pass it (would raise TypeError).
         nuts_full = blackjax.nuts(
             logpost_z,
             **parameters,

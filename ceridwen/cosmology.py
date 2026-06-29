@@ -209,6 +209,45 @@ def comoving_distance_mpc(z: Array, cosmo: Cosmology = DEFAULT_COSMO,
     return cosmo.hubble_distance_mpc * _integrate_dz_over_E(z, cosmo, n_nodes)
 
 
+# 1/H0 expressed in Gyr:  (Mpc in km) / (s per Gyr) = 977.792 / (H0 [km/s/Mpc]).
+_INV_H0_GYR_NUM = 977.7922216807891       # 3.0856775814913673e19 / 3.15576e16
+
+
+def age_gyr(z: Array, cosmo: Cosmology = DEFAULT_COSMO,
+            n_nodes: int = 257) -> Array:
+    r"""Age of the Universe at redshift ``z`` in **Gyr** (JAX-native).
+
+    .. math::
+        t(z) = \frac{1}{H_0}\int_0^{a(z)}\frac{da'}{a'\,E(z'(a'))},
+        \qquad a = \frac{1}{1+z},\; z'(a') = 1/a' - 1.
+
+    Simpson's rule on a fixed scale-factor grid (traced shape static), so
+    the result is differentiable in ``z`` and usable inside a JIT'd model
+    (e.g. to recompute SFH age-bins from a sampled redshift).  The
+    integrand vanishes analytically as :math:`a'\to 0` (radiation era),
+    so the ``a'=0`` node is set to zero to avoid ``0/0``.  Matches
+    :meth:`astropy.cosmology.FlatLambdaCDM.age` to <~0.3% over
+    :math:`0 \le z \le 20` (residual dominated by the massive-neutrino
+    approximation in :func:`E_of_z`, not the integrator).
+    """
+    if n_nodes % 2 == 0:
+        n_nodes += 1
+    z = jnp.asarray(z, dtype=float)
+    a = 1.0 / (1.0 + jnp.maximum(z, 0.0))          # scale factor (...,)
+    u = jnp.linspace(0.0, 1.0, n_nodes)            # (n_nodes,)
+    x = a[..., None] * u                           # (..., n_nodes): a' from 0..a
+    # Double-``where`` so neither the value nor the GRADIENT sees the 0/0 at
+    # a'=0: evaluate with a safe x=1 there, then mask the contribution to 0.
+    pos = x > 0.0
+    x_safe = jnp.where(pos, x, 1.0)
+    zp = 1.0 / x_safe - 1.0
+    g = jnp.where(pos, 1.0 / (x_safe * E_of_z(zp, cosmo)), 0.0)
+    w = jnp.ones(n_nodes).at[1::2].set(4.0).at[2:-1:2].set(2.0)
+    h = a / (n_nodes - 1)
+    integral = (h / 3.0) * jnp.sum(w * g, axis=-1)
+    return (_INV_H0_GYR_NUM / cosmo.H0) * integral
+
+
 def _astropy_luminosity_distance_mpc(z) -> float:
     """Use astropy.cosmology.Planck18 for the luminosity distance.
 

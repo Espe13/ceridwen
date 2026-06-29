@@ -73,10 +73,6 @@ class SSPBasis:
             if k in self.ssp.params.all_params:
                 self.ssp.params[k] = deepcopy(v)
 
-        # We use FSPS for SSPs !!ONLY!!
-        # except for FastStepBasis.  And CSPSpecBasis. and...
-        # assert self.ssp.params['sfh'] == 0
-    
     def get_galaxy_spectrum(self, **params):
         """Update parameters, then get the SSP spectrum
 
@@ -148,14 +144,8 @@ class FastStepBasis(SSPBasis):
 
         Not JIT-compiled: the body calls into FSPS Fortran
         (``self.ssp.set_tabular_sfh`` / ``self.ssp.get_spectrum``), which is
-        not JAX-traceable, so a ``@jit`` here cannot work — in fact the
-        previous bound-method ``@jit`` made this method *uncallable* (``self``
-        was passed as a would-be abstract array and the trace raised
-        immediately, so neither the FSPS path nor the validation below ever
-        executed).  The only purely-numerical part, :meth:`convert_sfh`, is
-        JIT-compiled on its own below.  The age-bin validation therefore runs
-        on concrete arrays in this (un-jitted) method, which is the correct
-        place for a data-validation guard.
+        not JAX-traceable, so ``@jit`` cannot be applied here.  The age-bin
+        validation runs on concrete arrays in this un-jitted method.
         """
         self.update(**params)
         if float(jnp.min(jnp.diff(10 ** jnp.asarray(self.params['agebins'])))) < 1e6:
@@ -174,10 +164,10 @@ class FastStepBasis(SSPBasis):
         Calculate a tabular SFH based on age bins and formed masses.
 
         Not JIT-compiled: ``jnp.unique`` below has a value-dependent output
-        size, which raises ``ConcretizationTypeError`` under ``jax.jit`` (the
-        previous ``@jit`` made this helper uncallable).  It is only ever called
-        from the un-jitted :meth:`get_galaxy_spectrum` (which itself wraps FSPS
-        Fortran), so there is no hot path that benefits from compiling it.
+        size, which raises ``ConcretizationTypeError`` under ``jax.jit``.  It
+        is only ever called from the un-jitted :meth:`get_galaxy_spectrum`
+        (which itself wraps FSPS Fortran), so there is no hot path that
+        benefits from compiling it.
         """
         agebins_yrs = 10 ** jnp.array(agebins).T
         dt = agebins_yrs[1, :] - agebins_yrs[0, :]

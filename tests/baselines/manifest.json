@@ -1,0 +1,157 @@
+{
+  "convention": "OLD (decreasing)",
+  "n_time": 10,
+  "tuniv_gyr": 13.8,
+  "psi_old": [
+    1.0,
+    0.21605501120434087,
+    0.04667976786650786,
+    0.010085397769414386,
+    0.00217900072807106,
+    0.0004707840267176599,
+    0.00010171524816730865,
+    2.197608908244019e-05,
+    4.748044172934209e-06,
+    1.0258387369820044e-06
+  ],
+  "lb_old_gyr": [
+    0.0,
+    1.5322222222222222,
+    3.0644444444444443,
+    4.596666666666667,
+    6.128888888888889,
+    7.6611111111111105,
+    9.193333333333333,
+    10.725555555555555,
+    12.257777777777777,
+    13.790000000000001
+  ],
+  "configs": [
+    {
+      "tag": "step_constZ_pernode",
+      "sfh_interp": "step",
+      "zh_const": true,
+      "per_bin": false,
+      "shapes": {
+        "W": [
+          12,
+          107
+        ],
+        "spec": [
+          5994
+        ],
+        "lines": [
+          5994
+        ],
+        "maggies": [
+          5
+        ]
+      }
+    },
+    {
+      "tag": "step_constZ_perbin",
+      "sfh_interp": "step",
+      "zh_const": true,
+      "per_bin": true,
+      "shapes": {
+        "W": [
+          12,
+          107
+        ],
+        "spec": [
+          5994
+        ],
+        "lines": [
+          5994
+        ],
+        "maggies": [
+          5
+        ]
+      }
+    },
+    {
+      "tag": "step_varZ_pernode",
+      "sfh_interp": "step",
+      "zh_const": false,
+      "per_bin": false,
+      "shapes": {
+        "W": [
+          12,
+          107
+        ],
+        "spec": [
+          5994
+        ],
+        "lines": [
+          5994
+        ],
+        "maggies": [
+          5
+        ]
+      }
+    },
+    {
+      "tag": "step_varZ_perbin",
+      "sfh_interp": "step",
+      "zh_const": false,
+      "per_bin": true,
+      "shapes": {
+        "W": [
+          12,
+          107
+        ],
+        "spec": [
+          5994
+        ],
+        "lines": [
+          5994
+        ],
+        "maggies": [
+          5
+        ]
+      }
+    },
+    {
+      "tag": "linear_constZ_pernode",
+      "sfh_interp": "linear",
+      "zh_const": true,
+      "per_bin": false,
+      "shapes": {
+        "W": [
+          12,
+          107
+        ],
+        "spec": [
+          5994
+        ],
+        "lines": [
+          5994
+        ],
+        "maggies": [
+          5
+        ]
+      }
+    },
+    {
+      "tag": "linear_varZ_pernode",
+      "sfh_interp": "linear",
+      "zh_const": false,
+      "per_bin": false,
+      "shapes": {
+        "W": [
+          12,
+          107
+        ],
+        "spec": [
+          5994
+        ],
+        "lines": [
+          5994
+        ],
+        "maggies": [
+          5
+        ]
+      }
+    }
+  ]
+}

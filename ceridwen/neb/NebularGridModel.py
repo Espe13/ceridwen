@@ -198,14 +198,10 @@ class NebularModel:
                  res_floor_factor=2.0,
                  nebular_smooth_init=None):
         # Defaults match FSPS verbatim:
-        #   nebular_smooth_init=100 km/s  (libfsps/src/sps_vars.f90 L207)
-        #   smooth_velocity=.true.        (libfsps/src/sps_vars.f90 L154)
-        #   pixel floor = neb_res_min * 2 (libfsps/src/sps_setup.f90 L980)
-        # Prospector inherits this verbatim through python-fsps.  Previous
-        # ceridwen default was sigma_smooth=0.0 which left the floor as the
-        # only line-width source -- functionally identical to FSPS for the
-        # bulk of the line list but inconsistent with FSPS's documented
-        # 100 km/s setting in the velocity-dispersion-relevant lines.
+        #   nebular_smooth_init = 100 km/s  (sps_vars.f90)
+        #   smooth_velocity     = .true.    (sps_vars.f90)
+        #   pixel floor         = neb_res_min * 2  (sps_setup.f90)
+        # Prospector inherits this through python-fsps.
         if nebular_smooth_init is not None:
             sigma_smooth = float(nebular_smooth_init)
 

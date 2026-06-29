@@ -1,8 +1,7 @@
 """
 ceridwen/observation/photometry.py
 ==================================
-Split out of the former monolithic ``observation.py`` (review 2026-06-01).
-Class body is byte-identical to the original.
+Broadband photometric observation container.
 """
 
 import json
@@ -193,8 +192,7 @@ class Photometry(Observation):
         """
         wm_rest = np.asarray(wave_model, dtype=np.float64)   # (n_wave,)
         # Effective ("observed-frame") grid used for the maggies integral.
-        # At zred = 0 this equals wm_rest and the method is bit-for-bit
-        # identical to the pre-redshift implementation.
+        # At zred = 0 this equals wm_rest.
         opz = 1.0 + float(zred)
         wm = opz * wm_rest
         n_wave = len(wm)

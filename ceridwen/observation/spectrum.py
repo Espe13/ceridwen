@@ -1,8 +1,7 @@
 """
 ceridwen/observation/spectrum.py
 ================================
-Split out of the former monolithic ``observation.py`` (review 2026-06-01).
-Class body is byte-identical to the original.
+Spectroscopic observation container.
 """
 
 import json
@@ -43,7 +42,7 @@ class Spectrum(Observation):
         Instrumental smoothing width.  Interpretation depends on
         ``smoothtype``:
 
-        * ``smoothtype=None`` — stored but never applied (backward-compat).
+        * ``smoothtype=None`` — stored but never applied.
         * ``"vel"`` — scalar σ_v [km/s].
         * ``"R"``   — scalar resolving power R = λ/σ_λ.
         * ``"lambda"`` — scalar σ_λ [Å].
@@ -171,9 +170,8 @@ class Spectrum(Observation):
                 ``setup_for_model``.
             ``None`` (default)
                 No smoothing applied; ``predict`` performs pure linear
-                interpolation (``_H @ spectrum``).  Backward-compatible with
-                the original behaviour when ``resolution`` was stored but
-                unused.
+                interpolation (``_H @ spectrum``).  ``resolution`` is stored
+                but unused in this mode.
 
         inres : float, optional
             Intrinsic (library) resolution of the input model spectrum,
@@ -200,14 +198,13 @@ class Spectrum(Observation):
         # ── Galaxy LOSVD (sigma_smooth in Prospector convention) ──────────
         # When ``fit_sigma_smooth=False`` (default), ``sigma_losvd`` is
         # baked into ``_predict_fn`` at ``setup_for_model`` time as a
-        # Python float -- the same fast-path closure that was always
-        # there.  When ``fit_sigma_smooth=True``, the closure instead
-        # accepts a runtime ``sigma_smooth`` jnp scalar (km/s) and the
-        # caller (CSPBasis.predict) passes ``theta["sigma_smooth"]``
-        # through.  In that fittable mode ``sigma_losvd`` is only used
-        # as the warmup / smoother-init value, so we default to the
-        # Prospector ``TemplateLibrary["spectral_smoothing"]`` init
-        # (200 km/s) when the user does not supply one.
+        # Python float.  When ``fit_sigma_smooth=True``, the closure
+        # instead accepts a runtime ``sigma_smooth`` jnp scalar (km/s) and
+        # the caller (CSPBasis.predict) passes ``theta["sigma_smooth"]``
+        # through.  In that fittable mode ``sigma_losvd`` is only used as
+        # the warmup / smoother-init value, so we default to 200 km/s
+        # (Prospector ``TemplateLibrary["spectral_smoothing"]`` init) when
+        # the user does not supply one.
         self.fit_sigma_smooth = bool(fit_sigma_smooth)
         if self.fit_sigma_smooth and sigma_losvd is None:
             sigma_losvd = 200.0
@@ -253,8 +250,7 @@ class Spectrum(Observation):
 
         **No smoothing** (``smoothtype=None``)
             Builds the dense (n_pix, n_wave) linear-interpolation matrix
-            ``_H`` and sets ``_predict_fn(spec) = _H @ spec``.  Identical
-            to the original behaviour.
+            ``_H`` and sets ``_predict_fn(spec) = _H @ spec``.
 
         **With instrumental smoothing** (``smoothtype`` in
         ``{"vel", "R", "lambda", "lsf"}``)
@@ -262,8 +258,8 @@ class Spectrum(Observation):
             precompute all FFT grid transforms.  The returned closure is
             fully JAX-JIT-compilable with respect to the spectrum.
             ``_predict_fn(spec)`` applies smoothing *and* interpolation to
-            the observed pixel grid in one call.  ``_H`` is still built for
-            backward compatibility.
+            the observed pixel grid in one call.  ``_H`` is also built (used
+            only by the no-smoothing fast path).
 
         Parameters
         ----------
@@ -275,8 +271,7 @@ class Spectrum(Observation):
             maps from the observed-frame grid
             ``(1 + zred) * wave_model`` onto ``self.wavelength`` (which is
             interpreted as observed-frame pixel wavelengths), preserving
-            the predict-time GEMV fast path.  At ``zred = 0`` this method
-            is bit-for-bit identical to the pre-redshift implementation.
+            the predict-time GEMV fast path.
         """
         wm_rest = np.asarray(wave_model, dtype=np.float64)
         opz = 1.0 + float(zred)
@@ -286,7 +281,7 @@ class Spectrum(Observation):
         n_pix  = len(wo)
 
         # ── Always build the dense interpolation matrix _H ────────────────
-        # (kept for backward compatibility and the no-smoothing fast path)
+        # (used by the no-smoothing fast path)
         j_hi = np.searchsorted(wm, wo, side='right')
         j_hi = np.clip(j_hi, 1, n_wave - 1)
         j_lo = j_hi - 1
@@ -307,10 +302,9 @@ class Spectrum(Observation):
         has_losvd  = self.sigma_losvd is not None
         # When the galaxy LOSVD is a free parameter, the closure has a
         # runtime ``sigma_smooth`` argument; ``predict`` switches its
-        # signature accordingly.  When ``fit_sigma_smooth=True`` but
-        # ``sigma_losvd is None`` would have left ``has_losvd=False`` --
-        # the constructor injects the 200 km/s default in that case so
-        # we always have a valid smoother to build here.
+        # signature accordingly.  The constructor injects a 200 km/s
+        # default when ``fit_sigma_smooth=True`` and ``sigma_losvd is
+        # None``, so a valid smoother can always be built here.
         fit_lo     = self.fit_sigma_smooth and has_losvd
 
         if not has_instr and not has_losvd:

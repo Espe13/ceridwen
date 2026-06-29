@@ -1,3 +1,91 @@
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "ceridwen"
+version = "0.1.0"
+description = "JAX-native, GPU-capable SED fitting with VI-preconditioned HMC"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Amanda Stoffers", email = "aas208@cam.ac.uk" }]
+keywords = ["astronomy", "astrophysics", "SED fitting", "JAX", "HMC", "stellar populations"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+# Core runtime dependencies.  These are everything needed for
+# ``import ceridwen`` and the README quick-start (forward model, priors,
+# default NUTS/nested sampling, HDF5 I/O) to work on a clean environment.
+#
+# Lower bounds are taken from the known-good environment.yml; loosen only
+# after testing.  Notably:
+#   * jax>=0.4.30  -- jnp.trapezoid, modern jax.tree_util, 2024 PRNG conventions.
+#   * sedpy-jax    -- DISTRIBUTION name is "sedpy-jax"; IMPORT name is "sedpy_jax".
+#                     Imported at module scope (dust/DustModel.py) so it is
+#                     mandatory just to import the package.
+#   * tensorflow-probability -- every prior uses tfp.substrates.jax.
+#   * blackjax     -- used in the core likelihood/theta/model layers, not only
+#                     the samplers.  WARNING: your environment.yml pins a *dev*
+#                     build (0.1.dev704) that is NOT on PyPI.  The floor below
+#                     is a guess at the nearest release -- VERIFY the released
+#                     blackjax API matches what ceridwen calls before tagging,
+#                     or replace this with the git+https install you actually use.
+dependencies = [
+    "jax>=0.4.30",
+    "jaxlib>=0.4.30",
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "h5py>=3.8",
+    "astropy>=5.3",
+    "sedpy-jax>=0.1.0",
+    "tensorflow-probability>=0.23",
+    "blackjax>=1.2.0",
+    "tqdm>=4.65",
+]
+
+[project.optional-dependencies]
+# Variational-inference preconditioning (NeuTra HMC) training loop.
+vi = ["optax>=0.2.0"]
+# Nested-sampling evidence + corner/diagnostic plotting.
+nested = ["anesthetic>=2.8"]
+# SSP-grid generation from FSPS.  python-fsps additionally needs a working
+# FSPS install + data files on disk (see README); it is not a pure-Python
+# wheel, hence kept out of the core deps.
+grids = ["fsps>=0.4.4"]
+# Test suite.
+test = ["pytest>=7.0"]
+# Everything (convenience for developers / CI).
+all = ["ceridwen[vi,nested,grids,test]"]
+
+[project.urls]
+Homepage = "https://github.com/Espe13/ceridwen"
+Source = "https://github.com/Espe13/ceridwen"
+Issues = "https://github.com/Espe13/ceridwen/issues"
+
+[tool.setuptools.packages.find]
+# Ship only the importable package; keep scripts/, tests/, notebooks/,
+# animation/, presentations/, Method_Paper/, etc. out of the wheel.
+include = ["ceridwen*"]
+exclude = ["tests*", "scripts*", "notebooks*", "animation*", "presentations*", "GPU*"]
+
+[tool.setuptools.package-data]
+# Do NOT bundle the 178 MB ceridwen/data/test_data/*.h5 grids into the wheel.
+# List small, genuinely-required data files here explicitly if any exist.
+ceridwen = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "fsps: requires a working FSPS install (deselect with -m 'not fsps')",
+    "gpu: requires a GPU (deselect with -m 'not gpu')",
+]

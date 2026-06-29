@@ -203,8 +203,7 @@ class SedModel:
         # If the user supplied a non-trivial fixed redshift, seed theta_init
         # so the CSP forward model applies the matching cosmological flux
         # factor.  Leaving zred out of theta_init entirely (the default at
-        # zred = 0) means zero branches in CSPBasis.predict — existing tests
-        # stay bit-for-bit identical.
+        # zred = 0) means zero branches in CSPBasis.predict.
         #
         # When astropy is installed we prefer its Planck18 luminosity
         # distance for this one-off scalar computation (it includes
@@ -212,7 +211,8 @@ class SedModel:
         # and bake the resulting flux factor into a static JAX scalar.
         # The sampled path (when zred is free) continues to use the
         # native differentiable backend, so NUTS gradients still work.
-        # Only seed theta_init['zred'] when there is no user-supplied
+        #
+        # GOTCHA: only seed theta_init['zred'] when there is no user-supplied
         # ``zred`` transform.  If the user registered transforms={"zred": ...}
         # they are explicitly injecting zred at predict time from a
         # fixed external value; adding zred to theta_init on top would
@@ -335,9 +335,7 @@ class SedModel:
         """
         # Built once on first access via cached_property (avoids tracing at
         # __init__ time, before observations are set up) and cached on the
-        # instance thereafter.  Semantically identical to the previous
-        # hasattr-lazy attribute, but robust under subclassing and explicit
-        # about the jit boundary.
+        # instance thereafter.
         return self._predict_jit_fn(theta)
 
     @cached_property

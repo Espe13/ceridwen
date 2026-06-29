@@ -12,12 +12,12 @@ blocks for the more complex stellar populations used in SED fitting.
 
 Note on ``log_qq``
 ------------------
-Earlier versions of this module also stored a precomputed ionising
-photon rate ``log_qq`` per (Z, age).  This is no longer included.
-The :class:`ceridwen.neb.NebularGridModel.NebularModel` now derives
-``log_qq`` directly from ``ssp_flux`` at construction time, so the
-value is always self-consistent with the SSP grid in use and with
-FSPS's own run-time formula.
+This module does not store a precomputed ionising photon rate
+``log_qq`` per (Z, age).  :class:`ceridwen.neb.NebularGridModel.NebularModel`
+derives ``log_qq`` directly from ``ssp_flux`` at construction time, so the
+value is always self-consistent with the SSP grid in use and with FSPS's
+own run-time formula.  Legacy HDF5 files that contain a ``log_qq`` dataset
+are loaded transparently — the field is simply ignored.
 """
 
 import typing
@@ -60,10 +60,9 @@ class SSPData:
 
     Notes
     -----
-    The previously stored ``log_qq`` table was removed in
-    favour of an internal calculation performed by the nebular model;
-    older HDF5 files that still contain a ``log_qq`` dataset are loaded
-    transparently — the field is simply ignored.
+    No ``log_qq`` table is stored; the nebular model computes the ionising
+    photon rate internally.  HDF5 files that contain a ``log_qq`` dataset
+    are loaded transparently — the field is simply ignored.
     """
 
     ssp_lgmet: jnp.ndarray          # log10 absolute metallicity grid
