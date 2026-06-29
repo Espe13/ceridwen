@@ -32,8 +32,11 @@ from ceridwen.csp.csp import CSPBasis
 
 from _gridfixture import require_test_grid
 
+# Uses NebularModelFSPSMatch, which reads CLOUDY grids from $SPS_HOME/nebular/;
+# those ship with FSPS, so this module requires a working FSPS install.
+pytestmark = pytest.mark.fsps
 
-# This regression needs the BPASS+AGB grid variant; commit it to
+# This regression also needs the BPASS+AGB grid variant; commit it to
 # tests/fixtures/ (see tests/fixtures/README.md) or the test skips.
 SSP_FILE = str(require_test_grid("ssp_data_bpass_agb_dust.h5"))
 

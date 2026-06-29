@@ -33,6 +33,11 @@ from ceridwen.observation.observation import Photometry
 
 from _gridfixture import require_test_grid
 
+# Builds CSPs with nebular emission, which reads CLOUDY grids from the FSPS
+# data dir ($SPS_HOME/nebular/...). Those files ship with FSPS, not with the
+# committed SSP fixture, so this whole module requires a working FSPS install.
+pytestmark = pytest.mark.fsps
+
 BASELINES = pathlib.Path(__file__).resolve().parent.parent / "baselines"
 SSP_FILE  = str(require_test_grid())
 
