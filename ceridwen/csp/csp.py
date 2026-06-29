@@ -29,6 +29,7 @@ the dict theta.
 """
 
 import math
+import os
 import warnings
 
 import numpy as np
@@ -133,9 +134,11 @@ class CSPBasis:
         If False, use time-varying metallicity (requires key ``"zh"``).
     add_neb, add_dust, add_diffuse_dust, add_dust_emission : bool
         Physics switches.
-    sps_home : str
-        Path to the FSPS root directory (needed for nebular and dust emission
-        file loading).
+    sps_home : str, optional
+        Path to the FSPS data directory (needed for nebular and dust-emission
+        grid loading). Defaults to the ``$SPS_HOME`` environment variable that
+        FSPS users set on install; pass explicitly to override. Required only
+        when ``add_neb`` or ``add_dust_emission`` is True.
     init_neb_params, init_dust_params : dict
         Keyword arguments forwarded to ``NebularModel`` / ``Dust``.
     diffuse_law : str
@@ -160,7 +163,7 @@ class CSPBasis:
         add_igm=False,
         igm_model="madau1995",
         igm_factor=1.0,
-        sps_home='/Users/amanda/Prospector/fsps',
+        sps_home=None,
         init_dust_params=None,
         diffuse_law='kriek_conroy',
         verbose=True,
@@ -249,6 +252,16 @@ class CSPBasis:
 
         self.tuniv      = tuniv
         self.tiny_logt  = tiny_logt
+        # Resolve the FSPS data directory: explicit arg wins, else $SPS_HOME
+        # (the variable FSPS users already set on install).
+        if sps_home is None:
+            sps_home = os.environ.get("SPS_HOME")
+        if (add_neb or add_dust_emission) and not sps_home:
+            raise ValueError(
+                "sps_home is required for nebular / dust emission but was not "
+                "given and $SPS_HOME is unset. Set `export SPS_HOME=/path/to/fsps` "
+                "(your FSPS data directory) or pass sps_home=... explicitly."
+            )
         self.sps_home   = sps_home
         # Free-redshift age-grid tracking.  When True AND theta carries a
         # sampled ``zred`` (and NO explicit ``lookback_time``), the SFH
