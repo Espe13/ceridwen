@@ -12,12 +12,13 @@ concurrency:
 
 jobs:
   # ----------------------------------------------------------------------
-  # Smoke test: the single most important signal for a stranger -- does the
-  # package install from a clean environment and import on CPU?  Importing
-  # ceridwen.sampler additionally exercises the blackjax / tensorflow-
-  # probability floors declared in pyproject.toml, so a bad dependency pin
-  # fails here rather than silently at a user's first fit.
-  # This job must stay green.
+  # Smoke test: does the package install from a clean environment and import?
+  # Importing ceridwen.sampler also exercises the sedpy-jax / tfp / blackjax
+  # dependency pins, so a bad pin fails here rather than at a user's first fit.
+  #
+  # Python is restricted to 3.10 for now: nested sampling pins the handley-lab
+  # blackjax fork at commit 41daed7, which only installs on 3.10. Re-add 3.11 /
+  # 3.12 once blackjax.ns is upstreamed and the fork pin is dropped.
   # ----------------------------------------------------------------------
   smoke:
     name: smoke (import) py${{ matrix.python-version }}
@@ -25,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10"]
     steps:
       - uses: actions/checkout@v4
 
@@ -48,9 +49,8 @@ jobs:
           # Public top-level API (declared in ceridwen.__all__).
           from ceridwen import DustModel, DustEmission, NebularModel, fitSED, read_result_h5
 
-          # Submodule imports that pull the heavier optional-at-runtime deps,
-          # so a broken floor (sedpy-jax / astropy / tfp / blackjax) is caught
-          # at CI time rather than by the first user.
+          # Submodule imports that pull the heavier deps, so a broken pin
+          # (sedpy-jax / astropy / tfp / blackjax) is caught at CI time.
           import ceridwen.csp.csp            # astropy, sedpy_jax
           import ceridwen.observation.observation
           import ceridwen.sampler            # tensorflow-probability, blackjax
@@ -59,23 +59,21 @@ jobs:
           PY
 
   # ----------------------------------------------------------------------
-  # Test suite.  NOTE: several tests load ceridwen/data/test_data/*.h5, which
-  # are NOT committed to git (~178 MB), and some require a working FSPS install
-  # (marked `fsps`) or a GPU (marked `gpu`).  Until a small committed fixture
-  # grid lands (see RELEASE_CHECKLIST item 11), this job is expected to be
-  # partially red -- it is marked continue-on-error so it does not block, and
-  # should be made required once the fixtures exist.
+  # Test suite (FSPS-free subset). Fixtures live in tests/fixtures/*.h5 via
+  # git-lfs, so checkout must pull LFS. FSPS- and GPU-only tests are skipped
+  # by marker. Pinned to Python 3.10 for the same blackjax-fork reason above.
   # ----------------------------------------------------------------------
   tests:
-    name: pytest (best-effort)
+    name: pytest (FSPS-free)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.10"
           cache: pip
 
       - name: Install with test extras
@@ -85,4 +83,4 @@ jobs:
 
       - name: Run tests (skip FSPS- and GPU-only tests)
         run: |
-          pytest -m "not fsps and not gpu" -ra
+          python -m pytest -m "not fsps and not gpu" -ra
