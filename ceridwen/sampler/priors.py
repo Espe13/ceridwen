@@ -108,6 +108,9 @@ class Prior(abc.ABC):
         return self._sample_impl(key, shape)
 
     def _sample_impl(self, key: jax.random.KeyArray, shape: Tuple[int, ...]) -> Array:
+        # TFP wants a concrete sample_shape; None triggers a deprecation warning.
+        if shape is None:
+            shape = ()
         return self.tfp_dist().sample(seed=key, sample_shape=shape)
 
     def unit_transform(self, x: Array) -> Array:

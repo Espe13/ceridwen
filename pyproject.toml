@@ -94,3 +94,10 @@ markers = [
     "fsps: requires a working FSPS install (deselect with -m 'not fsps')",
     "gpu: requires a GPU (deselect with -m 'not gpu')",
 ]
+# Silence third-party deprecation noise we can't fix (tensorflow-probability's
+# JAX substrate, pkg_resources). We deliberately do NOT blanket-ignore
+# DeprecationWarning, so genuine deprecations in ceridwen's own code still show.
+filterwarnings = [
+    "ignore::DeprecationWarning:tensorflow_probability.*",
+    "ignore:pkg_resources is deprecated as an API:DeprecationWarning",
+]

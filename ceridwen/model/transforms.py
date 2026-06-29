@@ -186,6 +186,6 @@ def sfh_to_logsfr_ratios(sfh):
         ``logsfr_ratios[i] = log10( sfh[i] / sfh[i+1] )``.
     """
     sfh     = jnp.asarray(sfh, dtype=float)
-    sfh     = jnp.clip(sfh, a_min=1e-30)
+    sfh     = jnp.clip(sfh, 1e-30)
     log_sfr = jnp.log10(sfh)
     return log_sfr[:-1] - log_sfr[1:]                             # (n-1,)
