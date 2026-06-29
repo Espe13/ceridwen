@@ -18,10 +18,6 @@ import pytest
 
 from capture_baseline import compute_baselines, BASELINE_DIR
 
-# Recomputing the baselines goes through SSPBasis, which requires FSPS.
-# Tag the whole module so `-m "not fsps"` skips it on FSPS-free machines/CI.
-pytestmark = pytest.mark.fsps
-
 ATOL = 1e-10
 RTOL = 1e-7
 

@@ -19,6 +19,11 @@ import numpy as np
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
+import pytest
+
+# Nested sampling requires the handley-lab blackjax fork (provides blackjax.ns);
+# skip cleanly on a stock PyPI blackjax that lacks it.
+pytest.importorskip("blackjax.ns")
 
 from ceridwen.sampler.nested import BlackJAXNestedSamplerAdapter
 from ceridwen.sampler import Uniform

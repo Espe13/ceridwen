@@ -34,9 +34,16 @@ pip install -e .
 ```
 
 This installs everything needed to `import ceridwen`, build the forward model,
-and run the default NUTS / nested samplers: `jax`, `jaxlib`, `numpy`, `scipy`,
+and run NUTS / VI / nested sampling: `jax`, `jaxlib`, `numpy`, `scipy`,
 `matplotlib`, `h5py`, `astropy`, `sedpy-jax`, `tensorflow-probability`,
 `blackjax`, and `tqdm` are all pulled in automatically.
+
+> **Note on `blackjax`.** Nested sampling uses `blackjax.ns`, which currently
+> lives only in the [handley-lab blackjax fork](https://github.com/handley-lab/blackjax).
+> ceridwen therefore pins that fork at a known-good commit (works on Python
+> 3.10). Because this is a direct git dependency, ceridwen is installed from
+> source/GitHub rather than PyPI for now; this will be swapped for a normal
+> PyPI pin once `blackjax.ns` is released upstream.
 
 Optional features live behind extras:
 

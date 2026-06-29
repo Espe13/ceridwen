@@ -33,12 +33,18 @@ classifiers = [
 #                     Imported at module scope (dust/DustModel.py) so it is
 #                     mandatory just to import the package.
 #   * tensorflow-probability -- every prior uses tfp.substrates.jax.
-#   * blackjax     -- used in the core likelihood/theta/model layers, not only
-#                     the samplers.  WARNING: your environment.yml pins a *dev*
-#                     build (0.1.dev704) that is NOT on PyPI.  The floor below
-#                     is a guess at the nearest release -- VERIFY the released
-#                     blackjax API matches what ceridwen calls before tagging,
-#                     or replace this with the git+https install you actually use.
+#   * blackjax     -- nested sampling needs `blackjax.ns`, which only exists in
+#                     the handley-lab fork. We pin the exact known-good commit
+#                     (41daed7 = the 0.1.dev704 build; supports Python 3.10, fork
+#                     HEAD now requires 3.11). This direct git reference means
+#                     ceridwen cannot be uploaded to PyPI as-is.
+#                     TODO(switch ASAP): when `blackjax.ns` is released upstream
+#                     on PyPI, replace this with a normal pin (e.g. blackjax>=X.Y)
+#                     to restore PyPI-installability.
+#   * sedpy-jax    -- the 0.1.0 published to PyPI carries `inres` support + the
+#                     LOSVD FFT wrap-around fix (no prior 0.1.0 exists on PyPI, so
+#                     this is unambiguous). Make sure the same fixes are pushed to
+#                     the sedpy_jax GitHub repo too, for git/source installs.
 dependencies = [
     "jax>=0.4.30",
     "jaxlib>=0.4.30",
@@ -49,7 +55,7 @@ dependencies = [
     "astropy>=5.3",
     "sedpy-jax>=0.1.0",
     "tensorflow-probability>=0.23",
-    "blackjax>=1.2.0",
+    "blackjax @ git+https://github.com/handley-lab/blackjax@41daed7",
     "tqdm>=4.65",
 ]
 

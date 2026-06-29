@@ -312,3 +312,4 @@ tests/regression/big_comparison_*.txt
 tests/regression/parameter_effects_*.txt
 tests/regression/_weights_oldref.npz
 tests/regression/baselines/params.pkl
+ceridwen-clone/
