@@ -41,10 +41,9 @@ classifiers = [
 #                     TODO(switch ASAP): when `blackjax.ns` is released upstream
 #                     on PyPI, replace this with a normal pin (e.g. blackjax>=X.Y)
 #                     to restore PyPI-installability.
-#   * sedpy-jax    -- the 0.1.0 published to PyPI carries `inres` support + the
-#                     LOSVD FFT wrap-around fix (no prior 0.1.0 exists on PyPI, so
-#                     this is unambiguous). Make sure the same fixes are pushed to
-#                     the sedpy_jax GitHub repo too, for git/source installs.
+#   * sedpy-jax    -- >=0.1.1 carries the `inres` arg of make_lsf_smoother + the
+#                     LOSVD FFT wrap-around fix (published to PyPI). The older
+#                     0.1.0 lacks them, so the floor must exclude it.
 dependencies = [
     "jax>=0.4.30",
     "jaxlib>=0.4.30",
@@ -53,7 +52,7 @@ dependencies = [
     "matplotlib>=3.7",
     "h5py>=3.8",
     "astropy>=5.3",
-    "sedpy-jax>=0.1.0",
+    "sedpy-jax>=0.1.1",
     "tensorflow-probability>=0.23",
     "blackjax @ git+https://github.com/handley-lab/blackjax@41daed7",
     "tqdm>=4.65",
