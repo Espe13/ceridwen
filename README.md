@@ -85,6 +85,22 @@ runnable fit (mock SDSS photometry, end to end) once FSPS is set up.
 
 ## Quick start
 
+### Run the bundled example first
+
+The fastest way to confirm your whole setup works end to end. It builds the SSP
+cache from FSPS, generates mock SDSS photometry, fits it with nested sampling,
+and prints recovered-vs-true parameters plus a corner plot
+(`examples/quickstart_corner.png`):
+
+```bash
+export SPS_HOME=/path/to/fsps        # your FSPS data directory
+python examples/quickstart.py
+```
+
+If that runs and the recovered `Z`/`logmass` land near the injected truth,
+you're ready to fit real data — read on. The two steps below are what the
+example does internally, shown so you can adapt them to your own observations.
+
 ### Step 0 — build the SSP grid (once per FSPS configuration)
 
 Ceridwen's forward model consumes an HDF5 cache of SSP spectra precomputed
@@ -109,6 +125,10 @@ FSPS must be installed and importable; see the Installation section.
 
 ### Step 1 — fit a galaxy end-to-end
 
+This is a **template**, not a copy-paste-runnable script: the flux/uncertainty
+arrays (and `my_observed_flux` / `my_observed_sigma`) are placeholders for your
+own data. For a script that runs as-is, use `examples/quickstart.py` above.
+
 ```python
 import jax, jax.numpy as jnp
 from ceridwen.ssps.ssp_data import SSPData
@@ -122,11 +142,12 @@ from ceridwen.fit import fitSED
 ssp = SSPData.load("ssp_data.h5")
 
 # Composite-stellar-population forward model.
+# sps_home defaults to the $SPS_HOME environment variable, so you can omit it
+# if that is set (recommended); pass it explicitly to override.
 csp = CSPBasis(
     ssp,
     add_dust=True, add_diffuse_dust=True,
     add_neb=True, add_igm=True,            # IGM (Madau 1995) auto-scales with zred
-    sps_home="/path/to/fsps",
 )
 
 # Observations.  Any combination of the three container classes can be
@@ -185,12 +206,16 @@ observations = [phot, spec, lines]
 model = SedModel(
     csp, observations=observations,
     priors={
-        "Z": ClippedNormal(mean=-1.0, sigma=0.3, low=-2.0, high=0.19),
+        # Z is log10 of ABSOLUTE metallicity (= ssp_lgmet), NOT log10(Z/Zsun).
+        # Keep this inside the FSPS grid (≈ [-4, -1.4]; solar ≈ -1.85) — values
+        # outside it are silently clamped. Run `csp.check_param_ranges(...)` or
+        # `python -m ceridwen.check` if unsure of your grid bounds.
+        "Z": ClippedNormal(mean=-2.0, sigma=0.5, low=-4.0, high=-1.4),
         "logmass": Uniform(low=6.0, high=12.5),
         "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
         "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
         "tau_pow": ClippedNormal(mean=0.3, sigma=0.5, low=0.0, high=4.0),
-        "alpha": ClippedNormal(mean=-1.0, sigma=0.5, low=-2.5, high=0.5),
+        "alpha_pow": ClippedNormal(mean=-1.0, sigma=0.5, low=-2.5, high=0.5),
         "gas_logz": Uniform(low=-2.0, high=0.5),
         "gas_logu": Uniform(low=-4.0, high=-1.0),
         "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=0.3),
@@ -212,6 +237,20 @@ result = fitSED(
 ```
 
 The `result` object has posterior samples keyed by parameter name, plus the VI trace and per-phase wall-clock timings in `result.raw`.
+
+---
+
+## Troubleshooting
+
+- **Run `python -m ceridwen.check` first.** It reports missing dependencies, an
+  unset or wrong `$SPS_HOME`, a too-old `sedpy-jax`, and whether nested sampling
+  is available — each with the fix.
+- **Install must be Python 3.10** (see Installation); 3.11/3.12 are refused for
+  now because of the `blackjax` fork.
+- **Common scientific pitfalls** — the metallicity-units trap, silently-ignored
+  `theta` typos, the lookback-time convention — are documented in
+  [`GOTCHAS.md`](GOTCHAS.md). If you're letting an AI assistant help you use
+  ceridwen, point it at [`AGENTS.md`](AGENTS.md).
 
 ---
 

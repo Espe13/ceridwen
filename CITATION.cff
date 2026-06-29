@@ -1,0 +1,44 @@
+cff-version: 1.2.0
+message: "If you use CERIDWEN in your research, please cite it as below."
+title: "CERIDWEN: Comprehensive SED Estimation Routine Involving Data-driven WEight calculatioNs"
+abstract: >-
+  CERIDWEN is a JAX-native, GPU-capable spectral energy distribution (SED)
+  fitting package for galaxies. It provides a differentiable forward model
+  (stellar populations, dust attenuation and emission, nebular continuum and
+  line emission, IGM attenuation, redshift-aware observed-frame projection) and
+  posterior inference via nested sampling and variational-inference
+  preconditioned Hamiltonian Monte Carlo.
+type: software
+authors:
+  - family-names: Stoffers
+    given-names: Amanda
+    email: aas208@cam.ac.uk
+    affiliation: "Institute of Astronomy, University of Cambridge"
+version: "0.1.0"
+date-released: "2026-06-29"
+license: MIT
+repository-code: "https://github.com/Espe13/ceridwen"
+url: "https://github.com/Espe13/ceridwen"
+keywords:
+  - astronomy
+  - astrophysics
+  - spectral energy distribution
+  - SED fitting
+  - stellar population synthesis
+  - Bayesian inference
+  - nested sampling
+  - JAX
+
+# When the methods paper is published, fill in the journal, year, volume,
+# pages and DOI below, and update `message` to ask users to cite the paper.
+preferred-citation:
+  type: article
+  title: "CERIDWEN: a JAX-native, GPU-accelerated SED fitting framework"
+  authors:
+    - family-names: Stoffers
+      given-names: Amanda
+      email: aas208@cam.ac.uk
+      affiliation: "Institute of Astronomy, University of Cambridge"
+  journal: "Monthly Notices of the Royal Astronomical Society"
+  year: 2026
+  notes: "Methods paper (in preparation). Update title, volume, pages and DOI on publication."

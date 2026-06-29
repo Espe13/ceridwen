@@ -90,7 +90,9 @@ def main() -> int:
     csp = CSPBasis(
         ssp_data,
         theta={"lookback_time": lookback, "sfh": jnp.ones(N_TIME),
-               "Z": jnp.array([-1.0])},
+               # Z is log10 of ABSOLUTE metallicity (= ssp_lgmet), NOT log10(Z/Zsun).
+               # This FSPS grid spans roughly [-4.0, -1.4]; solar ~ -1.85.
+               "Z": jnp.array([-2.0])},
         tuniv=T_UNIV,
         zh_const=True,
         sfh_interp="step",
@@ -103,7 +105,7 @@ def main() -> int:
 
     # ---- Step 2: mock photometry from known truth ------------------------
     TRUE_LOGSFR_RATIOS = jnp.array([+0.3, +0.2, -0.1, -0.5])
-    TRUE_Z = jnp.array([-0.5])
+    TRUE_Z = jnp.array([-2.0])      # log10 absolute Z, inside the grid (~Z/2 Zsun)
     TRUE_LOGMASS = jnp.array([10.5])
     TRUE_DIFFDUST = jnp.array([0.5])
     TRUE_DUST_INDEX = jnp.array([-0.7])
@@ -139,7 +141,7 @@ def main() -> int:
 
     priors = {
         "logsfr_ratios": StudentT(mean=0.0, scale=1.0, df=2.0),
-        "Z": Uniform(low=-2.5, high=0.2),
+        "Z": Uniform(low=-3.9, high=-1.45),   # stay within the FSPS metallicity grid
         "logmass": Uniform(low=9.0, high=12.0),
         "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
         "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
