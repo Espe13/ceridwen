@@ -66,7 +66,7 @@ def _build_csp(ssp, *, sfh_interp, per_bin, n_time=10, tuniv=13.8):
     theta    = {
         "lookback_time": lookback,
         "sfh":           sfh,
-        "Z":             jnp.array([-0.5]),
+        "Z":             jnp.array([-2.0]),   # log10 absolute Z, within the grid
     }
     return CSPBasis(
         ssp,
