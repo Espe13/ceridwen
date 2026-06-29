@@ -185,6 +185,15 @@ class SedModel:
                     if p not in self.param_names:
                         self.param_names.append(p)
 
+        # Tell the CSP unknown-key guard about the model-level free parameters
+        # (e.g. logsfr_ratios consumed by the sfh transform). apply_transforms
+        # forwards the full free-parameter dict to csp.predict, so without this
+        # those keys would be mis-flagged as typos on every fit.
+        if hasattr(self.csp, "register_known_theta_keys"):
+            self.csp.register_known_theta_keys(
+                set(self.param_names) | set(self.priors) | set(self.transforms)
+            )
+
         # Precompute static projection matrices for Spectrum and Lines.
         # This must happen once, at Python level, BEFORE any JIT trace of
         # predict().  Each observation's setup_for_model() stores a constant

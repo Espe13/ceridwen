@@ -7,7 +7,11 @@ name = "ceridwen"
 version = "0.1.0"
 description = "JAX-native, GPU-capable SED fitting with VI-preconditioned HMC"
 readme = "README.md"
-requires-python = ">=3.10"
+# Capped to 3.10 for now: nested sampling pins the handley-lab blackjax fork,
+# which only installs on 3.10. This makes `pip install` fail fast with a clear
+# "requires Python 3.10" message instead of a cryptic blackjax build error on
+# 3.11/3.12. Widen this when blackjax.ns is upstreamed and the fork pin drops.
+requires-python = ">=3.10,<3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Amanda Stoffers", email = "aas208@cam.ac.uk" }]
 keywords = ["astronomy", "astrophysics", "SED fitting", "JAX", "HMC", "stellar populations"]
@@ -18,8 +22,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
 ]
 
 # Core runtime dependencies.  These are everything needed for

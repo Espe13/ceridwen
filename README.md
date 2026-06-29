@@ -25,13 +25,28 @@ Everything is written against `jax.numpy` with `@jit` and `vmap`/`pmap` in mind:
 
 ## Installation
 
-Requires Python ≥ 3.10.
+**Use Python 3.10.** Nested sampling depends on the handley-lab `blackjax` fork,
+which currently only installs on 3.10; `pip install` will refuse 3.11/3.12 until
+that lands upstream. A fresh conda env is the easy route:
 
 ```bash
+conda create -n ceridwen python=3.10 -y
+conda activate ceridwen
+
 git clone https://github.com/Espe13/ceridwen.git
 cd ceridwen
 pip install -e .
 ```
+
+After installing, verify your setup (deps, FSPS, `$SPS_HOME`, nested-sampling
+support) before your first fit:
+
+```bash
+python -m ceridwen.check
+```
+
+It prints an `ok` / `warn` / `FAIL` line per component with the exact fix for
+anything missing.
 
 This installs everything needed to `import ceridwen`, build the forward model,
 and run NUTS / VI / nested sampling: `jax`, `jaxlib`, `numpy`, `scipy`,

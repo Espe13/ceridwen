@@ -513,6 +513,17 @@ class CSPBasis:
     # Defensive helpers (all NON-jitted or trace-time-only; zero hot-path cost)
     # -----------------------------------------------------------------------
 
+    def register_known_theta_keys(self, keys):
+        """Register additional recognized theta keys so they are not mis-flagged
+        as typos by :meth:`_warn_unknown_theta_keys`.
+
+        ``SedModel`` calls this with its model-level free parameters (e.g.
+        ``logsfr_ratios``, which the ``sfh`` transform consumes): those keys are
+        forwarded through to ``predict`` in the full theta dict but are not CSP
+        parameters, so without this they would trigger a spurious typo warning.
+        """
+        self._known_theta_keys |= set(keys)
+
     def _warn_unknown_theta_keys(self, theta):
         """Warn about theta keys the model does not consume (usually typos).
 

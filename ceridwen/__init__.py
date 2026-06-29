@@ -4,6 +4,7 @@ jax.config.update("jax_enable_x64", True)
 from .dust import DustModel, DustEmission
 from .neb import NebularModel
 from .fit import fitSED, read_result_h5
+from .check import check_environment
 
 try:
     from ._version import __version__
@@ -33,6 +34,7 @@ __all__ = [
     "NebularModel",
     "fitSED",
     "read_result_h5",
+    "check_environment",
     "__version__",
     "__githash__",
 ]
