@@ -35,8 +35,19 @@ conda activate ceridwen
 
 git clone https://github.com/Espe13/ceridwen.git
 cd ceridwen
-pip install -e .
+pip install .
 ```
+
+Use a plain `pip install .` (not `-e`): an editable install tracks your working
+copy, so your version would change as the repo moves. To pin a specific release
+instead, install a tag directly (no manual clone needed):
+
+```bash
+pip install "git+https://github.com/Espe13/ceridwen.git@v0.1.0"
+```
+
+(If you intend to modify ceridwen's source, then `pip install -e .` from a clone
+is the developer workflow.)
 
 After installing, verify your setup (deps, FSPS, `$SPS_HOME`, nested-sampling
 support) before your first fit:
@@ -63,21 +74,24 @@ and run NUTS / VI / nested sampling: `jax`, `jaxlib`, `numpy`, `scipy`,
 Optional features live behind extras:
 
 ```bash
-pip install -e ".[vi]"      # optax — variational-inference (NeuTra) preconditioning
-pip install -e ".[nested]"  # anesthetic — nested-sampling evidence + corner plots
-pip install -e ".[grids]"   # python-fsps — generate SSP grids from FSPS (see Step 0)
-pip install -e ".[all]"     # everything above, plus the test suite
+pip install ".[vi]"      # optax — variational-inference (NeuTra) preconditioning
+pip install ".[nested]"  # anesthetic — nested-sampling evidence + corner plots
+pip install ".[grids]"   # python-fsps — generate SSP grids from FSPS (see Step 0)
+pip install ".[all]"     # everything above, plus the test suite
 ```
 
 ### Installing FSPS and setting `$SPS_HOME`
 
-CERIDWEN needs [FSPS](https://github.com/cconroy20/fsps) (via the
-[`python-fsps`](https://dfm.io/python-fsps) wrapper) to build the SSP cache, and
-— with `add_neb=True` or `add_dust_emission=True` — at runtime, to read the
-CLOUDY nebular grids and Draine & Li dust-emission templates. FSPS is **not** a
-pure-Python wheel: it needs a Fortran compiler and a clone of the FSPS data
-files, and it reads the `$SPS_HOME` environment variable (it fails to import if
-that is unset or wrong).
+CERIDWEN uses [FSPS](https://github.com/cconroy20/fsps) in two ways. The
+[`python-fsps`](https://dfm.io/python-fsps) wrapper builds the SSP cache (Step
+0). Separately, the FSPS **data files** supply the CLOUDY nebular grids and
+Draine & Li dust-emission templates: when `add_neb=True` or
+`add_dust_emission=True`, **CERIDWEN reads those files directly from
+`$SPS_HOME`** — FSPS itself is not run at fit time, it just provides the data.
+
+FSPS is **not** a pure-Python wheel: it needs a Fortran compiler and a clone of
+the FSPS data files, and `python-fsps` reads the `$SPS_HOME` environment
+variable (it fails to import if that is unset or wrong).
 
 ```bash
 # 1. A Fortran compiler (pick one for your system):
@@ -85,8 +99,11 @@ brew install gcc                       # macOS (Homebrew)
 sudo apt-get install gfortran          # Debian/Ubuntu
 conda install -c conda-forge gfortran  # any OS, inside your conda env
 
-# 2. Clone the FSPS data files and point $SPS_HOME at them:
-export SPS_HOME="$HOME/fsps"
+# 2. Pick where the FSPS data should live and point $SPS_HOME at it. This can
+#    be ANY path -- $HOME, a data disk, cluster scratch, etc. `git clone` writes
+#    to that absolute path, so it does NOT matter which directory you run it from
+#    (no `cd` needed). Just change the path below to wherever you want it.
+export SPS_HOME="$HOME/fsps"        # <- edit this to your chosen location
 git clone https://github.com/cconroy20/fsps.git "$SPS_HOME"
 
 # 3. Install the Python wrapper (it compiles against $SPS_HOME):
@@ -95,7 +112,8 @@ python -m pip install fsps
 
 **Make `$SPS_HOME` permanent.** Step 2 above only sets it for the current
 terminal; `python-fsps` needs it in *every* session. Add it to your shell
-startup file so it persists:
+startup file so it persists (use the **same path you chose in step 2** — the
+`$HOME/fsps` below is just the example default):
 
 ```bash
 # zsh (the macOS default shell):
