@@ -58,21 +58,24 @@ dependencies = [
     "tensorflow-probability>=0.23",
     "blackjax @ git+https://github.com/handley-lab/blackjax@41daed7",
     "tqdm>=4.65",
+    # Pure-Python, so kept in core for a fully-featured default install:
+    "optax>=0.2.0",       # VI (NeuTra) preconditioning training loop
+    "anesthetic>=2.8",    # nested-sampling posteriors, evidence, corner plots
 ]
 
 [project.optional-dependencies]
-# Variational-inference preconditioning (NeuTra HMC) training loop.
-vi = ["optax>=0.2.0"]
-# Nested-sampling evidence + corner/diagnostic plotting.
-nested = ["anesthetic>=2.8"]
 # SSP-grid generation from FSPS.  python-fsps additionally needs a working
-# FSPS install + data files on disk (see README); it is not a pure-Python
-# wheel, hence kept out of the core deps.
+# FSPS install + data files on disk (see README); it is NOT a pure-Python
+# wheel (compiles against $SPS_HOME), hence the only feature kept out of core.
 grids = ["fsps>=0.4.4"]
 # Test suite.
 test = ["pytest>=7.0"]
-# Everything (convenience for developers / CI).
-all = ["ceridwen[vi,nested,grids,test]"]
+# Back-compat no-ops: optax/anesthetic are now core, so these install nothing
+# extra, but `pip install '.[vi]'` / `.[nested]` still work.
+vi = []
+nested = []
+# Everything installable automatically (FSPS still needs the manual setup).
+all = ["ceridwen[grids,test]"]
 
 [project.urls]
 Homepage = "https://github.com/Espe13/ceridwen"

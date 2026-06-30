@@ -25,7 +25,8 @@ e.g.::
 The SSP cache is written to ``examples/ssp_data.h5`` the first time and
 re-used on subsequent runs.  Set ``$SSP_FILE`` to point elsewhere.
 
-Runs on CPU in a couple of minutes; no GPU required.
+The fit takes ~10 min on CPU (much faster on GPU); lower ``num_live`` in the
+adapter below for a quicker, rougher run.
 """
 from __future__ import annotations
 
@@ -165,12 +166,14 @@ def main() -> int:
     )
 
     n_dims = sum(int(jnp.size(v)) for v in model.theta_init.values())
-    # FAST DEMO settings so this finishes in ~1-2 min on a CPU. For science use
-    # num_live >= 500, num_inner_steps >= n_dims*5, and a stricter logZ_tol
-    # (e.g. -3.0) -- expect minutes-to-hours on CPU, seconds-to-minutes on GPU.
+    # Demo settings tuned for a well-converged, good-looking corner in ~10 min
+    # on a CPU (much faster on GPU). num_live is the main runtime<->quality dial:
+    # lower it (e.g. 120) for a quick/rough run, raise it for tighter contours.
+    # For publication use num_live >= 500, num_inner_steps >= n_dims*5, and a
+    # stricter logZ_tol (e.g. -3.0).
     adapter = BlackJAXNestedSamplerAdapter(
-        priors=model.priors, num_live=150, num_inner_steps=max(8, n_dims * 3),
-        logZ_tol=-1.0, verbose=True,
+        priors=model.priors, num_live=200, num_inner_steps=max(8, n_dims * 3),
+        logZ_tol=-2.0, verbose=True,
     )
     likelihood = MultiObservationLikelihood(
         keys=("phot",), likelihoods=(DiagonalGaussianLikelihood(),)

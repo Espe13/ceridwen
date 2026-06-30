@@ -60,9 +60,11 @@ It prints an `ok` / `warn` / `FAIL` line per component with the exact fix for
 anything missing.
 
 This installs everything needed to `import ceridwen`, build the forward model,
-and run NUTS / VI / nested sampling: `jax`, `jaxlib`, `numpy`, `scipy`,
-`matplotlib`, `h5py`, `astropy`, `sedpy-jax`, `tensorflow-probability`,
-`blackjax`, and `tqdm` are all pulled in automatically.
+and run NUTS / VI / nested sampling **including posterior plotting** — `jax`,
+`jaxlib`, `numpy`, `scipy`, `matplotlib`, `h5py`, `astropy`, `sedpy-jax`,
+`tensorflow-probability`, `blackjax`, `tqdm`, `optax` (VI), and `anesthetic`
+(nested-sampling posteriors + corner plots) are all pulled in automatically.
+The only thing not installed for you is FSPS (it can't be — see below).
 
 > **Note on `blackjax`.** Nested sampling uses `blackjax.ns`, which currently
 > lives only in the [handley-lab blackjax fork](https://github.com/handley-lab/blackjax).
@@ -71,14 +73,16 @@ and run NUTS / VI / nested sampling: `jax`, `jaxlib`, `numpy`, `scipy`,
 > source/GitHub rather than PyPI for now; this will be swapped for a normal
 > PyPI pin once `blackjax.ns` is released upstream.
 
-Optional features live behind extras:
+Two optional extras remain — the things that can't or needn't be in core:
 
 ```bash
-pip install ".[vi]"      # optax — variational-inference (NeuTra) preconditioning
-pip install ".[nested]"  # anesthetic — nested-sampling evidence + corner plots
-pip install ".[grids]"   # python-fsps — generate SSP grids from FSPS (see Step 0)
-pip install ".[all]"     # everything above, plus the test suite
+pip install ".[grids]"   # python-fsps — build SSP grids from FSPS (needs the FSPS setup below)
+pip install ".[test]"    # pytest — run the test suite
+pip install ".[all]"     # both of the above
 ```
+
+(`.[vi]` and `.[nested]` still work but are now no-ops — optax and anesthetic
+moved into the core install.)
 
 ### Installing FSPS and setting `$SPS_HOME`
 

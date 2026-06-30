@@ -60,13 +60,13 @@ def check_environment(verbose: bool = True) -> bool:
             "work; nested sampling likely will not install.",
         )
 
-    # ---- Core required deps ---------------------------------------------
+    # ---- Core required deps (incl. optax + anesthetic, now core) --------
     for mod in ("jax", "jaxlib", "numpy", "scipy", "matplotlib", "h5py",
-                "astropy", "tqdm"):
+                "astropy", "tqdm", "optax", "anesthetic"):
         m, err = _try_import(mod)
         if m is None:
             required_ok = False
-            record(_FAIL, mod, f"not importable ({err}); run `pip install -e .`")
+            record(_FAIL, mod, f"not importable ({err}); run `pip install .`")
         else:
             record(_OK, mod, getattr(m, "__version__", ""))
 
@@ -126,15 +126,6 @@ def check_environment(verbose: bool = True) -> bool:
             record(_WARN, "blackjax.ns",
                    "missing -> nested sampling unavailable. Install the fork: "
                    "pip install git+https://github.com/handley-lab/blackjax@41daed7")
-
-    # ---- Optional samplers ----------------------------------------------
-    for mod, why in (("optax", "variational inference"),
-                     ("anesthetic", "nested-sampling posteriors/plots")):
-        m, _ = _try_import(mod)
-        if m is None:
-            record(_WARN, mod, f"absent ({why}); `pip install ceridwen[{'vi' if mod=='optax' else 'nested'}]`")
-        else:
-            record(_OK, mod, getattr(m, "__version__", ""))
 
     # ---- FSPS + $SPS_HOME (grid building + nebular/dust-emission) -------
     fsps, _ = _try_import("fsps")
