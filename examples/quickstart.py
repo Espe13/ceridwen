@@ -169,13 +169,15 @@ def main() -> int:
     )
 
     n_dims = sum(int(jnp.size(v)) for v in model.theta_init.values())
-    # Demo settings tuned for a well-converged, good-looking corner in ~10 min
-    # on a CPU (much faster on GPU). num_live is the main runtime<->quality dial:
-    # lower it (e.g. 120) for a quick/rough run, raise it for tighter contours.
+    # Demo settings tuned for a reasonable CPU runtime (~10 min) and a
+    # good-looking corner. Two dials:
+    #   * num_inner_steps -- dominates the one-time JIT *compile* time of the
+    #     step kernel (it is the unrolled inner MCMC chain) AND per-step cost.
+    #   * num_live -- runtime<->quality (more = smoother contours, more steps).
     # For publication use num_live >= 500, num_inner_steps >= n_dims*5, and a
-    # stricter logZ_tol (e.g. -3.0).
+    # stricter logZ_tol (e.g. -3.0); expect much longer on CPU.
     adapter = BlackJAXNestedSamplerAdapter(
-        priors=model.priors, num_live=200, num_inner_steps=max(8, n_dims * 3),
+        priors=model.priors, num_live=150, num_inner_steps=max(8, n_dims * 2),
         logZ_tol=-2.0, verbose=True,
     )
     likelihood = MultiObservationLikelihood(

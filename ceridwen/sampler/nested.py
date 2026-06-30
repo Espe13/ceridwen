@@ -429,8 +429,11 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
             while float(_get_logZ_live(live) - _get_logZ(live)) >= self.logZ_tol:
                 rng_key, subkey = jax.random.split(rng_key)
                 if _iter == 0 and self.verbose:
-                    print("  [step_fn] Compiling + running first iteration "
-                          "(this may take 1-2 min on CPU) ...", flush=True)
+                    print("  [step_fn] Compiling the step kernel (one-time JIT) "
+                          "+ running the first iteration. This compile can be "
+                          "slow on CPU (seconds to many minutes depending on "
+                          "model size and hardware); subsequent steps are fast.",
+                          flush=True)
                 _t_iter = time.perf_counter()
 
                 live, dead_info = step_fn(subkey, live)
