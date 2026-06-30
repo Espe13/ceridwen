@@ -13,7 +13,7 @@ Main Components:
     spectrum = csp.get_spectrum()
 """
 
-from .csp import CSPBasis
+from .csp import CSPBasis, fnu2flam
 
 # SVD-accelerated variant is optional — not present in all installations
 try:
@@ -23,7 +23,6 @@ except ImportError:
     SVDCSPBasis = None
     _HAS_SVD = False
 
-__version__ = "1.0.0"
 __author__ = "Amanda Stoffers"
 
-__all__ = ["CSPBasis"] + (["SVDCSPBasis"] if _HAS_SVD else []) + ["fnun2flam"]
+__all__ = ["CSPBasis", "fnu2flam"] + (["SVDCSPBasis"] if _HAS_SVD else [])

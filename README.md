@@ -168,7 +168,7 @@ with FSPS.  On first use you need to generate it.  This takes a few
 minutes on CPU and only has to be done once:
 
 ```python
-from ceridwen.ssps.ssp_data import SSPData
+from ceridwen import SSPData
 
 # Generate + cache.  Any FSPS params (imf_type, dust_type, nebular grid
 # choices, ...) can be passed as kwargs.  The example below matches the
@@ -191,12 +191,9 @@ own data. For a script that runs as-is, use `examples/quickstart.py` above.
 
 ```python
 import jax, jax.numpy as jnp
-from ceridwen.ssps.ssp_data import SSPData
-from ceridwen.csp.csp import CSPBasis
-from ceridwen.observation.observation import Photometry
-from ceridwen.model.model import SedModel
-from ceridwen.sampler import Uniform, ClippedNormal, StudentT
-from ceridwen.fit import fitSED
+from ceridwen import SSPData, CSPBasis, SedModel, fitSED
+from ceridwen.observation import Photometry, Spectrum, Lines
+from ceridwen.priors import Uniform, ClippedNormal, StudentT
 
 # Load the cached grid produced in Step 0.
 ssp = SSPData.load("ssp_data.h5")
@@ -227,8 +224,7 @@ phot = Photometry(
 # ``smoothtype`` if you want the forward model to apply instrumental
 # broadening.  Optional: ``response`` = per-pixel multiplicative
 # flux-calibration vector.
-from ceridwen.observation.observation import Spectrum
-import numpy as np
+import numpy as np   # Spectrum already imported above
 
 wave = np.linspace(3600.0, 9000.0, 1024)     # Å, vacuum rest-frame
 spec = Spectrum(
@@ -242,8 +238,7 @@ spec = Spectrum(
 
 # (c) Nebular emission-line fluxes (used by fit_lines.py drivers).
 # ``line_ind`` are 1-based indices into FSPS's ``emlines_info.dat``;
-# ``wavelength`` is the vacuum rest wavelength in Å.
-from ceridwen.observation.observation import Lines
+# ``wavelength`` is the vacuum rest wavelength in Å.  (Lines imported above.)
 
 LINE_IND   = [59, 62, 63, 71, 72]                       # Hβ, [OIII]4959, [OIII]5007, Hα, [NII]6583
 LINE_NAMES = ["Hbeta", "[OIII]4959", "[OIII]5007", "Halpha", "[NII]6583"]

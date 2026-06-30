@@ -68,14 +68,19 @@ branches. When modifying it:
 ## Public API (import these; treat everything else as internal)
 
 ```python
-from ceridwen import DustModel, DustEmission, NebularModel, fitSED, read_result_h5
-from ceridwen.ssps.ssp_data import SSPData
-from ceridwen.csp.csp import CSPBasis
-from ceridwen.observation.observation import Photometry, Spectrum, Lines
-from ceridwen.model.model import SedModel
-from ceridwen.sampler import (Uniform, TopHat, Normal, ClippedNormal,
-                              LogNormal, StudentT, run_sampler)
+# Primary model builders are available straight from the top level:
+from ceridwen import (SSPData, CSPBasis, SedModel,
+                      DustModel, DustEmission, NebularModel, fitSED, read_result_h5)
+# Observation containers, priors and samplers live in clear sub-namespaces:
+from ceridwen.observation import Photometry, Spectrum, Lines
+from ceridwen.priors import (Prior, Uniform, TopHat, Normal, ClippedNormal,
+                             LogNormal, StudentT)
+from ceridwen.sampler import run_sampler
+from ceridwen.likelihood import DiagonalGaussianLikelihood, MultiObservationLikelihood
 ```
+
+Equivalent namespaced paths also work: `ceridwen.ssps.SSPData`,
+`ceridwen.csp.CSPBasis`, `ceridwen.model.SedModel`.
 
 - The canonical nebular class is `NebularModel`. `NebularModelFSPSMatch`
   (bug-for-bug FSPS reproduction) is intentionally internal — only use it via

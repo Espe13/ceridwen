@@ -43,16 +43,12 @@ import matplotlib.pyplot as plt
 # 64-bit floats are required for accurate Bayesian evidence estimates.
 jax.config.update("jax_enable_x64", True)
 
-from ceridwen.ssps.ssp_data import SSPData
-from ceridwen.csp.csp import CSPBasis
-from ceridwen.observation.observation import Photometry
-from ceridwen.model.model import SedModel
-from ceridwen.model.transforms import logsfr_ratios_to_sfh
-from ceridwen.likelihood.likelihood import (
-    DiagonalGaussianLikelihood,
-    MultiObservationLikelihood,
-)
-from ceridwen.sampler import Uniform, ClippedNormal, StudentT, run_sampler
+from ceridwen import SSPData, CSPBasis, SedModel
+from ceridwen.observation import Photometry
+from ceridwen.model import logsfr_ratios_to_sfh
+from ceridwen.priors import Uniform, ClippedNormal, StudentT
+from ceridwen.likelihood import DiagonalGaussianLikelihood, MultiObservationLikelihood
+from ceridwen.sampler import run_sampler
 from ceridwen.sampler.nested import BlackJAXNestedSamplerAdapter
 
 HERE = pathlib.Path(__file__).resolve().parent

@@ -31,6 +31,16 @@ _patch_tfp_jax_compat()
 from .dust import DustModel, DustEmission
 from .neb import NebularModel
 from .fit import fitSED, read_result_h5
+
+# Primary model builders, re-exported at the top level for a flat public API
+# (`from ceridwen import CSPBasis, SSPData, SedModel`). Observation containers
+# stay under `ceridwen.observation` and priors under `ceridwen.priors` for
+# clarity; the namespaced paths (ceridwen.ssps, ceridwen.csp, ceridwen.model)
+# also remain available.
+from .ssps import SSPData
+from .csp import CSPBasis
+from .model import SedModel
+
 # NB: do NOT import .check here — it is run as `python -m ceridwen.check`, and
 # importing it in the package __init__ triggers a runpy double-import warning.
 # Use it via the CLI, or `from ceridwen.check import check_environment`.
@@ -58,9 +68,15 @@ except ImportError:  # pragma: no cover - stamp absent in a dev checkout
     __build_time__ = None
 
 __all__ = [
+    # primary model builders
+    "SSPData",
+    "CSPBasis",
+    "SedModel",
+    # physics components
     "DustModel",
     "DustEmission",
     "NebularModel",
+    # top-level entry points
     "fitSED",
     "read_result_h5",
     "__version__",
