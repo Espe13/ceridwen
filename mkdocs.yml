@@ -54,5 +54,6 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - Quick start: quickstart.md
+  - 'Tutorial: joint fit': tutorial.md
   - Conventions & gotchas: conventions.md
   - API reference: api.md
