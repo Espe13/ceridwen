@@ -185,7 +185,9 @@ def main() -> int:
         print(f"  logmass    {float(TRUE_LOGMASS[0]):.3f}      {m_med:.3f}")
 
         out = HERE / "quickstart_corner.png"
-        ns.plot_2d(["Z", "logmass", "diffuse_tau_kc"]).fig.savefig(out, dpi=120)
+        axes = ns.plot_2d(["Z", "logmass", "diffuse_tau_kc"])
+        # anesthetic returns an AxesDataFrame; grab the Figure from any cell.
+        axes.iloc[0, 0].figure.savefig(out, dpi=120, bbox_inches="tight")
         print(f"\ncorner plot -> {out}")
     except ImportError:
         print("\n(install anesthetic for posterior summaries: pip install -e '.[nested]')")

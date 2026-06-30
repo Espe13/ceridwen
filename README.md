@@ -69,17 +69,54 @@ pip install -e ".[grids]"   # python-fsps — generate SSP grids from FSPS (see 
 pip install -e ".[all]"     # everything above, plus the test suite
 ```
 
-External (non-PyPI) requirement — **needed to run Ceridwen, not just to build
-grids**:
-- [FSPS](https://github.com/cconroy20/fsps) — the `[grids]` extra installs the
-  `python-fsps` wrapper, but FSPS itself (the compiled library + its data
-  files) must be installed separately and `$SPS_HOME` set to its root. FSPS is
-  required to build the SSP cache (Step 0) **and at runtime**: the CLOUDY
-  nebular grids and Draine & Li dust-emission templates are read from
-  `$SPS_HOME` whenever `add_neb=True` or `add_dust_emission=True`.
+### Installing FSPS and setting `$SPS_HOME`
 
-See [`examples/quickstart.py`](examples/quickstart.py) for a complete,
-runnable fit (mock SDSS photometry, end to end) once FSPS is set up.
+CERIDWEN needs [FSPS](https://github.com/cconroy20/fsps) (via the
+[`python-fsps`](https://dfm.io/python-fsps) wrapper) to build the SSP cache, and
+— with `add_neb=True` or `add_dust_emission=True` — at runtime, to read the
+CLOUDY nebular grids and Draine & Li dust-emission templates. FSPS is **not** a
+pure-Python wheel: it needs a Fortran compiler and a clone of the FSPS data
+files, and it reads the `$SPS_HOME` environment variable (it fails to import if
+that is unset or wrong).
+
+```bash
+# 1. A Fortran compiler (pick one for your system):
+brew install gcc                       # macOS (Homebrew)
+sudo apt-get install gfortran          # Debian/Ubuntu
+conda install -c conda-forge gfortran  # any OS, inside your conda env
+
+# 2. Clone the FSPS data files and point $SPS_HOME at them:
+export SPS_HOME="$HOME/fsps"
+git clone https://github.com/cconroy20/fsps.git "$SPS_HOME"
+
+# 3. Install the Python wrapper (it compiles against $SPS_HOME):
+python -m pip install fsps
+```
+
+**Make `$SPS_HOME` permanent.** Step 2 above only sets it for the current
+terminal; `python-fsps` needs it in *every* session. Add it to your shell
+startup file so it persists:
+
+```bash
+# zsh (the macOS default shell):
+echo 'export SPS_HOME="$HOME/fsps"' >> ~/.zshrc
+source ~/.zshrc
+
+# bash (most Linux):
+echo 'export SPS_HOME="$HOME/fsps"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Open a **new** terminal and run `echo $SPS_HOME` — it should print the path. If
+it's blank, the line went into the wrong file (check which shell you use with
+`echo $SHELL`). Then confirm the whole setup with:
+
+```bash
+python -m ceridwen.check
+```
+
+Once FSPS is set up, see [`examples/quickstart.py`](examples/quickstart.py) for a
+complete, runnable fit (mock SDSS photometry, end to end).
 
 ---
 
