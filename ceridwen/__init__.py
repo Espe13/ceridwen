@@ -1,6 +1,33 @@
 import jax
 jax.config.update("jax_enable_x64", True)
 
+
+def _patch_tfp_jax_compat():
+    """Restore symbols newer JAX removed from ``jax.interpreters.xla`` that the
+    tensorflow-probability JAX substrate still imports.
+
+    TFP references e.g. ``jax.interpreters.xla.pytype_aval_mappings``, which JAX
+    moved to ``jax.core`` (same object) and then removed the old alias. We re-add
+    the alias so ``tensorflow_probability.substrates.jax`` imports on JAX >= 0.7.
+    Harmless on older JAX (the attributes already exist).
+    """
+    import warnings
+    try:
+        import jax.interpreters.xla as _xla
+        import jax.core as _core
+        # jax.core members are themselves deprecated; probing them warns. We
+        # only need the object, so silence the deprecation during the copy.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            for _name in ("pytype_aval_mappings", "abstractify"):
+                if not hasattr(_xla, _name) and hasattr(_core, _name):
+                    setattr(_xla, _name, getattr(_core, _name))
+    except Exception:  # pragma: no cover - never let the shim break import
+        pass
+
+
+_patch_tfp_jax_compat()
+
 from .dust import DustModel, DustEmission
 from .neb import NebularModel
 from .fit import fitSED, read_result_h5

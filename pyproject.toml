@@ -7,11 +7,10 @@ name = "ceridwen"
 version = "0.1.0"
 description = "JAX-native, GPU-capable SED fitting with VI-preconditioned HMC"
 readme = "README.md"
-# Capped to 3.10 for now: nested sampling pins the handley-lab blackjax fork,
-# which only installs on 3.10. This makes `pip install` fail fast with a clear
-# "requires Python 3.10" message instead of a cryptic blackjax build error on
-# 3.11/3.12. Widen this when blackjax.ns is upstreamed and the fork pin drops.
-requires-python = ">=3.10,<3.11"
+# Python 3.11+ required: nested sampling pins official blackjax (main), which
+# itself requires >=3.11. When blackjax ships NSS in a PyPI release this stays
+# >=3.11 and the git pin below becomes a normal version pin.
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Amanda Stoffers", email = "aas208@cam.ac.uk" }]
 keywords = ["astronomy", "astrophysics", "SED fitting", "JAX", "HMC", "stellar populations"]
@@ -21,7 +20,8 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Astronomy",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 
 # Core runtime dependencies.  These are everything needed for
@@ -35,14 +35,15 @@ classifiers = [
 #                     Imported at module scope (dust/DustModel.py) so it is
 #                     mandatory just to import the package.
 #   * tensorflow-probability -- every prior uses tfp.substrates.jax.
-#   * blackjax     -- nested sampling needs `blackjax.ns`, which only exists in
-#                     the handley-lab fork. We pin the exact known-good commit
-#                     (41daed7 = the 0.1.dev704 build; supports Python 3.10, fork
-#                     HEAD now requires 3.11). This direct git reference means
-#                     ceridwen cannot be uploaded to PyPI as-is.
-#                     TODO(switch ASAP): when `blackjax.ns` is released upstream
-#                     on PyPI, replace this with a normal pin (e.g. blackjax>=X.Y)
-#                     to restore PyPI-installability.
+#   * blackjax     -- nested sampling (blackjax.nss / blackjax.ns) is now MERGED
+#                     into the official blackjax (blackjax-devs), but not yet in a
+#                     tagged PyPI release (latest is 1.5, pre-merge). We therefore
+#                     pin the official repo's main branch for now. This direct git
+#                     reference still means ceridwen cannot be uploaded to PyPI.
+#                     `@main` is a moving target -- pin a specific commit for
+#                     reproducible client installs once you have a good SHA.
+#                     TODO(switch ASAP): when a blackjax release ships NSS, replace
+#                     this with `blackjax>=X.Y` to restore PyPI-installability.
 #   * sedpy-jax    -- >=0.1.1 carries the `inres` arg of make_lsf_smoother + the
 #                     LOSVD FFT wrap-around fix (published to PyPI). The older
 #                     0.1.0 lacks them, so the floor must exclude it.
@@ -56,7 +57,7 @@ dependencies = [
     "astropy>=5.3",
     "sedpy-jax>=0.1.1",
     "tensorflow-probability>=0.23",
-    "blackjax @ git+https://github.com/handley-lab/blackjax@41daed7",
+    "blackjax @ git+https://github.com/blackjax-devs/blackjax@main",
     "tqdm>=4.65",
     # Pure-Python, so kept in core for a fully-featured default install:
     "optax>=0.2.0",       # VI (NeuTra) preconditioning training loop

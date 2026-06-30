@@ -25,12 +25,12 @@ Everything is written against `jax.numpy` with `@jit` and `vmap`/`pmap` in mind:
 
 ## Installation
 
-**Use Python 3.10.** Nested sampling depends on the handley-lab `blackjax` fork,
-which currently only installs on 3.10; `pip install` will refuse 3.11/3.12 until
-that lands upstream. A fresh conda env is the easy route:
+**Use Python 3.11 or newer.** Nested sampling depends on the official `blackjax`
+(its merged NSS), which requires Python ≥ 3.11; `pip install` will refuse 3.10.
+A fresh conda env is the easy route:
 
 ```bash
-conda create -n ceridwen python=3.10 -y
+conda create -n ceridwen python=3.11 -y
 conda activate ceridwen
 
 git clone https://github.com/Espe13/ceridwen.git
@@ -66,12 +66,13 @@ and run NUTS / VI / nested sampling **including posterior plotting** — `jax`,
 (nested-sampling posteriors + corner plots) are all pulled in automatically.
 The only thing not installed for you is FSPS (it can't be — see below).
 
-> **Note on `blackjax`.** Nested sampling uses `blackjax.ns`, which currently
-> lives only in the [handley-lab blackjax fork](https://github.com/handley-lab/blackjax).
-> ceridwen therefore pins that fork at a known-good commit (works on Python
-> 3.10). Because this is a direct git dependency, ceridwen is installed from
-> source/GitHub rather than PyPI for now; this will be swapped for a normal
-> PyPI pin once `blackjax.ns` is released upstream.
+> **Note on `blackjax`.** Nested sampling uses `blackjax.nss`, which has been
+> merged into the [official blackjax](https://github.com/blackjax-devs/blackjax)
+> but is not yet in a tagged PyPI release. ceridwen therefore pins blackjax's
+> `main` branch for now. Because this is a direct git dependency, ceridwen is
+> installed from source/GitHub rather than PyPI; once a blackjax release ships
+> NSS, this becomes a normal `blackjax>=X.Y` pin and ceridwen installs straight
+> from PyPI. (Python stays ≥ 3.11 either way.)
 
 Two optional extras remain — the things that can't or needn't be in core:
 

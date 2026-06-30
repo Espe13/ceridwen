@@ -42,12 +42,13 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
   SSP cache (`SSPData.from_fsps`) also needs FSPS.
 - **`sedpy_jax`** (PyPI: `sedpy-jax`) provides filter convolutions and smoothing;
   it is imported at package import time.
-- **Nested sampling needs the handley-lab blackjax fork** (`blackjax.ns`), not on
-  PyPI yet. `pyproject.toml` pins it via direct git reference at commit
-  `41daed7` (the last Python-3.10-compatible build), so `pip install` pulls it
-  automatically. Consequence: ceridwen is git/source-installed, not PyPI, until
-  `blackjax.ns` is upstreamed — then swap the pin for a normal `blackjax>=X.Y`.
-  Don't "simplify" this to a stock `blackjax` pin; it would drop `blackjax.ns`.
+- **Nested sampling needs `blackjax.nss`/`blackjax.ns`**, now merged into the
+  official blackjax (blackjax-devs) but not yet in a tagged PyPI release.
+  `pyproject.toml` pins blackjax's `main` branch via direct git reference, so
+  `pip install` pulls it automatically. Consequence: ceridwen is git/source-
+  installed, not PyPI, until a blackjax release ships NSS — then swap the pin for
+  `blackjax>=X.Y` (requires-python stays >=3.11). Don't "simplify" this to a
+  stock released `blackjax` pin yet; the released versions still lack NSS.
 
 ## Staying JAX-correct when editing the package
 

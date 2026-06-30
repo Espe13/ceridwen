@@ -49,16 +49,16 @@ def check_environment(verbose: bool = True) -> bool:
 
     # ---- Python version --------------------------------------------------
     py = sys.version_info
-    if (py.major, py.minor) == (3, 10):
+    if py >= (3, 11):
         record(_OK, f"Python {py.major}.{py.minor}")
     else:
         record(
-            _WARN,
+            _FAIL,
             f"Python {py.major}.{py.minor}",
-            "CERIDWEN currently targets Python 3.10 (nested sampling pins the "
-            "handley-lab blackjax fork, which is 3.10-only). NUTS/VI may still "
-            "work; nested sampling likely will not install.",
+            "CERIDWEN requires Python >= 3.11 (official blackjax nested sampling "
+            "needs it). Create a 3.11+ environment and reinstall.",
         )
+        required_ok = False
 
     # ---- Core required deps (incl. optax + anesthetic, now core) --------
     for mod in ("jax", "jaxlib", "numpy", "scipy", "matplotlib", "h5py",
@@ -124,8 +124,9 @@ def check_environment(verbose: bool = True) -> bool:
             record(_OK, "blackjax.ns", "nested sampling available")
         else:
             record(_WARN, "blackjax.ns",
-                   "missing -> nested sampling unavailable. Install the fork: "
-                   "pip install git+https://github.com/handley-lab/blackjax@41daed7")
+                   "missing -> nested sampling unavailable. Install blackjax "
+                   "with NSS: pip install "
+                   "'git+https://github.com/blackjax-devs/blackjax@main'")
 
     # ---- FSPS + $SPS_HOME (grid building + nebular/dust-emission) -------
     fsps, _ = _try_import("fsps")
