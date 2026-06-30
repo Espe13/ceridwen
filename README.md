@@ -116,7 +116,7 @@ python -m ceridwen.check
 ```
 
 Once FSPS is set up, see [`examples/quickstart.py`](examples/quickstart.py) for a
-complete, runnable fit (mock SDSS photometry, end to end).
+complete, runnable fit (mock UV-to-IR photometry, end to end).
 
 ---
 
@@ -125,7 +125,7 @@ complete, runnable fit (mock SDSS photometry, end to end).
 ### Run the bundled example first
 
 The fastest way to confirm your whole setup works end to end. It builds the SSP
-cache from FSPS, generates mock SDSS photometry, fits it with nested sampling,
+cache from FSPS, generates mock UV-to-IR photometry, fits it with nested sampling,
 and prints recovered-vs-true parameters plus a corner plot
 (`examples/quickstart_corner.png`):
 

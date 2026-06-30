@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Ceridwen quick-start: fit mock SDSS photometry end-to-end.
+Ceridwen quick-start: fit mock UV-to-IR broadband photometry end-to-end.
 ==========================================================
 
 This is a self-contained, runnable demo:
@@ -56,8 +56,15 @@ SSP_FILE = os.environ.get("SSP_FILE", str(HERE / "ssp_data.h5"))
 SPS_HOME = os.environ.get("SPS_HOME")
 RNG = jax.random.PRNGKey(42)
 
-SDSS_FILTERS = ["sdss_u0", "sdss_g0", "sdss_r0", "sdss_i0", "sdss_z0"]
-N_FILTERS = len(SDSS_FILTERS)
+# A broad UV->IR set (GALEX + SDSS + 2MASS + WISE) so the mock is well
+# constrained and the corner plot is informative. All ship with sedpy_jax.
+FILTERS = [
+    "galex_FUV", "galex_NUV",
+    "sdss_u0", "sdss_g0", "sdss_r0", "sdss_i0", "sdss_z0",
+    "twomass_J", "twomass_H", "twomass_Ks",
+    "wise_w1", "wise_w2",
+]
+N_FILTERS = len(FILTERS)
 
 
 def step0_load_or_build_grid() -> SSPData:
@@ -115,7 +122,7 @@ def main() -> int:
     sfh_true = logsfr_ratios_to_sfh(
         TRUE_LOGSFR_RATIOS, sfh_times_yr=np.array(csp.sfh_times)
     )
-    dummy_phot = Photometry(filters=SDSS_FILTERS, name="_tmp")
+    dummy_phot = Photometry(filters=FILTERS, name="_tmp")
     dummy_phot.setup_for_model(csp.wave)
 
     spec_unit = csp.get_spectrum(
@@ -130,8 +137,8 @@ def main() -> int:
     )
 
     phot_obs = Photometry(
-        filters=SDSS_FILTERS, flux=maggies_obs, uncertainty=sigma,
-        name="sdss_phot",
+        filters=FILTERS, flux=maggies_obs, uncertainty=sigma,
+        name="phot",
     )
 
     # ---- Step 3: model + nested sampling ---------------------------------
@@ -166,7 +173,7 @@ def main() -> int:
         logZ_tol=-1.0, verbose=True,
     )
     likelihood = MultiObservationLikelihood(
-        keys=("sdss_phot",), likelihoods=(DiagonalGaussianLikelihood(),)
+        keys=("phot",), likelihoods=(DiagonalGaussianLikelihood(),)
     )
 
     result = run_sampler(model, likelihood, adapter, RNG)

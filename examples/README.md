@@ -3,7 +3,7 @@
 ## `quickstart.py`
 
 A complete, self-contained fit: builds (or loads) the FSPS SSP cache, makes
-mock SDSS photometry from known parameters, recovers them with BlackJAX nested
+mock UV-to-IR photometry (GALEX+SDSS+2MASS+WISE) from known parameters, recovers them with BlackJAX nested
 sampling, and prints true-vs-posterior values plus an optional corner plot.
 
 ```bash
