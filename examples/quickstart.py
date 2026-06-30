@@ -162,8 +162,8 @@ def main() -> int:
     # num_live >= 500, num_inner_steps >= n_dims*5, and a stricter logZ_tol
     # (e.g. -3.0) -- expect minutes-to-hours on CPU, seconds-to-minutes on GPU.
     adapter = BlackJAXNestedSamplerAdapter(
-        priors=model.priors, num_live=80, num_inner_steps=max(8, n_dims * 2),
-        logZ_tol=-0.5, verbose=True,
+        priors=model.priors, num_live=150, num_inner_steps=max(8, n_dims * 3),
+        logZ_tol=-1.0, verbose=True,
     )
     likelihood = MultiObservationLikelihood(
         keys=("sdss_phot",), likelihoods=(DiagonalGaussianLikelihood(),)
@@ -173,22 +173,46 @@ def main() -> int:
     print(f"\nln Z = {result.log_evidence:.3f} +/- {result.log_evidence_err:.3f}")
 
     # ---- Step 4: recovered vs. true --------------------------------------
+    TRUTH = {
+        "Z": float(TRUE_Z[0]),
+        "logmass": float(TRUE_LOGMASS[0]),
+        "diffuse_tau_kc": float(TRUE_DIFFDUST[0]),
+        "diffuse_dust_index": float(TRUE_DUST_INDEX[0]),
+    }
+    LABELS = {
+        "Z": r"$\log_{10} Z$",
+        "logmass": r"$\log_{10} M_\star$",
+        "diffuse_tau_kc": r"$\hat{\tau}_V$",
+        "diffuse_dust_index": r"$\delta_{\rm dust}$",
+    }
     try:
-        ns = result.to_anesthetic()
-        # Weighted posterior draw, with replacement (the nested run yields fewer
-        # weighted points than 2000, so replace=False would error).
-        post = ns.sample(2000, replace=True)
-        z_med = float(np.median(post["Z"]))
-        m_med = float(np.median(post["logmass"]))
-        print("\nparameter      true      posterior median")
-        print(f"  Z          {float(TRUE_Z[0]):+.3f}     {z_med:+.3f}")
-        print(f"  logmass    {float(TRUE_LOGMASS[0]):.3f}      {m_med:.3f}")
+        ns = result.to_anesthetic(labels=LABELS)
+        params = list(TRUTH)
 
+        # Posterior medians vs. injected truth (weighted draw, with replacement).
+        post = ns.sample(4000, replace=True)
+        print("\nparameter             true     posterior median")
+        for p in params:
+            print(f"  {p:<20}{TRUTH[p]:+7.3f}   {float(np.median(post[p])):+7.3f}")
+
+        # Corner plot with the truth overlaid as red dashed lines.
         out = HERE / "quickstart_corner.png"
-        axes = ns.plot_2d(["Z", "logmass", "diffuse_tau_kc"])
-        # anesthetic returns an AxesDataFrame; grab the Figure from any cell.
-        axes.iloc[0, 0].figure.savefig(out, dpi=120, bbox_inches="tight")
-        print(f"\ncorner plot -> {out}")
+        axes = ns.plot_2d(params)
+        for yp in params:
+            for xp in params:
+                try:
+                    ax = axes.loc[yp, xp]
+                except Exception:
+                    ax = None
+                if ax is None:
+                    continue
+                ax.axvline(TRUTH[xp], color="red", lw=1.1, ls="--")
+                if yp != xp:
+                    ax.axhline(TRUTH[yp], color="red", lw=1.1, ls="--")
+        fig = axes.iloc[0, 0].figure
+        fig.suptitle("CERIDWEN quickstart — red = injected truth", fontsize=11)
+        fig.savefig(out, dpi=150, bbox_inches="tight")
+        print(f"\ncorner plot (truth overlaid) -> {out}")
     except ImportError:
         print("\n(install anesthetic for posterior summaries: pip install -e '.[nested]')")
     except Exception as exc:
