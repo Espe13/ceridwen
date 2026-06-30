@@ -263,14 +263,20 @@ def main() -> int:
             scale = float(np.median(pred_maggies[good] / spec_at_eff[good])) if good.any() else 1.0
             spec_maggies = spec * scale
 
+            # The injected (true) spectrum, on the same maggies scale.
+            true_spec = np.asarray(spec_unit) * 10.0 ** float(TRUE_LOGMASS[0])
+            true_maggies = true_spec * scale
+
             chi = (maggies_obs - pred_maggies) / sigma
 
             fig, (axsed, axchi) = plt.subplots(
                 2, 1, sharex=True, figsize=(7.5, 5.2),
                 gridspec_kw={"height_ratios": [3, 1], "hspace": 0.06},
             )
-            axsed.plot(wave_model, spec_maggies, color="0.6", lw=0.8, zorder=1,
-                       label="model spectrum")
+            axsed.plot(wave_model, true_maggies, color="C0", lw=1.0, alpha=0.9,
+                       zorder=1, label="true spectrum")
+            axsed.plot(wave_model, spec_maggies, color="0.5", lw=1.0, ls="--",
+                       zorder=2, label="model spectrum (median)")
             axsed.errorbar(wave_eff, maggies_obs, yerr=sigma, fmt="o", color="k",
                            ms=5, capsize=2, zorder=3, label="observed")
             axsed.scatter(wave_eff, pred_maggies, marker="s", facecolors="none",
