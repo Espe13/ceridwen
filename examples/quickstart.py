@@ -84,7 +84,7 @@ def main() -> int:
 
     # ---- Step 1: forward model -------------------------------------------
     T_UNIV = 13.8          # age of the universe [Gyr]
-    N_TIME = 5             # SFH bins -> N_TIME - 1 = 4 free logsfr_ratios
+    N_TIME = 4             # SFH bins -> N_TIME - 1 = 3 free logsfr_ratios (small for a fast demo)
     lookback = jnp.linspace(0.0, T_UNIV, N_TIME)   # today @ index 0
 
     csp = CSPBasis(
@@ -157,9 +157,12 @@ def main() -> int:
     )
 
     n_dims = sum(int(jnp.size(v)) for v in model.theta_init.values())
+    # FAST DEMO settings so this finishes in ~1-2 min on a CPU. For science use
+    # num_live >= 500, num_inner_steps >= n_dims*5, and a stricter logZ_tol
+    # (e.g. -3.0) -- expect minutes-to-hours on CPU, seconds-to-minutes on GPU.
     adapter = BlackJAXNestedSamplerAdapter(
-        priors=model.priors, num_live=250, num_inner_steps=n_dims * 4,
-        logZ_tol=-2.0, verbose=True,
+        priors=model.priors, num_live=80, num_inner_steps=max(8, n_dims * 2),
+        logZ_tol=-0.5, verbose=True,
     )
     likelihood = MultiObservationLikelihood(
         keys=("sdss_phot",), likelihoods=(DiagonalGaussianLikelihood(),)
