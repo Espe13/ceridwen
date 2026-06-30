@@ -4,7 +4,9 @@
 
 A complete, self-contained fit: builds (or loads) the FSPS SSP cache, makes
 mock UV-to-IR photometry (GALEX+SDSS+2MASS+WISE) from known parameters, recovers them with BlackJAX nested
-sampling, and prints true-vs-posterior values plus an optional corner plot.
+sampling, and prints true-vs-posterior values plus two figures: a corner plot
+(`quickstart_corner.png`) and a model-vs-data SED with a chi residual strip
+(`quickstart_sed.png`).
 
 ```bash
 pip install -e ".[grids,nested]"
