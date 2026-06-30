@@ -71,6 +71,9 @@ dependencies = [
 grids = ["fsps>=0.4.4"]
 # Test suite.
 test = ["pytest>=7.0"]
+# Documentation site (MkDocs + Material + API autodoc from docstrings).
+# black is used by mkdocstrings to pretty-print rendered signatures.
+docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.24", "black>=24.0"]
 # Back-compat no-ops: optax/anesthetic are now core, so these install nothing
 # extra, but `pip install '.[vi]'` / `.[nested]` still work.
 vi = []
