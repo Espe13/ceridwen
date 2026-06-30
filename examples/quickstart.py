@@ -84,7 +84,8 @@ def main() -> int:
 
     # ---- Step 1: forward model -------------------------------------------
     T_UNIV = 13.8          # age of the universe [Gyr]
-    N_TIME = 4             # SFH bins -> N_TIME - 1 = 3 free logsfr_ratios (small for a fast demo)
+    N_TIME = 5             # SFH bins -> N_TIME - 1 = 4 free logsfr_ratios
+    #                        (must match the length of TRUE_LOGSFR_RATIOS below)
     lookback = jnp.linspace(0.0, T_UNIV, N_TIME)   # today @ index 0
 
     csp = CSPBasis(
