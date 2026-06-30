@@ -175,7 +175,9 @@ def main() -> int:
     # ---- Step 4: recovered vs. true --------------------------------------
     try:
         ns = result.to_anesthetic()
-        post = ns.sample(2000)
+        # Weighted posterior draw, with replacement (the nested run yields fewer
+        # weighted points than 2000, so replace=False would error).
+        post = ns.sample(2000, replace=True)
         z_med = float(np.median(post["Z"]))
         m_med = float(np.median(post["logmass"]))
         print("\nparameter      true      posterior median")
@@ -187,6 +189,10 @@ def main() -> int:
         print(f"\ncorner plot -> {out}")
     except ImportError:
         print("\n(install anesthetic for posterior summaries: pip install -e '.[nested]')")
+    except Exception as exc:
+        # The fit already succeeded (ln Z printed above); don't let a
+        # plotting/summary hiccup crash the demo.
+        print(f"\n(fit succeeded; posterior summary/plot skipped: {exc})")
 
     return 0
 
