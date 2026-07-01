@@ -177,7 +177,7 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
         add_neb=True,
         add_igm=True,
         igm_model="madau1995",
-        init_neb_params={"isoc_type": "mist", "cloudy_dust": False},
+        init_neb_params={"cloudy_dust": False},  # isoc_type auto from grid provenance
         init_dust_params={"bin_edges": [(-jnp.inf, -1.97)], "laws": ["powerlaw"]},
         diffuse_law="kriek_conroy",
         sps_home=SPS_HOME,

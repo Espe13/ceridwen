@@ -124,7 +124,7 @@ def test_eline_scaling_is_a_fraction():
     csp = CSPBasis(ssp, theta={"lookback_time": lb, "sfh": sfh, "Z": jnp.array([-1.85])},
                    tuniv=T, zh_const=True, add_dust=False, add_diffuse_dust=False,
                    add_dust_emission=False, add_neb=True, add_igm=False,
-                   init_neb_params={"isoc_type": "mist", "cloudy_dust": False},
+                   init_neb_params={"cloudy_dust": False},  # isoc_type auto from grid
                    sps_home=os.environ["SPS_HOME"], verbose=False, sfh_interp="linear")
     th = dict(csp.theta_init, gas_logz=jnp.array([0.0]), gas_logu=jnp.array([-2.0]))
     L0 = np.asarray(csp.get_line_spec(th))

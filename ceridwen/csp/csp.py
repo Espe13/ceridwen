@@ -82,6 +82,62 @@ def intsfwght(t_hi, t_lo, a, slope, logage):
     return F(t_hi) - F(t_lo)
 
 
+# Legacy default used when an SSP grid records no isochrone library (i.e. it
+# predates provenance tracking) and the caller did not specify one.  Matches
+# the historical hard-coded CSPBasis default so old grids reproduce exactly.
+_LEGACY_ISOC_TYPE = "mist"
+
+
+def _resolve_isoc_type(recorded, user, *, default=_LEGACY_ISOC_TYPE):
+    """
+    Pick the nebular isochrone type, preferring the SSP grid's provenance.
+
+    A nebular CLOUDY grid whose isochrone set does not match the SSP grid is
+    wrong physics with no visible symptom, so a conflict is a hard error.
+
+    Parameters
+    ----------
+    recorded : str or None
+        ``isoc_type`` recorded in the SSPData (``None`` for legacy grids).
+    user : str or None
+        ``isoc_type`` the caller passed via ``init_neb_params`` (or ``None``).
+
+    Returns
+    -------
+    str
+        The isochrone type to use for the nebular grid.
+
+    Raises
+    ------
+    ValueError
+        If the caller specified an ``isoc_type`` that conflicts with the
+        value recorded in the SSP grid.
+    """
+    if user is None:
+        if recorded is None:
+            warnings.warn(
+                "SSPData carries no recorded isochrone library (it was loaded "
+                "from a legacy grid built before provenance tracking). Falling "
+                f"back to isoc_type={default!r} for the nebular grid, which is "
+                "WRONG if this SSP grid used a different isochrone set. Rebuild "
+                "the grid with SSPData.from_fsps to record provenance, or pass "
+                "init_neb_params={'isoc_type': ...} explicitly.",
+                UserWarning, stacklevel=3,
+            )
+            return default
+        return recorded
+    if recorded is not None and str(user) != str(recorded):
+        raise ValueError(
+            f"isoc_type conflict: init_neb_params requested isoc_type={user!r}, "
+            f"but the SSP grid was built with isoc_type={recorded!r} (from its "
+            "recorded provenance). A nebular CLOUDY grid that does not match the "
+            "SSP isochrone set is wrong physics with no visible symptom. Drop "
+            "the explicit isoc_type to use the grid's recorded value, or rebuild "
+            "the SSP grid with the matching isochrones."
+        )
+    return user
+
+
 # ===========================================================================
 # CSPBasis
 # ===========================================================================
@@ -141,6 +197,13 @@ class CSPBasis:
         when ``add_neb`` or ``add_dust_emission`` is True.
     init_neb_params, init_dust_params : dict
         Keyword arguments forwarded to ``NebularModel`` / ``Dust``.
+        ``isoc_type`` no longer needs to be set here: it is taken
+        automatically from the SSP grid's recorded provenance
+        (``SSPData.isoc_type``), so the nebular CLOUDY grid always matches
+        the SSP isochrone set. Passing an ``isoc_type`` that conflicts with
+        the grid raises ``ValueError``; passing one for a legacy grid with no
+        recorded library is honoured. A legacy grid with no recorded library
+        and no explicit ``isoc_type`` warns and falls back to ``'mist'``.
     diffuse_law : str
         Attenuation law name for the diffuse dust component.
     verbose : bool
@@ -199,7 +262,10 @@ class CSPBasis:
             # lookback strictly increases from 0 (today) to ≈ T_univ.
             theta = {'lookback_time': jnp.linspace(0.0, 13.8, 100)}
         if init_neb_params is None:
-            init_neb_params = {"isoc_type": "mist", "cloudy_dust": True}
+            # isoc_type is intentionally NOT set here: it is taken from the
+            # SSP grid's recorded provenance (see initialize_neb). Pass
+            # init_neb_params={'isoc_type': ...} only to override.
+            init_neb_params = {"cloudy_dust": True}
         if init_dust_params is None:
             init_dust_params = {'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']}
 
@@ -212,6 +278,12 @@ class CSPBasis:
         # internally (see ``initialize_neb`` / ``NebularModel.compute_log_qq``).
         self.zlegend   = 10 ** self.zmet                   # linear metallicity
         self.ssp_ages_lgyr = self.ages + 9                 # log10(yr)
+
+        # Static provenance carried by the SSP grid (Python-level only, never a
+        # JAX leaf). ``isoc_type`` is auto-propagated to the nebular model so
+        # users never have to set it by hand; ``None`` for legacy grids.
+        self._ssp_isoc_type    = getattr(SSPData, "isoc_type", None)
+        self._ssp_spec_library = getattr(SSPData, "spec_library", None)
 
         # Precomputed constants for calculate_ssp_weights (all static)
         self._logage_lo  = self.ssp_ages_lgyr[1:]
@@ -645,6 +717,15 @@ class CSPBasis:
             # FSPS to better than 0.5%.  When False (default), it uses the
             # physically strict per-cube-axis variant.
             match_fsps = init_neb_params.pop('match_fsps', False)
+
+            # Auto-propagate the isochrone type from the SSP grid's recorded
+            # provenance so the CLOUDY nebular grid always matches the SSP
+            # isochrone set. A caller-supplied isoc_type that conflicts with
+            # the grid is a hard error; a legacy grid with no provenance warns.
+            init_neb_params['isoc_type'] = _resolve_isoc_type(
+                self._ssp_isoc_type, init_neb_params.get('isoc_type'),
+            )
+
             init_neb_params.update({
                 'sps_home':       sps_home,
                 'csp_lambda':     self.wave,
@@ -652,7 +733,8 @@ class CSPBasis:
                 'ssp_ages_lgyr':  self.ssp_ages_lgyr,
             })
             NebClass = NebularModelFSPSMatch if match_fsps else NebularModel
-            print(f"Initializing Nebular Emission model ({NebClass.__name__})...")
+            print(f"Initializing Nebular Emission model ({NebClass.__name__}, "
+                  f"isoc_type={init_neb_params['isoc_type']!r})...")
             self.neb = NebClass(**init_neb_params)
 
             neb_defaults = self.neb.get_default_params()

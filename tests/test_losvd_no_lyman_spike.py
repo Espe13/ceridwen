@@ -58,8 +58,8 @@ def _build_dust_neb_csp():
         tuniv=T_UNIV, zh_const=True,
         add_dust=True, add_diffuse_dust=True, add_dust_emission=False,
         add_neb=True, nebemlineinspec=True,
-        init_neb_params={"isoc_type": "mist", "cloudy_dust": False,
-                          "match_fsps": True},
+        # isoc_type is auto-resolved from the SSP grid's recorded provenance.
+        init_neb_params={"cloudy_dust": False, "match_fsps": True},
         init_dust_params={"bin_edges": [(-jnp.inf, -1.97)], "laws": ["powerlaw"]},
         diffuse_law="kriek_conroy",
         verbose=False, sps_home=os.environ.get("SPS_HOME"),
