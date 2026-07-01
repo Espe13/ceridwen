@@ -171,8 +171,9 @@ model = SedModel(
 model.theta_init["alpha_pow"] = jnp.array([-1.0])
 ```
 
-To fit redshift instead of fixing it, omit `zred` and add a `"zred"` prior; see
-the free-redshift example in `scripts/`.
+To fit redshift instead of fixing it, omit `zred` and add a `"zred"` prior (and,
+for a non-parametric SFH, register a `"lookback_time"` transform so the SFH
+age-bin grid tracks the sampled redshift).
 
 ## 6. Fit
 
