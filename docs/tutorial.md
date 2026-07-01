@@ -9,6 +9,10 @@ any one of them, or all three together, with no change to the model or sampler.
 This tutorial builds one of each and fits them jointly. Replace the mock arrays
 with your own data.
 
+!!! tip "Runnable notebook"
+    A notebook version of this tutorial is in the repository at
+    [`examples/tutorial_joint_fit.ipynb`](https://github.com/Espe13/ceridwen/blob/main/examples/tutorial_joint_fit.ipynb).
+
 !!! note "Before you start"
     Read **[Conventions & gotchas](conventions.md)** — especially that `Z` is
     log10 *absolute* metallicity and that `lookback_time` index 0 is *today*.
@@ -27,6 +31,7 @@ import numpy as np
 from ceridwen import SSPData, CSPBasis, SedModel, fitSED
 from ceridwen.observation import Photometry, Spectrum, Lines
 from ceridwen.priors import Uniform, ClippedNormal, StudentT
+from ceridwen.model import logsfr_ratios_to_sfh
 
 ssp = SSPData.load("ssp_data.h5")          # built once via SSPData.from_fsps(...)
 
@@ -48,11 +53,16 @@ Broadband fluxes in **AB maggies**, with filter names resolved from the
 intrinsic (unscaled) line + continuum flux.
 
 ```python
+# If your catalogue is in nJy (common for JWST), convert to maggies and apply a
+# small error floor (here 5%), as the JADES pipeline does:
+flux_nJy, unc_nJy = my_phot_nJy, my_phot_unc_nJy
+unc_nJy = np.where(unc_nJy / flux_nJy > 0.05, unc_nJy, 0.05 * flux_nJy)
+
 phot = Photometry(
-    filters=["sdss_u0", "sdss_g0", "sdss_r0", "sdss_i0", "sdss_z0",
-             "twomass_J", "twomass_H", "twomass_Ks"],
-    flux=my_maggies,                # shape (n_filters,), AB maggies
-    uncertainty=my_maggies_unc,     # 1-sigma, AB maggies
+    filters=["jwst_f090w", "jwst_f115w", "jwst_f150w", "jwst_f200w",
+             "jwst_f277w", "jwst_f356w", "jwst_f444w"],
+    flux=jnp.asarray(flux_nJy) * 1e-9 / 3631.0,        # nJy -> AB maggies
+    uncertainty=jnp.asarray(unc_nJy) * 1e-9 / 3631.0,
     name="phot",                    # the key this observation is reported under
 )
 ```
@@ -93,12 +103,16 @@ Integrated line fluxes. `line_ind` are **1-based** indices into FSPS's
 `emlines_info.dat`; `wavelength` are the vacuum rest wavelengths in Å.
 
 ```python
+# Catalogue line fluxes are often quoted in 1e-20 erg s^-1 cm^-2; scale to
+# absolute CGS to match the model (adjust the factor to your catalogue).
+LINE_UNIT = 1.0e-20
+
 lines = Lines(
     line_ind=[59, 62, 63, 71, 72],                         # Hβ, [OIII]4959/5007, Hα, [NII]6583
     line_names=["Hbeta", "[OIII]4959", "[OIII]5007", "Halpha", "[NII]6583"],
     wavelength=[4861.3, 4958.9, 5006.8, 6562.8, 6583.4],   # Å, vacuum rest
-    flux=my_line_flux,              # erg s^-1 cm^-2 (consistent with the model)
-    uncertainty=my_line_unc,
+    flux=np.asarray(my_line_flux) * LINE_UNIT,             # erg s^-1 cm^-2
+    uncertainty=np.asarray(my_line_unc) * LINE_UNIT,
     name="lines",
 )
 ```
@@ -136,12 +150,25 @@ priors = {
     "eline_scaling":     Uniform(low=0.1, high=2.0),
 }
 
+# The non-parametric SFH is sampled as logsfr_ratios and turned into the per-bin
+# sfh by a REGISTERED transform — this step is required for logsfr_ratios to work.
+sfh_times_yr = np.array(csp.sfh_times)
+def logsfr_to_sfh(free_theta, _t=sfh_times_yr):
+    return logsfr_ratios_to_sfh(free_theta["logsfr_ratios"], sfh_times_yr=_t)
+
+N_RATIOS = 4   # number of SFH bins - 1
 model = SedModel(
     csp,
     observations=observations,
     priors=priors,
-    zred=ZRED,                       # fixed spectroscopic redshift
+    transforms={"sfh": logsfr_to_sfh},        # REQUIRED for logsfr_ratios
+    free_param_init={"logsfr_ratios": jnp.zeros(N_RATIOS),
+                     "logmass": jnp.array([10.0])},
+    zred=ZRED,                                # fixed spectroscopic redshift
 )
+
+# Fixed knob not sampled here: the birth-cloud (Charlot & Fall) slope.
+model.theta_init["alpha_pow"] = jnp.array([-1.0])
 ```
 
 To fit redshift instead of fixing it, omit `zred` and add a `"zred"` prior; see

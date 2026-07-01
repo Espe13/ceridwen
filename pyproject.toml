@@ -59,27 +59,24 @@ dependencies = [
     "tensorflow-probability>=0.23",
     "blackjax @ git+https://github.com/blackjax-devs/blackjax@main",
     "tqdm>=4.65",
-    # Pure-Python, so kept in core for a fully-featured default install:
+    # Everything needed to import, fit, plot, and test CERIDWEN is core, so a
+    # plain `pip install .` gives a fully-featured install with no extras to
+    # choose. (VI + nested-sampling plotting + the test runner are all here.)
     "optax>=0.2.0",       # VI (NeuTra) preconditioning training loop
     "anesthetic>=2.8",    # nested-sampling posteriors, evidence, corner plots
+    "pytest>=7.0",        # test runner (so `pytest` works with no extra install)
 ]
 
+# The ONE thing that cannot be a core dependency is FSPS (`python-fsps`): it is
+# not a pure-Python wheel — it compiles Fortran against $SPS_HOME at install
+# time, so bundling it would make `pip install` fail on any machine without a
+# Fortran compiler and $SPS_HOME set. FSPS is a documented prerequisite instead
+# (see the README "Installing FSPS" section): install it with `pip install fsps`.
+
 [project.optional-dependencies]
-# SSP-grid generation from FSPS.  python-fsps additionally needs a working
-# FSPS install + data files on disk (see README); it is NOT a pure-Python
-# wheel (compiles against $SPS_HOME), hence the only feature kept out of core.
-grids = ["fsps>=0.4.4"]
-# Test suite.
-test = ["pytest>=7.0"]
-# Documentation site (MkDocs + Material + API autodoc from docstrings).
-# black is used by mkdocstrings to pretty-print rendered signatures.
+# Maintainer-only: tooling to build the documentation site. Not needed to use
+# or test CERIDWEN.
 docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.24", "black>=24.0"]
-# Back-compat no-ops: optax/anesthetic are now core, so these install nothing
-# extra, but `pip install '.[vi]'` / `.[nested]` still work.
-vi = []
-nested = []
-# Everything installable automatically (FSPS still needs the manual setup).
-all = ["ceridwen[grids,test]"]
 
 [project.urls]
 Homepage = "https://github.com/Espe13/ceridwen"

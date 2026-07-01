@@ -151,8 +151,9 @@ bin, automatic parameter renaming when a law is reused); `@jit`/`vmap` throughou
 
 ## Building grids and installing for development
 
-- `pip install -e ".[all]"` for a full dev environment (core + vi + nested +
-  grids + test). FSPS must be installed separately and `$SPS_HOME` set.
+- `pip install -e .` for a dev environment — everything (incl. VI, nested-sampling
+  plotting, and the test runner) is core, no extras to choose. FSPS is the one
+  exception: install it separately (`pip install fsps`) with `$SPS_HOME` set.
 - Build the SSP cache once: `SSPData.from_fsps(save_to="ssp_data.h5", ...)` (any
   FSPS kwargs pass through), then reload with `SSPData.load(...)`.
 - Some nebular models need CLOUDY grid files present in the FSPS data directory.

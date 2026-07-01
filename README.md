@@ -74,16 +74,10 @@ The only thing not installed for you is FSPS (it can't be — see below).
 > NSS, this becomes a normal `blackjax>=X.Y` pin and ceridwen installs straight
 > from PyPI. (Python stays ≥ 3.11 either way.)
 
-Two optional extras remain — the things that can't or needn't be in core:
-
-```bash
-pip install ".[grids]"   # python-fsps — build SSP grids from FSPS (needs the FSPS setup below)
-pip install ".[test]"    # pytest — run the test suite
-pip install ".[all]"     # both of the above
-```
-
-(`.[vi]` and `.[nested]` still work but are now no-ops — optax and anesthetic
-moved into the core install.)
+There are **no extras to choose** — `pip install .` gives you everything to
+import, fit, plot, and test CERIDWEN. The only thing installed separately is
+**FSPS**, which can't be a normal Python dependency (it compiles Fortran); see
+[Installing FSPS](#installing-fsps-and-setting-sps_home) below.
 
 ### Installing FSPS and setting `$SPS_HOME`
 
@@ -157,9 +151,13 @@ export SPS_HOME=/path/to/fsps        # your FSPS data directory
 python examples/quickstart.py
 ```
 
-If that runs and the recovered `Z`/`logmass` land near the injected truth,
-you're ready to fit real data — read on. The two steps below are what the
-example does internally, shown so you can adapt them to your own observations.
+If that runs and prints a recovered-vs-true table, your setup works and you're
+ready to fit real data — read on. Expect `logmass` to land near the injected
+truth; `Z` and the dust parameters are only weakly constrained by broadband
+photometry alone, so their posteriors are broad and can sit ~1 dex off truth.
+That is expected, not a broken install — add spectroscopy or emission lines to
+pin them down. The two steps below are what the example does internally, shown
+so you can adapt them to your own observations.
 
 ### Step 0 — build the SSP grid (once per FSPS configuration)
 
@@ -300,8 +298,9 @@ The `result` object has posterior samples keyed by parameter name, plus the VI t
 - **Run `python -m ceridwen.check` first.** It reports missing dependencies, an
   unset or wrong `$SPS_HOME`, a too-old `sedpy-jax`, and whether nested sampling
   is available — each with the fix.
-- **Install must be Python 3.10** (see Installation); 3.11/3.12 are refused for
-  now because of the `blackjax` fork.
+- **Install needs Python 3.11 or newer** (see Installation); 3.10 is refused
+  because nested sampling pins the official `blackjax` (its merged NSS), which
+  requires Python ≥ 3.11.
 - **Common scientific pitfalls** — the metallicity-units trap, silently-ignored
   `theta` typos, the lookback-time convention — are documented in
   [`GOTCHAS.md`](GOTCHAS.md). If you're letting an AI assistant help you use

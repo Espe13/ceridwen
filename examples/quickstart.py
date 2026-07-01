@@ -20,7 +20,8 @@ nebular grids and the dust-emission templates are read from ``$SPS_HOME``
 (the FSPS data directory).  So FSPS must be installed and ``SPS_HOME`` set,
 e.g.::
 
-    pip install -e ".[grids,nested]"      # python-fsps + anesthetic
+    pip install .                         # everything except FSPS
+    pip install fsps                      # FSPS wrapper (needs gfortran + $SPS_HOME)
     export SPS_HOME=/path/to/fsps         # the FSPS root (contains nebular/, ...)
     python examples/quickstart.py
 
@@ -78,7 +79,7 @@ def step0_load_or_build_grid() -> SSPData:
     except ImportError as exc:
         raise SystemExit(
             "FSPS (python-fsps) is required to build the SSP grid and is not "
-            "importable. Install it with `pip install -e '.[grids]'` and a "
+            "importable. Install it with `pip install fsps` and a "
             "working FSPS build, then set $SPS_HOME. See the README."
         ) from exc
 

@@ -75,10 +75,10 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install with test extras
+      - name: Install (pytest is included in core)
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[nested,vi,test]"
+          pip install -e .
 
       - name: Run tests (skip FSPS- and GPU-only tests)
         run: |

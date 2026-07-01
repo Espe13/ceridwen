@@ -10,6 +10,11 @@
     python examples/quickstart.py
     ```
 
+    `logmass` should land near the injected truth. `Z` and the dust parameters
+    are only weakly constrained by broadband photometry alone, so their
+    posteriors are broad and can sit ~1 dex off truth — that is expected, not a
+    broken install (add spectroscopy or emission lines to pin them down).
+
     The two steps below are what the example does internally, shown so you can
     adapt them to your own observations.
 

@@ -29,13 +29,10 @@ NUTS / VI / nested sampling **including posterior plotting**: `jax`, `jaxlib`,
 `tensorflow-probability`, `blackjax`, `tqdm`, `optax`, and `anesthetic`. The only
 thing not installed automatically is FSPS (see below).
 
-Optional extras:
-
-```bash
-pip install ".[grids]"   # python-fsps — build SSP grids from FSPS
-pip install ".[test]"    # pytest — run the test suite
-pip install ".[docs]"    # mkdocs-material + mkdocstrings — build these docs
-```
+There are no extras to choose — `pip install .` includes VI, nested-sampling
+plotting, and the test runner. FSPS is installed separately (see below), because
+it compiles Fortran and can't be a normal Python dependency. Building this
+documentation site needs `pip install ".[docs]"` (maintainers only).
 
 !!! note "blackjax"
     Nested sampling uses `blackjax.nss`, which is merged into the official
