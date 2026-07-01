@@ -94,8 +94,9 @@ Equivalent namespaced paths also work: `ceridwen.ssps.SSPData`,
 Step 0 build/load the SSP cache → build `CSPBasis` → wrap observations
 (`Photometry`/`Spectrum`/`Lines`) → `SedModel(csp, observations, priors=...)` →
 `fitSED(...)` or `run_sampler(...)`. The end-to-end, runnable reference is
-[`examples/quickstart.py`](examples/quickstart.py); larger drivers
-(spectroscopy, lines, free redshift, VI-NUTS) are in `scripts/`.
+[`examples/quickstart.py`](examples/quickstart.py); the joint photometry +
+spectroscopy + lines workflow is in
+[`examples/tutorial_joint_fit.ipynb`](examples/tutorial_joint_fit.ipynb).
 
 ## Package architecture / module map
 
@@ -154,8 +155,13 @@ bin, automatic parameter renaming when a law is reused); `@jit`/`vmap` throughou
 - `pip install -e .` for a dev environment — everything (incl. VI, nested-sampling
   plotting, and the test runner) is core, no extras to choose. FSPS is the one
   exception: install it separately (`pip install fsps`) with `$SPS_HOME` set.
-- Build the SSP cache once: `SSPData.from_fsps(save_to="ssp_data.h5", ...)` (any
-  FSPS kwargs pass through), then reload with `SSPData.load(...)`.
+- Build the SSP cache once: `SSPData.from_fsps(imf_type=1, save_to="ssp_data.h5")`.
+  `from_fsps` accepts ONLY stellar-library / IMF kwargs — dust, SFH, nebular, IGM,
+  redshift, and fixed-metallicity kwargs are rejected (the CSP owns those) — and
+  records provenance (isochrone library, `imf_type`, FSPS version, build kwargs).
+  `CSPBasis` reads the isochrone library from that provenance automatically, so
+  `isoc_type` is never set by hand and the nebular grid always matches; a
+  conflicting user `isoc_type` raises. Reload with `SSPData.load(...)`.
 - Some nebular models need CLOUDY grid files present in the FSPS data directory.
 
 ## Repository pointers
@@ -166,14 +172,13 @@ bin, automatic parameter renaming when a law is reused); `@jit`/`vmap` throughou
   conventions above.
 - `examples/quickstart.py` — minimal runnable fit (mock photometry).
 - Tests live in `tests/`; they resolve a committed SSP grid via
-  `tests/_gridfixture.py` and skip cleanly if it (or FSPS) is absent. Run
-  `pytest -m "not fsps and not gpu"` for the FSPS-free subset.
-  `python scripts/make_test_fixture_grid.py` (re)builds the committed fixture.
+  `tests/_gridfixture.py` (under `tests/fixtures/`) and skip cleanly if it (or
+  FSPS) is absent. Run `pytest -m "not fsps and not gpu"` for the FSPS-free subset.
 
 ## Don't
 
 - Don't recombine the split `__version__` / `__githash__` imports in
   `ceridwen/__init__.py` (the split fixes a real import-masking bug).
-- Don't ship research/diagnostic scripts inside the `ceridwen/` namespace; they
-  belong in `scripts/`.
+- Don't put research/diagnostic scripts inside the `ceridwen/` package; only the
+  importable library ships. User-facing runnable examples live in `examples/`.
 - Don't add new runtime dependencies without updating `pyproject.toml`.

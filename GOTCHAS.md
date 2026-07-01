@@ -90,11 +90,15 @@ prefer `predict`/`get_spectrum_components`.
 
 - **`SPS_HOME`** must point at an FSPS install for the nebular model, dust
   emission, and `SSPBasis`/`FastStepBasis`. Unset → `RuntimeError` at import/use.
-- **SSP grid ↔ FSPS library must match.** A MILES grid (`ssp_data.h5`,
-  5994 λ-points) does **not** line up with a BPASS FSPS install
-  (15000 points); any ceridwen-vs-FSPS comparison then crashes with a shape
-  mismatch. Use the grid built from the *same* FSPS you compare against (here:
-  `ssp_data_bpass_agb_dust.h5`).
+- **SSP grid ↔ nebular library — now auto-enforced (was a silent trap).**
+  CERIDWEN records the isochrone library in the SSP grid's provenance, and
+  `CSPBasis` picks the matching CLOUDY nebular grid automatically; a conflicting
+  `isoc_type` passed in `init_neb_params` now **raises** instead of silently
+  loading the wrong grid. (Grids built before provenance tracking warn and fall
+  back to `'mist'`.) You still must build the SSP grid from the *same* FSPS you
+  directly compare against — a MILES grid (`ssp_data.h5`, 5994 λ-points) and a
+  BPASS install (15000 points) differ in shape, so a raw ceridwen-vs-FSPS
+  comparison would mismatch.
 - **Only one `fsps.StellarPopulation` per process.** FSPS keeps global Fortran
   state; constructing a second `StellarPopulation` corrupts the first. (CERIDWEN
   itself makes none — the nebular model reads grid *files*.)
