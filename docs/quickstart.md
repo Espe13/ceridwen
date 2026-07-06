@@ -30,6 +30,13 @@ ssp = SSPData.from_fsps(imf_type=1, save_to="ssp_data.h5")
 # later: ssp = SSPData.load("ssp_data.h5")
 ```
 
+`from_fsps` accepts only stellar-library / IMF kwargs (`imf_type` and friends);
+dust, SFH, nebular, IGM, redshift, or a fixed metallicity are rejected — the
+forward model owns those. The grid records its provenance (isochrone/spectral
+library, `imf_type`, FSPS version, build kwargs) and `CSPBasis` picks up the
+isochrone library automatically, so **`isoc_type` never has to be set by hand**
+and the nebular grid always matches the SSP isochrones.
+
 ## Step 1 — build a model and fit
 
 ```python

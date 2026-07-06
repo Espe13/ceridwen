@@ -10,7 +10,7 @@ sampling, and prints true-vs-posterior values plus two figures: a corner plot
 
 ```bash
 pip install .                      # everything except FSPS
-pip install fsps                   # FSPS wrapper (needs gfortran + $SPS_HOME; see README)
+pip install "fsps>=0.4.4"          # FSPS wrapper (needs gfortran + $SPS_HOME; see README)
 export SPS_HOME=/path/to/fsps      # FSPS root directory (contains nebular/, ...)
 python examples/quickstart.py
 ```

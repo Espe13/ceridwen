@@ -34,6 +34,8 @@ from ceridwen.priors import Uniform, ClippedNormal, StudentT
 from ceridwen.model import logsfr_ratios_to_sfh
 
 ssp = SSPData.load("ssp_data.h5")          # built once via SSPData.from_fsps(...)
+# The grid records its isochrone library; CSPBasis reads it automatically,
+# so isoc_type never needs to be passed in init_neb_params.
 
 ZRED = 0.5                                  # spectroscopic redshift of the galaxy
 

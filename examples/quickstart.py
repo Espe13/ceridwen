@@ -21,14 +21,15 @@ nebular grids and the dust-emission templates are read from ``$SPS_HOME``
 e.g.::
 
     pip install .                         # everything except FSPS
-    pip install fsps                      # FSPS wrapper (needs gfortran + $SPS_HOME)
+    pip install "fsps>=0.4.4"             # FSPS wrapper (needs gfortran + $SPS_HOME)
     export SPS_HOME=/path/to/fsps         # the FSPS root (contains nebular/, ...)
     python examples/quickstart.py
 
 The SSP cache is written to ``examples/ssp_data.h5`` the first time and
 re-used on subsequent runs.  Set ``$SSP_FILE`` to point elsewhere.
 
-The fit takes ~10 min on CPU (much faster on GPU); lower ``num_live`` in the
+The fit takes ~10 min on an unloaded CPU (much faster on GPU; longer on a busy
+machine); lower ``num_live`` in the
 adapter below for a quicker, rougher run.
 """
 from __future__ import annotations
@@ -53,7 +54,37 @@ from ceridwen.sampler import run_sampler
 from ceridwen.sampler.nested import BlackJAXNestedSamplerAdapter
 
 HERE = pathlib.Path(__file__).resolve().parent
-SSP_FILE = os.environ.get("SSP_FILE", str(HERE / "ssp_data.h5"))
+
+
+def _default_ssp_file() -> str:
+    """Resolve a usable SSP grid without requiring FSPS.
+
+    Order: $SSP_FILE -> examples/ssp_data.h5 -> the git-lfs test
+    fixture tests/fixtures/ssp_data_test.h5 (present in every clone
+    where `git lfs install && git lfs pull` has been run).  A tiny
+    file at the fixture path is a git-lfs POINTER, not the data —
+    detect it and explain, because the resulting HDF5 error is
+    otherwise cryptic in a tutorial setting.
+    """
+    env = os.environ.get("SSP_FILE")
+    if env:
+        return env
+    local = HERE / "ssp_data.h5"
+    if local.is_file():
+        return str(local)
+    fixture = HERE.parent / "tests" / "fixtures" / "ssp_data_test.h5"
+    if fixture.is_file():
+        if fixture.stat().st_size < 10_000:
+            raise SystemExit(
+                f"{fixture} is a git-lfs pointer, not the actual grid.\n"
+                "Run `git lfs install && git lfs pull` in the repository, "
+                "then re-run this script."
+            )
+        return str(fixture)
+    return str(local)   # absent: step0 falls through to the FSPS build
+
+
+SSP_FILE = _default_ssp_file()
 SPS_HOME = os.environ.get("SPS_HOME")
 RNG = jax.random.PRNGKey(42)
 
@@ -79,7 +110,7 @@ def step0_load_or_build_grid() -> SSPData:
     except ImportError as exc:
         raise SystemExit(
             "FSPS (python-fsps) is required to build the SSP grid and is not "
-            "importable. Install it with `pip install fsps` and a "
+            "importable. Install it with `pip install 'fsps>=0.4.4'` and a "
             "working FSPS build, then set $SPS_HOME. See the README."
         ) from exc
 
@@ -166,8 +197,8 @@ def main() -> int:
     )
 
     n_dims = sum(int(jnp.size(v)) for v in model.theta_init.values())
-    # Demo settings tuned for a reasonable CPU runtime (~10 min) and a
-    # good-looking corner. Two dials:
+    # Demo settings tuned for a reasonable CPU runtime (~10 min unloaded; longer
+    # on a busy machine) and a good-looking corner. Two dials:
     #   * num_inner_steps -- dominates the one-time JIT *compile* time of the
     #     step kernel (it is the unrolled inner MCMC chain) AND per-step cost.
     #   * num_live -- runtime<->quality (more = smoother contours, more steps).

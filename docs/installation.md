@@ -77,7 +77,7 @@ export SPS_HOME="$HOME/fsps"           # <- edit to your chosen location
 git clone https://github.com/cconroy20/fsps.git "$SPS_HOME"
 
 # 3. Install the Python wrapper (it compiles against $SPS_HOME):
-python -m pip install fsps
+python -m pip install "fsps>=0.4.4"
 ```
 
 !!! tip "Make `$SPS_HOME` permanent"

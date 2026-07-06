@@ -106,7 +106,7 @@ export SPS_HOME="$HOME/fsps"        # <- edit this to your chosen location
 git clone https://github.com/cconroy20/fsps.git "$SPS_HOME"
 
 # 3. Install the Python wrapper (it compiles against $SPS_HOME):
-python -m pip install fsps
+python -m pip install "fsps>=0.4.4"
 ```
 
 **Make `$SPS_HOME` permanent.** Step 2 above only sets it for the current
@@ -168,14 +168,24 @@ minutes on CPU and only has to be done once:
 ```python
 from ceridwen import SSPData
 
-# Generate + cache.  Any FSPS params (imf_type, dust_type, nebular grid
-# choices, ...) can be passed as kwargs.  The example below matches the
-# defaults used throughout the quick-start below.
+# Generate + cache. from_fsps accepts ONLY the kwargs that define the stellar
+# library / IMF (imf_type and its parameters, isochrone-phase knobs like
+# tpagb_norm_type). Anything the forward model applies itself — dust, SFH,
+# nebular emission, IGM, redshift, or a fixed metallicity — is rejected with a
+# clear error, so the grid can never be silently double-processed.
 ssp = SSPData.from_fsps(imf_type=1, save_to="ssp_data.h5")
 
 # Subsequent runs just reload the cache:
 # ssp = SSPData.load("ssp_data.h5")
 ```
+
+The grid records its own **provenance** (isochrone/spectral library, `imf_type`,
+FSPS version, the exact build kwargs, wavelength range) into the HDF5 file, and
+`CSPBasis` reads the isochrone library back automatically — **you never set
+`isoc_type` by hand**, and the nebular CLOUDY grid is guaranteed to match the
+SSP isochrone set. (Old grids built before provenance tracking still load; for
+those, `CSPBasis` warns that the isochrone type is unknown and falls back to
+`'mist'`.)
 
 `from_fsps(**fsps_kwargs)` is a thin classmethod wrapper around
 `ceridwen.ssps.ssp_data.collect_ssp_data_wrapper` — either call works.
@@ -234,7 +244,7 @@ spec = Spectrum(
     name="my_spec",
 )
 
-# (c) Nebular emission-line fluxes (used by fit_lines.py drivers).
+# (c) Nebular emission-line fluxes.
 # ``line_ind`` are 1-based indices into FSPS's ``emlines_info.dat``;
 # ``wavelength`` is the vacuum rest wavelength in Å.  (Lines imported above.)
 
