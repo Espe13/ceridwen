@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ceridwen"
-version = "0.1.0"
+version = "0.1.1"
 description = "JAX-native, GPU-capable SED fitting with VI-preconditioned HMC"
 readme = "README.md"
 # Python 3.11+ required: nested sampling pins official blackjax (main), which

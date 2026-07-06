@@ -14,8 +14,8 @@ authors:
     given-names: Amanda
     email: aas208@cam.ac.uk
     affiliation: "Institute of Astronomy, University of Cambridge"
-version: "0.1.0"
-date-released: "2026-06-29"
+version: "0.1.1"
+date-released: "2026-07-06"
 license: MIT
 repository-code: "https://github.com/Espe13/ceridwen"
 url: "https://github.com/Espe13/ceridwen"
