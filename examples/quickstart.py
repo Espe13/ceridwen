@@ -78,7 +78,10 @@ def _default_ssp_file() -> str:
             raise SystemExit(
                 f"{fixture} is a git-lfs pointer, not the actual grid.\n"
                 "Run `git lfs install && git lfs pull` in the repository, "
-                "then re-run this script."
+                "then re-run this script.\n"
+                "No git-lfs? Download the grid from Zenodo instead and save "
+                "it as examples/ssp_data.h5 — see docs/installation.md "
+                "('Getting the SSP grid')."
             )
         return str(fixture)
     return str(local)   # absent: step0 falls through to the FSPS build
@@ -109,9 +112,14 @@ def step0_load_or_build_grid() -> SSPData:
         import fsps  # noqa: F401
     except ImportError as exc:
         raise SystemExit(
-            "FSPS (python-fsps) is required to build the SSP grid and is not "
-            "importable. Install it with `pip install 'fsps>=0.4.4'` and a "
-            "working FSPS build, then set $SPS_HOME. See the README."
+            "No SSP grid found and FSPS (python-fsps) is not importable.\n"
+            "Easiest fixes (no FSPS needed):\n"
+            "  * run `git lfs install && git lfs pull` in the repository "
+            "(fetches the bundled test grid), or\n"
+            "  * download the grid from Zenodo to examples/ssp_data.h5 — see "
+            "docs/installation.md ('Getting the SSP grid').\n"
+            "Alternatively install FSPS with `pip install 'fsps>=0.4.4'` and "
+            "set $SPS_HOME to build the grid locally. See the README."
         ) from exc
 
     print(f"[Step 0] building SSP grid from FSPS -> {SSP_FILE} (one-off, ~minutes)")

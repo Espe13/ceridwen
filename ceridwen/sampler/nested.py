@@ -36,8 +36,8 @@ Installation
 ::
 
     # Nested sampling (blackjax.nss) is merged into the official blackjax;
-    # until it lands in a PyPI release, install from main:
-    pip install "git+https://github.com/blackjax-devs/blackjax@main"
+    # until it lands in a PyPI release, install the pinned commit:
+    pip install "git+https://github.com/blackjax-devs/blackjax@f73e12956"
     pip install anesthetic   # optional (posteriors/plots; now on PyPI)
 
 Usage
@@ -317,7 +317,7 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         except ImportError as exc:
             raise ImportError(
                 "BlackJAX with nested sampling (blackjax.ns) is required.\n"
-                "Install: pip install 'git+https://github.com/blackjax-devs/blackjax@main'"
+                "Install: pip install 'git+https://github.com/blackjax-devs/blackjax@f73e12956'"
             ) from exc
 
         import tqdm

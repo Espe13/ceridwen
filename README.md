@@ -351,4 +351,5 @@ The `result` object has posterior samples keyed by parameter name, plus the VI t
 
 ---
 
-Maintainer: Amanda Stoffers, Institute of Astronomy, University of Cambridge — `aas208@cam.ac.uk`
+Maintainer: [Amanda Stoffers](https://www.amanda-stoffers.de), Kavli Institute for Cosmology, University of Cambridge — `aas208@cam.ac.uk`
+

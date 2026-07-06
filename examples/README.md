@@ -8,19 +8,23 @@ sampling, and prints true-vs-posterior values plus two figures: a corner plot
 (`quickstart_corner.png`) and a model-vs-data SED with a chi residual strip
 (`quickstart_sed.png`).
 
+No FSPS needed — the quickstart runs off a bundled SSP grid:
+
 ```bash
+git lfs install && git lfs pull    # fetch the bundled test grid (~120 MB)
 pip install .                      # everything except FSPS
-pip install "fsps>=0.4.4"          # FSPS wrapper (needs gfortran + $SPS_HOME; see README)
-export SPS_HOME=/path/to/fsps      # FSPS root directory (contains nebular/, ...)
 python examples/quickstart.py
 ```
 
-The SSP cache is written to `examples/ssp_data.h5` on first run and re-used
-afterwards. Override with `SSP_FILE=/some/path.h5`.
+The script resolves the grid in this order: `$SSP_FILE` →
+`examples/ssp_data.h5` → the LFS fixture `tests/fixtures/ssp_data_test.h5`.
+No git-lfs? Download the grid from Zenodo to `examples/ssp_data.h5` instead
+(see `docs/installation.md`, "Getting the SSP grid").
 
-FSPS is required even though this demo has `add_neb=False`: Step 0 builds the
-SSP grid from FSPS. Flip `add_neb=True` in the script to add CLOUDY nebular
-emission (read from `$SPS_HOME` at runtime).
+FSPS is only needed to *build your own* grid (then it is written to
+`examples/ssp_data.h5` and re-used), and for `add_neb=True`, which reads CLOUDY
+nebular emission from `$SPS_HOME` at runtime — see the README for the FSPS
+install.
 
 For spectroscopy, emission lines, free redshift, and VI-preconditioned NUTS, see
 the end-to-end template in the

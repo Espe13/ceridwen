@@ -10,10 +10,19 @@ A fresh conda environment is the easy route:
 conda create -n ceridwen python=3.11 -y
 conda activate ceridwen
 
+git lfs install    # needs git-lfs: brew install git-lfs / apt-get install git-lfs
 git clone https://github.com/Espe13/ceridwen.git
 cd ceridwen
+git lfs pull       # fetches the SSP test grid (~120 MB) used by the quickstart
 pip install .
 ```
+
+!!! warning "git-lfs required for the quickstart"
+    The bundled SSP grids are stored with [git LFS](https://git-lfs.com). Without
+    `git lfs install && git lfs pull` a clone contains tiny *pointer files*
+    instead of the data, and `examples/quickstart.py` will stop with an
+    explanatory message. If you cannot use LFS, download the grid from Zenodo
+    instead (see "Getting the SSP grid" below).
 
 Use a plain `pip install .` (not `-e`) unless you intend to edit the source — an
 editable install tracks your working copy, so your version would move as the
@@ -36,10 +45,32 @@ documentation site needs `pip install ".[docs]"` (maintainers only).
 
 !!! note "blackjax"
     Nested sampling uses `blackjax.nss`, which is merged into the official
-    blackjax but not yet in a tagged PyPI release, so CERIDWEN pins blackjax's
-    `main` branch. This is why CERIDWEN installs from source/GitHub rather than
-    PyPI for now; once a blackjax release ships NSS it becomes a normal version
-    pin.
+    blackjax but not yet in a tagged PyPI release, so CERIDWEN pins a fixed
+    blackjax commit (`f73e12956`) — everyone installs the same validated state.
+    This is why CERIDWEN installs from source/GitHub rather than PyPI for now;
+    once a blackjax release ships NSS it becomes a normal version pin.
+
+## Getting the SSP grid
+
+Fitting needs a pre-computed SSP grid (an HDF5 file). Any one of these works —
+the quickstart resolves them in the order `$SSP_FILE` →
+`examples/ssp_data.h5` → the LFS test fixture:
+
+1. **git LFS (default).** `git lfs pull` in the clone fetches
+   `tests/fixtures/ssp_data_test.h5`, which the quickstart uses automatically.
+   Zero extra setup.
+2. **Zenodo download (no LFS needed).** Download the quickstart grid and place
+   it at `examples/ssp_data.h5`:
+
+    ```bash
+    curl -L -o examples/ssp_data.h5 \
+        "https://zenodo.org/records/ZENODO_RECORD_ID/files/ssp_data.h5?download=1"
+    ```
+
+    <!-- TODO(release): replace ZENODO_RECORD_ID after minting the Zenodo record -->
+
+3. **Build your own with FSPS** (below) — required anyway for nebular emission
+   and dust emission, which read the CLOUDY/Draine & Li data from `$SPS_HOME`.
 
 ## Verify your setup
 

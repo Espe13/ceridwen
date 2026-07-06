@@ -126,7 +126,7 @@ def check_environment(verbose: bool = True) -> bool:
             record(_WARN, "blackjax.ns",
                    "missing -> nested sampling unavailable. Install blackjax "
                    "with NSS: pip install "
-                   "'git+https://github.com/blackjax-devs/blackjax@main'")
+                   "'git+https://github.com/blackjax-devs/blackjax@f73e12956'")
 
     # ---- FSPS + $SPS_HOME (grid building + nebular/dust-emission) -------
     fsps, _ = _try_import("fsps")

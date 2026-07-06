@@ -38,10 +38,11 @@ classifiers = [
 #   * blackjax     -- nested sampling (blackjax.nss / blackjax.ns) is now MERGED
 #                     into the official blackjax (blackjax-devs), but not yet in a
 #                     tagged PyPI release (latest is 1.5, pre-merge). We therefore
-#                     pin the official repo's main branch for now. This direct git
+#                     pin the official repo at a fixed commit. This direct git
 #                     reference still means ceridwen cannot be uploaded to PyPI.
-#                     `@main` is a moving target -- pin a specific commit for
-#                     reproducible client installs once you have a good SHA.
+#                     Pinned SHA f73e12956 = the maintainer-validated environment
+#                     (blackjax 1.6.dev98+gf73e12956), so every install is
+#                     bit-identical to the tested one.
 #                     TODO(switch ASAP): when a blackjax release ships NSS, replace
 #                     this with `blackjax>=X.Y` to restore PyPI-installability.
 #   * sedpy-jax    -- >=0.1.1 carries the `inres` arg of make_lsf_smoother + the
@@ -57,7 +58,7 @@ dependencies = [
     "astropy>=5.3",
     "sedpy-jax>=0.1.1",
     "tensorflow-probability>=0.23",
-    "blackjax @ git+https://github.com/blackjax-devs/blackjax@main",
+    "blackjax @ git+https://github.com/blackjax-devs/blackjax@f73e12956",
     "tqdm>=4.65",
     # Everything needed to import, fit, plot, and test CERIDWEN is core, so a
     # plain `pip install .` gives a fully-featured install with no extras to
