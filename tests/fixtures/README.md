@@ -1,27 +1,26 @@
 # Test fixtures
 
-This directory holds the small SSP grid the test suite loads.
+This directory holds the SSP grids the test suite loads. Both are committed
+via **git LFS** — run `git lfs install && git lfs pull` after cloning, or the
+files here are tiny pointer files and the grid-dependent tests skip cleanly
+(with a message pointing here) rather than erroring, so `import`/smoke CI
+stays green.
 
-`ssp_data_test.h5` is **not** in the repository yet — build it once (on a
-machine with FSPS) and commit it:
+- `ssp_data_test.h5` — the main test grid (BPASS build, provenance-tagged).
+  Tests resolve it via `tests/_gridfixture.py`.
+- `ssp_data_bpass_agb_dust.h5` — used by the BPASS+AGB regression test
+  (`tests/test_losvd_no_lyman_spike.py`). Written before provenance tracking,
+  so it also exercises the legacy-file path of `SSPData.load`.
 
-```bash
-python scripts/make_test_fixture_grid.py
-git add tests/fixtures/ssp_data_test.h5
-git commit -m "Add committed test SSP fixture grid"
-```
-
-Tests resolve the grid via `tests/_gridfixture.py`. If the file is absent, the
-grid-dependent tests skip cleanly (with a message pointing here) rather than
-erroring, so `import`/smoke CI stays green.
-
-You can also point the suite at an existing grid without committing one:
+You can point the suite at a different grid without touching the fixtures:
 
 ```bash
 export CERIDWEN_TEST_SSP=/path/to/ssp_data.h5
 pytest
 ```
 
-The BPASS+AGB regression test (`tests/test_losvd_no_lyman_spike.py`) needs a
-separate grid named `ssp_data_bpass_agb_dust.h5`; commit that here too if you
-want that test to run on fresh clones.
+To rebuild a fixture (needs FSPS): `SSPData.from_fsps(save_to=...)` on a
+machine with the appropriate python-fsps build, then `git add` the file —
+`.gitattributes` routes `tests/fixtures/*.h5` through LFS automatically.
+Note that every committed fixture version permanently consumes GitHub LFS
+storage quota, so regenerate only when the on-disk schema actually changes.
