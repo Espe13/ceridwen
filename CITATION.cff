@@ -29,6 +29,16 @@ keywords:
   - nested sampling
   - JAX
 
+# Pre-built SSP grids (MIST+MILES+Chabrier and BPASS) used by the quickstart
+# and usable by the test suite:
+references:
+  - type: dataset
+    title: "CERIDWEN quickstart SSP grids"
+    doi: 10.5281/zenodo.21221634
+    authors:
+      - family-names: Stoffers
+        given-names: Amanda
+
 # When the methods paper is published, fill in the journal, year, volume,
 # pages and DOI below, and update `message` to ask users to cite the paper.
 preferred-citation:

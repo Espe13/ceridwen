@@ -8,23 +8,30 @@ sampling, and prints true-vs-posterior values plus two figures: a corner plot
 (`quickstart_corner.png`) and a model-vs-data SED with a chi residual strip
 (`quickstart_sed.png`).
 
-No FSPS needed — the quickstart runs off a bundled SSP grid:
+Recommended route — build the SSP grid yourself with FSPS (you control
+isochrones, spectral library, and IMF; see the README for the FSPS install):
 
 ```bash
-git lfs install && git lfs pull    # fetch the bundled test grid (~120 MB)
 pip install .                      # everything except FSPS
-python examples/quickstart.py
+pip install "fsps>=0.4.4"          # needs gfortran + $SPS_HOME; see README
+export SPS_HOME=/path/to/fsps
+python examples/quickstart.py      # builds examples/ssp_data.h5 on first run
 ```
 
-The script resolves the grid in this order: `$SSP_FILE` →
-`examples/ssp_data.h5` → the LFS fixture `tests/fixtures/ssp_data_test.h5`.
-No git-lfs? Download the grid from Zenodo to `examples/ssp_data.h5` instead
-(see `docs/installation.md`, "Getting the SSP grid").
+No FSPS? A pre-built grid always works too — either download from Zenodo
+([doi:10.5281/zenodo.21221634](https://doi.org/10.5281/zenodo.21221634)):
 
-FSPS is only needed to *build your own* grid (then it is written to
-`examples/ssp_data.h5` and re-used), and for `add_neb=True`, which reads CLOUDY
-nebular emission from `$SPS_HOME` at runtime — see the README for the FSPS
-install.
+```bash
+curl -L -o examples/ssp_data.h5 \
+    "https://zenodo.org/records/21221634/files/ssp_data.h5?download=1"
+```
+
+or use the bundled LFS test grid (`git lfs install && git lfs pull`). The
+script resolves the grid in this order: `$SSP_FILE` →
+`examples/ssp_data.h5` → the LFS fixture `tests/fixtures/ssp_data_test.h5`.
+
+`add_neb=True` additionally needs `$SPS_HOME` at runtime (CLOUDY nebular
+data), i.e. an FSPS data checkout even with a downloaded grid.
 
 For spectroscopy, emission lines, free redshift, and VI-preconditioned NUTS, see
 the end-to-end template in the

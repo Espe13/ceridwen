@@ -12,7 +12,9 @@ stays green.
   (`tests/test_losvd_no_lyman_spike.py`). Written before provenance tracking,
   so it also exercises the legacy-file path of `SSPData.load`.
 
-You can point the suite at a different grid without touching the fixtures:
+You can point the suite at a different grid without touching the fixtures —
+e.g. one you built with FSPS, or the pre-built grids on Zenodo
+([doi:10.5281/zenodo.21221634](https://doi.org/10.5281/zenodo.21221634)):
 
 ```bash
 export CERIDWEN_TEST_SSP=/path/to/ssp_data.h5

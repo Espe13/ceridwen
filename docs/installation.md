@@ -52,25 +52,29 @@ documentation site needs `pip install ".[docs]"` (maintainers only).
 
 ## Getting the SSP grid
 
-Fitting needs a pre-computed SSP grid (an HDF5 file). Any one of these works —
-the quickstart resolves them in the order `$SSP_FILE` →
-`examples/ssp_data.h5` → the LFS test fixture:
+Fitting needs a pre-computed SSP grid (an HDF5 file). The quickstart resolves
+it in the order `$SSP_FILE` → `examples/ssp_data.h5` → the LFS test fixture.
 
-1. **git LFS (default).** `git lfs pull` in the clone fetches
-   `tests/fixtures/ssp_data_test.h5`, which the quickstart uses automatically.
-   Zero extra setup.
-2. **Zenodo download (no LFS needed).** Download the quickstart grid and place
-   it at `examples/ssp_data.h5`:
+1. **Build your own with FSPS (recommended).** Install FSPS (below) and let
+   the quickstart build the grid on first run, or call
+   `SSPData.from_fsps(save_to="examples/ssp_data.h5", imf_type=1)` directly.
+   You control the isochrones, spectral library, and IMF — and FSPS is needed
+   anyway for nebular and dust emission, which read the CLOUDY/Draine & Li
+   data from `$SPS_HOME`.
+2. **Download from Zenodo (no FSPS needed)** —
+   [doi:10.5281/zenodo.21221634](https://doi.org/10.5281/zenodo.21221634).
+   Two grids are provided: `ssp_data.h5` (MIST isochrones, MILES spectra,
+   Chabrier IMF) and `ssp_data_bpass.h5` (BPASS v2 binary SSPs). For the
+   quickstart:
 
     ```bash
     curl -L -o examples/ssp_data.h5 \
-        "https://zenodo.org/records/ZENODO_RECORD_ID/files/ssp_data.h5?download=1"
+        "https://zenodo.org/records/21221634/files/ssp_data.h5?download=1"
     ```
 
-    <!-- TODO(release): replace ZENODO_RECORD_ID after minting the Zenodo record -->
-
-3. **Build your own with FSPS** (below) — required anyway for nebular emission
-   and dust emission, which read the CLOUDY/Draine & Li data from `$SPS_HOME`.
+3. **git LFS test fixture.** `git lfs pull` in the clone fetches
+   `tests/fixtures/ssp_data_test.h5`, which the quickstart falls back to
+   automatically. Zero extra setup beyond git-lfs.
 
 ## Verify your setup
 
