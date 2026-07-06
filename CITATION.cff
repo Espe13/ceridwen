@@ -13,7 +13,7 @@ authors:
   - family-names: Stoffers
     given-names: Amanda
     email: aas208@cam.ac.uk
-    affiliation: "Institute of Astronomy, University of Cambridge"
+    affiliation: "Kavli Institute for Cosmology, University of Cambridge"
 version: "0.1.1"
 date-released: "2026-07-06"
 license: MIT
@@ -48,7 +48,7 @@ preferred-citation:
     - family-names: Stoffers
       given-names: Amanda
       email: aas208@cam.ac.uk
-      affiliation: "Institute of Astronomy, University of Cambridge"
+      affiliation: "Kavli Institute for Cosmology, University of Cambridge"
   journal: "Monthly Notices of the Royal Astronomical Society"
   year: 2026
   notes: "Methods paper (in preparation). Update title, volume, pages and DOI on publication."
