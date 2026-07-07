@@ -33,8 +33,12 @@ A fresh conda env is the easy route:
 conda create -n ceridwen python=3.11 -y
 conda activate ceridwen
 
+git lfs install    # needs git-lfs: brew install git-lfs / apt-get install git-lfs
 git clone https://github.com/Espe13/ceridwen.git
 cd ceridwen
+git lfs pull       # fetches the bundled SSP test grid (~120 MB; used by the
+                   # quickstart fallback and the test suite — or download a
+                   # grid from Zenodo instead, see docs/installation.md)
 pip install .
 ```
 
@@ -68,11 +72,12 @@ The only thing not installed for you is FSPS (it can't be — see below).
 
 > **Note on `blackjax`.** Nested sampling uses `blackjax.nss`, which has been
 > merged into the [official blackjax](https://github.com/blackjax-devs/blackjax)
-> but is not yet in a tagged PyPI release. ceridwen therefore pins blackjax's
-> `main` branch for now. Because this is a direct git dependency, ceridwen is
-> installed from source/GitHub rather than PyPI; once a blackjax release ships
-> NSS, this becomes a normal `blackjax>=X.Y` pin and ceridwen installs straight
-> from PyPI. (Python stays ≥ 3.11 either way.)
+> but is not yet in a tagged PyPI release. ceridwen therefore pins a fixed
+> blackjax commit (`f73e12956`), so every install gets the same validated
+> state. Because this is a direct git dependency, ceridwen is installed from
+> source/GitHub rather than PyPI; once a blackjax release ships NSS, this
+> becomes a normal `blackjax>=X.Y` pin and ceridwen installs straight from
+> PyPI. (Python stays ≥ 3.11 either way.)
 
 There are **no extras to choose** — `pip install .` gives you everything to
 import, fit, plot, and test CERIDWEN. The only thing installed separately is
@@ -132,8 +137,10 @@ it's blank, the line went into the wrong file (check which shell you use with
 python -m ceridwen.check
 ```
 
-Once FSPS is set up, see [`examples/quickstart.py`](examples/quickstart.py) for a
-complete, runnable fit (mock UV-to-IR photometry, end to end).
+FSPS is the recommended route to an SSP grid (you control isochrones, spectral
+library, and IMF) and is required for nebular / dust emission — but the bundled
+example runs without it (see below). Either way, next stop:
+[`examples/quickstart.py`](examples/quickstart.py), a complete runnable fit.
 
 ---
 
@@ -141,13 +148,15 @@ complete, runnable fit (mock UV-to-IR photometry, end to end).
 
 ### Run the bundled example first
 
-The fastest way to confirm your whole setup works end to end. It builds the SSP
-cache from FSPS, generates mock UV-to-IR photometry, fits it with nested sampling,
+The fastest way to confirm your whole setup works end to end. It loads an SSP
+grid — building it from FSPS only if none is found (`$SSP_FILE` →
+`examples/ssp_data.h5` → the LFS test fixture; see
+[`docs/installation.md`](docs/installation.md), "Getting the SSP grid") —
+generates mock UV-to-IR photometry, fits it with nested sampling,
 and prints recovered-vs-true parameters plus a corner plot
 (`examples/quickstart_corner.png`):
 
 ```bash
-export SPS_HOME=/path/to/fsps        # your FSPS data directory
 python examples/quickstart.py
 ```
 
@@ -162,8 +171,10 @@ so you can adapt them to your own observations.
 ### Step 0 — build the SSP grid (once per FSPS configuration)
 
 Ceridwen's forward model consumes an HDF5 cache of SSP spectra precomputed
-with FSPS.  On first use you need to generate it.  This takes a few
-minutes on CPU and only has to be done once:
+with FSPS. Building your own is the recommended route (you control the
+isochrones, spectral library, and IMF); it takes a few minutes on CPU and only
+has to be done once. No FSPS? Download a pre-built grid instead
+(Zenodo/git-LFS options in [`docs/installation.md`](docs/installation.md)).
 
 ```python
 from ceridwen import SSPData
@@ -193,113 +204,119 @@ FSPS must be installed and importable; see the Installation section.
 
 ### Step 1 — fit a galaxy end-to-end
 
-This is a **template**, not a copy-paste-runnable script: the flux/uncertainty
-arrays (and `my_observed_flux` / `my_observed_sigma`) are placeholders for your
-own data. For a script that runs as-is, use `examples/quickstart.py` above.
+This is a real, copy-paste-runnable joint fit of broadband photometry plus an
+optical spectrum. The data live in `examples/mock_galaxy.npz` — a mock galaxy
+at fixed z = 0.1 generated with the same forward model
+(`examples/make_mock_data.py` shows exactly how, and regenerates it). The
+injected truth is stored in the file, so you can check the fit recovers it.
 
 ```python
+import pathlib
 import jax, jax.numpy as jnp
+import numpy as np
 from ceridwen import SSPData, CSPBasis, SedModel, fitSED
-from ceridwen.observation import Photometry, Spectrum, Lines
+from ceridwen.observation import Photometry, Spectrum
+from ceridwen.model import logsfr_ratios_to_sfh
 from ceridwen.priors import Uniform, ClippedNormal, StudentT
 
-# Load the cached grid produced in Step 0.
-ssp = SSPData.load("ssp_data.h5")
+# Load the mock observations (and the injected truth) shipped with the repo.
+d = np.load(pathlib.Path("examples") / "mock_galaxy.npz")
+ZRED = float(d["zred"])                      # fixed spectroscopic redshift
 
-# Composite-stellar-population forward model.
-# sps_home defaults to the $SPS_HOME environment variable, so you can omit it
-# if that is set (recommended); pass it explicitly to override.
+# Load the SSP grid from Step 0 (or the Zenodo download — see Installation).
+ssp = SSPData.load("examples/ssp_data.h5")
+
+# Composite-stellar-population forward model. lookback_time is the static SFH
+# node grid (Gyr, increasing, index 0 = today, >= 2 nodes); it comes with the
+# mock file so model and data match. (For control over the initial parameter
+# values, pass a full theta= dict instead — see the CSPBasis docstring.)
+lookback = jnp.asarray(d["lookback_time"])   # 6 nodes -> 5 free logsfr_ratios
 csp = CSPBasis(
     ssp,
-    add_dust=True, add_diffuse_dust=True,
-    add_neb=True, add_igm=True,            # IGM (Madau 1995) auto-scales with zred
+    lookback_time=lookback,
+    zh_const=True, sfh_interp="step",
+    add_dust=False, add_diffuse_dust=True,
+    add_neb=False,        # nebular emission needs FSPS data ($SPS_HOME); see below
+    verbose=False,
 )
 
-# Observations.  Any combination of the three container classes can be
-# fit jointly; the likelihood is a simple sum over their chi-squared
-# contributions.
+# Observations. Any combination of Photometry / Spectrum / Lines containers
+# is fit jointly; the likelihood is a sum over their contributions.
 
-# (a) Broadband photometry, e.g. JWST/NIRCam.  Fluxes in AB maggies.
+# (a) Broadband photometry: fluxes in AB maggies (1 maggie = 3631 Jy).
 phot = Photometry(
-    filters=["jwst_f115w", "jwst_f200w", "jwst_f444w"],
-    flux=[1.2e-8, 2.7e-8, 3.1e-8],
-    uncertainty=[6e-10, 1.4e-9, 1.5e-9],
-    name="my_phot",
+    filters=[str(f) for f in d["filters"]],
+    flux=d["maggies"], uncertainty=d["maggies_unc"],
+    name="phot",
 )
 
-# (b) Spectroscopy, e.g. a NIRSpec medium-resolution spectrum.  Pass the
-# rest-frame vacuum wavelength grid; set ``resolution`` (km/s) and
-# ``smoothtype`` if you want the forward model to apply instrumental
-# broadening.  Optional: ``response`` = per-pixel multiplicative
-# flux-calibration vector.
-import numpy as np   # Spectrum already imported above
-
-wave = np.linspace(3600.0, 9000.0, 1024)     # Å, vacuum rest-frame
+# (b) Spectroscopy. The wavelength grid is vacuum Å in the OBSERVED frame
+# (as delivered by the instrument): the forward model redshifts the model
+# spectrum by (1 + zred) and projects it onto these pixels. ``resolution`` +
+# ``smoothtype`` apply instrumental broadening ("vel": sigma in km/s;
+# also "R", "lambda", "lsf"). Flux units must match the model spectrum
+# (L_sun Hz^-1 after mass scaling) up to a calibration you supply.
 spec = Spectrum(
-    wavelength=wave,
-    flux=my_observed_flux,                   # F_nu per pixel, same units as model
-    uncertainty=my_observed_sigma,
-    resolution=150.0,                        # km/s
-    smoothtype="vel",                        # or "R", "lambda", "lsf"
-    name="my_spec",
+    wavelength=d["spec_wave_obs"],
+    flux=d["spec_flux"], uncertainty=d["spec_unc"],
+    resolution=float(d["spec_resolution"]), smoothtype="vel",
+    name="spec",
 )
 
-# (c) Nebular emission-line fluxes.
-# ``line_ind`` are 1-based indices into FSPS's ``emlines_info.dat``;
-# ``wavelength`` is the vacuum rest wavelength in Å.  (Lines imported above.)
+# The SFH is sampled as logsfr_ratios (Prospector convention) and transformed
+# to per-node SFR; logmass then sets the absolute amplitude.
+sfh_times_yr = np.array(csp.sfh_times)
+def logsfr_to_sfh(free_theta, _t=sfh_times_yr):
+    return logsfr_ratios_to_sfh(free_theta["logsfr_ratios"], sfh_times_yr=_t)
 
-LINE_IND   = [59, 62, 63, 71, 72]                       # Hβ, [OIII]4959, [OIII]5007, Hα, [NII]6583
-LINE_NAMES = ["Hbeta", "[OIII]4959", "[OIII]5007", "Halpha", "[NII]6583"]
-LINE_WAVE  = [4861.3, 4958.9, 5006.8, 6562.8, 6583.4]
-
-lines = Lines(
-    line_ind=LINE_IND,
-    line_names=LINE_NAMES,
-    wavelength=LINE_WAVE,
-    flux=[1.4e-18, 1.1e-18, 3.2e-18, 4.2e-18, 1.3e-18],  # erg s^-1 cm^-2
-    uncertainty=[1.4e-19, 1.1e-19, 3.2e-19, 4.2e-19, 1.3e-19],
-    name="my_lines",
-)
-
-# Collect whichever observations you have into a single list; an empty
-# list is fine for any type that is not being fit.
-observations = [phot, spec, lines]
-
-# SedModel at fixed spectroscopic redshift.
 model = SedModel(
-    csp, observations=observations,
+    csp, observations=[phot, spec],
     priors={
-        # Z is log10 of ABSOLUTE metallicity (= ssp_lgmet), NOT log10(Z/Zsun).
-        # Keep this inside the FSPS grid (≈ [-4, -1.4]; solar ≈ -1.85) — values
-        # outside it are silently clamped. Run `csp.check_param_ranges(...)` or
-        # `python -m ceridwen.check` if unsure of your grid bounds.
-        "Z": ClippedNormal(mean=-2.0, sigma=0.5, low=-4.0, high=-1.4),
-        "logmass": Uniform(low=6.0, high=12.5),
+        # Z is log10 of ABSOLUTE metallicity (= ssp_lgmet), NOT log10(Z/Zsun);
+        # solar is ~ -1.85. Keep it inside your SSP grid — values outside are
+        # silently clamped. Run `csp.check_param_ranges(...)` for the bounds.
+        "Z": Uniform(low=-3.9, high=-1.45),
+        "logmass": Uniform(low=9.0, high=12.0),
         "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
         "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
-        "tau_pow": ClippedNormal(mean=0.3, sigma=0.5, low=0.0, high=4.0),
-        "alpha_pow": ClippedNormal(mean=-1.0, sigma=0.5, low=-2.5, high=0.5),
-        "gas_logz": Uniform(low=-2.0, high=0.5),
-        "gas_logu": Uniform(low=-4.0, high=-1.0),
-        "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=0.3),
+        "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=1.0),
     },
-    zred=6.5,                                # fixed spec-z
+    transforms={"sfh": logsfr_to_sfh},
+    free_param_init={"logsfr_ratios": jnp.zeros(lookback.size - 1),
+                     "logmass": jnp.array([10.0])},
+    zred=ZRED,                               # fixed spec-z
 )
 
-# VI-preconditioned NUTS.  VI learns a full-rank Gaussian approximation
-# (~30 s); NUTS samples in the whitened space with target_acceptance = 0.95
-# and a ~200-step step-size-only warmup.
+# VI-preconditioned NUTS: VI learns a full-rank Gaussian transport map,
+# NUTS then samples in the whitened space (Hoffman et al. 2019).
 result = fitSED(
-    model, observations=observations,
+    model,
     sampler="nuts",
     vi="tril",                               # "iaf" for NeuTra neural transport
     sampler_kwargs={"num_chains": 4, "num_samples": 2000},
     rng_key=jax.random.PRNGKey(42),
     output_dir="./my_fit",
 )
+
+# Recovered vs injected truth.
+for p in ("Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index"):
+    samples = np.asarray(result.samples[p]).ravel()
+    print(f"{p:>20}: true {float(d['true_' + p][0]):+7.3f}   "
+          f"fit {np.median(samples):+7.3f} "
+          f"+/- {np.std(samples):.3f}")
 ```
 
-The `result` object has posterior samples keyed by parameter name, plus the VI trace and per-phase wall-clock timings in `result.raw`.
+The `result` object has posterior samples keyed by parameter name, plus the VI
+trace and per-phase wall-clock timings in `result.raw`; everything is also
+written to `./my_fit/ceridwen_result.h5`.
+
+To add **nebular emission lines** to the fit (a `Lines` container, joint with
+photometry and spectroscopy, `add_neb=True`), you need the FSPS data files
+(`$SPS_HOME`) for the CLOUDY grids — the walk-through in
+[`docs/tutorial.md`](docs/tutorial.md) covers exactly that, including line
+selection via FSPS's `emlines_info.dat` (rest-frame vacuum Å — unlike the
+spectrum's pixel grid, line wavelengths are given in the REST frame and
+redshifted internally).
 
 ---
 

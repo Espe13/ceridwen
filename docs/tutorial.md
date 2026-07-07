@@ -74,13 +74,16 @@ non-detections enter as one-sided χ²).
 
 ## 3. (b) Spectrum
 
-A densely-sampled spectrum. Pass the **rest-frame, vacuum** wavelength grid in Å
-and flux in `F_ν` (same system as the model). Set `resolution` + `smoothtype` to
-have the forward model apply instrumental broadening.
+A densely-sampled spectrum. Pass the **observed-frame, vacuum** wavelength grid
+in Å (the pixel wavelengths as delivered by the instrument — the forward model
+redshifts the model spectrum by `(1 + zred)` onto these pixels; at `zred = 0`
+observed and rest frame coincide) and flux in `F_ν` (same system as the model).
+Set `resolution` + `smoothtype` to have the forward model apply instrumental
+broadening.
 
 ```python
 spec = Spectrum(
-    wavelength=my_rest_wave_aa,     # Å, vacuum, rest-frame, shape (n_pix,)
+    wavelength=my_obs_wave_aa,      # Å, vacuum, OBSERVED frame, shape (n_pix,)
     flux=my_spec_fnu,               # F_nu per pixel
     uncertainty=my_spec_unc,
     resolution=120.0,               # see smoothtype for the unit
@@ -228,5 +231,7 @@ script that also builds a corner plot and a model-vs-data figure.
 - **Aperture.** Use `eline_scaling` (and, for the spectrum, `calibration`/
   `noise_floor`) to absorb slit-vs-photometry aperture and flux-calibration
   differences.
-- **Wavelengths are rest-frame vacuum Å** for the spectrum and line lists; the
-  forward model handles the redshifting to the observed frame.
+- **Know your frames.** The spectrum's pixel grid is **observed-frame** vacuum
+  Å (the model is redshifted onto it); line-list wavelengths and
+  `mask_lines(...)` centres are **rest-frame** vacuum Å (redshifted internally
+  by `(1 + zred)`).

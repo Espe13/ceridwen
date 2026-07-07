@@ -157,9 +157,29 @@ class CSPBasis:
         nebular model computes its own ionising-photon rate from
         ``SSPData.ssp_flux`` at construction time, so ``log_qq`` is no
         longer carried in the SSP grid container.
-    theta : dict
+    theta : dict, optional
         Initial parameter values.  Must contain ``"sfh"`` and
-        ``"lookback_time"``.  All other keys are optional.
+        ``"lookback_time"`` (>= 2 nodes; n_time nodes define n_time-1 SFH
+        bins).  All other keys are optional.  Instead of ``theta`` you can
+        pass the ``lookback_time=`` shortcut (below), which fills the initial
+        values with neutral defaults — use ``theta`` only when you want
+        control over the initial values themselves (e.g. a specific initial
+        SFH for ``display_sfh`` or a chosen starting point).
+
+        ``"lookback_time"`` is required even when the redshift is sampled:
+        with ``track_zred_age=True`` the forward pass rescales this grid to
+        track ``age_gyr(zred)``, preserving its length and relative node
+        spacing — the construction-time grid is the *template* that fixes
+        ``n_time`` and the bin structure.
+
+        The construction-time grid is a *default*, not a straitjacket: an
+        explicit ``theta["lookback_time"]`` passed to ``predict`` /
+        ``get_spectrum`` takes precedence and is used verbatim in the weight
+        kernel (see ``_ssp_weights``), e.g. for transform-derived grids
+        computed from a sampled ``zred``.  Per-call grids are traced values
+        and therefore CANNOT be validated (monotonicity, range) inside the
+        compiled path — that fail-fast validation happens only on the
+        concrete construction-time grid, which is why one is required here.
 
         Lookback-time convention
             ``theta["lookback_time"]`` is **monotonically increasing**
@@ -208,6 +228,23 @@ class CSPBasis:
         Attenuation law name for the diffuse dust component.
     verbose : bool
         Print parameter summary after initialization.
+    lookback_time : array-like, optional
+        Shortcut alternative to ``theta``: the static SFH node grid (Gyr,
+        monotonically increasing, index 0 = today, >= 2 nodes).  Initial
+        values are filled with neutral defaults (``sfh`` = 1 in every
+        node/bin; metallicity = the median of the SSP grid, guaranteed
+        in-grid).  Mutually exclusive with ``theta``.
+
+        Example::
+
+            csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6),
+                           zh_const=True, add_neb=False)
+    sfh_per_bin : bool
+        Only used with the ``lookback_time=`` shortcut: if True, the SFH is
+        one SFR per bin (shape ``(n_time-1,)``, FastStepBasis / prospector
+        convention) instead of one per node (shape ``(n_time,)``).  Default
+        False.  (With ``theta=`` the convention is inferred from the shape
+        of ``theta['sfh']``.)
     """
 
     def __init__(
@@ -233,6 +270,8 @@ class CSPBasis:
         sfh_interp='step',
         sigma_losvd_kms=300.0,
         track_zred_age=False,
+        lookback_time=None,
+        sfh_per_bin=False,
         **kwargs,
     ):
         """
@@ -258,9 +297,42 @@ class CSPBasis:
             # or
             csp.calculate_ssp_weights = csp.calculate_ssp_weights_const_zh
         """
+        # --- Shortcut construction: lookback_time= instead of theta= --------
+        # The init theta exists to fix STATIC structure (n_time + node spacing,
+        # the per-node/per-bin sfh convention, the Z-vs-zh metallicity mode) —
+        # things the JIT-compiled kernels bake in at trace time.  The initial
+        # VALUES only seed theta_init and the early range check, so the
+        # shortcut fills them with neutral defaults: sfh = 1 everywhere and
+        # the median metallicity of the SSP grid (always in-grid).  Every
+        # predict/get_spectrum call still takes its own theta as usual.
+        if lookback_time is not None:
+            if theta is not None:
+                raise ValueError(
+                    "Pass either theta= (full control over the initial "
+                    "parameter values) or the lookback_time= shortcut, not "
+                    "both."
+                )
+            _lb = jnp.atleast_1d(jnp.asarray(lookback_time, dtype=float))
+            _n = int(_lb.size)
+            theta = {
+                'lookback_time': _lb,
+                'sfh': jnp.ones(max(_n - 1, 1) if sfh_per_bin else _n),
+            }
+            _z_mid = float(jnp.median(jnp.asarray(SSPData.ssp_lgmet)))
+            if zh_const:
+                theta['Z'] = jnp.array([_z_mid])
+            else:
+                theta['zh'] = jnp.full((_n,), _z_mid)
         if theta is None:
-            # lookback strictly increases from 0 (today) to ≈ T_univ.
-            theta = {'lookback_time': jnp.linspace(0.0, 13.8, 100)}
+            raise ValueError(
+                "CSPBasis needs the static SFH grid structure. Pass either\n"
+                "  lookback_time=jnp.linspace(0.0, T_oldest, n_nodes)   "
+                "(shortcut; neutral initial values), or\n"
+                "  theta={'lookback_time': ..., 'sfh': ..., 'Z' or 'zh': ...} "
+                "(full control).\n"
+                "lookback_time is in Gyr, monotonically increasing, index 0 = "
+                "today, >= 2 nodes."
+            )
         if init_neb_params is None:
             # isoc_type is intentionally NOT set here: it is taken from the
             # SSP grid's recorded provenance (see initialize_neb). Pass
@@ -443,11 +515,44 @@ class CSPBasis:
         ``(n_time,)``, time-varying metallicity) must be present, depending on
         the ``zh_const`` flag set during ``__init__``.
         """
+        # --- Required keys: nice errors instead of raw KeyErrors -----------
+        if 'lookback_time' not in theta:
+            raise ValueError(
+                "theta must contain 'lookback_time' — the static SFH node grid "
+                "(Gyr, monotonically increasing, index 0 = today). It is "
+                "required even when the redshift is a free parameter: with "
+                "track_zred_age=True the grid is rescaled inside the forward "
+                "pass to track age(zred), but its LENGTH and RELATIVE spacing "
+                "come from this construction-time grid, so it defines n_time "
+                "and the bin structure rather than a fixed absolute age range."
+            )
+        if 'sfh' not in theta:
+            raise ValueError(
+                "theta must contain 'sfh' — star-formation-rate values, either "
+                "one per lookback node (shape (n_time,)) or one per bin "
+                "(shape (n_time-1,), FastStepBasis convention), where n_time = "
+                "len(theta['lookback_time'])."
+            )
+
         # --- sfh_times: static (not part of theta) -------------------------
         self.sfh_times = jnp.atleast_1d(
             jnp.asarray(theta['lookback_time'], dtype=float)
         ) * 1e9   # Gyr → yr
         self.n_time = self.sfh_times.size
+
+        # --- Minimum grid size ---------------------------------------------
+        # n_time nodes define n_time-1 SFH bins; with fewer than 2 nodes there
+        # is no bin to integrate over. (This must precede the monotonicity
+        # check: np.diff of a single node is empty and np.all([]) is True, so
+        # a 1-node grid would otherwise slip through and fail later inside a
+        # jitted weight kernel with a cryptic shape error.)
+        if self.n_time < 2:
+            raise ValueError(
+                f"theta['lookback_time'] has {self.n_time} node(s); at least "
+                "2 are required (n_time nodes define n_time-1 SFH bins). "
+                "Typical fits use 5-10 nodes, e.g. "
+                "jnp.linspace(0.0, T_UNIV, 6)."
+            )
 
         # Convention check: lookback_time must be monotonically *increasing*,
         # starting at 0 (today).  A decreasing grid trips here loudly rather

@@ -22,10 +22,21 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
    (`lookback = T_univ - t_grid`) is rejected at construction with a `ValueError`
    — do not reintroduce it, and do not "helpfully" reverse arrays.
 
-3. **Units.** Wavelengths are Å, vacuum, rest-frame on input. Model spectra are
-   `F_nu` (per unit frequency). Broadband fluxes are AB maggies. Emission-line
-   fluxes are erg s⁻¹ cm⁻². Stellar mass is supplied as `logmass` = log10(M⋆/M_sun);
-   the forward model is evaluated at unit mass and scaled by `10**logmass`.
+   A construction-time grid is REQUIRED (either `CSPBasis(ssp,
+   lookback_time=...)` or a full `theta=` dict): it is where monotonicity and
+   range are validated — per-call grids are traced under `jit` and cannot be
+   value-checked. A per-call `theta["lookback_time"]` passed to
+   `predict`/`get_spectrum` then overrides it verbatim (used by
+   transform-derived grids from a sampled `zred`).
+
+3. **Units and frames.** All wavelengths are Å, vacuum. The model grid
+   (`csp.wave`) and `Lines` wavelengths (and `mask_lines` centres) are
+   REST-frame; the `Spectrum` data pixel grid is OBSERVED-frame — the model is
+   redshifted by (1 + zred) onto the data pixels, never the other way. Model
+   spectra are `F_nu` (per unit frequency). Broadband fluxes are AB maggies.
+   Emission-line fluxes are erg s⁻¹ cm⁻². Stellar mass is supplied as
+   `logmass` = log10(M⋆/M_sun); the forward model is evaluated at unit mass
+   and scaled by `10**logmass`.
 
 4. **SFH mass normalisation is mass-weighted (trapezoidal), not mean-SFR.** See
    `model/transforms.py` (`logsfr_ratios_to_sfh`). Getting this wrong biases

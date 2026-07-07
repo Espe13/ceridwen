@@ -5,7 +5,7 @@ Ceridwen quick-start: fit mock UV-to-IR broadband photometry end-to-end.
 
 This is a self-contained, runnable demo:
 
-  Step 0  build (or load) the FSPS SSP grid cache  -> needs FSPS + $SPS_HOME
+  Step 0  load an SSP grid (built from FSPS only if none is found)
   Step 1  build the CSP forward model
   Step 2  generate MOCK photometry from known "true" parameters
   Step 3  fit it back with BlackJAX nested sampling
@@ -15,22 +15,18 @@ This is a self-contained, runnable demo:
 
 Requirements
 ------------
-Ceridwen needs FSPS at *runtime*, not just to build the cache: the CLOUDY
-nebular grids and the dust-emission templates are read from ``$SPS_HOME``
-(the FSPS data directory).  So FSPS must be installed and ``SPS_HOME`` set,
-e.g.::
+FSPS is NOT required to run this demo (``add_neb=False``: no CLOUDY data is
+read). An SSP grid is resolved in this order: ``$SSP_FILE`` ->
+``examples/ssp_data.h5`` (build it with FSPS — recommended — or download it
+from Zenodo, see docs/installation.md "Getting the SSP grid") -> the git-lfs
+test fixture ``tests/fixtures/ssp_data_test.h5``. Only if no grid is found
+does the script fall back to building one, which then does need FSPS +
+``$SPS_HOME``. Flipping ``add_neb=True`` (CLOUDY nebular emission) also needs
+``$SPS_HOME`` at runtime.
 
-    pip install .                         # everything except FSPS
-    pip install "fsps>=0.4.4"             # FSPS wrapper (needs gfortran + $SPS_HOME)
-    export SPS_HOME=/path/to/fsps         # the FSPS root (contains nebular/, ...)
-    python examples/quickstart.py
-
-The SSP cache is written to ``examples/ssp_data.h5`` the first time and
-re-used on subsequent runs.  Set ``$SSP_FILE`` to point elsewhere.
-
-The fit takes ~10 min on an unloaded CPU (much faster on GPU; longer on a busy
-machine); lower ``num_live`` in the
-adapter below for a quicker, rougher run.
+The fit takes a few minutes on an unloaded laptop CPU (much faster on GPU;
+longer on a busy machine); lower ``num_live`` in the adapter below for a
+quicker, rougher run.
 """
 from __future__ import annotations
 

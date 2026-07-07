@@ -30,7 +30,9 @@ arrays "to be safe".
 
 | Quantity | Unit |
 |---|---|
-| Wavelength (input) | Å, vacuum, rest-frame |
+| Model wavelength grid (`csp.wave`) | Å, vacuum, rest-frame |
+| `Spectrum` pixel wavelengths (data) | Å, vacuum, **observed frame** (model is redshifted onto them) |
+| `Lines` wavelengths / `mask_lines` centres | Å, vacuum, **rest frame** (redshifted internally) |
 | Model spectra | `F_ν` (per unit frequency) |
 | Broadband fluxes | AB maggies |
 | Emission-line fluxes | erg s⁻¹ cm⁻² |

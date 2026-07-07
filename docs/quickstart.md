@@ -1,12 +1,13 @@
 # Quick start
 
 !!! tip "Run the bundled example first"
-    The fastest way to confirm your whole setup works end to end. It builds the
-    SSP cache from FSPS, generates mock UV-to-IR photometry, fits it with nested
-    sampling, and writes a corner plot and a model-vs-data SED figure:
+    The fastest way to confirm your whole setup works end to end. It loads an
+    SSP grid (building it from FSPS only if none is found — see
+    [Installation: Getting the SSP grid](installation.md#getting-the-ssp-grid)),
+    generates mock UV-to-IR photometry, fits it with nested sampling, and
+    writes a corner plot and a model-vs-data SED figure:
 
     ```bash
-    export SPS_HOME=/path/to/fsps
     python examples/quickstart.py
     ```
 
@@ -39,18 +40,34 @@ and the nebular grid always matches the SSP isochrones.
 
 ## Step 1 — build a model and fit
 
+A minimal photometry-only fit. For the full runnable joint
+photometry + spectroscopy example on the shipped mock data
+(`examples/mock_galaxy.npz`), see the README's "fit a galaxy end-to-end"
+section; for lines and nebular emission see the [tutorial](tutorial.md).
+
 ```python
 import jax, jax.numpy as jnp
+import numpy as np
 from ceridwen import SSPData, CSPBasis, SedModel, fitSED
 from ceridwen.observation import Photometry
+from ceridwen.model import logsfr_ratios_to_sfh
 from ceridwen.priors import Uniform, ClippedNormal, StudentT
 
 ssp = SSPData.load("ssp_data.h5")
 
-# Composite-stellar-population forward model. sps_home defaults to $SPS_HOME.
-csp = CSPBasis(ssp, add_dust=True, add_diffuse_dust=True, add_neb=True, add_igm=True)
+# Composite-stellar-population forward model. lookback_time is the static SFH
+# node grid (Gyr, increasing, index 0 = today-at-z, >= 2 nodes); the oldest
+# node must not exceed the age of the universe at the fit redshift (~0.85 Gyr
+# at z = 6.5). sps_home defaults to $SPS_HOME (needed because add_neb=True).
+lookback = jnp.linspace(0.0, 0.8, 6)         # 6 nodes -> 5 free logsfr_ratios
+csp = CSPBasis(
+    ssp,
+    lookback_time=lookback,
+    zh_const=True, sfh_interp="step",
+    add_dust=True, add_diffuse_dust=True, add_neb=True, add_igm=True,
+)
 
-# Observations (any combination of Photometry / Spectrum / Lines can be fit jointly).
+# Observations (any combination of Photometry / Spectrum / Lines, fit jointly).
 phot = Photometry(
     filters=["jwst_f115w", "jwst_f200w", "jwst_f444w"],
     flux=[1.2e-8, 2.7e-8, 3.1e-8],          # AB maggies
@@ -58,21 +75,32 @@ phot = Photometry(
     name="phot",
 )
 
+# The SFH is sampled as logsfr_ratios and transformed to per-node SFR.
+sfh_times_yr = np.array(csp.sfh_times)
+def logsfr_to_sfh(free_theta, _t=sfh_times_yr):
+    return logsfr_ratios_to_sfh(free_theta["logsfr_ratios"], sfh_times_yr=_t)
+
 model = SedModel(
     csp, observations=[phot],
     priors={
-        # Z is log10 ABSOLUTE metallicity — keep inside the FSPS grid (~[-4, -1.4]).
+        # Z is log10 ABSOLUTE metallicity (solar ~ -1.85) — keep inside your
+        # SSP grid (run csp.check_param_ranges() to see the bounds).
         "Z": ClippedNormal(mean=-2.0, sigma=0.5, low=-4.0, high=-1.4),
         "logmass": Uniform(low=6.0, high=12.5),
         "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
         "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
+        "gas_logz": Uniform(low=-2.0, high=0.5),
+        "gas_logu": Uniform(low=-4.0, high=-1.0),
         "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=0.3),
     },
+    transforms={"sfh": logsfr_to_sfh},
+    free_param_init={"logsfr_ratios": jnp.zeros(5),
+                     "logmass": jnp.array([10.0])},
     zred=6.5,                                # fixed spec-z
 )
 
 result = fitSED(
-    model, observations=[phot],
+    model,
     sampler="nuts", vi="tril",
     sampler_kwargs={"num_chains": 4, "num_samples": 2000},
     rng_key=jax.random.PRNGKey(42),

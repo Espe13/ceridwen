@@ -29,7 +29,10 @@ class Spectrum(Observation):
     Parameters
     ----------
     wavelength : array-like, shape (n_pix,)
-        Wavelength grid [Å], vacuum rest-frame.
+        Wavelength grid [Å], vacuum, **observed frame** (as delivered by the
+        instrument).  ``setup_for_model(wave_model, zred=...)`` redshifts the
+        rest-frame *model* grid by (1 + zred) and interpolates onto these
+        pixels; at ``zred = 0`` observed and rest frame coincide.
     flux : array-like, shape (n_pix,)
         Observed flux.  Units must be consistent with ``uncertainty`` and
         any model spectra passed to ``chi_sq`` / ``residuals``.
@@ -273,6 +276,14 @@ class Spectrum(Observation):
             interpreted as observed-frame pixel wavelengths), preserving
             the predict-time GEMV fast path.
         """
+        if self._wavelength is None:
+            raise ValueError(
+                "Spectrum.setup_for_model() needs the observed pixel "
+                "wavelength grid, but this Spectrum has wavelength=None. "
+                "Pass wavelength= (Å, vacuum, observed frame) at "
+                "construction — flux/uncertainty may be added later (e.g. a "
+                "predictive container for mock generation)."
+            )
         wm_rest = np.asarray(wave_model, dtype=np.float64)
         opz = 1.0 + float(zred)
         wm = opz * wm_rest

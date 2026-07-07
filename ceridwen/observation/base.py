@@ -174,12 +174,13 @@ class Observation:
         Called automatically at the end of ``__init__``.
         """
         if self.flux is None:
-            # Subclasses may define wavelength as a read-only property;
-            # wrap the assignment in a try/except to avoid AttributeError.
-            try:
-                self.wavelength = None
-            except AttributeError:
-                pass
+            # No data yet: skip the flux/uncertainty validation but KEEP any
+            # user-supplied wavelength grid.  A flux-less container with a
+            # pixel grid is the legitimate *predictive* configuration (mock
+            # generation / forward modelling): setup_for_model + predict only
+            # need the grid, and the data can be attached afterwards.
+            # (Historically the grid was reset to None here, which silently
+            # broke predictive Spectrum containers.)
             return
 
         assert self.flux.ndim == 1,        "flux must be 1-D"
