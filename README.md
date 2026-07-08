@@ -26,7 +26,7 @@ Everything is written against `jax.numpy` with `@jit` and `vmap`/`pmap` in mind:
 ## Installation
 
 **Requires Python 3.11.** Nested sampling depends on the official `blackjax`
-(its merged NSS), which needs Python 3.11 — create the environment with exactly
+(its merged NSS), which needs Python 3.11. Create the environment with exactly
 that version:
 
 ```bash
@@ -38,8 +38,7 @@ cd ceridwen
 pip install .
 ```
 
-This pulls in everything to import, fit, plot, and test CERIDWEN — there are no
-extras to choose. The one thing you install separately is **FSPS** (it compiles
+The one thing you install separately is **FSPS** (it compiles
 Fortran, so it can't be a pip dependency); see
 [Installing FSPS](#installing-fsps-and-setting-sps_home) below.
 
@@ -92,7 +91,7 @@ echo 'export SPS_HOME="$HOME/fsps"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-Open a **new** terminal and run `echo $SPS_HOME` — it should print the path. If
+Open a **new** terminal and run `echo $SPS_HOME`, it should print the path. If
 it's blank, the line went into the wrong file (check which shell you use with
 `echo $SHELL`). Then confirm the whole setup with:
 
@@ -108,37 +107,20 @@ IMF) and supplies the nebular / dust-emission data. With it set up, next stop:
 
 ## Quick start
 
-### Run the bundled example first
-
-The fastest way to confirm your whole setup works end to end. It builds an SSP
-grid from FSPS on first run (and reuses it afterwards), generates mock UV-to-IR
-photometry, fits it, and prints recovered-vs-true parameters plus a corner plot
-(`examples/quickstart_corner.png`):
-
-```bash
-python examples/quickstart.py
-```
-
-If it prints a recovered-vs-true table, your setup works. `logmass` recovers the
-injected truth; `Z` and the dust parameters are weakly constrained by broadband
-photometry alone, so their posteriors are broad (add spectroscopy or emission
-lines to pin them down). The two steps below are what the example does
-internally, shown so you can adapt them to your own data.
-
 ### Step 0 — build the SSP grid (once per FSPS configuration)
 
 Ceridwen's forward model consumes an HDF5 cache of SSP spectra precomputed
 with FSPS. You build it yourself (you control the isochrones, spectral library,
-and IMF); it takes a few minutes on CPU and only has to be done once.
+and IMF); it takes a few minutes on CPU and only has to be done once. You can use it
+for all fits that you want to base on the same IMF and libraries.
 
 ```python
 from ceridwen import SSPData
 
 # Generate + cache. from_fsps accepts ONLY the kwargs that define the stellar
 # library / IMF (imf_type and its parameters, isochrone-phase knobs like
-# tpagb_norm_type). Anything the forward model applies itself — dust, SFH,
-# nebular emission, IGM, redshift, or a fixed metallicity — is rejected with a
-# clear error, so the grid can never be silently double-processed.
+# tpagb_norm_type). Anything the forward model applies itself (dust, SFH,
+# nebular emission, IGM, redshift, or a fixed metallicity) is rejected.
 ssp = SSPData.from_fsps(imf_type=1, save_to="ssp_data.h5")
 
 # Subsequent runs just reload the cache:
@@ -152,14 +134,12 @@ and the nebular CLOUDY grid always matches the SSP isochrones.
 
 ### Step 1 — fit a galaxy end-to-end
 
-A copy-paste-runnable joint fit of broadband photometry plus an optical
-spectrum. The observations and the injected truth live in
-`examples/mock_galaxy.npz` (a mock galaxy at z = 0.1;
-`examples/make_mock_data.py` regenerates it), so you can check the fit recovers
-it.
+A self-contained, copy-paste-runnable joint fit. It makes a mock galaxy from
+known truth **with the same forward model it then fits**, so the data is always
+consistent with the SSP grid you built and the fit recovers the truth — no data
+files needed.
 
 ```python
-import pathlib
 import jax, jax.numpy as jnp
 import numpy as np
 from ceridwen import SSPData, CSPBasis, SedModel, fitSED
@@ -167,77 +147,75 @@ from ceridwen.observation import Photometry, Spectrum
 from ceridwen.model import logsfr_ratios_to_sfh
 from ceridwen.priors import Uniform, ClippedNormal, StudentT
 
-# Load the mock observations (and the injected truth) shipped with the repo.
-d = np.load(pathlib.Path("examples") / "mock_galaxy.npz")
-ZRED = float(d["zred"])                      # fixed spectroscopic redshift
+rng = np.random.default_rng(42)
+ZRED = 0.1                                         # fixed spectroscopic redshift
+FILTERS = ["galex_FUV", "galex_NUV", "sdss_u0", "sdss_g0", "sdss_r0",
+           "sdss_i0", "sdss_z0", "twomass_J", "twomass_H", "twomass_Ks",
+           "wise_w1", "wise_w2"]
+SPEC_WAVE = np.linspace(4000.0, 8000.0, 600)       # observed-frame vacuum Angstrom
+TRUTH = {                                          # parameters to inject and recover
+    "logsfr_ratios":      jnp.array([0.3, 0.2, -0.1, -0.4, -0.6]),
+    "Z":                  jnp.array([-2.0]),       # log10 ABSOLUTE Z (ssp_lgmet)
+    "logmass":            jnp.array([10.5]),
+    "diffuse_tau_kc":     jnp.array([0.5]),
+    "diffuse_dust_index": jnp.array([-0.7]),
+}
 
-# Load the SSP grid you built in Step 0.
+# SSP grid from Step 0. lookback_time is the static SFH node grid (Gyr,
+# increasing, index 0 = today, >= 2 nodes; oldest node < age of universe at ZRED).
 ssp = SSPData.load("ssp_data.h5")
+ssp.display()                                      # grid summary + provenance
+csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6),
+               zh_const=True, sfh_interp="step",
+               add_dust=False, add_diffuse_dust=True, add_neb=False, verbose=False)
 
-# Composite-stellar-population forward model. lookback_time is the static SFH
-# node grid (Gyr, increasing, index 0 = today, >= 2 nodes); it comes with the
-# mock file so model and data match. (For control over the initial parameter
-# values, pass a full theta= dict instead — see the CSPBasis docstring.)
-lookback = jnp.asarray(d["lookback_time"])   # 6 nodes -> 5 free logsfr_ratios
-csp = CSPBasis(
-    ssp,
-    lookback_time=lookback,
-    zh_const=True, sfh_interp="step",
-    add_dust=False, add_diffuse_dust=True,
-    add_neb=False,        # nebular emission needs FSPS data ($SPS_HOME); see below
-    verbose=False,
-)
-
-# Observations. Any combination of Photometry / Spectrum / Lines containers
-# is fit jointly; the likelihood is a sum over their contributions.
-
-# (a) Broadband photometry: fluxes in AB maggies (1 maggie = 3631 Jy).
-phot = Photometry(
-    filters=[str(f) for f in d["filters"]],
-    flux=d["maggies"], uncertainty=d["maggies_unc"],
-    name="phot",
-)
-phot.display()   # print a summary table of the photometry you just built
-
-# (b) Spectroscopy. The wavelength grid is vacuum Å in the OBSERVED frame
-# (as delivered by the instrument): the forward model redshifts the model
-# spectrum by (1 + zred) and projects it onto these pixels. ``resolution`` +
-# ``smoothtype`` apply instrumental broadening ("vel": sigma in km/s;
-# also "R", "lambda", "lsf"). Flux units must match the model spectrum
-# (L_sun Hz^-1 after mass scaling) up to a calibration you supply.
-spec = Spectrum(
-    wavelength=d["spec_wave_obs"],
-    flux=d["spec_flux"], uncertainty=d["spec_unc"],
-    resolution=float(d["spec_resolution"]), smoothtype="vel",
-    name="spec",
-)
-spec.display()   # print a summary of the spectrum you just built
-
-# The SFH is sampled as logsfr_ratios (Prospector convention) and transformed
-# to per-node SFR; logmass then sets the absolute amplitude.
+# SFH is sampled as logsfr_ratios (Prospector convention) -> per-node SFR.
 sfh_times_yr = np.array(csp.sfh_times)
 def logsfr_to_sfh(free_theta, _t=sfh_times_yr):
     return logsfr_ratios_to_sfh(free_theta["logsfr_ratios"], sfh_times_yr=_t)
 
-model = SedModel(
-    csp, observations=[phot, spec],
-    priors={
-        # Z is log10 of ABSOLUTE metallicity (= ssp_lgmet), NOT log10(Z/Zsun);
-        # solar is ~ -1.85. Keep it inside your SSP grid — values outside are
-        # silently clamped. Print the allowed range with
-        #     print(float(csp.zmet.min()), float(csp.zmet.max()))
-        # and call `csp.check_param_ranges()` to warn about out-of-grid values.
-        "Z": Uniform(low=-3.9, high=-1.45),
-        "logmass": Uniform(low=9.0, high=12.0),
-        "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
-        "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
-        "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=1.0),
-    },
-    transforms={"sfh": logsfr_to_sfh},
-    free_param_init={"logsfr_ratios": jnp.zeros(lookback.size - 1),
-                     "logmass": jnp.array([10.0])},
-    zred=ZRED,                               # fixed spec-z
-)
+# One SedModel builder for BOTH the mock and the fit — this is what keeps them
+# consistent. Observations carry flux/uncertainty; empty ones (filters and
+# wavelengths only) are enough to generate the mock.
+def build_model(observations):
+    return SedModel(
+        csp, observations=observations,
+        priors={
+            # Z is log10 ABSOLUTE metallicity (= ssp_lgmet), NOT log10(Z/Zsun);
+            # solar ~ -1.85. Keep priors inside the grid — print the range with
+            #     print(float(csp.zmet.min()), float(csp.zmet.max()))
+            # and csp.check_param_ranges() warns about out-of-grid values.
+            "Z": Uniform(low=-3.9, high=-1.45),
+            "logmass": Uniform(low=9.0, high=12.0),
+            "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
+            "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
+            "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=1.0),
+        },
+        transforms={"sfh": logsfr_to_sfh},
+        free_param_init={"logsfr_ratios": jnp.zeros(5), "logmass": jnp.array([10.0])},
+        zred=ZRED,
+    )
+
+# (1) Make the mock: predict TRUTH through the model, add Gaussian noise.
+gen = build_model([
+    Photometry(filters=FILTERS, name="phot"),
+    Spectrum(wavelength=SPEC_WAVE, resolution=150.0, smoothtype="vel", name="spec"),
+])
+truth_pred = gen.predict(TRUTH)                    # AB maggies (phot), F_nu (spec)
+# Sanity check: the photometry is absolutely calibrated — the fixed ZRED is
+# injected into the forward model by SedModel.predict, so a z=0.1,
+# logmass=10.5 galaxy lands at ~1e-7 maggies (AB ~ 17-18) in the bright bands.
+mag = np.asarray(truth_pred["phot"]); mag_unc = mag / 20.0
+sfx = np.asarray(truth_pred["spec"]); sfx_unc = np.abs(sfx) / 25.0
+mag_obs = mag + mag_unc * rng.standard_normal(mag.shape)
+sfx_obs = sfx + sfx_unc * rng.standard_normal(sfx.shape)
+
+# (2) Observations to FIT (now carrying the mock data), then the fit model.
+phot = Photometry(filters=FILTERS, flux=mag_obs, uncertainty=mag_unc, name="phot")
+spec = Spectrum(wavelength=SPEC_WAVE, flux=sfx_obs, uncertainty=sfx_unc,
+                resolution=150.0, smoothtype="vel", name="spec")
+phot.display(); spec.display()                     # sanity-check the observations
+model = build_model([phot, spec])
 ```
 
 Now pick a sampler. Both fill the same `result` object, so everything after the
@@ -261,7 +239,7 @@ result = fitSED(
 # Recovered vs injected truth.
 for p in ("Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index"):
     samples = np.asarray(result.samples[p]).ravel()
-    print(f"{p:>20}: true {float(d['true_' + p][0]):+7.3f}   "
+    print(f"{p:>20}: true {float(TRUTH[p][0]):+7.3f}   "
           f"fit {np.median(samples):+7.3f} +/- {np.std(samples):.3f}")
 
 # Quick-look plots — VI loss, a corner subset, and data vs model.
@@ -272,17 +250,26 @@ plt.figure(); plt.plot(result.raw["vi_losses"]); plt.yscale("log")   # -ELBO
 plt.xlabel("VI iteration"); plt.ylabel(r"$-\mathrm{ELBO}$")
 
 subset = ["logmass", "Z", "diffuse_tau_kc"]
+truth  = {p: float(TRUTH[p][0]) for p in subset}
 data = np.column_stack([np.asarray(result.samples[p]).ravel() for p in subset])
-MCMCSamples(data=data, columns=subset).plot_2d(subset)
+axes = MCMCSamples(data=data, columns=subset).plot_2d(subset)
+for yp in subset:                     # overlay injected truth as red dashed lines
+    for xp in subset:
+        ax = axes.loc[yp, xp]
+        if ax is None:
+            continue
+        ax.axvline(truth[xp], color="red", ls="--", lw=1)
+        if yp != xp:
+            ax.axhline(truth[yp], color="red", ls="--", lw=1)
 
 theta_med = {p: jnp.atleast_1d(jnp.median(jnp.asarray(v), axis=0))
              for p, v in result.samples.items()}
-pred = model.predict(theta_med)                        # keyed by observation name
+pred = model.predict(theta_med)                        # AB maggies, keyed by obs name
 plt.figure()
 plt.errorbar(phot.wave_eff, phot.flux, yerr=phot.uncertainty, fmt="o", label="data")
 plt.plot(phot.wave_eff, np.asarray(pred["phot"]), "s", label="model")
-plt.xlabel(r"$\lambda_{\rm eff}$ [Å]"); plt.ylabel("flux [maggies]"); plt.legend()
-plt.show()
+plt.xlabel(r"$\lambda_{\rm eff}$ [Å]"); plt.ylabel("flux [maggies]")
+plt.yscale("log"); plt.legend(); plt.show()
 ```
 
 #### Option B — nested sampling
@@ -301,8 +288,9 @@ result = fitSED(
 )
 print(f"log Z = {result.log_evidence:.2f} +/- {result.log_evidence_err:.2f}")
 
-# Nested samples carry importance weights — anesthetic applies them:
-result.to_anesthetic().plot_2d(["logmass", "Z", "diffuse_tau_kc"])
+# Nested samples carry importance weights — anesthetic applies them.
+# plot_2d returns the same axes grid, so overlay the truth exactly as in Option A.
+axes = result.to_anesthetic().plot_2d(["logmass", "Z", "diffuse_tau_kc"])
 ```
 
 The `result` object has posterior samples keyed by parameter name, plus per-phase
@@ -311,6 +299,24 @@ is also written to `./my_fit/ceridwen_result.h5`.
 
 For **nebular emission lines** (a `Lines` container, `add_neb=True`, which needs
 the CLOUDY grids at `$SPS_HOME`), see the [tutorial](docs/tutorial.md).
+
+
+### Run a bundled example 
+
+The fastest way to confirm your whole setup works end to end. It builds an SSP
+grid from FSPS on first run (and reuses it afterwards), generates mock UV-to-IR
+photometry, fits it, and prints recovered-vs-true parameters plus a corner plot
+(`examples/quickstart_corner.png`):
+
+```bash
+python examples/quickstart.py
+```
+
+If it prints a recovered-vs-true table, your setup works. `logmass` recovers the
+injected truth; `Z` and the dust parameters are weakly constrained by broadband
+photometry alone, so their posteriors are broad (add spectroscopy or emission
+lines to pin them down). The two steps below are what the example does
+internally, shown so you can adapt them to your own data.
 
 ---
 

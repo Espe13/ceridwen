@@ -1123,6 +1123,16 @@ class CSPBasis:
             - ``Spectrum``   → shape (n_pix,), model F_nu interpolated onto
               the observed pixel grid
             - ``Lines``      → shape (n_lines,), Gaussian-aperture fluxes
+
+        .. warning::
+            The outputs are observed-frame AB maggies **only if** ``theta``
+            contains ``"zred"``: that key gates the cosmological flux factor
+            ``(1+z) (10pc/D_L)^2`` (and the L_sun/Hz → cgs conversion)
+            inside :func:`ceridwen.cosmology.flux_factor_maggies`.  Without
+            it the values are raw 10 pc-frame numbers, ~6e21 too bright at
+            z = 0.1.  ``SedModel.predict`` injects its fixed ``zred``
+            automatically; only direct callers of this method (and of
+            ``get_line_spec``) need to supply it themselves.
         """
         spectrum_phot, spectrum_slit = self._assemble_observer_spectra(theta)
         spectrum_phot, spectrum_slit = self._apply_mass_redshift_igm(

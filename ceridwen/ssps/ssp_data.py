@@ -279,6 +279,84 @@ class SSPData:
             )
 
     # ------------------------------------------------------------------
+    # Human-readable summary
+    # ------------------------------------------------------------------
+    def display(self, *, return_str: bool = False, file=None):
+        """Print a summary of the grid and its provenance.
+
+        Intended as a sanity check: call it right after ``from_fsps`` or
+        ``load`` to confirm the isochrone set, spectral library, IMF, and
+        grid coverage are what you expect before you build a ``CSPBasis``.
+        Purely diagnostic — none of this is touched by the forward model.
+
+        Parameters
+        ----------
+        return_str : bool, optional
+            Return the formatted string instead of printing it.  Default False.
+        file : file-like, optional
+            Destination for the print (default ``sys.stdout``).
+
+        Returns
+        -------
+        str or None
+            The formatted string if ``return_str=True``, else ``None``.
+        """
+        import sys as _sys
+
+        lgmet = np.asarray(self.ssp_lgmet)
+        lgage = np.asarray(self.ssp_lg_age_gyr)
+        wave  = np.asarray(self.ssp_wave)
+        n_met, n_age, n_wave = self.ssp_flux.shape
+        age_gyr = 10.0 ** lgage
+
+        def _fmt(v, na="—"):
+            return na if v is None else str(v)
+
+        # Human-readable in-memory size of the (dominant) flux array.
+        size = float(np.asarray(self.ssp_flux).nbytes)
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if size < 1024.0 or unit == "TB":
+                size_str = f"{size:.1f} {unit}"
+                break
+            size /= 1024.0
+
+        lines = [
+            "SSPData",
+            "-" * 66,
+            "provenance",
+            f"  isochrones (isoc_type)   : {_fmt(self.isoc_type)}",
+            f"  spectral library         : {_fmt(self.spec_library)}",
+            f"  IMF (imf_type)           : {_fmt(self.imf_type)}",
+            f"  FSPS version             : {_fmt(self.fsps_version)}",
+            f"  schema version           : {_fmt(self.schema_version)}",
+            f"  recorded wave_min/max    : {_fmt(self.wave_min)} / {_fmt(self.wave_max)}",
+            f"  build kwargs             : {self.fsps_kwargs or '{}'}",
+            "grids",
+            f"  metallicity  log10 Z     : {n_met:>4d} pts   "
+            f"[{lgmet.min():+.3f}, {lgmet.max():+.3f}]  (absolute Z, NOT Z/Zsun)",
+            f"  age          log10(Gyr)  : {n_age:>4d} pts   "
+            f"[{lgage.min():+.3f}, {lgage.max():+.3f}]  "
+            f"= [{age_gyr.min():.3g}, {age_gyr.max():.3g}] Gyr",
+            f"  wavelength   Angstrom    : {n_wave:>4d} pts   "
+            f"[{wave.min():.1f}, {wave.max():.1f}]",
+            f"  flux (n_met,n_age,n_wave): {tuple(int(s) for s in self.ssp_flux.shape)}  "
+            f"[L_sun Hz^-1 M_sun^-1]  {np.asarray(self.ssp_flux).dtype}  {size_str}",
+        ]
+        if self.isoc_type is None:
+            lines += [
+                "note",
+                "  isoc_type is None (legacy grid, built before provenance "
+                "tracking):",
+                "  CSPBasis will warn and fall back to 'mist' for the nebular grid.",
+            ]
+
+        txt = "\n".join(lines)
+        if return_str:
+            return txt
+        print(txt, file=file or _sys.stdout)
+        return None
+
+    # ------------------------------------------------------------------
     # HDF5 I/O
     # ------------------------------------------------------------------
     def save(self, filename):

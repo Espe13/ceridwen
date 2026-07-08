@@ -201,18 +201,30 @@ class SedModel:
         # at trace time — meaning the GPU kernel contains no matrix construction,
         # only a single GEMV.  Photometry.setup_for_model() is a no-op.
         #
-        # ``zred`` bakes the (1+z) factor into the projection matrices so the
-        # GEMV fast path stays the same shape for non-zero fixed redshift.
-        # Combine with setting ``theta_init['zred'] = jnp.array([zred])`` so
-        # that CSPBasis.predict also applies the cosmological flux-factor —
-        # both things are needed for observed-frame calibration.
+        # ``zred`` bakes the (1+z) wavelength stretch into the projection
+        # matrices so the GEMV fast path stays the same shape for non-zero
+        # fixed redshift.  The matching cosmological flux factor is applied
+        # inside CSPBasis.predict via the ``zred`` entry that
+        # :meth:`predict` injects into the CSP theta (see below) — both
+        # things are needed for observed-frame calibration.
         for obs in self.observations:
             obs.setup_for_model(self.wave, zred=self.zred)
 
-        # If the user supplied a non-trivial fixed redshift, seed theta_init
-        # so the CSP forward model applies the matching cosmological flux
-        # factor.  Leaving zred out of theta_init entirely (the default at
-        # zred = 0) means zero branches in CSPBasis.predict.
+        # If the user supplied a non-trivial fixed redshift, store it so
+        # :meth:`predict` can inject it into the CSP theta at trace time.
+        #
+        # A fixed zred must NOT be seeded into ``theta_init``: theta_init
+        # is the sampled free-parameter pytree handed to the sampler
+        # (``run_sampler`` -> ``adapter.run(..., model.theta_init, ...)``),
+        # so a seeded entry silently becomes an UNPRIORED sampled
+        # dimension.  Nothing bounds it; once the sampler drifts it to
+        # z <= 0 the 10 pc fallback inside ``flux_factor_maggies`` erases
+        # the entire (10pc/D_L)^2 dimming — a factor ~2e15 in flux at
+        # z = 0.1 — without raising any error.  Injecting at predict time
+        # instead guarantees EVERY prediction path (mock generation,
+        # loglike_fn, predict_jit, predict_vmap) applies the same
+        # cosmological normalisation, while keeping zred out of the
+        # sampled parameter vector.
         #
         # When astropy is installed we prefer its Planck18 luminosity
         # distance for this one-off scalar computation (it includes
@@ -221,16 +233,15 @@ class SedModel:
         # The sampled path (when zred is free) continues to use the
         # native differentiable backend, so NUTS gradients still work.
         #
-        # GOTCHA: only seed theta_init['zred'] when there is no user-supplied
-        # ``zred`` transform.  If the user registered transforms={"zred": ...}
+        # GOTCHA: only inject when there is no user-supplied ``zred``
+        # transform.  If the user registered transforms={"zred": ...}
         # they are explicitly injecting zred at predict time from a
-        # fixed external value; adding zred to theta_init on top would
-        # let NUTS sample it unconstrained (no prior -> no bounds -> the
-        # leapfrog integrator can push it into z < -1, where E(z) =
-        # sqrt(Ω_m(1+z)^3 + ...) goes imaginary and the log-posterior
-        # becomes NaN on the very first step).
+        # fixed external value; adding it here on top would double-route
+        # the parameter.
+        self._zred_fixed = None
+        self.flux_factor_astropy = None
         if self.zred != 0.0 and "zred" not in self.transforms:
-            self.theta_init.setdefault("zred", jnp.array([self.zred]))
+            self._zred_fixed = jnp.array([self.zred])
             try:
                 from ..cosmology import (
                     flux_factor_maggies, have_astropy,
@@ -321,6 +332,20 @@ class SedModel:
             Keyed by ``obs.name`` for each observation in ``self.observations``.
         """
         model_theta = self.apply_transforms(theta)
+        # Fixed-redshift injection: guarantee the cosmological flux factor
+        # (1+z) * (10pc/D_L)^2 is applied inside csp.predict for EVERY
+        # caller (mock generation, loglike_fn, predict_jit, predict_vmap).
+        # Without this, a theta lacking "zred" silently skips the entire
+        # distance normalisation and the returned "maggies" are the raw
+        # 10 pc-frame numbers (~6e21 too bright at z = 0.1).  The dict-key
+        # check is Python-static, and ``self._zred_fixed`` is a concrete
+        # closure constant, so this folds out at JIT trace time — zero
+        # cost in the compiled hot path.  A caller-supplied (e.g. sampled)
+        # ``zred`` always wins over the fixed value.
+        if self._zred_fixed is not None and "zred" not in model_theta:
+            if model_theta is theta:          # apply_transforms may not copy
+                model_theta = dict(model_theta)
+            model_theta["zred"] = self._zred_fixed
         # Mass scaling is handled inside csp.predict() — the spectrum is
         # scaled once before projection, rather than per-observation.
         return self.csp.predict(model_theta, self.observations)

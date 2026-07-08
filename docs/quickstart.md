@@ -40,10 +40,10 @@ and the nebular grid always matches the SSP isochrones.
 
 ## Step 1 — build a model and fit
 
-A minimal photometry-only fit. For the full runnable joint
-photometry + spectroscopy example on the shipped mock data
-(`examples/mock_galaxy.npz`), see the README's "fit a galaxy end-to-end"
-section; for lines and nebular emission see the [tutorial](tutorial.md).
+A minimal photometry-only fit. For a full runnable joint
+photometry + spectroscopy example that generates its own self-consistent mock,
+see the README's "fit a galaxy end-to-end" section; for lines and nebular
+emission see the [tutorial](tutorial.md).
 
 ```python
 import jax, jax.numpy as jnp

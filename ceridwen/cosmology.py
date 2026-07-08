@@ -369,10 +369,23 @@ def flux_factor_maggies(z, cosmo: Cosmology = DEFAULT_COSMO,
         provided and the package is installed.
     """
     dL_pc = 1e6 * luminosity_distance_mpc(z, cosmo, n_nodes, backend=backend)
-    # Avoid 0/0 at z = 0: when z is exactly zero, D_L is zero by integration;
-    # the algebraic limit is "source at 10 pc", so the distance ratio becomes 1.
-    safe_dL = jnp.where(dL_pc > 0, dL_pc, float(_MAGGIES_D_FID_PC))
-    ff_distance = (1.0 + z) * (_MAGGIES_D_FID_PC / safe_dL) ** 2
+    # z <= 0 has no cosmological dimming in this convention (the CSP
+    # normalisation is already "source at 10 pc"), so the distance ratio is
+    # pinned to exactly 1 there.  The gate is on ``z``, NOT on ``dL_pc``:
+    # gating on ``dL_pc > 0`` (the previous behaviour) silently rerouted
+    # every z > 0 evaluation whose distance came out non-positive or NaN
+    # to the 10 pc fallback, erasing the entire (10pc/D_L)^2 dimming —
+    # a factor ~2e15 in flux at z = 0.1 — with no error raised.  With the
+    # gate on ``z``, a broken D_L at z > 0 now propagates as NaN/inf and
+    # fails loudly.  Double-``where`` so neither the value nor the GRADIENT
+    # touches the division at z <= 0 (where D_L = 0 would give 0/0).
+    positive_z = z > 0
+    safe_dL = jnp.where(positive_z, dL_pc, float(_MAGGIES_D_FID_PC))
+    ff_distance = jnp.where(
+        positive_z,
+        (1.0 + z) * (_MAGGIES_D_FID_PC / safe_dL) ** 2,
+        1.0,
+    )
     # Close the L_sun/Hz -> erg/s/cm^2/Hz gap so downstream filter projection
     # via sedpy_jax lands in the AB zero-point frame used by the Photometry
     # data side.  Without this, ceridwen's predicted maggies are ~3e-7 x the
