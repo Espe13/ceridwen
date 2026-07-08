@@ -238,11 +238,17 @@ model = SedModel(
                      "logmass": jnp.array([10.0])},
     zred=ZRED,                               # fixed spec-z
 )
+```
 
-# Run the fit. Pick ONE of the two samplers below.
+Now pick a sampler. Both fill the same `result` object, so everything after the
+fit (reporting, plotting) is identical.
 
-# Option A — VI-preconditioned NUTS: VI learns a full-rank Gaussian transport
-# map, NUTS then samples in the whitened space (Hoffman et al. 2019).
+#### Option A — VI-preconditioned NUTS
+
+VI learns a full-rank Gaussian transport map; NUTS then samples in the whitened
+space (Hoffman et al. 2019).
+
+```python
 result = fitSED(
     model,
     sampler="nuts",
@@ -252,27 +258,56 @@ result = fitSED(
     output_dir="./my_fit",
 )
 
-# Option B — nested sampling: gradient-free, and also returns the Bayesian
-# evidence (log Z) for model comparison. Uncomment to use it instead of NUTS.
-# result = fitSED(
-#     model,
-#     sampler="ns",
-#     sampler_kwargs={"num_live": 400, "num_delete": 100},
-#     rng_key=jax.random.PRNGKey(42),
-#     output_dir="./my_fit",
-# )
-
 # Recovered vs injected truth.
 for p in ("Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index"):
     samples = np.asarray(result.samples[p]).ravel()
     print(f"{p:>20}: true {float(d['true_' + p][0]):+7.3f}   "
-          f"fit {np.median(samples):+7.3f} "
-          f"+/- {np.std(samples):.3f}")
+          f"fit {np.median(samples):+7.3f} +/- {np.std(samples):.3f}")
+
+# Quick-look plots — VI loss, a corner subset, and data vs model.
+import matplotlib.pyplot as plt
+from anesthetic import MCMCSamples
+
+plt.figure(); plt.plot(result.raw["vi_losses"]); plt.yscale("log")   # -ELBO
+plt.xlabel("VI iteration"); plt.ylabel(r"$-\mathrm{ELBO}$")
+
+subset = ["logmass", "Z", "diffuse_tau_kc"]
+data = np.column_stack([np.asarray(result.samples[p]).ravel() for p in subset])
+MCMCSamples(data=data, columns=subset).plot_2d(subset)
+
+theta_med = {p: jnp.atleast_1d(jnp.median(jnp.asarray(v), axis=0))
+             for p, v in result.samples.items()}
+pred = model.predict(theta_med)                        # keyed by observation name
+plt.figure()
+plt.errorbar(phot.wave_eff, phot.flux, yerr=phot.uncertainty, fmt="o", label="data")
+plt.plot(phot.wave_eff, np.asarray(pred["phot"]), "s", label="model")
+plt.xlabel(r"$\lambda_{\rm eff}$ [Å]"); plt.ylabel("flux [maggies]"); plt.legend()
+plt.show()
 ```
 
-The `result` object has posterior samples keyed by parameter name, plus the VI
-trace and per-phase wall-clock timings in `result.raw`; everything is also
-written to `./my_fit/ceridwen_result.h5`.
+#### Option B — nested sampling
+
+Gradient-free, and also returns the Bayesian evidence (log Z) for model
+comparison. The truth table and the data-vs-model plot from Option A work
+unchanged — only the sampler call and the (importance-weighted) corner differ.
+
+```python
+result = fitSED(
+    model,
+    sampler="ns",
+    sampler_kwargs={"num_live": 400, "num_delete": 100},
+    rng_key=jax.random.PRNGKey(42),
+    output_dir="./my_fit",
+)
+print(f"log Z = {result.log_evidence:.2f} +/- {result.log_evidence_err:.2f}")
+
+# Nested samples carry importance weights — anesthetic applies them:
+result.to_anesthetic().plot_2d(["logmass", "Z", "diffuse_tau_kc"])
+```
+
+The `result` object has posterior samples keyed by parameter name, plus per-phase
+wall-clock timings (and, for NUTS+VI, the VI trace) in `result.raw`; everything
+is also written to `./my_fit/ceridwen_result.h5`.
 
 For **nebular emission lines** (a `Lines` container, `add_neb=True`, which needs
 the CLOUDY grids at `$SPS_HOME`), see the [tutorial](docs/tutorial.md).
