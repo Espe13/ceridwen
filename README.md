@@ -25,64 +25,27 @@ Everything is written against `jax.numpy` with `@jit` and `vmap`/`pmap` in mind:
 
 ## Installation
 
-**Use Python 3.11 or newer.** Nested sampling depends on the official `blackjax`
-(its merged NSS), which requires Python ≥ 3.11; `pip install` will refuse 3.10.
-A fresh conda env is the easy route:
+**Requires Python 3.11.** Nested sampling depends on the official `blackjax`
+(its merged NSS), which needs Python 3.11 — create the environment with exactly
+that version:
 
 ```bash
 conda create -n ceridwen python=3.11 -y
 conda activate ceridwen
 
-git lfs install    # needs git-lfs: brew install git-lfs / apt-get install git-lfs
 git clone https://github.com/Espe13/ceridwen.git
 cd ceridwen
-git lfs pull       # fetches the bundled SSP test grid (~120 MB; used by the
-                   # quickstart fallback and the test suite — or download a
-                   # grid from Zenodo instead, see docs/installation.md)
 pip install .
 ```
 
-Use a plain `pip install .` (not `-e`): an editable install tracks your working
-copy, so your version would change as the repo moves. To pin a specific release
-instead, install a tag directly (no manual clone needed):
-
-```bash
-pip install "git+https://github.com/Espe13/ceridwen.git@v0.1.0"
-```
-
-(If you intend to modify ceridwen's source, then `pip install -e .` from a clone
-is the developer workflow.)
-
-After installing, verify your setup (deps, FSPS, `$SPS_HOME`, nested-sampling
-support) before your first fit:
-
-```bash
-python -m ceridwen.check
-```
-
-It prints an `ok` / `warn` / `FAIL` line per component with the exact fix for
-anything missing.
-
-This installs everything needed to `import ceridwen`, build the forward model,
-and run NUTS / VI / nested sampling **including posterior plotting** — `jax`,
-`jaxlib`, `numpy`, `scipy`, `matplotlib`, `h5py`, `astropy`, `sedpy-jax`,
-`tensorflow-probability`, `blackjax`, `tqdm`, `optax` (VI), and `anesthetic`
-(nested-sampling posteriors + corner plots) are all pulled in automatically.
-The only thing not installed for you is FSPS (it can't be — see below).
-
-> **Note on `blackjax`.** Nested sampling uses `blackjax.nss`, which has been
-> merged into the [official blackjax](https://github.com/blackjax-devs/blackjax)
-> but is not yet in a tagged PyPI release. ceridwen therefore pins a fixed
-> blackjax commit (`f73e12956`), so every install gets the same validated
-> state. Because this is a direct git dependency, ceridwen is installed from
-> source/GitHub rather than PyPI; once a blackjax release ships NSS, this
-> becomes a normal `blackjax>=X.Y` pin and ceridwen installs straight from
-> PyPI. (Python stays ≥ 3.11 either way.)
-
-There are **no extras to choose** — `pip install .` gives you everything to
-import, fit, plot, and test CERIDWEN. The only thing installed separately is
-**FSPS**, which can't be a normal Python dependency (it compiles Fortran); see
+This pulls in everything to import, fit, plot, and test CERIDWEN — there are no
+extras to choose. The one thing you install separately is **FSPS** (it compiles
+Fortran, so it can't be a pip dependency); see
 [Installing FSPS](#installing-fsps-and-setting-sps_home) below.
+
+> **blackjax** is pinned to a fixed commit (`f73e12956`) because its nested
+> sampler (`blackjax.nss`) is not in a PyPI release yet, so CERIDWEN installs it
+> from GitHub. This becomes a normal version pin once that release ships.
 
 ### Installing FSPS and setting `$SPS_HOME`
 
@@ -137,9 +100,8 @@ it's blank, the line went into the wrong file (check which shell you use with
 python -m ceridwen.check
 ```
 
-FSPS is the recommended route to an SSP grid (you control isochrones, spectral
-library, and IMF) and is required for nebular / dust emission — but the bundled
-example runs without it (see below). Either way, next stop:
+FSPS builds your SSP grid (you control the isochrones, spectral library, and
+IMF) and supplies the nebular / dust-emission data. With it set up, next stop:
 [`examples/quickstart.py`](examples/quickstart.py), a complete runnable fit.
 
 ---
@@ -148,33 +110,26 @@ example runs without it (see below). Either way, next stop:
 
 ### Run the bundled example first
 
-The fastest way to confirm your whole setup works end to end. It loads an SSP
-grid — building it from FSPS only if none is found (`$SSP_FILE` →
-`examples/ssp_data.h5` → the LFS test fixture; see
-[`docs/installation.md`](docs/installation.md), "Getting the SSP grid") —
-generates mock UV-to-IR photometry, fits it with nested sampling,
-and prints recovered-vs-true parameters plus a corner plot
+The fastest way to confirm your whole setup works end to end. It builds an SSP
+grid from FSPS on first run (and reuses it afterwards), generates mock UV-to-IR
+photometry, fits it, and prints recovered-vs-true parameters plus a corner plot
 (`examples/quickstart_corner.png`):
 
 ```bash
 python examples/quickstart.py
 ```
 
-If that runs and prints a recovered-vs-true table, your setup works and you're
-ready to fit real data — read on. Expect `logmass` to land near the injected
-truth; `Z` and the dust parameters are only weakly constrained by broadband
-photometry alone, so their posteriors are broad and can sit ~1 dex off truth.
-That is expected, not a broken install — add spectroscopy or emission lines to
-pin them down. The two steps below are what the example does internally, shown
-so you can adapt them to your own observations.
+If it prints a recovered-vs-true table, your setup works. `logmass` recovers the
+injected truth; `Z` and the dust parameters are weakly constrained by broadband
+photometry alone, so their posteriors are broad (add spectroscopy or emission
+lines to pin them down). The two steps below are what the example does
+internally, shown so you can adapt them to your own data.
 
 ### Step 0 — build the SSP grid (once per FSPS configuration)
 
 Ceridwen's forward model consumes an HDF5 cache of SSP spectra precomputed
-with FSPS. Building your own is the recommended route (you control the
-isochrones, spectral library, and IMF); it takes a few minutes on CPU and only
-has to be done once. No FSPS? Download a pre-built grid instead
-(Zenodo/git-LFS options in [`docs/installation.md`](docs/installation.md)).
+with FSPS. You build it yourself (you control the isochrones, spectral library,
+and IMF); it takes a few minutes on CPU and only has to be done once.
 
 ```python
 from ceridwen import SSPData
@@ -190,25 +145,18 @@ ssp = SSPData.from_fsps(imf_type=1, save_to="ssp_data.h5")
 # ssp = SSPData.load("ssp_data.h5")
 ```
 
-The grid records its own **provenance** (isochrone/spectral library, `imf_type`,
-FSPS version, the exact build kwargs, wavelength range) into the HDF5 file, and
-`CSPBasis` reads the isochrone library back automatically — **you never set
-`isoc_type` by hand**, and the nebular CLOUDY grid is guaranteed to match the
-SSP isochrone set. (Old grids built before provenance tracking still load; for
-those, `CSPBasis` warns that the isochrone type is unknown and falls back to
-`'mist'`.)
-
-`from_fsps(**fsps_kwargs)` is a thin classmethod wrapper around
-`ceridwen.ssps.ssp_data.collect_ssp_data_wrapper` — either call works.
-FSPS must be installed and importable; see the Installation section.
+The grid records its **provenance** (isochrone/spectral library, `imf_type`,
+FSPS version, build kwargs) into the HDF5 file, and `CSPBasis` reads the
+isochrone library back automatically — **you never set `isoc_type` by hand**,
+and the nebular CLOUDY grid always matches the SSP isochrones.
 
 ### Step 1 — fit a galaxy end-to-end
 
-This is a real, copy-paste-runnable joint fit of broadband photometry plus an
-optical spectrum. The data live in `examples/mock_galaxy.npz` — a mock galaxy
-at fixed z = 0.1 generated with the same forward model
-(`examples/make_mock_data.py` shows exactly how, and regenerates it). The
-injected truth is stored in the file, so you can check the fit recovers it.
+A copy-paste-runnable joint fit of broadband photometry plus an optical
+spectrum. The observations and the injected truth live in
+`examples/mock_galaxy.npz` (a mock galaxy at z = 0.1;
+`examples/make_mock_data.py` regenerates it), so you can check the fit recovers
+it.
 
 ```python
 import pathlib
@@ -223,8 +171,8 @@ from ceridwen.priors import Uniform, ClippedNormal, StudentT
 d = np.load(pathlib.Path("examples") / "mock_galaxy.npz")
 ZRED = float(d["zred"])                      # fixed spectroscopic redshift
 
-# Load the SSP grid from Step 0 (or the Zenodo download — see Installation).
-ssp = SSPData.load("examples/ssp_data.h5")
+# Load the SSP grid you built in Step 0.
+ssp = SSPData.load("ssp_data.h5")
 
 # Composite-stellar-population forward model. lookback_time is the static SFH
 # node grid (Gyr, increasing, index 0 = today, >= 2 nodes); it comes with the
@@ -249,6 +197,7 @@ phot = Photometry(
     flux=d["maggies"], uncertainty=d["maggies_unc"],
     name="phot",
 )
+phot.display()   # print a summary table of the photometry you just built
 
 # (b) Spectroscopy. The wavelength grid is vacuum Å in the OBSERVED frame
 # (as delivered by the instrument): the forward model redshifts the model
@@ -262,6 +211,7 @@ spec = Spectrum(
     resolution=float(d["spec_resolution"]), smoothtype="vel",
     name="spec",
 )
+spec.display()   # print a summary of the spectrum you just built
 
 # The SFH is sampled as logsfr_ratios (Prospector convention) and transformed
 # to per-node SFR; logmass then sets the absolute amplitude.
@@ -274,7 +224,9 @@ model = SedModel(
     priors={
         # Z is log10 of ABSOLUTE metallicity (= ssp_lgmet), NOT log10(Z/Zsun);
         # solar is ~ -1.85. Keep it inside your SSP grid — values outside are
-        # silently clamped. Run `csp.check_param_ranges(...)` for the bounds.
+        # silently clamped. Print the allowed range with
+        #     print(float(csp.zmet.min()), float(csp.zmet.max()))
+        # and call `csp.check_param_ranges()` to warn about out-of-grid values.
         "Z": Uniform(low=-3.9, high=-1.45),
         "logmass": Uniform(low=9.0, high=12.0),
         "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
@@ -287,8 +239,10 @@ model = SedModel(
     zred=ZRED,                               # fixed spec-z
 )
 
-# VI-preconditioned NUTS: VI learns a full-rank Gaussian transport map,
-# NUTS then samples in the whitened space (Hoffman et al. 2019).
+# Run the fit. Pick ONE of the two samplers below.
+
+# Option A — VI-preconditioned NUTS: VI learns a full-rank Gaussian transport
+# map, NUTS then samples in the whitened space (Hoffman et al. 2019).
 result = fitSED(
     model,
     sampler="nuts",
@@ -297,6 +251,16 @@ result = fitSED(
     rng_key=jax.random.PRNGKey(42),
     output_dir="./my_fit",
 )
+
+# Option B — nested sampling: gradient-free, and also returns the Bayesian
+# evidence (log Z) for model comparison. Uncomment to use it instead of NUTS.
+# result = fitSED(
+#     model,
+#     sampler="ns",
+#     sampler_kwargs={"num_live": 400, "num_delete": 100},
+#     rng_key=jax.random.PRNGKey(42),
+#     output_dir="./my_fit",
+# )
 
 # Recovered vs injected truth.
 for p in ("Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index"):
@@ -310,13 +274,8 @@ The `result` object has posterior samples keyed by parameter name, plus the VI
 trace and per-phase wall-clock timings in `result.raw`; everything is also
 written to `./my_fit/ceridwen_result.h5`.
 
-To add **nebular emission lines** to the fit (a `Lines` container, joint with
-photometry and spectroscopy, `add_neb=True`), you need the FSPS data files
-(`$SPS_HOME`) for the CLOUDY grids — the walk-through in
-[`docs/tutorial.md`](docs/tutorial.md) covers exactly that, including line
-selection via FSPS's `emlines_info.dat` (rest-frame vacuum Å — unlike the
-spectrum's pixel grid, line wavelengths are given in the REST frame and
-redshifted internally).
+For **nebular emission lines** (a `Lines` container, `add_neb=True`, which needs
+the CLOUDY grids at `$SPS_HOME`), see the [tutorial](docs/tutorial.md).
 
 ---
 
@@ -325,9 +284,8 @@ redshifted internally).
 - **Run `python -m ceridwen.check` first.** It reports missing dependencies, an
   unset or wrong `$SPS_HOME`, a too-old `sedpy-jax`, and whether nested sampling
   is available — each with the fix.
-- **Install needs Python 3.11 or newer** (see Installation); 3.10 is refused
-  because nested sampling pins the official `blackjax` (its merged NSS), which
-  requires Python ≥ 3.11.
+- **Install needs Python 3.11** (see Installation); nested sampling pins the
+  official `blackjax` (its merged NSS), which requires Python 3.11.
 - **Common scientific pitfalls** — the metallicity-units trap, silently-ignored
   `theta` typos, the lookback-time convention — are documented in
   [`GOTCHAS.md`](GOTCHAS.md). If you're letting an AI assistant help you use

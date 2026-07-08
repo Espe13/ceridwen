@@ -60,6 +60,9 @@ dependencies = [
     "tensorflow-probability>=0.23",
     "blackjax @ git+https://github.com/blackjax-devs/blackjax@f73e12956",
     "tqdm>=4.65",
+    "fastprogress>=1.0",  # blackjax.window_adaptation's progress bar imports this
+                          # lazily; it is not pulled in by the pinned blackjax, so
+                          # NUTS warmup crashes on a clean install without it.
     # Everything needed to import, fit, plot, and test CERIDWEN is core, so a
     # plain `pip install .` gives a fully-featured install with no extras to
     # choose. (VI + nested-sampling plotting + the test runner are all here.)

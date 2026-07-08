@@ -74,6 +74,7 @@ phot = Photometry(
     uncertainty=[6e-10, 1.4e-9, 1.5e-9],
     name="phot",
 )
+phot.display()   # sanity-check the photometry you just built
 
 # The SFH is sampled as logsfr_ratios and transformed to per-node SFR.
 sfh_times_yr = np.array(csp.sfh_times)
@@ -84,7 +85,9 @@ model = SedModel(
     csp, observations=[phot],
     priors={
         # Z is log10 ABSOLUTE metallicity (solar ~ -1.85) — keep inside your
-        # SSP grid (run csp.check_param_ranges() to see the bounds).
+        # SSP grid. Print the allowed range with
+        #     print(float(csp.zmet.min()), float(csp.zmet.max()))
+        # and call csp.check_param_ranges() to warn about out-of-grid values.
         "Z": ClippedNormal(mean=-2.0, sigma=0.5, low=-4.0, high=-1.4),
         "logmass": Uniform(low=6.0, high=12.5),
         "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
@@ -99,6 +102,7 @@ model = SedModel(
     zred=6.5,                                # fixed spec-z
 )
 
+# Pick ONE sampler. Option A — VI-preconditioned NUTS:
 result = fitSED(
     model,
     sampler="nuts", vi="tril",
@@ -106,6 +110,15 @@ result = fitSED(
     rng_key=jax.random.PRNGKey(42),
     output_dir="./my_fit",
 )
+
+# Option B — nested sampling (gradient-free; also returns the evidence log Z):
+# result = fitSED(
+#     model,
+#     sampler="ns",
+#     sampler_kwargs={"num_live": 400, "num_delete": 100},
+#     rng_key=jax.random.PRNGKey(42),
+#     output_dir="./my_fit",
+# )
 ```
 
 `result` carries posterior samples keyed by parameter name, plus the VI trace and
