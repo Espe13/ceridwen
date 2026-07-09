@@ -39,7 +39,7 @@ pip install .
 
 **GPU is the default.** On Linux this installs the CUDA 12 JAX wheels (the
 CUDA libraries are bundled; the only system requirement is an NVIDIA driver
->= 525, no toolkit install), and JAX uses the GPU automatically. No flags,
+\>= 525, no toolkit install), and JAX uses the GPU automatically. No flags,
 no separate install. A machine without a usable NVIDIA GPU gets the same
 install and falls back to CPU at import time: one warning, identical
 results, more patience. macOS and native Windows have no CUDA wheels and

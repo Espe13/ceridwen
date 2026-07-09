@@ -130,16 +130,20 @@ def fitSED(
         for IAF).
     filename : str
         Name of the output HDF5 file.  Default ``ceridwen_result.h5``.
+        A plain-text log with the same stem (``ceridwen_result.log``) is
+        written alongside it: timestamped device/backend info, sampler
+        configuration, timings, and the result summary.  It is written
+        regardless of ``verbose`` (which only controls console echo).
     overwrite : bool
         If True (default), overwrite an existing file.
     verbose : bool
-        Print progress.  Default True.
+        Print progress to the console.  Default True.
 
     Returns
     -------
     SamplingResult
         The sampling result object (same as returned by ``run_sampler``).
-        The HDF5 file is written as a side effect.
+        The HDF5 file and the ``.log`` file are written as side effects.
     """
     from .likelihood.likelihood import (
         DiagonalGaussianLikelihood,
@@ -193,23 +197,40 @@ def fitSED(
     )
     _t_likelihood = time.perf_counter() - _t0_likelihood
 
-    # Route verbose diagnostics through the package logger.
-    if verbose:
-        logger.setLevel(logging.INFO)
-        if not logger.handlers:
-            _handler = logging.StreamHandler()
-            _handler.setFormatter(logging.Formatter("%(message)s"))
-            logger.addHandler(_handler)
-            logger.propagate = False
+    # Route diagnostics through the package logger, with two sinks:
+    #   * console (StreamHandler)  -- only when verbose=True (unchanged);
+    #   * a per-fit log file next to the HDF5 result -- ALWAYS, so every
+    #     fit leaves a text record (device, sampler config, timings,
+    #     result summary) even when run non-verbose inside a batch job.
+    # NOTE: sampler-internal progress (the "[vi] iter ..." lines, NUTS
+    # warmup bars) is written with bare print() inside ceridwen.sampler
+    # and is NOT captured here; use `python fit_script.py |& tee run.log`
+    # for a full console transcript.
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    if verbose and not any(
+        isinstance(h, logging.StreamHandler)
+        and not isinstance(h, logging.FileHandler)
+        for h in logger.handlers
+    ):
+        _handler = logging.StreamHandler()
+        _handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(_handler)
 
-    # Report the XLA backend up front: a fit silently falling back to CPU
-    # (missing CUDA jaxlib, JAX_PLATFORMS=cpu leaking from a mock script,
-    # driver mismatch) looks identical except for a ~10-100x slowdown.
-    _devices = jax.devices()
-    _backend = jax.default_backend().upper()   # 'CPU', 'GPU', or 'TPU'
-    _device_str = ", ".join(str(d) for d in _devices)
+    log_path = output_path.with_suffix(".log")
+    _file_handler = logging.FileHandler(log_path, mode="w")
+    _file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s  %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    logger.addHandler(_file_handler)
 
-    if verbose:
+    try:
+        # Report the XLA backend up front: a fit silently falling back to CPU
+        # (missing CUDA jaxlib, JAX_PLATFORMS=cpu leaking from a mock script,
+        # driver mismatch) looks identical except for a ~10-100x slowdown.
+        _devices = jax.devices()
+        _backend = jax.default_backend().upper()   # 'CPU', 'GPU', or 'TPU'
+        _device_str = ", ".join(str(d) for d in _devices)
+
         logger.info(f"ceridwen.fitSED")
         logger.info(f"  Device      : {_backend}  ({_device_str})")
         if _backend == "CPU":
@@ -221,33 +242,30 @@ def fitSED(
         logger.info(f"  Parameters  : {model.param_names}  ({sum(int(jnp.size(v)) for v in model.theta_init.values())} dims)")
         logger.info(f"  Observations: {list(keys)}")
         logger.info(f"  Output      : {output_path}")
+        logger.info(f"  Log         : {log_path}")
         logger.info(f"  Likelihood build: {_t_likelihood:.3f} s")
 
-    # ── Configure sampler ─────────────────────────────────────────────
-    _t0_adapter = time.perf_counter()
-    adapter = _build_adapter(
-        sampler, model, sampler_kwargs, verbose,
-        vi=vi, vi_kwargs=vi_kwargs,
-    )
-    _t_adapter = time.perf_counter() - _t0_adapter
-
-    if verbose:
+        # ── Configure sampler ─────────────────────────────────────────
+        _t0_adapter = time.perf_counter()
+        adapter = _build_adapter(
+            sampler, model, sampler_kwargs, verbose,
+            vi=vi, vi_kwargs=vi_kwargs,
+        )
+        _t_adapter = time.perf_counter() - _t0_adapter
         logger.info(f"  Adapter build:    {_t_adapter:.3f} s")
 
-    # ── Run ────────────────────────────────────────────────────────────
-    _t0_sampler = time.perf_counter()
-    result = run_sampler(model, multi_likelihood, adapter, rng_key)
-    _t_sampler = time.perf_counter() - _t0_sampler
+        # ── Run ────────────────────────────────────────────────────────
+        _t0_sampler = time.perf_counter()
+        result = run_sampler(model, multi_likelihood, adapter, rng_key)
+        _t_sampler = time.perf_counter() - _t0_sampler
 
-    if verbose:
         logger.info(f"\n{result.summary()}")
 
-    # ── Write HDF5 ────────────────────────────────────────────────────
-    _t0_h5 = time.perf_counter()
-    write_result_h5(output_path, model, result, verbose=verbose)
-    _t_h5 = time.perf_counter() - _t0_h5
+        # ── Write HDF5 ────────────────────────────────────────────────
+        _t0_h5 = time.perf_counter()
+        write_result_h5(output_path, model, result, verbose=verbose)
+        _t_h5 = time.perf_counter() - _t0_h5
 
-    if verbose:
         _t_total = _t_likelihood + _t_adapter + _t_sampler + _t_h5
         logger.info(f"\n  fitSED timing breakdown:")
         logger.info(f"    Likelihood build : {_t_likelihood:>8.3f} s")
@@ -256,7 +274,12 @@ def fitSED(
         logger.info(f"    HDF5 write       : {_t_h5:>8.3f} s")
         logger.info(f"    Total fitSED     : {_t_total:>8.1f} s")
 
-    return result
+        return result
+    finally:
+        # Detach the per-fit file handler so repeated fitSED calls in the
+        # same session do not multiply handlers or write to stale files.
+        logger.removeHandler(_file_handler)
+        _file_handler.close()
 
 
 # ======================================================================
