@@ -202,8 +202,21 @@ def fitSED(
             logger.addHandler(_handler)
             logger.propagate = False
 
+    # Report the XLA backend up front: a fit silently falling back to CPU
+    # (missing CUDA jaxlib, JAX_PLATFORMS=cpu leaking from a mock script,
+    # driver mismatch) looks identical except for a ~10-100x slowdown.
+    _devices = jax.devices()
+    _backend = jax.default_backend().upper()   # 'CPU', 'GPU', or 'TPU'
+    _device_str = ", ".join(str(d) for d in _devices)
+
     if verbose:
         logger.info(f"ceridwen.fitSED")
+        logger.info(f"  Device      : {_backend}  ({_device_str})")
+        if _backend == "CPU":
+            logger.info(
+                "                ^ running on CPU — for GPU check that a "
+                "CUDA-enabled jaxlib is installed and JAX_PLATFORMS is unset"
+            )
         logger.info(f"  Sampler     : {sampler}")
         logger.info(f"  Parameters  : {model.param_names}  ({sum(int(jnp.size(v)) for v in model.theta_init.values())} dims)")
         logger.info(f"  Observations: {list(keys)}")

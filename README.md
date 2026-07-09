@@ -38,6 +38,20 @@ cd ceridwen
 pip install .
 ```
 
+**GPU is the default.** On Linux this installs the CUDA 12 JAX wheels (the
+CUDA libraries are bundled — an NVIDIA driver >= 525 is the only system
+requirement, no toolkit install), and JAX uses the GPU automatically. No
+flags, no separate install. If the machine has no usable NVIDIA GPU, the
+same install falls back to CPU at import time — one warning, identical
+results, just slower. macOS and native Windows have no CUDA wheels and get
+the CPU build automatically; on a Windows machine with an NVIDIA GPU,
+install inside WSL2. Every `fitSED` call prints which backend it is on:
+
+```
+ceridwen.fitSED
+  Device      : GPU  (CudaDevice(id=0))
+```
+
 The one thing you install separately is **FSPS** (it compiles
 Fortran, so it can't be a pip dependency); see
 [Installing FSPS](#installing-fsps-and-setting-sps_home) below.

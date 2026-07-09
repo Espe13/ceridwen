@@ -49,7 +49,17 @@ classifiers = [
 #                     LOSVD FFT wrap-around fix (published to PyPI). The older
 #                     0.1.0 lacks them, so the floor must exclude it.
 dependencies = [
-    "jax>=0.4.30",
+    # GPU by default where CUDA exists: on Linux the CUDA 12 jaxlib wheels are
+    # installed (CUDA libraries bundled -- an NVIDIA driver >= 525 is the only
+    # system requirement).  JAX picks the GPU automatically at import time; on
+    # a Linux box WITHOUT a usable NVIDIA GPU the same install falls back to
+    # CPU at runtime (one warning at import, identical results).  macOS and
+    # native Windows have no CUDA wheels, so they get the CPU build; Windows
+    # users with an NVIDIA GPU should install inside WSL2 (which is Linux, so
+    # the CUDA path applies).  The fitSED header "Device : ..." shows which
+    # backend a fit is actually using.
+    "jax[cuda12]>=0.4.30; sys_platform == 'linux'",
+    "jax>=0.4.30; sys_platform != 'linux'",
     "jaxlib>=0.4.30",
     "numpy>=1.24",
     "scipy>=1.10",
