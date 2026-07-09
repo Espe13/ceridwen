@@ -289,44 +289,12 @@ result = fitSED(
     output_dir="./my_fit",
 )
 print(f"log Z = {result.log_evidence:.2f} +/- {result.log_evidence_err:.2f}")
-
-# Recovered vs injected truth.
-for p in ("Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index"):
-    samples = np.asarray(result.samples[p]).ravel()
-    print(f"{p:>20}: true {float(TRUTH[p][0]):+7.3f}   "
-          f"fit {np.median(samples):+7.3f} +/- {np.std(samples):.3f}")
-
-# Corner plot. Nested samples carry importance weights; anesthetic applies them.
-subset = ["logmass", "Z", "diffuse_tau_kc"]
-truth  = {p: float(TRUTH[p][0]) for p in subset}
-axes = result.to_anesthetic().plot_2d(subset)
-for yp in subset:                     # overlay injected truth as red dashed lines
-    for xp in subset:
-        ax = axes.loc[yp, xp]
-        if ax is None:
-            continue
-        ax.axvline(truth[xp], color="red", ls="--", lw=1)
-        if yp != xp:
-            ax.axhline(truth[yp], color="red", ls="--", lw=1)
-
-# Data vs model at the posterior median.
-import matplotlib.pyplot as plt
-theta_med = {p: jnp.atleast_1d(jnp.median(jnp.asarray(v), axis=0))
-             for p, v in result.samples.items()}
-pred = model.predict(theta_med)                        # AB maggies, keyed by obs name
-plt.figure()
-plt.errorbar(phot.wave_eff, phot.flux, yerr=phot.uncertainty, fmt="o", label="data")
-plt.plot(phot.wave_eff, np.asarray(pred["phot"]), "s", label="model")
-plt.xlabel(r"$\lambda_{\rm eff}$ [Å]"); plt.ylabel("flux [maggies]")
-plt.yscale("log"); plt.legend(); plt.show()
 ```
 
 #### Option B: VI-preconditioned NUTS
 
 VI learns a full-rank Gaussian transport map; NUTS then samples in the whitened
-space (Hoffman et al. 2019). The truth table and the data-vs-model plot from
-Option A work unchanged; only the sampler call, the VI-loss curve, and the
-(unweighted) corner differ.
+space (Hoffman et al. 2019).
 
 ```python
 result = fitSED(
@@ -342,13 +310,67 @@ result = fitSED(
 import matplotlib.pyplot as plt
 plt.figure(); plt.plot(result.raw["vi_losses"]); plt.yscale("log")   # -ELBO
 plt.xlabel("VI iteration"); plt.ylabel(r"$-\mathrm{ELBO}$")
+```
 
-# Corner plot: NUTS samples are unweighted, so plain MCMCSamples works.
-# plot_2d returns the same axes grid, so overlay the truth exactly as in Option A.
-from anesthetic import MCMCSamples
+#### Inspecting the results (identical for both samplers)
+
+Everything below is sampler-agnostic. The one thing to respect: nested
+samples carry importance weights (`result.log_weights`), and ANY summary
+statistic must use them or it is biased toward the prior (the corner would
+look fine while medians and predicted fluxes drift). Resampling to equal
+weight once makes everything downstream a plain median/percentile. NUTS
+fills `log_weights` with zeros, so the same code runs unchanged there.
+
+```python
+import matplotlib.pyplot as plt
+
+# Equal-weight posterior draws.
+lw  = np.asarray(result.log_weights)
+w   = np.exp(lw - lw.max()); w /= w.sum()
+idx = rng.choice(w.size, size=1000, p=w)
+
+# Recovered vs injected truth.
+for p in ("Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index"):
+    s = np.asarray(result.samples[p])[idx].ravel()
+    print(f"{p:>20}: true {float(TRUTH[p][0]):+7.3f}   "
+          f"fit {np.median(s):+7.3f} +/- {np.std(s):.3f}")
+
+# Corner plot: to_anesthetic() carries the weights, nothing to do by hand.
 subset = ["logmass", "Z", "diffuse_tau_kc"]
-data = np.column_stack([np.asarray(result.samples[p]).ravel() for p in subset])
-axes = MCMCSamples(data=data, columns=subset).plot_2d(subset)
+truth  = {p: float(TRUTH[p][0]) for p in subset}
+axes = result.to_anesthetic().plot_2d(subset)
+for yp in subset:                     # overlay injected truth as red dashed lines
+    for xp in subset:
+        ax = axes.loc[yp, xp]
+        if ax is None:
+            continue
+        ax.axvline(truth[xp], color="red", ls="--", lw=1)
+        if yp != xp:
+            ax.axhline(truth[yp], color="red", ls="--", lw=1)
+
+# Data vs model WITH model uncertainty: push the equal-weight draws
+# through the forward model in one vmapped call and plot the 16-84% band.
+theta_draws = {p: jnp.asarray(np.asarray(v)[idx])
+               for p, v in result.samples.items()}
+pred_draws = np.asarray(model.predict_vmap(theta_draws)["phot"])  # (1000, n_bands)
+lo, med, hi = np.percentile(pred_draws, [16, 50, 84], axis=0)
+
+# Both data and model are AB maggies (F_nu-like); convert to F_lambda
+# [erg s^-1 cm^-2 A^-1] for the classic SED plot.
+AB_ZERO_FNU = 3.631e-20                    # 3631 Jy in erg s^-1 cm^-2 Hz^-1
+C_AAS       = 2.998e18                     # speed of light [A/s]
+wave    = np.asarray(phot.wave_eff)
+to_flam = AB_ZERO_FNU * C_AAS / wave**2    # per-band maggies -> F_lambda
+
+plt.figure()
+plt.errorbar(wave, phot.flux * to_flam, yerr=phot.uncertainty * to_flam,
+             fmt="o", label="data")
+plt.errorbar(wave, med * to_flam,
+             yerr=[(med - lo) * to_flam, (hi - med) * to_flam],
+             fmt="s", label="model (16-84%)")
+plt.xlabel(r"$\lambda_{\rm eff}$ [Å]")
+plt.ylabel(r"$F_\lambda$ [erg s$^{-1}$ cm$^{-2}$ Å$^{-1}$]")
+plt.yscale("log"); plt.legend(); plt.show()
 ```
 
 The `result` object has posterior samples keyed by parameter name, plus per-phase
