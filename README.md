@@ -382,32 +382,44 @@ C_AAS       = 2.998e18                     # speed of light [A/s]
 wave      = np.asarray(phot.wave_eff)
 to_flam   = AB_ZERO_FNU * C_AAS / wave**2  # per-band maggies -> F_lambda
 spec_flam = spec_fnu * C_AAS / wave_obs**2
+# Defensive: hide any non-positive pixels from the log axis. (None are
+# expected -- a zeroed edge pixel of the LOSVD smoothing window was a bug,
+# fixed in CSPBasis._apply_losvd.)
+spec_flam = np.where(spec_flam > 0, spec_flam, np.nan)
+
+# Truth spectrum, red like the truth lines in the corner plot.
+theta_truth = {k: jnp.asarray(v) for k, v in TRUTH.items()}
+truth_fnu   = (np.asarray(model.csp.get_spectrum(model.apply_transforms(theta_truth)))
+               * 10.0 ** float(TRUTH["logmass"][0]) * float(flux_factor_maggies(ZRED)))
+truth_flam  = truth_fnu * C_AAS / wave_obs**2
+truth_flam  = np.where(truth_flam > 0, truth_flam, np.nan)
 
 fig, (ax, axc) = plt.subplots(
     2, 1, sharex=True, figsize=(8, 6),
     gridspec_kw={"height_ratios": [3, 1], "hspace": 0.06})
 
-# Main panel: best-fit spectrum behind the data and the model bands.
+# Main panel: best-fit + truth spectra behind the data and the model bands.
 ax.plot(wave_obs, spec_flam, color="0.7", lw=0.7, zorder=1,
         label="best-fit spectrum")
+ax.plot(wave_obs, truth_flam, color="red", ls="--", lw=0.7, zorder=2,
+        label="truth")
 ax.errorbar(wave, phot.flux * to_flam, yerr=phot.uncertainty * to_flam,
             fmt="o", zorder=3, label="data")
 ax.errorbar(wave, med * to_flam,
             yerr=[(med - lo) * to_flam, (hi - med) * to_flam],
             fmt="s", zorder=4, label="model (16-84%)")
-dat_flam = phot.flux * to_flam
 ax.set_xlim(0.5 * wave.min(), 1.2 * wave.max())
-ax.set_ylim(0.05 * dat_flam.min(), 20 * dat_flam.max())
+ax.set_ylim(1e-18, 5e-16)
 ax.set_yscale("log")
 ax.set_ylabel(r"$F_\lambda$ [erg s$^{-1}$ cm$^{-2}$ Å$^{-1}$]")
 ax.legend(loc="upper right")
 
-# Filter transmission curves along the bottom of the main panel.
+# Filter transmission curves, shaded, along the bottom of the main panel.
 axf = ax.twinx()
 for f in phot.filters:
-    axf.plot(np.asarray(f.wavelength),
-             np.asarray(f.transmission) / np.max(np.asarray(f.transmission)),
-             lw=0.8, alpha=0.35)
+    fw = np.asarray(f.wavelength)
+    ft = np.asarray(f.transmission)
+    axf.fill_between(fw, 0.0, ft / ft.max(), alpha=0.25, lw=0)
 axf.set_ylim(0, 4); axf.set_yticks([])     # curves fill the lower quarter
 
 # Chi panel: (data - model) / sigma. Unitless, so maggies are fine as is.

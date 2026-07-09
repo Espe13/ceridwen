@@ -995,6 +995,18 @@ class CSPBasis:
         # here; threading it from theta would enable free-sigma fitting.
         spec_window = spectrum[self._losvd_idx]
         smoothed = self._losvd_smoother(spec_window, self.sigma_losvd_kms)
+        # Edge repair: sedpy_jax's ``jax_interp`` zero-fills OUTSIDE its
+        # internal log-uniform grid (left=0, right=0), and that grid's
+        # endpoints are built as exp(log(lambda)), which can land 1 ulp
+        # inside the true window endpoints.  The window's first/last pixel
+        # then tests as out-of-range and comes back EXACTLY 0 -- seen as a
+        # spurious notch at the red edge of the smoothing window (rest
+        # 24950 A on the FSPS grid; blue-edge sibling of the Lyman-spike
+        # bug covered by tests/test_losvd_no_lyman_spike.py).  Keep the raw
+        # endpoint pixels instead: a 1-pixel unsmoothed edge is invisible,
+        # a zeroed pixel is a hole in every SED.
+        smoothed = smoothed.at[0].set(spec_window[0]) \
+                           .at[-1].set(spec_window[-1])
         return spectrum.at[self._losvd_idx].set(
             smoothed.astype(spectrum.dtype))
 
