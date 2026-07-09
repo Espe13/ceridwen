@@ -364,53 +364,42 @@ theta_draws = {p: jnp.asarray(np.asarray(v)[idx].reshape(len(idx), -1))
 pred_draws = np.asarray(model.predict_vmap(theta_draws)["phot"])  # (1000, n_bands)
 lo, med, hi = np.percentile(pred_draws, [16, 50, 84], axis=0)
 
-# Best-fit (max-likelihood) full spectrum for the background, scaled to
-# observed-frame flux exactly as csp.predict does: mass x flux factor.
+# Truth spectrum for the background, scaled to observed-frame flux exactly
+# as csp.predict does (mass x flux factor); red like the truth lines in the
+# corner plot.
 from ceridwen.cosmology import flux_factor_maggies
-i_best     = int(np.argmax(np.asarray(result.log_likelihoods)))
-theta_best = {p: jnp.asarray(np.asarray(v)[i_best].reshape(-1))
-              for p, v in result.samples.items()}
-spec_rest = np.asarray(model.csp.get_spectrum(model.apply_transforms(theta_best)))
-wave_obs  = (1.0 + ZRED) * np.asarray(model.csp.wave)      # observed frame [A]
-spec_fnu  = spec_rest * 10.0 ** float(theta_best["logmass"][0]) \
-            * float(flux_factor_maggies(ZRED))              # erg s^-1 cm^-2 Hz^-1
+wave_obs    = (1.0 + ZRED) * np.asarray(model.csp.wave)    # observed frame [A]
+theta_truth = {k: jnp.asarray(v) for k, v in TRUTH.items()}
+truth_fnu   = (np.asarray(model.csp.get_spectrum(model.apply_transforms(theta_truth)))
+               * 10.0 ** float(TRUTH["logmass"][0]) * float(flux_factor_maggies(ZRED)))
 
 # Both data and model photometry are AB maggies (F_nu-like); convert
 # everything to F_lambda [erg s^-1 cm^-2 A^-1] for the classic SED plot.
 AB_ZERO_FNU = 3.631e-20                    # 3631 Jy in erg s^-1 cm^-2 Hz^-1
 C_AAS       = 2.998e18                     # speed of light [A/s]
-wave      = np.asarray(phot.wave_eff)
-to_flam   = AB_ZERO_FNU * C_AAS / wave**2  # per-band maggies -> F_lambda
-spec_flam = spec_fnu * C_AAS / wave_obs**2
-# Defensive: hide any non-positive pixels from the log axis. (None are
-# expected -- a zeroed edge pixel of the LOSVD smoothing window was a bug,
-# fixed in CSPBasis._apply_losvd.)
-spec_flam = np.where(spec_flam > 0, spec_flam, np.nan)
-
-# Truth spectrum, red like the truth lines in the corner plot.
-theta_truth = {k: jnp.asarray(v) for k, v in TRUTH.items()}
-truth_fnu   = (np.asarray(model.csp.get_spectrum(model.apply_transforms(theta_truth)))
-               * 10.0 ** float(TRUTH["logmass"][0]) * float(flux_factor_maggies(ZRED)))
-truth_flam  = truth_fnu * C_AAS / wave_obs**2
-truth_flam  = np.where(truth_flam > 0, truth_flam, np.nan)
+wave       = np.asarray(phot.wave_eff)
+to_flam    = AB_ZERO_FNU * C_AAS / wave**2  # per-band maggies -> F_lambda
+truth_flam = truth_fnu * C_AAS / wave_obs**2
+truth_flam = np.where(truth_flam > 0, truth_flam, np.nan)  # log-axis safety
 
 fig, (ax, axc) = plt.subplots(
     2, 1, sharex=True, figsize=(8, 6),
     gridspec_kw={"height_ratios": [3, 1], "hspace": 0.06})
 
-# Main panel: best-fit + truth spectra behind the data and the model bands.
-ax.plot(wave_obs, spec_flam, color="0.7", lw=0.7, zorder=1,
-        label="best-fit spectrum")
-ax.plot(wave_obs, truth_flam, color="red", ls="--", lw=0.7, zorder=2,
+# Main panel: truth spectrum behind the data and the model bands.
+ax.plot(wave_obs, truth_flam, color="red", lw=0.5, alpha=0.6, zorder=2,
         label="truth")
 ax.errorbar(wave, phot.flux * to_flam, yerr=phot.uncertainty * to_flam,
-            fmt="o", zorder=3, label="data")
+            fmt="o", color="red", markeredgecolor="black", markeredgewidth=1.5,
+            zorder=3, label="data")
 ax.errorbar(wave, med * to_flam,
             yerr=[(med - lo) * to_flam, (hi - med) * to_flam],
-            fmt="s", zorder=4, label="model (16-84%)")
+            fmt="s", color="None", markeredgecolor="blue",
+            markeredgewidth=1, zorder=4, label="model (16-84%)")
 ax.set_xlim(0.5 * wave.min(), 1.2 * wave.max())
 ax.set_ylim(1e-18, 5e-16)
 ax.set_yscale("log")
+ax.set_xscale("log")
 ax.set_ylabel(r"$F_\lambda$ [erg s$^{-1}$ cm$^{-2}$ Å$^{-1}$]")
 ax.legend(loc="upper right")
 
