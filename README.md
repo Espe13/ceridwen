@@ -321,6 +321,12 @@ look fine while medians and predicted fluxes drift). Resampling to equal
 weight once makes everything downstream a plain median/percentile. NUTS
 fills `log_weights` with zeros, so the same code runs unchanged there.
 
+This block also works on a reloaded fit from an earlier session:
+`result = load_result_h5("my_fit/ceridwen_result.h5")` (importable from
+`ceridwen`) returns the same result object; only the forward-model parts
+(`model.predict_vmap`) need the Step 1 setup re-run, with the same `ZRED`
+(recorded in the file's `/model` attrs).
+
 ```python
 import matplotlib.pyplot as plt
 
@@ -350,27 +356,68 @@ for yp in subset:                     # overlay injected truth as red dashed lin
 
 # Data vs model WITH model uncertainty: push the equal-weight draws
 # through the forward model in one vmapped call and plot the 16-84% band.
-theta_draws = {p: jnp.asarray(np.asarray(v)[idx])
+# The reshape matters: result.samples stores scalar parameters squeezed to
+# (n_samples,), but predict_vmap expects per-sample shape (1,) -- i.e.
+# batches of (N, 1) for scalars and (N, k) for vector parameters.
+theta_draws = {p: jnp.asarray(np.asarray(v)[idx].reshape(len(idx), -1))
                for p, v in result.samples.items()}
 pred_draws = np.asarray(model.predict_vmap(theta_draws)["phot"])  # (1000, n_bands)
 lo, med, hi = np.percentile(pred_draws, [16, 50, 84], axis=0)
 
-# Both data and model are AB maggies (F_nu-like); convert to F_lambda
-# [erg s^-1 cm^-2 A^-1] for the classic SED plot.
+# Best-fit (max-likelihood) full spectrum for the background, scaled to
+# observed-frame flux exactly as csp.predict does: mass x flux factor.
+from ceridwen.cosmology import flux_factor_maggies
+i_best     = int(np.argmax(np.asarray(result.log_likelihoods)))
+theta_best = {p: jnp.asarray(np.asarray(v)[i_best].reshape(-1))
+              for p, v in result.samples.items()}
+spec_rest = np.asarray(model.csp.get_spectrum(model.apply_transforms(theta_best)))
+wave_obs  = (1.0 + ZRED) * np.asarray(model.csp.wave)      # observed frame [A]
+spec_fnu  = spec_rest * 10.0 ** float(theta_best["logmass"][0]) \
+            * float(flux_factor_maggies(ZRED))              # erg s^-1 cm^-2 Hz^-1
+
+# Both data and model photometry are AB maggies (F_nu-like); convert
+# everything to F_lambda [erg s^-1 cm^-2 A^-1] for the classic SED plot.
 AB_ZERO_FNU = 3.631e-20                    # 3631 Jy in erg s^-1 cm^-2 Hz^-1
 C_AAS       = 2.998e18                     # speed of light [A/s]
-wave    = np.asarray(phot.wave_eff)
-to_flam = AB_ZERO_FNU * C_AAS / wave**2    # per-band maggies -> F_lambda
+wave      = np.asarray(phot.wave_eff)
+to_flam   = AB_ZERO_FNU * C_AAS / wave**2  # per-band maggies -> F_lambda
+spec_flam = spec_fnu * C_AAS / wave_obs**2
 
-plt.figure()
-plt.errorbar(wave, phot.flux * to_flam, yerr=phot.uncertainty * to_flam,
-             fmt="o", label="data")
-plt.errorbar(wave, med * to_flam,
-             yerr=[(med - lo) * to_flam, (hi - med) * to_flam],
-             fmt="s", label="model (16-84%)")
-plt.xlabel(r"$\lambda_{\rm eff}$ [Å]")
-plt.ylabel(r"$F_\lambda$ [erg s$^{-1}$ cm$^{-2}$ Å$^{-1}$]")
-plt.yscale("log"); plt.legend(); plt.show()
+fig, (ax, axc) = plt.subplots(
+    2, 1, sharex=True, figsize=(8, 6),
+    gridspec_kw={"height_ratios": [3, 1], "hspace": 0.06})
+
+# Main panel: best-fit spectrum behind the data and the model bands.
+ax.plot(wave_obs, spec_flam, color="0.7", lw=0.7, zorder=1,
+        label="best-fit spectrum")
+ax.errorbar(wave, phot.flux * to_flam, yerr=phot.uncertainty * to_flam,
+            fmt="o", zorder=3, label="data")
+ax.errorbar(wave, med * to_flam,
+            yerr=[(med - lo) * to_flam, (hi - med) * to_flam],
+            fmt="s", zorder=4, label="model (16-84%)")
+dat_flam = phot.flux * to_flam
+ax.set_xlim(0.5 * wave.min(), 1.2 * wave.max())
+ax.set_ylim(0.05 * dat_flam.min(), 20 * dat_flam.max())
+ax.set_yscale("log")
+ax.set_ylabel(r"$F_\lambda$ [erg s$^{-1}$ cm$^{-2}$ Å$^{-1}$]")
+ax.legend(loc="upper right")
+
+# Filter transmission curves along the bottom of the main panel.
+axf = ax.twinx()
+for f in phot.filters:
+    axf.plot(np.asarray(f.wavelength),
+             np.asarray(f.transmission) / np.max(np.asarray(f.transmission)),
+             lw=0.8, alpha=0.35)
+axf.set_ylim(0, 4); axf.set_yticks([])     # curves fill the lower quarter
+
+# Chi panel: (data - model) / sigma. Unitless, so maggies are fine as is.
+chi = (np.asarray(phot.flux) - med) / np.asarray(phot.uncertainty)
+axc.axhspan(-1.0, 1.0, color="0.92", zorder=0)
+axc.axhline(0.0, color="0.5", lw=0.8)
+axc.scatter(wave, chi, s=14, zorder=3)
+axc.set_ylabel(r"$\chi$")
+axc.set_xlabel(r"$\lambda_{\rm eff}$ [Å]")
+plt.show()
 ```
 
 The `result` object has posterior samples keyed by parameter name, plus per-phase
