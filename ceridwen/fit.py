@@ -487,6 +487,10 @@ def write_result_h5(
             mod_grp.attrs["transforms"] = json.dumps(tx_names)
 
         # CSP configuration
+        # Fixed redshift of the fit: without this the file is not
+        # self-describing and any post-hoc forward-model rebuild risks
+        # the wrong flux normalisation.
+        mod_grp.attrs["zred"] = float(getattr(model, "zred", 0.0))
         mod_grp.attrs["n_time"] = int(model.csp.ages.shape[0]) if hasattr(model.csp, "ages") else -1
         mod_grp.attrs["n_metallicities"] = int(model.csp.zmet.shape[0]) if hasattr(model.csp, "zmet") else -1
 
@@ -540,6 +544,76 @@ def write_result_h5(
     if verbose:
         size_mb = path.stat().st_size / 1024**2
         logger.info(f"  Wrote {path}  ({size_mb:.1f} MB)")
+
+
+def load_result_h5(path: str | Path):
+    """
+    Load an HDF5 result file back into a :class:`SamplingResult`.
+
+    Unlike :func:`read_result_h5` (which returns plain dicts), this
+    reconstructs the actual result object, so everything downstream of a
+    fresh ``fitSED`` call works identically on a reloaded file:
+    ``result.to_anesthetic()``, ``result.summary()``, ``result.samples``,
+    ``result.log_weights``, the README "Inspecting the results" block, etc.
+
+    Not restored: ``result.raw`` sampler internals that are not persisted
+    (e.g. the VI loss trace), and the forward model itself -- rebuild the
+    ``SedModel`` (SSP grid + CSP + priors, with the SAME fixed zred, stored
+    in the file's ``/model`` attrs) if you need ``model.predict_vmap`` for
+    posterior-predictive bands.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to the HDF5 file written by ``write_result_h5``.
+
+    Returns
+    -------
+    SamplingResult
+
+    Examples
+    --------
+    >>> from ceridwen.fit import load_result_h5
+    >>> result = load_result_h5("my_fit/ceridwen_result.h5")
+    >>> axes = result.to_anesthetic().plot_2d(["logmass", "Z"])
+    """
+    import h5py
+    from .sampler.runner import SamplingResult
+
+    path = Path(path)
+    with h5py.File(path, "r") as f:
+        samp = f["samples"]
+        param_names = list(f["model"]["param_names"].asstr()[()])
+
+        samples = {p: jnp.asarray(np.array(samp[p])) for p in param_names}
+        log_likelihoods = jnp.asarray(np.array(samp["log_likelihoods"]))
+        log_weights     = jnp.asarray(np.array(samp["log_weights"]))
+        llb = (jnp.asarray(np.array(samp["log_likelihoods_birth"]))
+               if "log_likelihoods_birth" in samp else None)
+
+        # Chain layout (NUTS) round-trips through raw so post-hoc trace
+        # plots can reshape; absent for nested sampling.
+        raw = {}
+        if "num_chains" in samp.attrs:
+            raw["num_chains"] = int(samp.attrs["num_chains"])
+        if "num_samples_per_chain" in samp.attrs:
+            raw["num_samples"] = int(samp.attrs["num_samples_per_chain"])
+        if "num_warmup" in samp.attrs:
+            raw["num_warmup"] = int(samp.attrs["num_warmup"])
+
+        return SamplingResult(
+            samples               = samples,
+            log_evidence          = float(samp.attrs.get("log_evidence", float("nan"))),
+            log_evidence_err      = float(samp.attrs.get("log_evidence_err", float("nan"))),
+            log_weights           = log_weights,
+            log_likelihoods       = log_likelihoods,
+            param_names           = param_names,
+            n_likelihood_calls    = int(samp.attrs.get("n_likelihood_calls", -1)),
+            wall_time_s           = float(samp.attrs.get("wall_time_s", float("nan"))),
+            sampler_name          = str(samp.attrs.get("sampler_name", "unknown")),
+            log_likelihoods_birth = llb,
+            raw                   = raw or None,
+        )
 
 
 def read_result_h5(path: str | Path) -> dict:

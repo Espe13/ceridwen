@@ -30,7 +30,7 @@ _patch_tfp_jax_compat()
 
 from .dust import DustModel, DustEmission
 from .neb import NebularModel
-from .fit import fitSED, read_result_h5
+from .fit import fitSED, read_result_h5, load_result_h5
 
 # Primary model builders, re-exported at the top level for a flat public API
 # (`from ceridwen import CSPBasis, SSPData, SedModel`). Observation containers
@@ -79,6 +79,7 @@ __all__ = [
     # top-level entry points
     "fitSED",
     "read_result_h5",
+    "load_result_h5",
     "__version__",
     "__githash__",
 ]
