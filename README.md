@@ -2,7 +2,7 @@
 
 # Ceridwen
 
-**C**omprehensive **S**ED **E**stimation **R**outine **I**nvolving **D**ata-driven **WE**ight calculatio**N**s — a JAX-native, GPU-capable spectral energy distribution (SED) fitting package with variational-inference preconditioned Hamiltonian Monte Carlo and native redshift support.
+**C**omprehensive **S**ED **E**stimation **R**outine **I**nvolving **D**ata-driven **WE**ight calculatio**N**s: a JAX-native, GPU-capable spectral energy distribution (SED) fitting package with variational-inference preconditioned Hamiltonian Monte Carlo and native redshift support.
 
 ---
 
@@ -25,9 +25,8 @@ Everything is written against `jax.numpy` with `@jit` and `vmap`/`pmap` in mind:
 
 ## Installation
 
-**Requires Python 3.11.** Nested sampling depends on the official `blackjax`
-(its merged NSS), which needs Python 3.11. Create the environment with exactly
-that version:
+**Requires Python 3.11.** The pinned `blackjax` (nested sampling) insists on
+it. Create the environment with exactly that version:
 
 ```bash
 conda create -n ceridwen python=3.11 -y
@@ -39,13 +38,13 @@ pip install .
 ```
 
 **GPU is the default.** On Linux this installs the CUDA 12 JAX wheels (the
-CUDA libraries are bundled — an NVIDIA driver >= 525 is the only system
-requirement, no toolkit install), and JAX uses the GPU automatically. No
-flags, no separate install. If the machine has no usable NVIDIA GPU, the
-same install falls back to CPU at import time — one warning, identical
-results, just slower. macOS and native Windows have no CUDA wheels and get
-the CPU build automatically; on a Windows machine with an NVIDIA GPU,
-install inside WSL2. Every `fitSED` call prints which backend it is on:
+CUDA libraries are bundled; the only system requirement is an NVIDIA driver
+>= 525, no toolkit install), and JAX uses the GPU automatically. No flags,
+no separate install. A machine without a usable NVIDIA GPU gets the same
+install and falls back to CPU at import time: one warning, identical
+results, more patience. macOS and native Windows have no CUDA wheels and
+get the CPU build automatically; on a Windows machine with an NVIDIA GPU,
+install inside WSL2. Every `fitSED` call prints which backend it landed on:
 
 ```
 ceridwen.fitSED
@@ -67,7 +66,7 @@ CERIDWEN uses [FSPS](https://github.com/cconroy20/fsps) in two ways. The
 0). Separately, the FSPS **data files** supply the CLOUDY nebular grids and
 Draine & Li dust-emission templates: when `add_neb=True` or
 `add_dust_emission=True`, **CERIDWEN reads those files directly from
-`$SPS_HOME`** — FSPS itself is not run at fit time, it just provides the data.
+`$SPS_HOME`**; FSPS itself is not run at fit time, it just provides the data.
 
 FSPS is **not** a pure-Python wheel: it needs a Fortran compiler and a clone of
 the FSPS data files, and `python-fsps` reads the `$SPS_HOME` environment
@@ -92,7 +91,7 @@ python -m pip install "fsps>=0.4.4"
 
 **Make `$SPS_HOME` permanent.** Step 2 above only sets it for the current
 terminal; `python-fsps` needs it in *every* session. Add it to your shell
-startup file so it persists (use the **same path you chose in step 2** — the
+startup file so it persists (use the **same path you chose in step 2**; the
 `$HOME/fsps` below is just the example default):
 
 ```bash
@@ -105,7 +104,7 @@ echo 'export SPS_HOME="$HOME/fsps"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-Open a **new** terminal and run `echo $SPS_HOME`, it should print the path. If
+Open a **new** terminal and run `echo $SPS_HOME`; it should print the path. If
 it's blank, the line went into the wrong file (check which shell you use with
 `echo $SHELL`). Then confirm the whole setup with:
 
@@ -113,23 +112,22 @@ it's blank, the line went into the wrong file (check which shell you use with
 python -m ceridwen.check
 ```
 
-FSPS builds your SSP grid (you control the isochrones, spectral library, and
-IMF) and supplies the nebular / dust-emission data. With it set up, next stop:
+With FSPS set up, next stop:
 [`examples/quickstart.py`](examples/quickstart.py), a complete runnable fit.
 
 ---
 
 ## Quick start
 
-### Step 0 — build the SSP grid (once per FSPS configuration)
+### Step 0: build the SSP grid (once per FSPS configuration)
 
 Ceridwen's forward model consumes an HDF5 cache of SSP spectra precomputed
-with FSPS. You build it yourself (you control the isochrones, spectral library,
-and IMF); it takes a few minutes on CPU and only has to be done once. You can use it
-for all fits that you want to base on the same IMF and libraries.
+with FSPS. You build it yourself, so you control the isochrones, spectral
+library, and IMF. It takes a few minutes on CPU (about one coffee) and then
+serves every fit that shares those choices.
 
-This block is safe to rerun — it loads the cached grid if one exists at
-`SSP_FILE` and only builds (needs FSPS + `$SPS_HOME`) when it doesn't:
+This block is safe to rerun: it loads the cached grid if one exists at
+`SSP_FILE` and only builds (which needs FSPS and `$SPS_HOME`) when it doesn't:
 
 ```python
 import pathlib
@@ -150,20 +148,20 @@ ssp.display()    # confirm library / IMF / grid coverage before fitting
 ```
 
 If you change the FSPS configuration (a different IMF, say), point `SSP_FILE`
-at a new filename — the cache is keyed by nothing but its path, so reusing an
-old file with new intentions silently gives you the old grid (`display()`
-prints the provenance, so a glance catches it).
+at a new filename: the cache is keyed by nothing but its path, so an old file
+with new intentions silently gives you the old grid. `display()` prints the
+provenance, so a glance catches it.
 
-The grid records its **provenance** (isochrone/spectral library, `imf_type`,
-FSPS version, build kwargs) into the HDF5 file, and `CSPBasis` reads the
-isochrone library back automatically — **you never set `isoc_type` by hand**,
+The grid records that **provenance** (isochrone/spectral library, `imf_type`,
+FSPS version, build kwargs) in the HDF5 file, and `CSPBasis` reads the
+isochrone library back automatically: **you never set `isoc_type` by hand**,
 and the nebular CLOUDY grid always matches the SSP isochrones.
 
-### Step 1 — fit a galaxy end-to-end
+### Step 1: fit a galaxy end-to-end
 
 A self-contained, copy-paste-runnable joint fit. It makes a mock galaxy from
 known truth **with the same forward model it then fits**, so the data is always
-consistent with the SSP grid you built and the fit recovers the truth — no data
+consistent with the SSP grid you built and the fit recovers the truth. No data
 files needed.
 
 ```python
@@ -197,7 +195,7 @@ if SSP_FILE.is_file():
     print(f"[grid] loading cached SSP grid: {SSP_FILE}")
     ssp = SSPData.load(str(SSP_FILE))
 else:
-    print(f"[grid] no cache found — building with FSPS (a few minutes) ...")
+    print(f"[grid] no cache found, building with FSPS (a few minutes) ...")
     ssp = SSPData.from_fsps(imf_type=1, save_to=str(SSP_FILE))
 ssp.display()                                      # grid summary + provenance
 
@@ -212,7 +210,7 @@ sfh_times_yr = np.array(csp.sfh_times)
 def logsfr_to_sfh(free_theta, _t=sfh_times_yr):
     return logsfr_ratios_to_sfh(free_theta["logsfr_ratios"], sfh_times_yr=_t)
 
-# One SedModel builder for BOTH the mock and the fit — this is what keeps them
+# One SedModel builder for BOTH the mock and the fit: this is what keeps them
 # consistent. Observations carry flux/uncertainty; empty ones (filters and
 # wavelengths only) are enough to generate the mock.
 def build_model(observations):
@@ -220,7 +218,7 @@ def build_model(observations):
         csp, observations=observations,
         priors={
             # Z is log10 ABSOLUTE metallicity (= ssp_lgmet), NOT log10(Z/Zsun);
-            # solar ~ -1.85. Keep priors inside the grid — print the range with
+            # solar ~ -1.85. Keep priors inside the grid; print the range with
             #     print(float(csp.zmet.min()), float(csp.zmet.max()))
             # and csp.check_param_ranges() warns about out-of-grid values.
             "Z": Uniform(low=-3.9, high=-1.45),
@@ -233,8 +231,13 @@ def build_model(observations):
         free_param_init={"logsfr_ratios": jnp.zeros(5), "logmass": jnp.array([10.0])},
         zred=ZRED,
     )
+```
 
-# (1) Make the mock: predict TRUTH through the model, add Gaussian noise.
+Next, generate the mock: push TRUTH through the forward model and add Gaussian
+noise. The generator model carries *empty* observations (filters and
+wavelengths only), which is all `predict` needs.
+
+```python
 print("[mock] building the generator model (empty observations) ...")
 gen = build_model([
     Photometry(filters=FILTERS, name="phot"),
@@ -242,7 +245,7 @@ gen = build_model([
 ])
 print("[mock] predicting TRUTH through the forward model ...")
 truth_pred = gen.predict(TRUTH)                    # AB maggies (phot), F_nu (spec)
-# Sanity check: the photometry is absolutely calibrated — the fixed ZRED is
+# Sanity check: the photometry is absolutely calibrated. The fixed ZRED is
 # injected into the forward model by SedModel.predict, so a z=0.1,
 # logmass=10.5 galaxy lands at ~1e-7 maggies (AB ~ 17-18) in the bright bands.
 mag = np.asarray(truth_pred["phot"]); mag_unc = mag / 20.0
@@ -252,8 +255,12 @@ print(f"[mock] photometry: {mag.min():.3e} .. {mag.max():.3e} maggies "
 mag_obs = mag + mag_unc * rng.standard_normal(mag.shape)
 sfx_obs = sfx + sfx_unc * rng.standard_normal(sfx.shape)
 print("[mock] noise added (SNR 20 phot / 25 spec)")
+```
 
-# (2) Observations to FIT (now carrying the mock data), then the fit model.
+Finally, wrap the noisy mock in observation containers and build the model to
+fit: same `build_model`, now with data attached.
+
+```python
 print("[obs] building phot ...")
 phot = Photometry(filters=FILTERS, flux=mag_obs, uncertainty=mag_unc, name="phot")
 print("[obs] building spec ...")
@@ -262,68 +269,16 @@ spec = Spectrum(wavelength=SPEC_WAVE, flux=sfx_obs, uncertainty=sfx_unc,
 phot.display(); spec.display()                     # sanity-check the observations
 print("[model] building the fit model ...")
 model = build_model([phot, spec])
-print("[model] ready — handing over to fitSED")
+print("[model] ready, handing over to fitSED")
 ```
 
 Now pick a sampler. Both fill the same `result` object, so everything after the
 fit (reporting, plotting) is identical.
 
-#### Option A — VI-preconditioned NUTS
-
-VI learns a full-rank Gaussian transport map; NUTS then samples in the whitened
-space (Hoffman et al. 2019).
-
-```python
-result = fitSED(
-    model,
-    sampler="nuts",
-    vi="tril",                               # "iaf" for NeuTra neural transport
-    sampler_kwargs={"num_chains": 4, "num_samples": 2000},
-    rng_key=jax.random.PRNGKey(42),
-    output_dir="./my_fit",
-)
-
-# Recovered vs injected truth.
-for p in ("Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index"):
-    samples = np.asarray(result.samples[p]).ravel()
-    print(f"{p:>20}: true {float(TRUTH[p][0]):+7.3f}   "
-          f"fit {np.median(samples):+7.3f} +/- {np.std(samples):.3f}")
-
-# Quick-look plots — VI loss, a corner subset, and data vs model.
-import matplotlib.pyplot as plt
-from anesthetic import MCMCSamples
-
-plt.figure(); plt.plot(result.raw["vi_losses"]); plt.yscale("log")   # -ELBO
-plt.xlabel("VI iteration"); plt.ylabel(r"$-\mathrm{ELBO}$")
-
-subset = ["logmass", "Z", "diffuse_tau_kc"]
-truth  = {p: float(TRUTH[p][0]) for p in subset}
-data = np.column_stack([np.asarray(result.samples[p]).ravel() for p in subset])
-axes = MCMCSamples(data=data, columns=subset).plot_2d(subset)
-for yp in subset:                     # overlay injected truth as red dashed lines
-    for xp in subset:
-        ax = axes.loc[yp, xp]
-        if ax is None:
-            continue
-        ax.axvline(truth[xp], color="red", ls="--", lw=1)
-        if yp != xp:
-            ax.axhline(truth[yp], color="red", ls="--", lw=1)
-
-theta_med = {p: jnp.atleast_1d(jnp.median(jnp.asarray(v), axis=0))
-             for p, v in result.samples.items()}
-pred = model.predict(theta_med)                        # AB maggies, keyed by obs name
-plt.figure()
-plt.errorbar(phot.wave_eff, phot.flux, yerr=phot.uncertainty, fmt="o", label="data")
-plt.plot(phot.wave_eff, np.asarray(pred["phot"]), "s", label="model")
-plt.xlabel(r"$\lambda_{\rm eff}$ [Å]"); plt.ylabel("flux [maggies]")
-plt.yscale("log"); plt.legend(); plt.show()
-```
-
-#### Option B — nested sampling
+#### Option A: nested sampling
 
 Gradient-free, and also returns the Bayesian evidence (log Z) for model
-comparison. The truth table and the data-vs-model plot from Option A work
-unchanged — only the sampler call and the (importance-weighted) corner differ.
+comparison.
 
 ```python
 result = fitSED(
@@ -335,9 +290,65 @@ result = fitSED(
 )
 print(f"log Z = {result.log_evidence:.2f} +/- {result.log_evidence_err:.2f}")
 
-# Nested samples carry importance weights — anesthetic applies them.
+# Recovered vs injected truth.
+for p in ("Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index"):
+    samples = np.asarray(result.samples[p]).ravel()
+    print(f"{p:>20}: true {float(TRUTH[p][0]):+7.3f}   "
+          f"fit {np.median(samples):+7.3f} +/- {np.std(samples):.3f}")
+
+# Corner plot. Nested samples carry importance weights; anesthetic applies them.
+subset = ["logmass", "Z", "diffuse_tau_kc"]
+truth  = {p: float(TRUTH[p][0]) for p in subset}
+axes = result.to_anesthetic().plot_2d(subset)
+for yp in subset:                     # overlay injected truth as red dashed lines
+    for xp in subset:
+        ax = axes.loc[yp, xp]
+        if ax is None:
+            continue
+        ax.axvline(truth[xp], color="red", ls="--", lw=1)
+        if yp != xp:
+            ax.axhline(truth[yp], color="red", ls="--", lw=1)
+
+# Data vs model at the posterior median.
+import matplotlib.pyplot as plt
+theta_med = {p: jnp.atleast_1d(jnp.median(jnp.asarray(v), axis=0))
+             for p, v in result.samples.items()}
+pred = model.predict(theta_med)                        # AB maggies, keyed by obs name
+plt.figure()
+plt.errorbar(phot.wave_eff, phot.flux, yerr=phot.uncertainty, fmt="o", label="data")
+plt.plot(phot.wave_eff, np.asarray(pred["phot"]), "s", label="model")
+plt.xlabel(r"$\lambda_{\rm eff}$ [Å]"); plt.ylabel("flux [maggies]")
+plt.yscale("log"); plt.legend(); plt.show()
+```
+
+#### Option B: VI-preconditioned NUTS
+
+VI learns a full-rank Gaussian transport map; NUTS then samples in the whitened
+space (Hoffman et al. 2019). The truth table and the data-vs-model plot from
+Option A work unchanged; only the sampler call, the VI-loss curve, and the
+(unweighted) corner differ.
+
+```python
+result = fitSED(
+    model,
+    sampler="nuts",
+    vi="tril",                               # "iaf" for NeuTra neural transport
+    sampler_kwargs={"num_chains": 4, "num_samples": 2000},
+    rng_key=jax.random.PRNGKey(42),
+    output_dir="./my_fit",
+)
+
+# VI convergence: -ELBO should drop and then plateau.
+import matplotlib.pyplot as plt
+plt.figure(); plt.plot(result.raw["vi_losses"]); plt.yscale("log")   # -ELBO
+plt.xlabel("VI iteration"); plt.ylabel(r"$-\mathrm{ELBO}$")
+
+# Corner plot: NUTS samples are unweighted, so plain MCMCSamples works.
 # plot_2d returns the same axes grid, so overlay the truth exactly as in Option A.
-axes = result.to_anesthetic().plot_2d(["logmass", "Z", "diffuse_tau_kc"])
+from anesthetic import MCMCSamples
+subset = ["logmass", "Z", "diffuse_tau_kc"]
+data = np.column_stack([np.asarray(result.samples[p]).ravel() for p in subset])
+axes = MCMCSamples(data=data, columns=subset).plot_2d(subset)
 ```
 
 The `result` object has posterior samples keyed by parameter name, plus per-phase
@@ -348,11 +359,12 @@ For **nebular emission lines** (a `Lines` container, `add_neb=True`, which needs
 the CLOUDY grids at `$SPS_HOME`), see the [tutorial](docs/tutorial.md).
 
 
-### Run a bundled example 
+### Run a bundled example
 
-The fastest way to confirm your whole setup works end to end. It builds an SSP
-grid from FSPS on first run (and reuses it afterwards), generates mock UV-to-IR
-photometry, fits it, and prints recovered-vs-true parameters plus a corner plot
+The fastest way to confirm your whole setup works end to end. It runs the two
+steps above as one script: builds an SSP grid from FSPS on first run (and
+reuses it afterwards), generates mock UV-to-IR photometry, fits it, and prints
+recovered-vs-true parameters plus a corner plot
 (`examples/quickstart_corner.png`):
 
 ```bash
@@ -362,8 +374,7 @@ python examples/quickstart.py
 If it prints a recovered-vs-true table, your setup works. `logmass` recovers the
 injected truth; `Z` and the dust parameters are weakly constrained by broadband
 photometry alone, so their posteriors are broad (add spectroscopy or emission
-lines to pin them down). The two steps below are what the example does
-internally, shown so you can adapt them to your own data.
+lines to pin them down).
 
 ---
 
@@ -371,11 +382,11 @@ internally, shown so you can adapt them to your own data.
 
 - **Run `python -m ceridwen.check` first.** It reports missing dependencies, an
   unset or wrong `$SPS_HOME`, a too-old `sedpy-jax`, and whether nested sampling
-  is available — each with the fix.
-- **Install needs Python 3.11** (see Installation); nested sampling pins the
-  official `blackjax` (its merged NSS), which requires Python 3.11.
-- **Common scientific pitfalls** — the metallicity-units trap, silently-ignored
-  `theta` typos, the lookback-time convention — are documented in
+  is available, each with the fix.
+- **Install needs Python 3.11** (see Installation); the pinned `blackjax`
+  requires it.
+- **Common scientific pitfalls** (the metallicity-units trap, silently-ignored
+  `theta` typos, the lookback-time convention) are documented in
   [`GOTCHAS.md`](GOTCHAS.md). If you're letting an AI assistant help you use
   ceridwen, point it at [`AGENTS.md`](AGENTS.md).
 
@@ -400,19 +411,18 @@ internally, shown so you can adapt them to your own data.
 
 ## References
 
-- **Hoffman et al. 2019**, *NeuTra-lizing Bad Geometry in HMC Using Neural Transport*, [arXiv:1903.03704](https://arxiv.org/abs/1903.03704) — VI-preconditioned NUTS (`ceridwen.sampler.vi`)
-- **Madau 1995**, ApJ 441, 18 — IGM transmission (`ceridwen.igm.Madau1995`)
-- **Planck Collaboration 2020**, A&A 641, A6 — default cosmology (`ceridwen.cosmology`)
-- **Kriek & Conroy 2013**, ApJ 775, L16 — diffuse dust attenuation shape (`ceridwen.dust`)
-- **Conroy, Gunn & White 2009** — FSPS, upstream SSP provider
+- **Hoffman et al. 2019**, *NeuTra-lizing Bad Geometry in HMC Using Neural Transport*, [arXiv:1903.03704](https://arxiv.org/abs/1903.03704) (VI-preconditioned NUTS, `ceridwen.sampler.vi`)
+- **Madau 1995**, ApJ 441, 18 (IGM transmission, `ceridwen.igm.Madau1995`)
+- **Planck Collaboration 2020**, A&A 641, A6 (default cosmology, `ceridwen.cosmology`)
+- **Kriek & Conroy 2013**, ApJ 775, L16 (diffuse dust attenuation shape, `ceridwen.dust`)
+- **Conroy, Gunn & White 2009** (FSPS, upstream SSP provider)
 
 ---
 
 ## Related projects
 
-- [sedpy_jax](https://github.com/Espe13/sedpy_jax) — JAX-compatible rewrite of [sedpy](https://github.com/bd-j/sedpy) by Benjamin D. Johnson; used by ceridwen for filter convolutions and smoothing.
+- [sedpy_jax](https://github.com/Espe13/sedpy_jax): a JAX-compatible rewrite of [sedpy](https://github.com/bd-j/sedpy) by Benjamin D. Johnson; used by ceridwen for filter convolutions and smoothing.
 
 ---
 
-Maintainer: [Amanda Stoffers](https://www.amanda-stoffers.de), Kavli Institute for Cosmology, University of Cambridge — `aas208@cam.ac.uk`
-
+Maintainer: [Amanda Stoffers](https://www.amanda-stoffers.de), Kavli Institute for Cosmology, University of Cambridge, `aas208@cam.ac.uk`
