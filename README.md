@@ -128,18 +128,31 @@ with FSPS. You build it yourself (you control the isochrones, spectral library,
 and IMF); it takes a few minutes on CPU and only has to be done once. You can use it
 for all fits that you want to base on the same IMF and libraries.
 
+This block is safe to rerun — it loads the cached grid if one exists at
+`SSP_FILE` and only builds (needs FSPS + `$SPS_HOME`) when it doesn't:
+
 ```python
+import pathlib
 from ceridwen import SSPData
 
-# Generate + cache. from_fsps accepts ONLY the kwargs that define the stellar
-# library / IMF (imf_type and its parameters, isochrone-phase knobs like
-# tpagb_norm_type). Anything the forward model applies itself (dust, SFH,
-# nebular emission, IGM, redshift, or a fixed metallicity) is rejected.
-ssp = SSPData.from_fsps(imf_type=1, save_to="ssp_data.h5")
+SSP_FILE = pathlib.Path("ssp_data.h5")
 
-# Subsequent runs just reload the cache:
-# ssp = SSPData.load("ssp_data.h5")
+if SSP_FILE.is_file():
+    ssp = SSPData.load(str(SSP_FILE))
+else:
+    # from_fsps accepts ONLY the kwargs that define the stellar
+    # library / IMF (imf_type and its parameters, isochrone-phase knobs like
+    # tpagb_norm_type). Anything the forward model applies itself (dust, SFH,
+    # nebular emission, IGM, redshift, or a fixed metallicity) is rejected.
+    ssp = SSPData.from_fsps(imf_type=1, save_to=str(SSP_FILE))
+
+ssp.display()    # confirm library / IMF / grid coverage before fitting
 ```
+
+If you change the FSPS configuration (a different IMF, say), point `SSP_FILE`
+at a new filename — the cache is keyed by nothing but its path, so reusing an
+old file with new intentions silently gives you the old grid (`display()`
+prints the provenance, so a glance catches it).
 
 The grid records its **provenance** (isochrone/spectral library, `imf_type`,
 FSPS version, build kwargs) into the HDF5 file, and `CSPBasis` reads the
@@ -175,13 +188,24 @@ TRUTH = {                                          # parameters to inject and re
     "diffuse_dust_index": jnp.array([-0.7]),
 }
 
-# SSP grid from Step 0. lookback_time is the static SFH node grid (Gyr,
-# increasing, index 0 = today, >= 2 nodes; oldest node < age of universe at ZRED).
-ssp = SSPData.load("ssp_data.h5")
+# SSP grid: load the Step 0 cache, or build it on first run (needs FSPS).
+# lookback_time is the static SFH node grid (Gyr, increasing, index 0 = today,
+# >= 2 nodes; oldest node < age of universe at ZRED).
+import pathlib
+SSP_FILE = pathlib.Path("ssp_data.h5")
+if SSP_FILE.is_file():
+    print(f"[grid] loading cached SSP grid: {SSP_FILE}")
+    ssp = SSPData.load(str(SSP_FILE))
+else:
+    print(f"[grid] no cache found — building with FSPS (a few minutes) ...")
+    ssp = SSPData.from_fsps(imf_type=1, save_to=str(SSP_FILE))
 ssp.display()                                      # grid summary + provenance
+
+print("[csp] building the composite-stellar-population basis ...")
 csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6),
                zh_const=True, sfh_interp="step",
                add_dust=False, add_diffuse_dust=True, add_neb=False, verbose=False)
+print("[csp] done")
 
 # SFH is sampled as logsfr_ratios (Prospector convention) -> per-node SFR.
 sfh_times_yr = np.array(csp.sfh_times)
@@ -211,25 +235,34 @@ def build_model(observations):
     )
 
 # (1) Make the mock: predict TRUTH through the model, add Gaussian noise.
+print("[mock] building the generator model (empty observations) ...")
 gen = build_model([
     Photometry(filters=FILTERS, name="phot"),
     Spectrum(wavelength=SPEC_WAVE, resolution=150.0, smoothtype="vel", name="spec"),
 ])
+print("[mock] predicting TRUTH through the forward model ...")
 truth_pred = gen.predict(TRUTH)                    # AB maggies (phot), F_nu (spec)
 # Sanity check: the photometry is absolutely calibrated — the fixed ZRED is
 # injected into the forward model by SedModel.predict, so a z=0.1,
 # logmass=10.5 galaxy lands at ~1e-7 maggies (AB ~ 17-18) in the bright bands.
 mag = np.asarray(truth_pred["phot"]); mag_unc = mag / 20.0
 sfx = np.asarray(truth_pred["spec"]); sfx_unc = np.abs(sfx) / 25.0
+print(f"[mock] photometry: {mag.min():.3e} .. {mag.max():.3e} maggies "
+      f"(expect bright bands ~1e-7, AB ~ 17-18)")
 mag_obs = mag + mag_unc * rng.standard_normal(mag.shape)
 sfx_obs = sfx + sfx_unc * rng.standard_normal(sfx.shape)
+print("[mock] noise added (SNR 20 phot / 25 spec)")
 
 # (2) Observations to FIT (now carrying the mock data), then the fit model.
+print("[obs] building phot ...")
 phot = Photometry(filters=FILTERS, flux=mag_obs, uncertainty=mag_unc, name="phot")
+print("[obs] building spec ...")
 spec = Spectrum(wavelength=SPEC_WAVE, flux=sfx_obs, uncertainty=sfx_unc,
                 resolution=150.0, smoothtype="vel", name="spec")
 phot.display(); spec.display()                     # sanity-check the observations
+print("[model] building the fit model ...")
 model = build_model([phot, spec])
+print("[model] ready — handing over to fitSED")
 ```
 
 Now pick a sampler. Both fill the same `result` object, so everything after the
