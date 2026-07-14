@@ -1,0 +1,847 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="JAX-native, GPU-capable spectral energy distribution (SED) fitting">
+      
+      
+      
+        <link rel="canonical" href="https://espe13.github.io/ceridwen/tutorial/">
+      
+      
+        <link rel="prev" href="../quickstart/">
+      
+      
+        <link rel="next" href="../conventions/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Tutorial: joint fit - CERIDWEN</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#tutorial-fitting-photometry-spectroscopy-and-lines-jointly" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="CERIDWEN" class="md-header__button md-logo" aria-label="CERIDWEN" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CERIDWEN
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Tutorial: joint fit
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Espe13/ceridwen" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Espe13/ceridwen
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="CERIDWEN" class="md-nav__button md-logo" aria-label="CERIDWEN" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CERIDWEN
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Espe13/ceridwen" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Espe13/ceridwen
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: joint fit
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: joint fit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-build-the-forward-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Build the forward model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-a-photometry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. (a) Photometry
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-b-spectrum" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. (b) Spectrum
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-c-emission-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. (c) Emission lines
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-priors-and-the-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Priors and the model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-fit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Fit
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-posterior-and-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Posterior and diagnostics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#consistency-checklist-for-real-joint-fits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consistency checklist for real joint fits
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conventions & gotchas
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="tutorial-fitting-photometry-spectroscopy-and-lines-jointly">Tutorial: fitting photometry, spectroscopy and lines jointly<a class="headerlink" href="#tutorial-fitting-photometry-spectroscopy-and-lines-jointly" title="Permanent link">&para;</a></h1>
+<p>CERIDWEN treats the three observation types uniformly: broadband <strong>photometry</strong>,
+a resolved <strong>spectrum</strong>, and <strong>emission-line</strong> fluxes. Each is a small container
+that knows how to project the model spectrum onto its own data space, and the
+joint likelihood is the sum of their χ² contributions. You can fit any one of
+them, or all three together, with no change to the model or sampler.</p>
+<p>This tutorial builds one of each and fits them jointly. Replace the mock arrays
+with your own data.</p>
+<div class="admonition tip">
+<p class="admonition-title">Runnable notebook</p>
+<p>A notebook version of this tutorial is in the repository at
+<a href="https://github.com/Espe13/ceridwen/blob/main/examples/tutorial_joint_fit.ipynb"><code>examples/tutorial_joint_fit.ipynb</code></a>.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Before you start</p>
+<p>Read <strong><a href="../conventions/">Conventions &amp; gotchas</a></strong>, especially that <code>Z</code> is
+log10 <em>absolute</em> metallicity and that <code>lookback_time</code> index 0 is <em>today</em>.
+Make sure FSPS and <code>$SPS_HOME</code> are set up (<a href="../installation/">Installation</a>);
+emission lines and nebular continuum need the CLOUDY grids from FSPS.</p>
+</div>
+<h2 id="1-build-the-forward-model">1. Build the forward model<a class="headerlink" href="#1-build-the-forward-model" title="Permanent link">&para;</a></h2>
+<p>Lines and nebular continuum require <code>add_neb=True</code>. We also enable diffuse and
+birth-cloud dust here.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">jax</span><span class="o">,</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span><span class="p">,</span> <span class="n">CSPBasis</span><span class="p">,</span> <span class="n">SedModel</span><span class="p">,</span> <span class="n">fitSED</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.observation</span><span class="w"> </span><span class="kn">import</span> <span class="n">Photometry</span><span class="p">,</span> <span class="n">Spectrum</span><span class="p">,</span> <span class="n">Lines</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.priors</span><span class="w"> </span><span class="kn">import</span> <span class="n">Uniform</span><span class="p">,</span> <span class="n">ClippedNormal</span><span class="p">,</span> <span class="n">StudentT</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">logsfr_ratios_to_sfh</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;ssp_data.h5&quot;</span><span class="p">)</span>          <span class="c1"># built once via SSPData.from_fsps(...)</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># The grid records its isochrone library; CSPBasis reads it automatically,</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># so isoc_type never needs to be passed in init_neb_params.</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">ZRED</span> <span class="o">=</span> <span class="mf">0.5</span>                                  <span class="c1"># spectroscopic redshift of the galaxy</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="n">ssp</span><span class="p">,</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">add_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_diffuse_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>   <span class="c1"># birth-cloud + diffuse attenuation</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="n">add_neb</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                           <span class="c1"># nebular continuum + lines (needs $SPS_HOME)</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="n">add_igm</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                           <span class="c1"># Madau (1995), auto-scales with zred</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>    <span class="c1"># sps_home defaults to $SPS_HOME</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="p">)</span>
+</code></pre></div>
+<h2 id="2-a-photometry">2. (a) Photometry<a class="headerlink" href="#2-a-photometry" title="Permanent link">&para;</a></h2>
+<p>Broadband fluxes in <strong>AB maggies</strong>, with filter names resolved from the
+<code>sedpy_jax</code> library. Photometry captures the full aperture, so it sees the
+intrinsic (unscaled) line + continuum flux.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># If your catalogue is in nJy (common for JWST), convert to maggies and apply a</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># small error floor (here 5%), as the JADES pipeline does:</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">flux_nJy</span><span class="p">,</span> <span class="n">unc_nJy</span> <span class="o">=</span> <span class="n">my_phot_nJy</span><span class="p">,</span> <span class="n">my_phot_unc_nJy</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">unc_nJy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">unc_nJy</span> <span class="o">/</span> <span class="n">flux_nJy</span> <span class="o">&gt;</span> <span class="mf">0.05</span><span class="p">,</span> <span class="n">unc_nJy</span><span class="p">,</span> <span class="mf">0.05</span> <span class="o">*</span> <span class="n">flux_nJy</span><span class="p">)</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">phot</span> <span class="o">=</span> <span class="n">Photometry</span><span class="p">(</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">filters</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;jwst_f090w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f115w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f150w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f200w&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>             <span class="s2">&quot;jwst_f277w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f356w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f444w&quot;</span><span class="p">],</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">flux</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">flux_nJy</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1e-9</span> <span class="o">/</span> <span class="mf">3631.0</span><span class="p">,</span>        <span class="c1"># nJy -&gt; AB maggies</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">uncertainty</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">unc_nJy</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1e-9</span> <span class="o">/</span> <span class="mf">3631.0</span><span class="p">,</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;phot&quot;</span><span class="p">,</span>                    <span class="c1"># the key this observation is reported under</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="p">)</span>
+</code></pre></div>
+<p>Optional: <code>mask=</code> (bool per band, True = used) and <code>upper_limit=</code> (bool per band;
+non-detections enter as one-sided χ²).</p>
+<h2 id="3-b-spectrum">3. (b) Spectrum<a class="headerlink" href="#3-b-spectrum" title="Permanent link">&para;</a></h2>
+<p>A densely-sampled spectrum. Pass the <strong>observed-frame, vacuum</strong> wavelength grid
+in Å (the pixel wavelengths as delivered by the instrument, since the forward
+model redshifts the model spectrum by <code>(1 + zred)</code> onto these pixels; at
+<code>zred = 0</code> observed and rest frame coincide) and flux in <code>F_ν</code> (same system as
+the model).
+Set <code>resolution</code> + <code>smoothtype</code> to have the forward model apply instrumental
+broadening.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">spec</span> <span class="o">=</span> <span class="n">Spectrum</span><span class="p">(</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">wavelength</span><span class="o">=</span><span class="n">my_obs_wave_aa</span><span class="p">,</span>      <span class="c1"># Å, vacuum, OBSERVED frame, shape (n_pix,)</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">flux</span><span class="o">=</span><span class="n">my_spec_fnu</span><span class="p">,</span>               <span class="c1"># F_nu per pixel</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">uncertainty</span><span class="o">=</span><span class="n">my_spec_unc</span><span class="p">,</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">resolution</span><span class="o">=</span><span class="mf">120.0</span><span class="p">,</span>               <span class="c1"># see smoothtype for the unit</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">smoothtype</span><span class="o">=</span><span class="s2">&quot;vel&quot;</span><span class="p">,</span>               <span class="c1"># &quot;vel&quot; (km/s), &quot;R&quot;, &quot;lambda&quot; (Å), or &quot;lsf&quot;</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">inres</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>                      <span class="c1"># model library intrinsic resolution to deconvolve</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">noise_floor</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>               <span class="c1"># 1% multiplicative calibration floor (optional)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;spec&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="p">)</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1"># Optional: mask known emission lines from the *continuum* spectrum fit so they</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="c1"># do not double-count against the Lines object, redshifting line centres first.</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="n">spec</span><span class="o">.</span><span class="n">mask_lines</span><span class="p">([</span><span class="mf">4861.3</span><span class="p">,</span> <span class="mf">5006.8</span><span class="p">,</span> <span class="mf">6562.8</span><span class="p">],</span> <span class="n">dv</span><span class="o">=</span><span class="mf">500.0</span><span class="p">,</span> <span class="n">zred</span><span class="o">=</span><span class="n">ZRED</span><span class="p">)</span>
+</code></pre></div>
+<p>Other optional knobs: <code>calibration=</code> (per-pixel multiplicative flux-calibration
+vector), <code>sigma_losvd=</code> (galaxy velocity dispersion applied before instrumental
+smoothing), and <code>mask=</code>.</p>
+<h2 id="4-c-emission-lines">4. (c) Emission lines<a class="headerlink" href="#4-c-emission-lines" title="Permanent link">&para;</a></h2>
+<p>Integrated line fluxes. <code>line_ind</code> are <strong>1-based</strong> indices into FSPS's
+<code>emlines_info.dat</code>; <code>wavelength</code> are the vacuum rest wavelengths in Å.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Catalogue line fluxes are often quoted in 1e-20 erg s^-1 cm^-2; scale to</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="c1"># absolute CGS to match the model (adjust the factor to your catalogue).</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">LINE_UNIT</span> <span class="o">=</span> <span class="mf">1.0e-20</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">lines</span> <span class="o">=</span> <span class="n">Lines</span><span class="p">(</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">line_ind</span><span class="o">=</span><span class="p">[</span><span class="mi">59</span><span class="p">,</span> <span class="mi">62</span><span class="p">,</span> <span class="mi">63</span><span class="p">,</span> <span class="mi">71</span><span class="p">,</span> <span class="mi">72</span><span class="p">],</span>                         <span class="c1"># Hβ, [OIII]4959/5007, Hα, [NII]6583</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">line_names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Hbeta&quot;</span><span class="p">,</span> <span class="s2">&quot;[OIII]4959&quot;</span><span class="p">,</span> <span class="s2">&quot;[OIII]5007&quot;</span><span class="p">,</span> <span class="s2">&quot;Halpha&quot;</span><span class="p">,</span> <span class="s2">&quot;[NII]6583&quot;</span><span class="p">],</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">wavelength</span><span class="o">=</span><span class="p">[</span><span class="mf">4861.3</span><span class="p">,</span> <span class="mf">4958.9</span><span class="p">,</span> <span class="mf">5006.8</span><span class="p">,</span> <span class="mf">6562.8</span><span class="p">,</span> <span class="mf">6583.4</span><span class="p">],</span>   <span class="c1"># Å, vacuum rest</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">flux</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">my_line_flux</span><span class="p">)</span> <span class="o">*</span> <span class="n">LINE_UNIT</span><span class="p">,</span>             <span class="c1"># erg s^-1 cm^-2</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="n">uncertainty</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">my_line_unc</span><span class="p">)</span> <span class="o">*</span> <span class="n">LINE_UNIT</span><span class="p">,</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;lines&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="p">)</span>
+</code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Slit losses and <code>eline_scaling</code></p>
+<p>Photometry sees the full field of view, but slit spectroscopy and
+aperture-measured line fluxes lose flux. The model parameter <code>eline_scaling</code>
+is the fractional aperture correction applied to the <strong>slit</strong> spectra and
+lines (1.0 = no loss, 0.65 = lines at 65%). Add a prior on it (below) to
+marginalise over the aperture mismatch when fitting photometry together with
+a slit spectrum/lines.</p>
+</div>
+<h2 id="5-priors-and-the-model">5. Priors and the model<a class="headerlink" href="#5-priors-and-the-model" title="Permanent link">&para;</a></h2>
+<p>Collect the observations into a single list. Any subset is fine; use an empty
+list for a type you are not fitting. Then define priors for every free parameter.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">observations</span> <span class="o">=</span> <span class="p">[</span><span class="n">phot</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">lines</span><span class="p">]</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">priors</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="c1"># Stellar population. Z is log10 ABSOLUTE metallicity (grid ~[-4, -1.4]).</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="s2">&quot;Z&quot;</span><span class="p">:</span>                 <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=-</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">low</span><span class="o">=-</span><span class="mf">4.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=-</span><span class="mf">1.4</span><span class="p">),</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="s2">&quot;logmass&quot;</span><span class="p">:</span>           <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">7.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">12.5</span><span class="p">),</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">:</span>     <span class="n">StudentT</span><span class="p">(</span><span class="n">df</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">0.3</span><span class="p">),</span>   <span class="c1"># non-parametric SFH</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="c1"># Dust.</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="s2">&quot;diffuse_tau_kc&quot;</span><span class="p">:</span>    <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">low</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">4.0</span><span class="p">),</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="s2">&quot;diffuse_dust_index&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.4</span><span class="p">),</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>    <span class="s2">&quot;tau_pow&quot;</span><span class="p">:</span>           <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">low</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">4.0</span><span class="p">),</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>    <span class="s2">&quot;alpha_pow&quot;</span><span class="p">:</span>         <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">low</span><span class="o">=-</span><span class="mf">2.5</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.5</span><span class="p">),</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>    <span class="c1"># Nebular (required for the Lines / nebular continuum).</span>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>    <span class="s2">&quot;gas_logz&quot;</span><span class="p">:</span>          <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.5</span><span class="p">),</span>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>    <span class="s2">&quot;gas_logu&quot;</span><span class="p">:</span>          <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">4.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">),</span>
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>    <span class="c1"># Aperture correction for the slit spectrum + lines.</span>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>    <span class="s2">&quot;eline_scaling&quot;</span><span class="p">:</span>     <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">2.0</span><span class="p">),</span>
+<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="p">}</span>
+<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>
+<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="c1"># The non-parametric SFH is sampled as logsfr_ratios and turned into the per-bin</span>
+<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="c1"># sfh by a REGISTERED transform; this step is required for logsfr_ratios to work.</span>
+<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="n">sfh_times_yr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">csp</span><span class="o">.</span><span class="n">sfh_times</span><span class="p">)</span>
+<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="k">def</span><span class="w"> </span><span class="nf">logsfr_to_sfh</span><span class="p">(</span><span class="n">free_theta</span><span class="p">,</span> <span class="n">_t</span><span class="o">=</span><span class="n">sfh_times_yr</span><span class="p">):</span>
+<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>    <span class="k">return</span> <span class="n">logsfr_ratios_to_sfh</span><span class="p">(</span><span class="n">free_theta</span><span class="p">[</span><span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">],</span> <span class="n">sfh_times_yr</span><span class="o">=</span><span class="n">_t</span><span class="p">)</span>
+<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a>
+<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="n">N_RATIOS</span> <span class="o">=</span> <span class="mi">4</span>   <span class="c1"># number of SFH bins - 1</span>
+<a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a><span class="n">model</span> <span class="o">=</span> <span class="n">SedModel</span><span class="p">(</span>
+<a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a>    <span class="n">csp</span><span class="p">,</span>
+<a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a>    <span class="n">observations</span><span class="o">=</span><span class="n">observations</span><span class="p">,</span>
+<a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a>    <span class="n">priors</span><span class="o">=</span><span class="n">priors</span><span class="p">,</span>
+<a id="__codelineno-4-31" name="__codelineno-4-31" href="#__codelineno-4-31"></a>    <span class="n">transforms</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;sfh&quot;</span><span class="p">:</span> <span class="n">logsfr_to_sfh</span><span class="p">},</span>        <span class="c1"># REQUIRED for logsfr_ratios</span>
+<a id="__codelineno-4-32" name="__codelineno-4-32" href="#__codelineno-4-32"></a>    <span class="n">free_param_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">N_RATIOS</span><span class="p">),</span>
+<a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a>                     <span class="s2">&quot;logmass&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">10.0</span><span class="p">])},</span>
+<a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a>    <span class="n">zred</span><span class="o">=</span><span class="n">ZRED</span><span class="p">,</span>                                <span class="c1"># fixed spectroscopic redshift</span>
+<a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a><span class="p">)</span>
+<a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a>
+<a id="__codelineno-4-37" name="__codelineno-4-37" href="#__codelineno-4-37"></a><span class="c1"># Fixed knob not sampled here: the birth-cloud (Charlot &amp; Fall) slope.</span>
+<a id="__codelineno-4-38" name="__codelineno-4-38" href="#__codelineno-4-38"></a><span class="n">model</span><span class="o">.</span><span class="n">theta_init</span><span class="p">[</span><span class="s2">&quot;alpha_pow&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">1.0</span><span class="p">])</span>
+</code></pre></div>
+<p>To fit redshift instead of fixing it, omit <code>zred</code> and add a <code>"zred"</code> prior (and,
+for a non-parametric SFH, register a <code>"lookback_time"</code> transform so the SFH
+age-bin grid tracks the sampled redshift).</p>
+<h2 id="6-fit">6. Fit<a class="headerlink" href="#6-fit" title="Permanent link">&para;</a></h2>
+<p><code>fitSED</code> builds the joint likelihood automatically from <code>model.observations</code>
+(one Gaussian likelihood per observation, keyed by <code>name</code>) and writes an HDF5
+result.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">model</span><span class="p">,</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">observations</span><span class="p">,</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nested&quot;</span><span class="p">,</span>               <span class="c1"># or &quot;nuts&quot; (optionally vi=&quot;tril&quot;)</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;./joint_fit&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="p">)</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ln Z = </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> +/- </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence_err</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="7-posterior-and-diagnostics">7. Posterior and diagnostics<a class="headerlink" href="#7-posterior-and-diagnostics" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">ns</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">to_anesthetic</span><span class="p">()</span>                      <span class="c1"># nested-sampling posterior</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">post</span> <span class="o">=</span> <span class="n">ns</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="mi">2000</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;median logmass:&quot;</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">post</span><span class="p">[</span><span class="s2">&quot;logmass&quot;</span><span class="p">])))</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># Predicted data for any posterior point (keyed by observation name):</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="n">theta</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">([</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">post</span><span class="p">[</span><span class="n">k</span><span class="p">]))])</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>         <span class="p">(</span><span class="s2">&quot;Z&quot;</span><span class="p">,</span> <span class="s2">&quot;logmass&quot;</span><span class="p">,</span> <span class="s2">&quot;diffuse_tau_kc&quot;</span><span class="p">,</span> <span class="s2">&quot;diffuse_dust_index&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>          <span class="s2">&quot;tau_pow&quot;</span><span class="p">,</span> <span class="s2">&quot;alpha_pow&quot;</span><span class="p">,</span> <span class="s2">&quot;gas_logz&quot;</span><span class="p">,</span> <span class="s2">&quot;gas_logu&quot;</span><span class="p">,</span> <span class="s2">&quot;eline_scaling&quot;</span><span class="p">)}</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="n">theta</span><span class="p">[</span><span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">post</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;logsfr_ratios[</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">]))</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">4</span><span class="p">)])</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="n">pred</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>        <span class="c1"># {&quot;phot&quot;: maggies, &quot;spec&quot;: F_nu, &quot;lines&quot;: fluxes}</span>
+</code></pre></div>
+<p><code>result.samples</code> holds the posterior keyed by parameter name; the HDF5 file in
+<code>output_dir</code> stores the observations, priors, samples, and (for nested sampling)
+the log-evidence. See <code>examples/quickstart.py</code> for a complete photometry-only
+script that also builds a corner plot and a model-vs-data figure.</p>
+<h2 id="consistency-checklist-for-real-joint-fits">Consistency checklist for real joint fits<a class="headerlink" href="#consistency-checklist-for-real-joint-fits" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Flux systems must agree.</strong> Photometry (maggies), spectrum (<code>F_ν</code>) and line
+  fluxes (erg s⁻¹ cm⁻²) must be calibrated to the same physical normalisation
+  the model produces at <code>zred</code>. Inconsistent absolute calibration between data
+  sets is the most common cause of a "good χ² per set but bad joint fit".</li>
+<li><strong>Don't double-count lines.</strong> If you fit both a spectrum <em>and</em> the line
+  fluxes, mask the lines out of the continuum spectrum (<code>spec.mask_lines(...)</code>).</li>
+<li><strong>Aperture.</strong> Use <code>eline_scaling</code> (and, for the spectrum, <code>calibration</code>/
+  <code>noise_floor</code>) to absorb slit-vs-photometry aperture and flux-calibration
+  differences.</li>
+<li><strong>Know your frames.</strong> The spectrum's pixel grid is <strong>observed-frame</strong> vacuum
+  Å (the model is redshifted onto it); line-list wavelengths and
+  <code>mask_lines(...)</code> centres are <strong>rest-frame</strong> vacuum Å (redshifted internally
+  by <code>(1 + zred)</code>).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

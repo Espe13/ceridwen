@@ -10,8 +10,10 @@
       
       
       
+        <link rel="canonical" href="https://espe13.github.io/ceridwen/conventions/">
       
-        <link rel="prev" href="../quickstart/">
+      
+        <link rel="prev" href="../tutorial/">
       
       
         <link rel="next" href="../api/">
@@ -340,6 +342,33 @@
       
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: joint fit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
     
   
   
@@ -447,10 +476,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#theta-is-a-dict-typos-are-silently-ignored" class="md-nav__link">
+  <a href="#theta-is-a-dict-so-typos-are-silently-ignored" class="md-nav__link">
     <span class="md-ellipsis">
       
-        theta is a dict — typos are silently ignored
+        theta is a dict, so typos are silently ignored
       
     </span>
   </a>
@@ -524,27 +553,29 @@
 
 
 <h1 id="conventions-gotchas">Conventions &amp; gotchas<a class="headerlink" href="#conventions-gotchas" title="Permanent link">&para;</a></h1>
-<p>These are the conventions that most often cause silent mistakes. Read them before
-fitting real data. (The package also ships a fuller misuse guide in <code>GOTCHAS.md</code>.)</p>
+<p>A few conventions cause silent mistakes if you get them wrong. Read them before
+fitting real data. The repository also ships a fuller misuse guide in
+<code>GOTCHAS.md</code>.</p>
 <h2 id="metallicity-is-log10-of-absolute-z">Metallicity is log10 of ABSOLUTE Z<a class="headerlink" href="#metallicity-is-log10-of-absolute-z" title="Permanent link">&para;</a></h2>
-<p>The parameter <code>Z</code> (and <code>ssp_lgmet</code>) is <code>log10(Z)</code> in <strong>absolute</strong> units, <strong>not</strong>
-<code>log10(Z/Z☉)</code>. Solar is roughly <code>-1.85</code> (Z☉ ≈ 0.014), <strong>not</strong> <code>0.0</code>.</p>
-<p>The FSPS grid spans roughly <code>[-4.0, -1.4]</code>. Values outside it are <strong>silently
-clamped</strong> to the nearest grid edge, so a "solar" guess of <code>Z = 0.0</code> is off the
-grid and will be clamped.</p>
+<p>The parameter <code>Z</code> (and <code>ssp_lgmet</code>) is <code>log10(Z)</code> in <strong>absolute</strong> units, not
+<code>log10(Z/Z☉)</code>. Solar is roughly <code>-1.85</code> (Z☉ ≈ 0.014), not <code>0.0</code>.</p>
+<p>The FSPS grid spans roughly <code>[-4.0, -1.4]</code>. Values outside it are silently
+clamped to the nearest grid edge, so a "solar" guess of <code>Z = 0.0</code> is off the
+grid and gets clamped.</p>
 <div class="admonition danger">
 <p class="admonition-title">Common mistake</p>
-<p>Setting a prior like <code>Uniform(low=-2.5, high=0.2)</code> puts most of the mass off
-the grid. Use something like <code>ClippedNormal(mean=-2.0, low=-4.0, high=-1.4)</code>.
-Call <code>csp.check_param_ranges(theta)</code> or <code>python -m ceridwen.check</code> if unsure
-of your grid bounds.</p>
+<p>A prior like <code>Uniform(low=-2.5, high=0.2)</code> puts most of its mass off the
+grid. Use something like <code>ClippedNormal(mean=-2.0, low=-4.0, high=-1.4)</code>. If
+you are unsure of your grid bounds, print them with
+<code>print(float(csp.zmet.min()), float(csp.zmet.max()))</code>, or call
+<code>csp.check_param_ranges(theta)</code> to warn about out-of-grid values.</p>
 </div>
 <h2 id="lookback-time-increases-with-index-index-0-today">Lookback time increases with index (index 0 = today)<a class="headerlink" href="#lookback-time-increases-with-index-index-0-today" title="Permanent link">&para;</a></h2>
-<p><code>lookback_time</code> element 0 is the present; the last element is the oldest bin
-(≈ the age of the universe). The <code>sfh</code> array is indexed the same way. The old
-<em>decreasing</em> convention (<code>lookback = T_univ - t_grid</code>) is rejected at
-construction with a <code>ValueError</code> — don't reintroduce it, and don't reverse
-arrays "to be safe".</p>
+<p><code>lookback_time</code> element 0 is the present; the last element is the oldest bin,
+near the age of the universe. The <code>sfh</code> array is indexed the same way. The old
+decreasing convention (<code>lookback = T_univ - t_grid</code>) is rejected at construction
+with a <code>ValueError</code>, so do not reintroduce it, and do not reverse arrays "to be
+safe".</p>
 <h2 id="units">Units<a class="headerlink" href="#units" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -555,8 +586,16 @@ arrays "to be safe".</p>
 </thead>
 <tbody>
 <tr>
-<td>Wavelength (input)</td>
-<td>Å, vacuum, rest-frame</td>
+<td>Model wavelength grid (<code>csp.wave</code>)</td>
+<td>Å, vacuum, rest frame</td>
+</tr>
+<tr>
+<td><code>Spectrum</code> pixel wavelengths (data)</td>
+<td>Å, vacuum, <strong>observed frame</strong> (model is redshifted onto them)</td>
+</tr>
+<tr>
+<td><code>Lines</code> wavelengths / <code>mask_lines</code> centres</td>
+<td>Å, vacuum, <strong>rest frame</strong> (redshifted internally)</td>
 </tr>
 <tr>
 <td>Model spectra</td>
@@ -580,18 +619,18 @@ arrays "to be safe".</p>
 <h2 id="sfh-mass-normalisation">SFH mass normalisation<a class="headerlink" href="#sfh-mass-normalisation" title="Permanent link">&para;</a></h2>
 <p>The <code>logsfr_ratios_to_sfh</code> transform normalises the SFH so the trapezoidal
 integral of SFR over the lookback grid equals 1 M☉, and <code>logmass</code> sets the
-amplitude. Use the provided transform rather than hand-rolling it — getting this
+amplitude. Use the provided transform rather than hand-rolling it. Getting this
 wrong biases <code>logmass</code> by many dex.</p>
-<h2 id="theta-is-a-dict-typos-are-silently-ignored"><code>theta</code> is a dict — typos are silently ignored<a class="headerlink" href="#theta-is-a-dict-typos-are-silently-ignored" title="Permanent link">&para;</a></h2>
-<p>A mistyped key (<code>logmas</code> for <code>logmass</code>, <code>dust2</code> for <code>diffuse_tau_kc</code>, …) is
-simply not read, so the parameter takes its default. <code>predict()</code> /
-<code>get_spectrum_components()</code> emit a warning listing unrecognized keys at trace
-time (zero hot-path cost). Model-level free parameters like <code>logsfr_ratios</code> are
-registered automatically and do not warn.</p>
+<h2 id="theta-is-a-dict-so-typos-are-silently-ignored"><code>theta</code> is a dict, so typos are silently ignored<a class="headerlink" href="#theta-is-a-dict-so-typos-are-silently-ignored" title="Permanent link">&para;</a></h2>
+<p>A mistyped key (<code>logmas</code> for <code>logmass</code>, <code>dust2</code> for <code>diffuse_tau_kc</code>, and so on)
+is simply not read, so the parameter takes its default. <code>predict()</code> and
+<code>get_spectrum_components()</code> emit a warning listing unrecognised keys at trace
+time, at no cost to the hot path. Model-level free parameters like
+<code>logsfr_ratios</code> are registered automatically and do not warn.</p>
 <h2 id="fsps-at-runtime">FSPS at runtime<a class="headerlink" href="#fsps-at-runtime" title="Permanent link">&para;</a></h2>
 <p>With <code>add_neb=True</code> or <code>add_dust_emission=True</code>, the forward model reads CLOUDY
 nebular grids and Draine &amp; Li templates from <code>$SPS_HOME</code>. FSPS must be installed
-and <code>$SPS_HOME</code> set; see <a href="../installation/">Installation</a>.</p>
+and <code>$SPS_HOME</code> set. See <a href="../installation/">Installation</a>.</p>
 
 
 

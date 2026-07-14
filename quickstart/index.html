@@ -10,11 +10,13 @@
       
       
       
+        <link rel="canonical" href="https://espe13.github.io/ceridwen/quickstart/">
+      
       
         <link rel="prev" href="../installation/">
       
       
-        <link rel="next" href="../conventions/">
+        <link rel="next" href="../tutorial/">
       
       
         
@@ -379,7 +381,7 @@
   <a href="#step-0-build-the-ssp-grid-once-per-fsps-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 0 — build the SSP grid (once per FSPS configuration)
+        Step 0: build the SSP grid (once per FSPS configuration)
       
     </span>
   </a>
@@ -390,7 +392,7 @@
   <a href="#step-1-build-a-model-and-fit" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 1 — build a model and fit
+        Step 1: build a model and fit
       
     </span>
   </a>
@@ -401,6 +403,33 @@
   
 </nav>
       
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: joint fit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -482,16 +511,21 @@
 <h1 id="quick-start">Quick start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h1>
 <div class="admonition tip">
 <p class="admonition-title">Run the bundled example first</p>
-<p>The fastest way to confirm your whole setup works end to end. It builds the
-SSP cache from FSPS, generates mock UV-to-IR photometry, fits it with nested
-sampling, and writes a corner plot and a model-vs-data SED figure:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SPS_HOME</span><span class="o">=</span>/path/to/fsps
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>python<span class="w"> </span>examples/quickstart.py
+<p>The fastest way to confirm your whole setup works end to end. It loads an
+SSP grid (building it from FSPS only if none is found; see
+<a href="../installation/#getting-the-ssp-grid">Installation: Getting the SSP grid</a>),
+generates mock UV-to-IR photometry, fits it with nested sampling, and
+writes a corner plot and a model-vs-data SED figure:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>python<span class="w"> </span>examples/quickstart.py
 </code></pre></div>
+<p><code>logmass</code> should land near the injected truth. <code>Z</code> and the dust parameters
+are only weakly constrained by broadband photometry alone, so their
+posteriors are broad and can sit ~1 dex off truth. That is expected, not a
+broken install; add spectroscopy or emission lines to pin them down.</p>
 <p>The two steps below are what the example does internally, shown so you can
 adapt them to your own observations.</p>
 </div>
-<h2 id="step-0-build-the-ssp-grid-once-per-fsps-configuration">Step 0 — build the SSP grid (once per FSPS configuration)<a class="headerlink" href="#step-0-build-the-ssp-grid-once-per-fsps-configuration" title="Permanent link">&para;</a></h2>
+<h2 id="step-0-build-the-ssp-grid-once-per-fsps-configuration">Step 0: build the SSP grid (once per FSPS configuration)<a class="headerlink" href="#step-0-build-the-ssp-grid-once-per-fsps-configuration" title="Permanent link">&para;</a></h2>
 <p>CERIDWEN's forward model consumes an HDF5 cache of SSP spectra precomputed with
 FSPS. Build it once (a few minutes on CPU); subsequent runs reload it.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span>
@@ -499,45 +533,90 @@ FSPS. Build it once (a few minutes on CPU); subsequent runs reload it.</p>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">from_fsps</span><span class="p">(</span><span class="n">imf_type</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">save_to</span><span class="o">=</span><span class="s2">&quot;ssp_data.h5&quot;</span><span class="p">)</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># later: ssp = SSPData.load(&quot;ssp_data.h5&quot;)</span>
 </code></pre></div>
-<h2 id="step-1-build-a-model-and-fit">Step 1 — build a model and fit<a class="headerlink" href="#step-1-build-a-model-and-fit" title="Permanent link">&para;</a></h2>
+<p><code>from_fsps</code> accepts only stellar-library / IMF kwargs (<code>imf_type</code> and friends);
+dust, SFH, nebular, IGM, redshift, or a fixed metallicity are rejected, because
+the forward model owns those. The grid records its provenance (isochrone/spectral
+library, <code>imf_type</code>, FSPS version, build kwargs) and <code>CSPBasis</code> picks up the
+isochrone library automatically, so <strong><code>isoc_type</code> never has to be set by hand</strong>
+and the nebular grid always matches the SSP isochrones.</p>
+<h2 id="step-1-build-a-model-and-fit">Step 1: build a model and fit<a class="headerlink" href="#step-1-build-a-model-and-fit" title="Permanent link">&para;</a></h2>
+<p>A minimal photometry-only fit. For a full runnable joint
+photometry + spectroscopy example that generates its own self-consistent mock,
+see the README's "fit a galaxy end-to-end" section; for lines and nebular
+emission see the <a href="../tutorial/">tutorial</a>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">jax</span><span class="o">,</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span><span class="p">,</span> <span class="n">CSPBasis</span><span class="p">,</span> <span class="n">SedModel</span><span class="p">,</span> <span class="n">fitSED</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.observation</span><span class="w"> </span><span class="kn">import</span> <span class="n">Photometry</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.priors</span><span class="w"> </span><span class="kn">import</span> <span class="n">Uniform</span><span class="p">,</span> <span class="n">ClippedNormal</span><span class="p">,</span> <span class="n">StudentT</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;ssp_data.h5&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span><span class="p">,</span> <span class="n">CSPBasis</span><span class="p">,</span> <span class="n">SedModel</span><span class="p">,</span> <span class="n">fitSED</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.observation</span><span class="w"> </span><span class="kn">import</span> <span class="n">Photometry</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">logsfr_ratios_to_sfh</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.priors</span><span class="w"> </span><span class="kn">import</span> <span class="n">Uniform</span><span class="p">,</span> <span class="n">ClippedNormal</span><span class="p">,</span> <span class="n">StudentT</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="c1"># Composite-stellar-population forward model. sps_home defaults to $SPS_HOME.</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="n">add_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_diffuse_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_neb</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_igm</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="c1"># Observations (any combination of Photometry / Spectrum / Lines can be fit jointly).</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="n">phot</span> <span class="o">=</span> <span class="n">Photometry</span><span class="p">(</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="n">filters</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;jwst_f115w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f200w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f444w&quot;</span><span class="p">],</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>    <span class="n">flux</span><span class="o">=</span><span class="p">[</span><span class="mf">1.2e-8</span><span class="p">,</span> <span class="mf">2.7e-8</span><span class="p">,</span> <span class="mf">3.1e-8</span><span class="p">],</span>          <span class="c1"># AB maggies</span>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>    <span class="n">uncertainty</span><span class="o">=</span><span class="p">[</span><span class="mf">6e-10</span><span class="p">,</span> <span class="mf">1.4e-9</span><span class="p">,</span> <span class="mf">1.5e-9</span><span class="p">],</span>
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;phot&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="p">)</span>
-<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>
-<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="n">model</span> <span class="o">=</span> <span class="n">SedModel</span><span class="p">(</span>
-<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>    <span class="n">csp</span><span class="p">,</span> <span class="n">observations</span><span class="o">=</span><span class="p">[</span><span class="n">phot</span><span class="p">],</span>
-<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>    <span class="n">priors</span><span class="o">=</span><span class="p">{</span>
-<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>        <span class="c1"># Z is log10 ABSOLUTE metallicity — keep inside the FSPS grid (~[-4, -1.4]).</span>
-<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>        <span class="s2">&quot;Z&quot;</span><span class="p">:</span> <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=-</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">low</span><span class="o">=-</span><span class="mf">4.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=-</span><span class="mf">1.4</span><span class="p">),</span>
-<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>        <span class="s2">&quot;logmass&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">6.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">12.5</span><span class="p">),</span>
-<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>        <span class="s2">&quot;diffuse_tau_kc&quot;</span><span class="p">:</span> <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">low</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">4.0</span><span class="p">),</span>
-<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>        <span class="s2">&quot;diffuse_dust_index&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.4</span><span class="p">),</span>
-<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a>        <span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">:</span> <span class="n">StudentT</span><span class="p">(</span><span class="n">df</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">0.3</span><span class="p">),</span>
-<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a>    <span class="p">},</span>
-<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a>    <span class="n">zred</span><span class="o">=</span><span class="mf">6.5</span><span class="p">,</span>                                <span class="c1"># fixed spec-z</span>
-<a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a><span class="p">)</span>
-<a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a>
-<a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span>
-<a id="__codelineno-2-33" name="__codelineno-2-33" href="#__codelineno-2-33"></a>    <span class="n">model</span><span class="p">,</span> <span class="n">observations</span><span class="o">=</span><span class="p">[</span><span class="n">phot</span><span class="p">],</span>
-<a id="__codelineno-2-34" name="__codelineno-2-34" href="#__codelineno-2-34"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nuts&quot;</span><span class="p">,</span> <span class="n">vi</span><span class="o">=</span><span class="s2">&quot;tril&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-35" name="__codelineno-2-35" href="#__codelineno-2-35"></a>    <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_chains&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span> <span class="s2">&quot;num_samples&quot;</span><span class="p">:</span> <span class="mi">2000</span><span class="p">},</span>
-<a id="__codelineno-2-36" name="__codelineno-2-36" href="#__codelineno-2-36"></a>    <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
-<a id="__codelineno-2-37" name="__codelineno-2-37" href="#__codelineno-2-37"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;./my_fit&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-38" name="__codelineno-2-38" href="#__codelineno-2-38"></a><span class="p">)</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;ssp_data.h5&quot;</span><span class="p">)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># Composite-stellar-population forward model. lookback_time is the static SFH</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="c1"># node grid (Gyr, increasing, index 0 = today-at-z, &gt;= 2 nodes); the oldest</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1"># node must not exceed the age of the universe at the fit redshift (~0.85 Gyr</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="c1"># at z = 6.5). sps_home defaults to $SPS_HOME (needed because add_neb=True).</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="n">lookback</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>         <span class="c1"># 6 nodes -&gt; 5 free logsfr_ratios</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>    <span class="n">ssp</span><span class="p">,</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>    <span class="n">lookback_time</span><span class="o">=</span><span class="n">lookback</span><span class="p">,</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>    <span class="n">zh_const</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sfh_interp</span><span class="o">=</span><span class="s2">&quot;step&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>    <span class="n">add_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_diffuse_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_neb</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_igm</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="p">)</span>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="c1"># Observations (any combination of Photometry / Spectrum / Lines, fit jointly).</span>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a><span class="n">phot</span> <span class="o">=</span> <span class="n">Photometry</span><span class="p">(</span>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>    <span class="n">filters</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;jwst_f115w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f200w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f444w&quot;</span><span class="p">],</span>
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>    <span class="n">flux</span><span class="o">=</span><span class="p">[</span><span class="mf">1.2e-8</span><span class="p">,</span> <span class="mf">2.7e-8</span><span class="p">,</span> <span class="mf">3.1e-8</span><span class="p">],</span>          <span class="c1"># AB maggies</span>
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>    <span class="n">uncertainty</span><span class="o">=</span><span class="p">[</span><span class="mf">6e-10</span><span class="p">,</span> <span class="mf">1.4e-9</span><span class="p">,</span> <span class="mf">1.5e-9</span><span class="p">],</span>
+<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;phot&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a><span class="p">)</span>
+<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a><span class="n">phot</span><span class="o">.</span><span class="n">display</span><span class="p">()</span>   <span class="c1"># sanity-check the photometry you just built</span>
+<a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a>
+<a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a><span class="c1"># The SFH is sampled as logsfr_ratios and transformed to per-node SFR.</span>
+<a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a><span class="n">sfh_times_yr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">csp</span><span class="o">.</span><span class="n">sfh_times</span><span class="p">)</span>
+<a id="__codelineno-2-33" name="__codelineno-2-33" href="#__codelineno-2-33"></a><span class="k">def</span><span class="w"> </span><span class="nf">logsfr_to_sfh</span><span class="p">(</span><span class="n">free_theta</span><span class="p">,</span> <span class="n">_t</span><span class="o">=</span><span class="n">sfh_times_yr</span><span class="p">):</span>
+<a id="__codelineno-2-34" name="__codelineno-2-34" href="#__codelineno-2-34"></a>    <span class="k">return</span> <span class="n">logsfr_ratios_to_sfh</span><span class="p">(</span><span class="n">free_theta</span><span class="p">[</span><span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">],</span> <span class="n">sfh_times_yr</span><span class="o">=</span><span class="n">_t</span><span class="p">)</span>
+<a id="__codelineno-2-35" name="__codelineno-2-35" href="#__codelineno-2-35"></a>
+<a id="__codelineno-2-36" name="__codelineno-2-36" href="#__codelineno-2-36"></a><span class="n">model</span> <span class="o">=</span> <span class="n">SedModel</span><span class="p">(</span>
+<a id="__codelineno-2-37" name="__codelineno-2-37" href="#__codelineno-2-37"></a>    <span class="n">csp</span><span class="p">,</span> <span class="n">observations</span><span class="o">=</span><span class="p">[</span><span class="n">phot</span><span class="p">],</span>
+<a id="__codelineno-2-38" name="__codelineno-2-38" href="#__codelineno-2-38"></a>    <span class="n">priors</span><span class="o">=</span><span class="p">{</span>
+<a id="__codelineno-2-39" name="__codelineno-2-39" href="#__codelineno-2-39"></a>        <span class="c1"># Z is log10 ABSOLUTE metallicity (solar ~ -1.85); keep inside your</span>
+<a id="__codelineno-2-40" name="__codelineno-2-40" href="#__codelineno-2-40"></a>        <span class="c1"># SSP grid. Print the allowed range with</span>
+<a id="__codelineno-2-41" name="__codelineno-2-41" href="#__codelineno-2-41"></a>        <span class="c1">#     print(float(csp.zmet.min()), float(csp.zmet.max()))</span>
+<a id="__codelineno-2-42" name="__codelineno-2-42" href="#__codelineno-2-42"></a>        <span class="c1"># and call csp.check_param_ranges() to warn about out-of-grid values.</span>
+<a id="__codelineno-2-43" name="__codelineno-2-43" href="#__codelineno-2-43"></a>        <span class="s2">&quot;Z&quot;</span><span class="p">:</span> <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=-</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">low</span><span class="o">=-</span><span class="mf">4.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=-</span><span class="mf">1.4</span><span class="p">),</span>
+<a id="__codelineno-2-44" name="__codelineno-2-44" href="#__codelineno-2-44"></a>        <span class="s2">&quot;logmass&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">6.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">12.5</span><span class="p">),</span>
+<a id="__codelineno-2-45" name="__codelineno-2-45" href="#__codelineno-2-45"></a>        <span class="s2">&quot;diffuse_tau_kc&quot;</span><span class="p">:</span> <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">low</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">4.0</span><span class="p">),</span>
+<a id="__codelineno-2-46" name="__codelineno-2-46" href="#__codelineno-2-46"></a>        <span class="s2">&quot;diffuse_dust_index&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.4</span><span class="p">),</span>
+<a id="__codelineno-2-47" name="__codelineno-2-47" href="#__codelineno-2-47"></a>        <span class="s2">&quot;gas_logz&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.5</span><span class="p">),</span>
+<a id="__codelineno-2-48" name="__codelineno-2-48" href="#__codelineno-2-48"></a>        <span class="s2">&quot;gas_logu&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">4.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">),</span>
+<a id="__codelineno-2-49" name="__codelineno-2-49" href="#__codelineno-2-49"></a>        <span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">:</span> <span class="n">StudentT</span><span class="p">(</span><span class="n">df</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">0.3</span><span class="p">),</span>
+<a id="__codelineno-2-50" name="__codelineno-2-50" href="#__codelineno-2-50"></a>    <span class="p">},</span>
+<a id="__codelineno-2-51" name="__codelineno-2-51" href="#__codelineno-2-51"></a>    <span class="n">transforms</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;sfh&quot;</span><span class="p">:</span> <span class="n">logsfr_to_sfh</span><span class="p">},</span>
+<a id="__codelineno-2-52" name="__codelineno-2-52" href="#__codelineno-2-52"></a>    <span class="n">free_param_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">5</span><span class="p">),</span>
+<a id="__codelineno-2-53" name="__codelineno-2-53" href="#__codelineno-2-53"></a>                     <span class="s2">&quot;logmass&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">10.0</span><span class="p">])},</span>
+<a id="__codelineno-2-54" name="__codelineno-2-54" href="#__codelineno-2-54"></a>    <span class="n">zred</span><span class="o">=</span><span class="mf">6.5</span><span class="p">,</span>                                <span class="c1"># fixed spec-z</span>
+<a id="__codelineno-2-55" name="__codelineno-2-55" href="#__codelineno-2-55"></a><span class="p">)</span>
+<a id="__codelineno-2-56" name="__codelineno-2-56" href="#__codelineno-2-56"></a>
+<a id="__codelineno-2-57" name="__codelineno-2-57" href="#__codelineno-2-57"></a><span class="c1"># Pick ONE sampler. Option A, VI-preconditioned NUTS:</span>
+<a id="__codelineno-2-58" name="__codelineno-2-58" href="#__codelineno-2-58"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span>
+<a id="__codelineno-2-59" name="__codelineno-2-59" href="#__codelineno-2-59"></a>    <span class="n">model</span><span class="p">,</span>
+<a id="__codelineno-2-60" name="__codelineno-2-60" href="#__codelineno-2-60"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nuts&quot;</span><span class="p">,</span> <span class="n">vi</span><span class="o">=</span><span class="s2">&quot;tril&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-61" name="__codelineno-2-61" href="#__codelineno-2-61"></a>    <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_chains&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span> <span class="s2">&quot;num_samples&quot;</span><span class="p">:</span> <span class="mi">2000</span><span class="p">},</span>
+<a id="__codelineno-2-62" name="__codelineno-2-62" href="#__codelineno-2-62"></a>    <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-2-63" name="__codelineno-2-63" href="#__codelineno-2-63"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;./my_fit&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-64" name="__codelineno-2-64" href="#__codelineno-2-64"></a><span class="p">)</span>
+<a id="__codelineno-2-65" name="__codelineno-2-65" href="#__codelineno-2-65"></a>
+<a id="__codelineno-2-66" name="__codelineno-2-66" href="#__codelineno-2-66"></a><span class="c1"># Option B, nested sampling (gradient-free; also returns the evidence log Z):</span>
+<a id="__codelineno-2-67" name="__codelineno-2-67" href="#__codelineno-2-67"></a><span class="c1"># result = fitSED(</span>
+<a id="__codelineno-2-68" name="__codelineno-2-68" href="#__codelineno-2-68"></a><span class="c1">#     model,</span>
+<a id="__codelineno-2-69" name="__codelineno-2-69" href="#__codelineno-2-69"></a><span class="c1">#     sampler=&quot;ns&quot;,</span>
+<a id="__codelineno-2-70" name="__codelineno-2-70" href="#__codelineno-2-70"></a><span class="c1">#     sampler_kwargs={&quot;num_live&quot;: 400, &quot;num_delete&quot;: 100},</span>
+<a id="__codelineno-2-71" name="__codelineno-2-71" href="#__codelineno-2-71"></a><span class="c1">#     rng_key=jax.random.PRNGKey(42),</span>
+<a id="__codelineno-2-72" name="__codelineno-2-72" href="#__codelineno-2-72"></a><span class="c1">#     output_dir=&quot;./my_fit&quot;,</span>
+<a id="__codelineno-2-73" name="__codelineno-2-73" href="#__codelineno-2-73"></a><span class="c1"># )</span>
 </code></pre></div>
 <p><code>result</code> carries posterior samples keyed by parameter name, plus the VI trace and
 per-phase timings. For nested sampling, <code>result.to_anesthetic()</code> gives an
@@ -546,7 +625,7 @@ evidence, corner plots, and posterior summaries.</p>
 <div class="admonition warning">
 <p class="admonition-title">Read the conventions first</p>
 <p>The metallicity units and the lookback-time indexing are the two things most
-likely to bite — see <strong><a href="../conventions/">Conventions &amp; gotchas</a></strong> before
+likely to bite. See <strong><a href="../conventions/">Conventions &amp; gotchas</a></strong> before
 fitting real data.</p>
 </div>
 <p>See <code>examples/quickstart.py</code> for a complete, runnable script (it also produces a

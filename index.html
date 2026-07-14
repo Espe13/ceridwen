@@ -10,6 +10,8 @@
       
       
       
+        <link rel="canonical" href="https://espe13.github.io/ceridwen/">
+      
       
       
         <link rel="next" href="installation/">
@@ -421,6 +423,33 @@
   
   
     <li class="md-nav__item">
+      <a href="tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: joint fit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="conventions/" class="md-nav__link">
         
   
@@ -490,36 +519,37 @@
 
 <h1 id="ceridwen">CERIDWEN<a class="headerlink" href="#ceridwen" title="Permanent link">&para;</a></h1>
 <p><strong>C</strong>omprehensive <strong>S</strong>ED <strong>E</strong>stimation <strong>R</strong>outine <strong>I</strong>nvolving <strong>D</strong>ata-driven
-<strong>WE</strong>ight calculatio<strong>N</strong>s — a JAX-native, GPU-capable spectral energy
+<strong>WE</strong>ight calculatio<strong>N</strong>s. A JAX-native, GPU-capable spectral energy
 distribution (SED) fitting package for galaxies, with variational-inference
 preconditioned Hamiltonian Monte Carlo, nested sampling, and native redshift
 support.</p>
-<p>The forward model is a single differentiable XLA graph: stellar populations →
-dust attenuation and emission → nebular continuum and line emission → IGM
-attenuation → redshift-aware observed-frame projection. Inference runs on CPU or
-GPU.</p>
+<p>The forward model is a single differentiable XLA graph. It builds a galaxy
+spectrum from stellar populations, applies dust attenuation and emission, adds
+nebular continuum and line emission, attenuates the intergalactic medium, and
+projects the result to the observed frame at the galaxy's redshift. Inference
+runs on CPU or GPU.</p>
 <h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Star formation history (non-parametric continuity + parametric)</li>
+<li>Star formation history (non-parametric continuity or parametric)</li>
 <li>Metallicity history (constant or time-varying)</li>
 <li>Dust attenuation (Kriek &amp; Conroy diffuse, power-law birth-cloud, multi-component age-dependent)</li>
 <li>Dust emission (Draine &amp; Li grids)</li>
-<li>Nebular continuum + emission lines (CLOUDY grids)</li>
-<li>Observations: broadband photometry, spectra, emission-line fluxes — fit singly or jointly</li>
+<li>Nebular continuum and emission lines (CLOUDY grids)</li>
+<li>Broadband photometry, spectra, and emission-line fluxes, fit on their own or jointly</li>
 <li>Redshift-aware forward model with cosmological flux normalisation</li>
-<li>IGM attenuation (Madau 1995), extensible via an <code>IGMModel</code> ABC</li>
-<li>NUTS / nested sampling / VI-preconditioned NUTS</li>
+<li>IGM attenuation (Madau 1995), extensible through an <code>IGMModel</code> base class</li>
+<li>NUTS, nested sampling, and VI-preconditioned NUTS</li>
 </ul>
 <h2 id="where-to-next">Where to next<a class="headerlink" href="#where-to-next" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong><a href="installation/">Installation</a></strong> — Python 3.11+, dependencies, and the FSPS / <code>$SPS_HOME</code> setup.</li>
-<li><strong><a href="quickstart/">Quick start</a></strong> — build a model and fit it end to end.</li>
-<li><strong><a href="conventions/">Conventions &amp; gotchas</a></strong> — the unit and indexing conventions that trip people up (read this before fitting real data).</li>
-<li><strong><a href="api/">API reference</a></strong> — the public classes and functions.</li>
+<li><a href="installation/">Installation</a>: Python 3.11, dependencies, and the FSPS / <code>$SPS_HOME</code> setup.</li>
+<li><a href="quickstart/">Quick start</a>: build a model and fit it end to end.</li>
+<li><a href="conventions/">Conventions &amp; gotchas</a>: the unit and indexing conventions that catch people out. Read this before fitting real data.</li>
+<li><a href="api/">API reference</a>: the public classes and functions.</li>
 </ul>
 <h2 id="citing">Citing<a class="headerlink" href="#citing" title="Permanent link">&para;</a></h2>
-<p>If you use CERIDWEN, please cite it — see <code>CITATION.cff</code> in the repository (the
-methods paper reference will be added on publication).</p>
+<p>If you use CERIDWEN, please cite it. See <code>CITATION.cff</code> in the repository; the
+methods paper reference will be added on publication.</p>
 
 
 
