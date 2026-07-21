@@ -79,6 +79,41 @@ TINY           = 1.0e-95       # FSPS floor for log10
 # ─────────────────────────────────────────────────────────────────────────────
 # Module-level helpers (also imported by NebularGridModelSVD).
 # ─────────────────────────────────────────────────────────────────────────────
+def _normalise_age_axis_to_log10yr(age, src_file):
+    """Normalise a CLOUDY-cube age axis to log10(age/yr), whatever unit the
+    file was tabulated in, and fail loudly on anything unrecognisable.
+
+    Conventions seen in FSPS ``ZAU_*`` files across libraries:
+      * log10(yr)  -- values ~ 5..9        (e.g. 6.0 .. 7.301)
+      * linear yr  -- values ~ 1e6..1e8
+      * linear Myr -- values ~ 0.5..100
+
+    The old heuristic (``if age.max() > 30: log10``) silently misreads a
+    linear-Myr axis (max <= 30) as log10(yr), which would break BOTH the
+    young-SSP mask and the age interpolation for every SSP.  This version
+    disambiguates on the value range and validates the result, so a nebular
+    library with a different age tabulation either works or raises
+    immediately.
+    """
+    a = np.asarray(age, dtype=np.float64)
+    if a.min() >= 4.5 and a.max() <= 10.5:            # already log10(yr)
+        out = a
+    elif a.max() > 1.0e4:                              # linear years
+        out = np.log10(a)
+    elif a.max() <= 1.0e3:                             # linear Myr
+        out = np.log10(a * 1.0e6)
+    else:
+        raise ValueError(
+            f"Unrecognisable nebular age axis in {src_file}: range "
+            f"[{a.min():g}, {a.max():g}]. Expected log10(yr) (~5-10), "
+            "linear yr (>1e4) or linear Myr (<=1e3).")
+    if not (4.5 <= out.min() and out.max() <= 10.5):
+        raise ValueError(
+            f"Nebular age axis in {src_file} normalised to log10(yr) is out "
+            f"of range: [{out.min():.2f}, {out.max():.2f}].")
+    return out
+
+
 def _locate(x, grid):
     """Index of the cell with ``grid[i] <= x < grid[i+1]``, clipped to ``[0, n-2]``."""
     return jnp.clip(jnp.searchsorted(grid, x) - 1, 0, grid.size - 2)
@@ -241,6 +276,19 @@ class NebularModel:
             young = ages <= max_age
             self.young_mask = young
             self.young_idx  = jnp.where(young)[0]
+            # Sanity guard (2026-07-21): the mask must actually restrict to
+            # the CLOUDY grid's age range.  With a mis-normalised age axis
+            # every SSP passes and old populations acquire nebular emission.
+            n_young = int(np.asarray(young).sum())
+            oldest_young_yr = (10.0 ** float(np.asarray(ages)[
+                np.asarray(young)].max()) if n_young else 0.0)
+            if n_young == 0 or oldest_young_yr > 3.2e8:
+                raise RuntimeError(
+                    "Nebular young-SSP mask is inconsistent with the CLOUDY "
+                    f"grid: {n_young} SSPs flagged young, oldest "
+                    f"{oldest_young_yr/1e6:.1f} Myr (grid max_age "
+                    f"{max_age:.3f} log10 yr). Check the cube age-axis "
+                    "units.")
         else:
             self.young_mask = None
             self.young_idx  = None
@@ -280,8 +328,7 @@ class NebularModel:
                         csp_np, readlamb, np.log10(raw + TINY))
                     idx += 1
 
-        if age.max() > 30.0:
-            age = np.log10(age)
+        age = _normalise_age_axis_to_log10yr(age, self.cont_file)
 
         z_perm = np.argsort(logz)
         a_perm = np.argsort(age)
@@ -322,8 +369,7 @@ class NebularModel:
                     cube[:, i, j, k] = np.log10(vals + TINY)
                     idx += 1
 
-        if age.max() > 30.0:
-            age = np.log10(age)
+        age = _normalise_age_axis_to_log10yr(age, self.line_file)
 
         z_perm = np.argsort(logz)
         a_perm = np.argsort(age)
@@ -494,6 +540,56 @@ class NebularModel:
             return (cont_flux.transpose(0, 2, 1),
                     line_spec.transpose(0, 2, 1))
         return (cont_flux + line_spec).transpose(0, 2, 1)
+
+    def evaluate_batch_line_lum(self, logZ_gas, logU, ssp_ages_young,
+                                logqq_young):
+        """Per-line luminosities WITHOUT the spectral painting round-trip.
+
+        Same (Z_gas, U) bilinear collapse and young-age interpolation as
+        :meth:`evaluate_batch`, but returns the raw line luminosities
+        ``(n_z, n_young, n_lines)`` [Lsun] instead of painting them onto the
+        wavelength grid.  Used by ``CSPBasis.predict_line_fluxes`` (2026-07-21):
+        extracting line fluxes back out of the painted spectrum with Gaussian
+        apertures recovers only ~0.35-0.5 of the painted flux (the aperture's
+        narrow-line normalisation vs the resolution-floor + LOSVD-broadened
+        line width), so ``Lines`` observations are now predicted directly
+        from these grid values -- exact for any library, resolution or
+        smoothing configuration.
+        """
+        logZ_gas = jnp.squeeze(logZ_gas)
+        logU     = jnp.squeeze(logU)
+        cube      = self.nebem_line
+        logz_grid = self.nebem_line_logz
+        age_grid  = self.nebem_line_age
+        logu_grid = self.nebem_line_logu
+
+        z1 = _locate(logZ_gas, logz_grid)
+        dz = _frac(logZ_gas,   logz_grid, z1)
+        u1 = _locate(logU,     logu_grid)
+        du = _frac(logU,       logu_grid, u1)
+        w00 = (1.0 - dz) * (1.0 - du)
+        w01 = (1.0 - dz) *       du
+        w10 =       dz   * (1.0 - du)
+        w11 =       dz   *       du
+        zu = (w00 * cube[..., z1,     :, u1    ]
+            + w01 * cube[..., z1,     :, u1 + 1]
+            + w10 * cube[..., z1 + 1, :, u1    ]
+            + w11 * cube[..., z1 + 1, :, u1 + 1])          # (nlines, nage)
+
+        a1 = jnp.clip(jnp.searchsorted(age_grid, ssp_ages_young) - 1,
+                      0, age_grid.shape[0] - 2)
+        da = jnp.clip(
+            (ssp_ages_young - age_grid[a1])
+            / (age_grid[a1 + 1] - age_grid[a1]),
+            0.0, 1.0,
+        )
+        log_line = ((1.0 - da)[None, :] * zu[..., a1]
+                    +       da[None, :] * zu[..., a1 + 1])   # (nlines, n_young)
+
+        # (n_z, nlines, n_young) -> (n_z, n_young, nlines)
+        line_lum = jnp.power(10.0, log_line[None, :, :]
+                             + logqq_young[:, None, :])
+        return line_lum.transpose(0, 2, 1)
 
     # ── parameter bookkeeping --------------------------------------------
     def get_default_params(self):

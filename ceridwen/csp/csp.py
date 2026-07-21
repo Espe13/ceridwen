@@ -1146,12 +1146,13 @@ class CSPBasis:
             automatically; only direct callers of this method (and of
             ``get_line_spec``) need to supply it themselves.
         """
-        spectrum_phot, spectrum_slit = self._assemble_observer_spectra(theta)
-        spectrum_phot, spectrum_slit = self._apply_mass_redshift_igm(
-            spectrum_phot, spectrum_slit, theta
+        spectrum_phot, spectrum_slit, line_slit = \
+            self._assemble_observer_spectra(theta)
+        spectrum_phot, spectrum_slit, line_slit = self._apply_mass_redshift_igm(
+            spectrum_phot, spectrum_slit, line_slit, theta
         )
         return self._project_observations(
-            spectrum_phot, spectrum_slit, observations, theta
+            spectrum_phot, spectrum_slit, line_slit, observations, theta
         )
 
     def _assemble_observer_spectra(self, theta):
@@ -1180,24 +1181,36 @@ class CSPBasis:
         spectrum_phot = spectrum_cont + line_component       # lines unscaled
         if "eline_scaling" in theta:
             eline_factor = jnp.ravel(theta["eline_scaling"])[0]   # fraction; 1.0 = no loss
-            spectrum_slit = (spectrum_cont
-                             + eline_factor.astype(spectrum_cont.dtype)
-                               * line_component)
+            line_slit = (eline_factor.astype(spectrum_cont.dtype)
+                         * line_component)
         else:
-            spectrum_slit = spectrum_phot
+            line_slit = line_component
+        spectrum_slit = spectrum_cont + line_slit
 
-        return spectrum_phot, spectrum_slit
+        # ``line_slit`` is the emission-line-ONLY slit component.  Lines
+        # observations must be projected from this term (2026-07-21 fix):
+        # previously the full slit spectrum was used, so the Gaussian line
+        # apertures integrated the stellar + nebular CONTINUUM under every
+        # line as well.  Catalogue line fluxes are continuum-subtracted, so
+        # that continuum term entered the likelihood as a spurious "line"
+        # flux scaling with the evolved stellar mass -- the dominant
+        # faint-line bias in the JADES fits (inflated high-order H ladder,
+        # auroral and He lines; inverted ladders in low-sSFR posteriors).
+        return spectrum_phot, spectrum_slit, line_slit
 
-    def _apply_mass_redshift_igm(self, spectrum_phot, spectrum_slit, theta):
+    def _apply_mass_redshift_igm(self, spectrum_phot, spectrum_slit,
+                                 line_slit, theta):
         """Apply mass, redshift (flux factor) and IGM multiplicative scaling
-        to both observer spectra.
+        to the observer spectra (photometry-facing, slit-facing, and the
+        emission-line-only slit component).
         """
-        # Identical multiplicative factors for both spectra; each is computed
-        # once and applied to both.
+        # Identical multiplicative factors for all three; each is computed
+        # once and applied to all.
         if "logmass" in theta:
             mass_scale = jnp.float32(10.0 ** theta["logmass"][0])
             spectrum_phot = spectrum_phot * mass_scale
             spectrum_slit = spectrum_slit * mass_scale
+            line_slit     = line_slit     * mass_scale
 
         if "zred" in theta:
             from ..cosmology import flux_factor_maggies
@@ -1205,6 +1218,7 @@ class CSPBasis:
             ff = jnp.float32(flux_factor_maggies(z_scalar))
             spectrum_phot = spectrum_phot * ff
             spectrum_slit = spectrum_slit * ff
+            line_slit     = line_slit     * ff
             if self.igm is not None:
                 if "igm_factor" in theta:
                     ig_factor = jnp.ravel(theta["igm_factor"])[0]
@@ -1215,16 +1229,23 @@ class CSPBasis:
                 ).astype(spectrum_phot.dtype)
                 spectrum_phot = spectrum_phot * transmission
                 spectrum_slit = spectrum_slit * transmission
+                line_slit     = line_slit     * transmission
 
-        return spectrum_phot, spectrum_slit
+        return spectrum_phot, spectrum_slit, line_slit
 
-    def _project_observations(self, spectrum_phot, spectrum_slit, observations, theta):
+    def _project_observations(self, spectrum_phot, spectrum_slit, line_slit,
+                              observations, theta):
         """Project the scaled spectra onto each Observation, returning the
         ``{obs.name: prediction}`` dict.
         """
         # Project: Photometry sees the full-field-of-view spectrum;
-        # Spectrum and Lines (slit-measured) see the eline_scaling-corrected
-        # spectrum.  ``isinstance`` is resolved statically at trace time.
+        # Spectrum (slit-measured) sees the eline_scaling-corrected FULL
+        # spectrum (a real spectrograph records the continuum); Lines sees
+        # the emission-line-ONLY slit component, because catalogue line
+        # fluxes are continuum-subtracted -- projecting the full spectrum
+        # through the positive Gaussian apertures added the continuum under
+        # each line to the prediction (2026-07-21 fix).
+        # ``isinstance`` is resolved statically at trace time.
         #
         # Free-redshift dispatch:
         #   When ``obs.free_z`` is True AND ``"zred"`` was sampled (so a
@@ -1246,6 +1267,20 @@ class CSPBasis:
             Photometry as _Photometry,
             Spectrum   as _Spectrum,
         )
+        from ..observation.lines import Lines as _Lines
+        # Direct grid-based line fluxes (2026-07-21): predicting Lines by
+        # Gaussian-aperture extraction from the painted spectrum recovers
+        # only ~0.35-0.5 of the painted flux (narrow-line aperture
+        # normalisation vs resolution-floor + LOSVD line widths, with a
+        # wavelength-dependent trend).  When a nebular module exists, Lines
+        # observations are therefore predicted straight from the CLOUDY
+        # grid line luminosities (exact; library/resolution/smoothing
+        # independent).  The static any()/getattr checks fold at trace time.
+        _has_lines_obs = any(isinstance(o, _Lines) for o in observations)
+        _line_fluxes = (self.predict_line_fluxes(theta)
+                        if _has_lines_obs
+                        and getattr(self, "neb", None) is not None
+                        else None)
         out = {}
         free_z_in_theta = "zred" in theta
         # Velocity-broadening dispatch.
@@ -1260,6 +1295,13 @@ class CSPBasis:
         # checks resolve at trace time, so the compiled XLA graph
         # contains only the chosen path.
         for obs in observations:
+            if isinstance(obs, _Lines):
+                if _line_fluxes is not None:
+                    out[obs.name] = _line_fluxes[obs.line_ind]
+                else:
+                    # no nebular module: line component is identically zero
+                    out[obs.name] = obs.predict(line_slit, self.wave)
+                continue
             spec_for_obs = (spectrum_phot if isinstance(obs, _Photometry)
                             else spectrum_slit)
             if (isinstance(obs, _Photometry)
@@ -1278,6 +1320,84 @@ class CSPBasis:
             else:
                 out[obs.name] = obs.predict(spec_for_obs, self.wave)
         return out
+
+    def predict_line_fluxes(self, theta):
+        """Observed-frame integrated emission-line fluxes for EVERY line in
+        the nebular grid, computed directly from the CLOUDY line
+        luminosities (no spectral painting / aperture round-trip).
+
+        Pipeline mirrors the spectrum path exactly: SFH/metallicity weights,
+        (1 - frac_obrun) nebular scaling, birth-cloud (per-age) + diffuse
+        dust evaluated AT the line wavelengths, OB-runaway bypass, mass,
+        cosmological flux factor, IGM at the line wavelengths, and
+        eline_scaling.  Returns shape ``(n_lines_grid,)`` in the same
+        integrated-flux units as ``Lines.flux`` (erg s^-1 cm^-2 when theta
+        carries ``zred``); index with ``Lines.line_ind`` to compare with an
+        observation.  Normalisation matches the total flux painted into the
+        spectrum, so photometry and line predictions stay consistent.
+        """
+        W = self.calculate_ssp_weights(theta=theta)          # (n_z, n_age)
+        logZ_gas = theta["gas_logz"]
+        logU     = theta["gas_logu"]
+        line_lum = self.neb.evaluate_batch_line_lum(
+            logZ_gas, logU, self._neb_ages_young, self._neb_logqq_young,
+        )                                                    # (n_z, n_young, n_lines)
+        if "frac_obrun" in theta:
+            f_esc = jnp.ravel(theta["frac_obrun"])[0]
+            line_lum = line_lum * (1.0 - f_esc)
+
+        # Static linear-interp weights of the line wavelengths on the model
+        # grid (both static arrays -> constant-folded under jit).
+        lam = self.neb.nebem_line_pos                        # (n_lines,)
+        li = jnp.clip(jnp.searchsorted(self.wave, lam) - 1,
+                      0, self.wave.shape[0] - 2)
+        lf = jnp.clip((lam - self.wave[li])
+                      / (self.wave[li + 1] - self.wave[li]), 0.0, 1.0)
+
+        # Birth-cloud (per SSP age) + diffuse attenuation at line positions.
+        # ``attenuate_dust`` / ``_age_bin_mix`` only exist when the CSP was
+        # built with the corresponding dust components -- mirror the
+        # get_spectrum_* dispatch and fall back to no attenuation (factor 1)
+        # when they are absent (e.g. add_dust=False test/intrinsic models).
+        n_young = self._neb_young_idx.shape[0]
+        attn_age_lines = jnp.ones((n_young, lam.shape[0]))
+        diff_lines = jnp.ones(lam.shape[0])
+        if hasattr(self, "attenuate_dust"):
+            attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+            if hasattr(self, "_age_bin_mix"):
+                M = self._age_bin_mix
+                tau_age = jnp.einsum("ab,bw->aw", M, attn)   # (n_age, n_wave)
+                tau_lines = ((1.0 - lf)[None, :] * tau_age[:, li]
+                             +        lf[None, :] * tau_age[:, li + 1])
+                aal = jnp.exp(-tau_lines)                    # (n_age, n_lines)
+                if "frac_obrun" in theta:
+                    fo = jnp.ravel(theta["frac_obrun"])[0]
+                    aal = (1.0 - fo) * aal + fo
+                attn_age_lines = aal[self._neb_young_idx, :]
+            diff_lines = jnp.exp(-((1.0 - lf) * attn_diffuse[li]
+                                   + lf * attn_diffuse[li + 1]))
+
+        F = jnp.einsum("zy,zyl,yl->l",
+                       W[:, self._neb_young_idx], line_lum, attn_age_lines)
+        F = F * diff_lines
+
+        if "logmass" in theta:
+            F = F * 10.0 ** jnp.ravel(theta["logmass"])[0]
+        if "zred" in theta:
+            from ..cosmology import flux_factor_maggies
+            z_scalar = jnp.ravel(theta["zred"])[0]
+            F = F * flux_factor_maggies(z_scalar)
+            if self.igm is not None:
+                if "igm_factor" in theta:
+                    ig_factor = jnp.ravel(theta["igm_factor"])[0]
+                else:
+                    ig_factor = jnp.float32(self.igm_factor)
+                trans = self.igm.attenuation(self.wave, z_scalar,
+                                             factor=ig_factor)
+                F = F * ((1.0 - lf) * trans[li] + lf * trans[li + 1])
+        if "eline_scaling" in theta:
+            F = F * jnp.ravel(theta["eline_scaling"])[0]
+        return F
 
     # -----------------------------------------------------------------------
     # Line-only spectrum (prospector-style)
