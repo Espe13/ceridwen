@@ -1297,7 +1297,7 @@ class CSPBasis:
         for obs in observations:
             if isinstance(obs, _Lines):
                 if _line_fluxes is not None:
-                    out[obs.name] = _line_fluxes[obs.line_ind]
+                    out[obs.name] = _line_fluxes[self._neb_cube_rows_for(obs)]
                 else:
                     # no nebular module: line component is identically zero
                     out[obs.name] = obs.predict(line_slit, self.wave)
@@ -1320,6 +1320,49 @@ class CSPBasis:
             else:
                 out[obs.name] = obs.predict(spec_for_obs, self.wave)
         return out
+
+    def _neb_cube_rows_for(self, obs):
+        """Map an observation's lines onto the nebular cube rows BY REST
+        WAVELENGTH (cached on the observation; static at trace time).
+
+        ``obs.line_ind`` indexes ``$SPS_HOME/data/emlines_info.dat``, but the
+        line-luminosity cube rows follow the ZAU ``.lines`` file's own
+        ordering.  On installations where the two files come from different
+        FSPS vintages (e.g. hand-installed BPASS cubes next to a stock
+        emlines_info.dat) the orderings DISAGREE, and an index-based gather
+        silently returns neighbouring lines -- observed 2026-07-21 on Tursa,
+        where the direct line predictions were wrong per-line (Hb off by
+        1000x) while the painted spectrum, which places lines by the cube's
+        own wavelengths, was correct.  Wavelength matching is immune to the
+        vintage mismatch; a >1 A discrepancy raises immediately instead of
+        corrupting the likelihood.  See also the construction-time
+        cross-check in ``NebularModel.__init__`` (emline_index_consistent).
+        """
+        rows = getattr(obs, "_neb_cube_rows", None)
+        if rows is not None:
+            return rows
+        pos = np.asarray(self.neb.nebem_line_pos, dtype=float)
+        lam = np.asarray(obs.wavelength, dtype=float)
+        idx = np.array([int(np.argmin(np.abs(pos - l))) for l in lam])
+        dmax = float(np.max(np.abs(pos[idx] - lam)))
+        if dmax > 1.0:
+            worst = int(np.argmax(np.abs(pos[idx] - lam)))
+            raise ValueError(
+                "Emission-line wavelength matching failed: observed line "
+                f"{getattr(obs, 'line_names', ['?'] * len(lam))[worst]!r} at "
+                f"{lam[worst]:.2f} A has no nebular-cube line within 1 A "
+                f"(nearest {pos[idx[worst]]:.2f} A). The ZAU .lines cube and "
+                "emlines_info.dat likely come from different FSPS versions.")
+        li_ext = np.asarray(obs.line_ind)
+        if not np.array_equal(idx, li_ext):
+            warnings.warn(
+                "emlines_info.dat indices and ZAU cube rows disagree for "
+                f"{int((idx != li_ext).sum())}/{idx.size} lines of obs "
+                f"{obs.name!r}; using wavelength-matched cube rows. Your "
+                "$SPS_HOME mixes file vintages -- consider aligning them.",
+                stacklevel=2)
+        obs._neb_cube_rows = jnp.asarray(idx)
+        return obs._neb_cube_rows
 
     def predict_line_fluxes(self, theta):
         """Observed-frame integrated emission-line fluxes for EVERY line in
@@ -1386,7 +1429,16 @@ class CSPBasis:
         if "zred" in theta:
             from ..cosmology import flux_factor_maggies
             z_scalar = jnp.ravel(theta["zred"])[0]
-            F = F * flux_factor_maggies(z_scalar)
+            # flux_factor_maggies carries the (1+z) bandwidth-compression
+            # Jacobian appropriate for PER-Hz flux densities (f_nu).  An
+            # INTEGRATED line flux F = L / (4 pi d_L^2) must not include it:
+            # integrating f_nu,obs over d nu_obs cancels the (1+z) against
+            # the compressed bandwidth.  Dividing here keeps the direct
+            # predictions equal to the observed-frame integral of the
+            # painted line spectrum (photometry/lines consistency) -- found
+            # 2026-07-21 on the 1025955 rerun, where predictions were
+            # exactly (1+z) = 2.87x above the painted-spectrum line fluxes.
+            F = F * flux_factor_maggies(z_scalar) / (1.0 + z_scalar)
             if self.igm is not None:
                 if "igm_factor" in theta:
                     ig_factor = jnp.ravel(theta["igm_factor"])[0]
@@ -1985,6 +2037,22 @@ class CSPBasis:
         if "frac_obrun" in theta:
             fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
             attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
+            # FIX (fesc double-count): the escaped LyC restored above
+            # (kill_ion: young ages, lambda<912, amplitude f_esc*flux = fo*F)
+            # already left through the density-bounded channel, so it bypasses
+            # the birth-cloud dust COMPLETELY -- attn_age = 1, not the runaway
+            # mix (1-fo)*a_bc + fo.  Without this line the emergent LyC is
+            #     fo*F * [(1-fo)*a_bc + fo] * d     with a_bc = exp(-tau_bc(912)),
+            #                                       d = diffuse transmission,
+            # i.e. the intended fo*F*d times a SPURIOUS factor a_bc+fo*(1-a_bc)
+            # that lies in [a_bc, 1].  At 912 A the birth cloud is ~opaque
+            # (a_bc<<1), so the factor -> fo and the escaping LyC -> fo**2*F*d
+            # (the frac_obrun**2 regime); only if a_bc -> 1 (no BC dust) does the
+            # double-count vanish on its own.  attn_age = 1 removes the factor
+            # identically for ANY a_bc, giving fo*F*d.  Diffuse dust still
+            # applies below, matching FSPS: runaways bypass birth-cloud (dust1)
+            # but see the diffuse ISM (dust2).  No effect when frac_obrun absent/0.
+            attn_age = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)
 
         W_f32 = W.astype(jnp.float32)
         spectrum = jnp.einsum("za,zaw,aw->w", W_f32, combined_fluxes, attn_age)
@@ -2025,6 +2093,22 @@ class CSPBasis:
         if "frac_obrun" in theta:
             fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
             attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
+            # FIX (fesc double-count): the escaped LyC restored above
+            # (kill_ion: young ages, lambda<912, amplitude f_esc*flux = fo*F)
+            # already left through the density-bounded channel, so it bypasses
+            # the birth-cloud dust COMPLETELY -- attn_age = 1, not the runaway
+            # mix (1-fo)*a_bc + fo.  Without this line the emergent LyC is
+            #     fo*F * [(1-fo)*a_bc + fo] * d     with a_bc = exp(-tau_bc(912)),
+            #                                       d = diffuse transmission,
+            # i.e. the intended fo*F*d times a SPURIOUS factor a_bc+fo*(1-a_bc)
+            # that lies in [a_bc, 1].  At 912 A the birth cloud is ~opaque
+            # (a_bc<<1), so the factor -> fo and the escaping LyC -> fo**2*F*d
+            # (the frac_obrun**2 regime); only if a_bc -> 1 (no BC dust) does the
+            # double-count vanish on its own.  attn_age = 1 removes the factor
+            # identically for ANY a_bc, giving fo*F*d.  Diffuse dust still
+            # applies below, matching FSPS: runaways bypass birth-cloud (dust1)
+            # but see the diffuse ISM (dust2).  No effect when frac_obrun absent/0.
+            attn_age = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)
 
         W_f32 = W.astype(jnp.float32)
         spectrum_dust_free = jnp.einsum("za,zaw->w",       W_f32, combined_fluxes)
