@@ -78,9 +78,14 @@ REGISTRY: dict[str, dict] = {
     # for [alpha/Fe] fitting: CSPBasis_afe has no nebular model, so with
     # this file no FSPS install (and no $SPS_HOME) is needed at all.
     "amist_c3k_lr_chab_afe": {
-        "url": None,        # TODO: run scripts_afe/publish_grid_zenodo.py
-        "sha256": None,     #       and paste the printed entry here
-        "size_mb": 54,      # (5, 13, 107, 1936) float32 + metadata
+        # Published 2026-08-04 as v2 of the ceridwen-grids deposit
+        # (concept DOI 10.5281/zenodo.21221633); sha256 pinned by
+        # scripts_afe/publish_grid_zenodo.py from the built grid.
+        "url": "https://zenodo.org/records/21794924/files/"
+               "amist_c3k_lr_chab_afe.h5?download=1",
+        "sha256": "0ae3ca192f1ba3a7825c83d77dd927ec069f4107"
+                  "a52051b2e4484f80d5a47ef7",
+        "size_mb": 108,     # (5, 13, 107, 1936) float64 + metadata
         "notes": "FSPS v4.0 alpha-MC (python-fsps >= 0.4.9.dev, AFE_FLAG=1), "
                  "aMIST + C3K_LR, Chabrier IMF, [alpha/Fe] = "
                  "{-0.2, 0.0, +0.2, +0.4, +0.6}. For CSPBasis_afe "
