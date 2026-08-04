@@ -40,9 +40,10 @@ JAX design rules applied here
    be able to differentiate through the noise model w.r.t. those parameters.
 
 4. **Log-space nuisance parameters**: jitter and fractional errors are passed
-   as ``log_jitter`` and ``log_f_calib`` in ``params`` and exponentiated
-   inside ``compute``.  This guarantees positivity without requiring constrained
-   samplers, and gives better geometry for gradient-based methods.
+   as ``log_jitter``, ``log_f_calib`` and ``log_f_data`` in ``params`` and
+   exponentiated inside ``compute``.  This guarantees positivity without
+   requiring constrained samplers, and gives better geometry for
+   gradient-based methods.
 
 Extension pattern
 -----------------
@@ -165,6 +166,7 @@ class NoiseModelBase(abc.ABC):
         mu: Array,
         mask: Array,
         params: Optional[dict[str, Array]] = None,
+        data: Optional[Array] = None,
     ) -> NoiseModelOutput:
         """
         Compute effective inverse variance and log-normalisation per datum.
@@ -185,6 +187,11 @@ class NoiseModelBase(abc.ABC):
             Sampled nuisance parameters extracted from ``theta``.  Keys and
             meanings are noise-model-specific.  Pass ``None`` or ``{}`` when
             the model has no nuisance parameters.
+        data : Array, shape (n_data,), optional
+            The observed flux ``y``.  Required only by noise models whose
+            effective variance depends on the *measured* flux rather than the
+            model prediction (the data-anchored fractional floor).  Pass
+            ``None`` when the model does not use it.
 
         Returns
         -------
@@ -210,17 +217,27 @@ class DiagonalNoiseModel(NoiseModelBase):
 
         \\sigma_{\\rm eff,i}^2 = \\sigma_{\\rm obs,i}^2
             + [\\exp(\\log f_{\\rm calib}) \\cdot |\\mu_i|]^2   \\quad (\\text{if use\\_fractional})
+            + [\\exp(\\log f_{\\rm data})  \\cdot |y_i|]^2       \\quad (\\text{if use\\_data\\_fractional})
             + \\exp(2 \\log j)                                    \\quad (\\text{if use\\_jitter})
 
-    The fractional calibration term models a systematic uncertainty that scales
-    with the model flux -- standard in photometric SED fitting where the flux
-    calibration is uncertain at the percent level.
+    The **model-anchored** fractional term (``use_fractional``) scales the
+    systematic floor with the model flux ``|mu|`` -- standard in photometric
+    SED fitting where the flux calibration is uncertain at the percent level.
+    Because the resulting variance depends on the parameters, it biases the
+    posterior weakly toward smaller predicted fluxes (an Eddington-type effect).
 
-    The jitter (noise-floor) term represents unmodelled noise that is
-    independent of flux -- common in spectroscopy where sky subtraction
+    The **data-anchored** fractional term (``use_data_fractional``) instead
+    scales the floor with the *observed* flux ``|y|``.  The variance is then
+    independent of ``theta``, so it introduces no Eddington-type bias -- the
+    natural choice for pure zero-point / flux-calibration uncertainties, and
+    for absorbing residual systematics (e.g. the CLOUDY line-ratio error) that
+    should be anchored to the measurement rather than the current model.
+
+    The jitter (noise-floor) term (``use_jitter``) represents unmodelled noise
+    that is independent of flux -- common in spectroscopy where sky subtraction
     residuals or read noise exceed the formal photon-noise estimate.
 
-    Both nuisance parameters are sampled in **log space** (see ``params``
+    All nuisance parameters are sampled in **log space** (see ``params``
     below).  Log-space sampling ensures positivity without hard constraints,
     giving gradient-based samplers a smooth, unconstrained parameter space.
 
@@ -230,8 +247,14 @@ class DiagonalNoiseModel(NoiseModelBase):
         If True, add an additive noise floor ``exp(log_jitter)`` in
         quadrature.  Reads ``params["log_jitter"]`` at compute time.
     use_fractional : bool, default False
-        If True, add a fractional calibration error ``exp(log_f_calib) * |mu|``
-        in quadrature.  Reads ``params["log_f_calib"]`` at compute time.
+        If True, add a model-anchored fractional calibration error
+        ``exp(log_f_calib) * |mu|`` in quadrature.  Reads
+        ``params["log_f_calib"]`` at compute time.
+    use_data_fractional : bool, default False
+        If True, add a data-anchored fractional systematic floor
+        ``exp(log_f_data) * |y|`` in quadrature, where ``y`` is the observed
+        flux passed as ``compute(..., data=y)``.  Reads
+        ``params["log_f_data"]`` at compute time.
 
     Notes
     -----
@@ -246,10 +269,15 @@ class DiagonalNoiseModel(NoiseModelBase):
     >>> out = nm.compute(sigma_obs, mu, mask, params={"log_jitter": jnp.log(0.02)})
     >>> out.inv_var   # shape (n_data,)
     >>> out.log_det   # shape (n_data,)
+
+    >>> nm = DiagonalNoiseModel(use_data_fractional=True)
+    >>> out = nm.compute(sigma_obs, mu, mask,
+    ...                  params={"log_f_data": jnp.log(0.05)}, data=y)
     """
 
-    use_jitter     : bool = False
-    use_fractional : bool = False
+    use_jitter          : bool = False
+    use_fractional      : bool = False
+    use_data_fractional : bool = False
 
     # ------------------------------------------------------------------
     def compute(
@@ -258,6 +286,7 @@ class DiagonalNoiseModel(NoiseModelBase):
         mu        : Array,
         mask      : Array,
         params    : Optional[dict[str, Array]] = None,
+        data      : Optional[Array] = None,
     ) -> NoiseModelOutput:
         """
         Compute ``inv_var`` and ``log_det`` for the diagonal Gaussian model.
@@ -274,8 +303,16 @@ class DiagonalNoiseModel(NoiseModelBase):
                 Log of the additive noise floor (same units as ``sigma_obs``).
                 Must be present when ``use_jitter=True``.
             ``"log_f_calib"``
-                Log of the fractional calibration error (dimensionless).
-                Must be present when ``use_fractional=True``.
+                Log of the model-anchored fractional calibration error
+                (dimensionless).  Must be present when ``use_fractional=True``.
+            ``"log_f_data"``
+                Log of the data-anchored fractional systematic floor
+                (dimensionless).  Must be present when
+                ``use_data_fractional=True``.
+        data : Array, shape (n_data,), optional
+            Observed flux ``y``.  Must be provided when
+            ``use_data_fractional=True`` (it anchors that term); ignored
+            otherwise.
 
         Returns
         -------
@@ -287,11 +324,24 @@ class DiagonalNoiseModel(NoiseModelBase):
         # Start with observational variance.
         var: Array = sigma_obs ** 2
 
-        # Fractional calibration error: sigma_calib = f_calib * |mu|
+        # Model-anchored fractional calibration error: sigma = f_calib * |mu|.
         # Gradient flows through mu -> var -> inv_var -> lnl cleanly.
         if self.use_fractional:
             f_calib = jnp.exp(params["log_f_calib"])
             var = var + (f_calib * jnp.abs(mu)) ** 2
+
+        # Data-anchored fractional systematic floor: sigma = f_data * |y|.
+        # Scales with the *observed* flux, so the variance does not depend on
+        # theta (no Eddington-type bias).  The natural form for pure zero-point
+        # uncertainties.  Requires the observed data to be passed explicitly.
+        if self.use_data_fractional:
+            if data is None:
+                raise ValueError(
+                    "DiagonalNoiseModel(use_data_fractional=True) requires the "
+                    "observed data array; call compute(..., data=y)."
+                )
+            f_data = jnp.exp(params["log_f_data"])
+            var = var + (f_data * jnp.abs(data)) ** 2
 
         # Additive noise floor (jitter).
         # Parameterised as log_jitter so sampling is unconstrained.
@@ -321,6 +371,8 @@ class DiagonalNoiseModel(NoiseModelBase):
         names: list[str] = []
         if self.use_fractional:
             names.append("log_f_calib")
+        if self.use_data_fractional:
+            names.append("log_f_data")
         if self.use_jitter:
             names.append("log_jitter")
         return tuple(names)
@@ -329,7 +381,8 @@ class DiagonalNoiseModel(NoiseModelBase):
         return (
             f"DiagonalNoiseModel("
             f"use_jitter={self.use_jitter}, "
-            f"use_fractional={self.use_fractional})"
+            f"use_fractional={self.use_fractional}, "
+            f"use_data_fractional={self.use_data_fractional})"
         )
 
 
@@ -344,10 +397,10 @@ class DiagonalNoiseModel(NoiseModelBase):
 jax.tree_util.register_pytree_node(
     DiagonalNoiseModel,
     flatten_func=lambda nm: (
-        [],                                            # leaves  (none)
-        (nm.use_jitter, nm.use_fractional),            # aux     (static)
+        [],                                                    # leaves  (none)
+        (nm.use_jitter, nm.use_fractional, nm.use_data_fractional),  # aux (static)
     ),
     unflatten_func=lambda aux, _: DiagonalNoiseModel(
-        use_jitter=aux[0], use_fractional=aux[1]
+        use_jitter=aux[0], use_fractional=aux[1], use_data_fractional=aux[2]
     ),
 )

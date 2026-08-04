@@ -42,7 +42,7 @@ class GaussianProcess:
 
     .. math::
 
-        K_{ij} = a^2 \\exp\\!\\left[-\\tfrac{1}{2}
+        K_{ij} = \\delta_{ij} + a^2 \\exp\\!\\left[-\\tfrac{1}{2}
             \\left(\\frac{\\lambda_i - \\lambda_j}{\\ell}\\right)^2\\right]
             + \\delta_{ij}\\,\\varepsilon
 
@@ -90,8 +90,13 @@ class GaussianProcess:
         Returns
         -------
         float
-            GP log-likelihood contribution.  Add to the standard Gaussian
-            log-likelihood to obtain the full marginal log-likelihood.
+            Full Gaussian log-likelihood of the normalised residuals
+            under covariance K = I + a^2 SE + eps I.  This already
+            includes the white-noise (identity) term and the -n/2 ln(2
+            pi) constant, so it must NOT be summed with a separate
+            -1/2 sum r_i^2 diagonal term (that would double-count the
+            white noise).  The per-pixel sigma_eff normalisation is
+            applied by the caller.
         """
         r   = np.asarray(residuals,  dtype=np.float64)
         wav = np.asarray(wavelength, dtype=np.float64)
@@ -109,7 +114,12 @@ class GaussianProcess:
         dlam = wav[:, None] - wav[None, :]                          # (n, n)
         K    = (self.amplitude ** 2
                 * np.exp(-0.5 * (dlam / self.length_scale) ** 2))
-        K   += self.jitter * np.eye(n)
+        # Fold in the unit white-noise identity so this is a SINGLE,
+        # self-consistent Gaussian on the normalised residuals r (which
+        # already carry unit variance by construction).  The caller must
+        # therefore NOT also add a separate -1/2 sum r_i^2 diagonal term
+        # -- doing so would double-count the white noise.
+        K   += (1.0 + self.jitter) * np.eye(n)
 
         # Log-likelihood via Cholesky decomposition
         try:

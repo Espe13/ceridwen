@@ -274,8 +274,14 @@ def test_T5_aperture_matches_direct_integration(setup):
     for k, nm in enumerate(names):
         sig = lam0[k] * (200.0 / 2.998e5)
         m = np.abs(wave - lam0[k]) < 5 * sig
-        # F_line = int f_nu dnu = int f_nu * c/lambda^2 dlambda
-        f_direct = np.trapezoid(line_spec[m] * c_aa / wave[m] ** 2, wave[m])
+        # F_line = int f_nu,obs dnu_obs.  get_line_spec returns f_nu,obs on
+        # the REST wavelength grid, so the observed-frame integral is the
+        # rest-frame integral divided by (1+z) (dnu_obs = dnu_rest/(1+z)).
+        # This is the physically correct integrated line flux and matches
+        # what photometry sees in-band; a prediction that agrees with the
+        # REST-frame integral instead is (1+z) too high (caught 2026-07-21).
+        f_direct = np.trapezoid(line_spec[m] * c_aa / wave[m] ** 2,
+                                wave[m]) / (1.0 + 2.0)   # zred=2.0 in theta
         r = f_ap[k] / f_direct if f_direct != 0 else np.nan
         ratios[nm] = r
         print(f"{nm:22s} {f_ap[k]:12.3e} {f_direct:12.3e} {r:10.3f}")
@@ -284,6 +290,32 @@ def test_T5_aperture_matches_direct_integration(setup):
             assert 0.75 < ratios[nm] < 1.25, (
                 f"{nm}: aperture/direct = {ratios[nm]:.2f} -- the Gaussian-"
                 "aperture normalisation disagrees with direct integration")
+
+
+def test_T6_line_index_vintage_mismatch_is_harmless(setup):
+    """The cube-row gather must be wavelength-matched, not index-trusted:
+    an observation whose line_ind values are shifted (emulating an
+    emlines_info.dat from a different FSPS vintage than the ZAU cube, as
+    found on Tursa 2026-07-21) must yield IDENTICAL predictions."""
+    from ceridwen.observation import Lines
+    csp, obs = setup
+    f_ref = _predict(csp, obs, 0.0, 0.005)
+    shifted = Lines(
+        line_ind=np.asarray(obs.line_ind) + 3,          # deliberately wrong
+        line_names=list(obs.line_names),
+        wavelength=np.asarray(obs.wavelength),
+        flux=np.asarray(obs.flux), uncertainty=np.asarray(obs.uncertainty),
+        name="test_lines_shifted",
+    )
+    if hasattr(shifted, "setup_for_model"):
+        shifted.setup_for_model(csp.wave)
+    import warnings as _w
+    with _w.catch_warnings():
+        _w.simplefilter("ignore")
+        f_shift = _predict(csp, shifted, 0.0, 0.005)
+    assert np.allclose(f_shift, f_ref, rtol=1e-6), (
+        "shifted line_ind changed the predictions -- the gather is trusting "
+        "emlines_info indices instead of matching cube rows by wavelength")
 
 
 if __name__ == "__main__":

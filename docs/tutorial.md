@@ -1,10 +1,10 @@
 # Tutorial: fitting photometry, spectroscopy and lines jointly
 
-CERIDWEN treats the three observation types — broadband **photometry**, a
-resolved **spectrum**, and **emission-line** fluxes — uniformly. Each is a small
-container that knows how to project the model spectrum onto its own data space,
-and the joint likelihood is simply the sum of their χ² contributions. You can fit
-any one of them, or all three together, with no change to the model or sampler.
+CERIDWEN treats the three observation types uniformly: broadband **photometry**,
+a resolved **spectrum**, and **emission-line** fluxes. Each is a small container
+that knows how to project the model spectrum onto its own data space, and the
+joint likelihood is the sum of their χ² contributions. You can fit any one of
+them, or all three together, with no change to the model or sampler.
 
 This tutorial builds one of each and fits them jointly. Replace the mock arrays
 with your own data.
@@ -14,7 +14,7 @@ with your own data.
     [`examples/tutorial_joint_fit.ipynb`](https://github.com/Espe13/ceridwen/blob/main/examples/tutorial_joint_fit.ipynb).
 
 !!! note "Before you start"
-    Read **[Conventions & gotchas](conventions.md)** — especially that `Z` is
+    Read **[Conventions & gotchas](conventions.md)**, especially that `Z` is
     log10 *absolute* metallicity and that `lookback_time` index 0 is *today*.
     Make sure FSPS and `$SPS_HOME` are set up ([Installation](installation.md));
     emission lines and nebular continuum need the CLOUDY grids from FSPS.
@@ -75,9 +75,10 @@ non-detections enter as one-sided χ²).
 ## 3. (b) Spectrum
 
 A densely-sampled spectrum. Pass the **observed-frame, vacuum** wavelength grid
-in Å (the pixel wavelengths as delivered by the instrument — the forward model
-redshifts the model spectrum by `(1 + zred)` onto these pixels; at `zred = 0`
-observed and rest frame coincide) and flux in `F_ν` (same system as the model).
+in Å (the pixel wavelengths as delivered by the instrument, since the forward
+model redshifts the model spectrum by `(1 + zred)` onto these pixels; at
+`zred = 0` observed and rest frame coincide) and flux in `F_ν` (same system as
+the model).
 Set `resolution` + `smoothtype` to have the forward model apply instrumental
 broadening.
 
@@ -132,8 +133,8 @@ lines = Lines(
 
 ## 5. Priors and the model
 
-Collect the observations into a single list — any subset is fine; an empty list
-for a type you are not fitting. Then define priors for every free parameter.
+Collect the observations into a single list. Any subset is fine; use an empty
+list for a type you are not fitting. Then define priors for every free parameter.
 
 ```python
 observations = [phot, spec, lines]
@@ -156,7 +157,7 @@ priors = {
 }
 
 # The non-parametric SFH is sampled as logsfr_ratios and turned into the per-bin
-# sfh by a REGISTERED transform — this step is required for logsfr_ratios to work.
+# sfh by a REGISTERED transform; this step is required for logsfr_ratios to work.
 sfh_times_yr = np.array(csp.sfh_times)
 def logsfr_to_sfh(free_theta, _t=sfh_times_yr):
     return logsfr_ratios_to_sfh(free_theta["logsfr_ratios"], sfh_times_yr=_t)

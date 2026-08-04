@@ -1,5 +1,5 @@
 """
-Composite Stellar Population (CSP) 
+Composite Stellar Population (CSP)
 
 Modeling composite stellar populations (CSPs) by combining Simple Stellar Population (SSP)
 spectra according to complex star formation and metallicity evolution histories.
@@ -9,11 +9,15 @@ where galaxy spectra are constructed by weighting and integrating SSP models acr
 age and metallicity grids based on the input evolutionary histories.
 
 Main Components:
-    CSPBasis: Primary class for CSP modeling and spectrum generation
+    CSPBasis: Primary class for CSP modeling and spectrum generation (solar-scaled
+        3-D SSP grids, full nebular machinery)
+    CSPBasis_afe: [alpha/Fe]-aware, nebular-free variant (4-D SSPDataAfe grids only)
+    SVDCSPBasis: SVD-accelerated variant of CSPBasis (optional)
     spectrum = csp.get_spectrum()
 """
 
 from .csp import CSPBasis, fnu2flam
+from .csp_afe import CSPBasis_afe
 
 # SVD-accelerated variant is optional — not present in all installations
 try:
@@ -25,4 +29,5 @@ except ImportError:
 
 __author__ = "Amanda Stoffers"
 
-__all__ = ["CSPBasis", "fnu2flam"] + (["SVDCSPBasis"] if _HAS_SVD else [])
+__all__ = ["CSPBasis", "CSPBasis_afe", "fnu2flam"] + \
+    (["SVDCSPBasis"] if _HAS_SVD else [])

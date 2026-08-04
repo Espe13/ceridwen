@@ -19,7 +19,7 @@ Documentation: [www.amanda-stoffers.de/ceridwen](https://www.amanda-stoffers.de/
 - [x] Redshift-aware forward model with cosmological flux normalisation
 - [x] IGM attenuation (Madau 1995), extensible via `IGMModel` ABC
 - [x] NUTS / nested sampling / variational-inference preconditioned NUTS
-- [ ] α-enhanced SSPs
+- [x] α-enhanced SSPs (`CSPBasis_afe`, FSPS v4.0 aMIST + C3K, [α/Fe] sampled as a free parameter)
 
 Everything is written against `jax.numpy` with `@jit` and `vmap`/`pmap` in mind: the forward model is a single XLA graph, the sampler runs on GPU, and the sampling hot path contains zero Python branches.
 
@@ -449,6 +449,51 @@ photometry alone, so their posteriors are broad (add spectroscopy or emission
 lines to pin them down).
 
 ---
+
+## Fitting [α/Fe] — no FSPS required
+
+The α-enhanced grids (FSPS v4.0, aMIST isochrones + C3K spectra,
+[α/Fe] ∈ {−0.2, 0.0, +0.2, +0.4, +0.6}) add α-element enhancement as a
+sampled stellar axis: a chemical clock for the formation timescale,
+measured jointly with — and physically degenerate with — the total
+metallicity. Building these grids yourself requires python-fsps compiled
+from source with `AFE_FLAG=1`, so the canonical grid is published on
+Zenodo and fetched by name. Because the α-enhanced variant carries **no
+nebular model** (no α-enhanced CLOUDY tables exist), nothing is read from
+`$SPS_HOME` at fit time either: **the downloaded grid is the complete
+stellar input, and no FSPS install is needed at all.**
+
+```python
+import jax.numpy as jnp
+from ceridwen.ssps import fetch_grid, SSPDataAfe
+from ceridwen.csp import CSPBasis_afe
+
+# One call: downloads once into ~/.ceridwen/grids, sha256-verified.
+ssp = SSPDataAfe.load(fetch_grid("amist_c3k_lr_chab_afe"))
+ssp.display()                       # (n_afe, n_Z, n_age, n_wave) = (5, 13, 107, 1936)
+
+csp = CSPBasis_afe(ssp, lookback_time=jnp.linspace(0.0, 12.0, 9),
+                   zh_const=True, verbose=False)
+
+theta = {
+    "lookback_time": jnp.linspace(0.0, 12.0, 9),
+    "sfh":           jnp.exp(-jnp.linspace(0.0, 12.0, 9) / 1.0),
+    "Z":             jnp.array([-1.9]),   # log10 TOTAL Z (absolute) — unchanged
+    "afe":           jnp.array([0.4]),    # [α/Fe]: re-partitions that Z
+    "tau_pow":           jnp.array([0.3]),
+    "diffuse_tau_kc":    jnp.array([0.2]),
+    "diffuse_dust_index": jnp.array([0.0]),
+}
+wave, fnu = csp.wave, csp.get_spectrum(theta)   # rest-frame Lsun/Hz per Msun
+```
+
+Notes: `theta["afe"]` is interpolated differentiably between the two
+bracketing grid planes, so it works under `jit`/`grad`/`vmap` and in every
+sampler; `Z` stays the total metal mass fraction ([Fe/H] becomes a derived
+quantity); `CSPBasis_afe` accepts **only** α-aware 4-D grids — passing a
+legacy 3-D grid raises a `TypeError` telling you to use `CSPBasis`;
+emission-line observations are rejected (continuum and photometry only)
+until α-enhanced photoionisation grids exist.
 
 ## Troubleshooting
 

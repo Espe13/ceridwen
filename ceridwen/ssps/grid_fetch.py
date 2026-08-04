@@ -1,0 +1,197 @@
+"""
+Download-on-demand registry for pre-built ceridwen SSP grids.
+
+Rationale
+---------
+ceridwen needs FSPS only at grid-GENERATION time; every fit loads a
+cached HDF5.  For the alpha-enhanced grids the generation step requires
+an unreleased python-fsps compiled from source with ``AFE_FLAG=1``
+against FSPS v4.0 data — a barrier users should not face, and an easy
+source of silent misbuilds.  We therefore publish the canonical grids
+(Zenodo) and users fetch them by name:
+
+    from ceridwen.ssps.grid_fetch import fetch_grid
+    from ceridwen.ssps.ssp_data_afe import SSPDataAfe
+
+    path = fetch_grid("amist_c3k_lr_chab_afe")   # cached after first call
+    ssp  = SSPDataAfe.load(path)                 # also loads legacy 3-D grids
+
+Files are cached in ``$CERIDWEN_GRID_DIR`` (default ``~/.ceridwen/grids``)
+and verified against a pinned SHA-256 on every fetch, so a truncated
+download or a silently updated remote file fails loudly instead of
+producing subtly wrong SEDs.
+
+Publishing a new grid
+---------------------
+1. Build it with ``scripts_afe/build_afe_grid.py`` (records provenance).
+2. Run ``scripts_afe/publish_grid_zenodo.py --file the_grid.h5 --name
+   <registry_key>`` wherever the file and network access coexist (Tursa
+   login node, or laptop after scp).  With ``$ZENODO_TOKEN`` set it
+   drives the Zenodo API (new version of the ceridwen-grids deposit,
+   upload, checksum verify); without a token it prints the manual
+   checklist.  Either way it prints the finished REGISTRY entry.
+3. Paste that entry below, commit, release.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import shutil
+import sys
+import tempfile
+import urllib.request
+from pathlib import Path
+
+# ---------------------------------------------------------------------
+# Registry of published grids.
+#
+# TODO(release): fill url/sha256/size_mb after the Zenodo upload of each
+# grid.  Entries with url=None are defined-but-unpublished; fetch_grid
+# raises a clear error naming the build script instead of downloading.
+# ---------------------------------------------------------------------
+REGISTRY: dict[str, dict] = {
+    # Legacy solar-scaled release grid (schema 1.0, 3-D; loads via
+    # SSPData.load or SSPDataAfe.load, which promotes it to n_afe=1).
+    # Published in the ceridwen-grids deposit as ssp_data.h5; the sha256
+    # is pinned from the repository's examples/ssp_data.h5 copy.
+    "mist_miles_chab_v3.2": {
+        "url": "https://zenodo.org/records/21221634/files/"
+               "ssp_data.h5?download=1",
+        "sha256": "57c54face30e78b3ecc25ac859fdc8578c36b886"
+                  "392fc47d9106398d94ed2854",
+        "size_mb": 62,
+        "notes": "FSPS 3.2 / python-fsps 0.4.x, MIST + MILES, Chabrier IMF. "
+                 "The v0.1.x release grid (nebular-capable via CSPBasis).",
+    },
+    # BPASS v2 binary-population release grid (schema 1.0, 3-D).
+    "mist_bpass_v2": {
+        "url": "https://zenodo.org/records/21221634/files/"
+               "ssp_data_bpass.h5?download=1",
+        "sha256": "5034b12a1d92cd09896a99def7f60601186807429"
+                  "ab02b52a817302341fc808f",
+        "size_mb": 62,
+        "notes": "BPASS v2 binary SSPs, Chabrier IMF. The v0.1.x release "
+                 "grid used for the GN-z11 demonstration.",
+    },
+    # Alpha-enhanced grid (schema 2.0, 4-D, n_afe=5).  THE download path
+    # for [alpha/Fe] fitting: CSPBasis_afe has no nebular model, so with
+    # this file no FSPS install (and no $SPS_HOME) is needed at all.
+    "amist_c3k_lr_chab_afe": {
+        "url": None,        # TODO: run scripts_afe/publish_grid_zenodo.py
+        "sha256": None,     #       and paste the printed entry here
+        "size_mb": 54,      # (5, 13, 107, 1936) float32 + metadata
+        "notes": "FSPS v4.0 alpha-MC (python-fsps >= 0.4.9.dev, AFE_FLAG=1), "
+                 "aMIST + C3K_LR, Chabrier IMF, [alpha/Fe] = "
+                 "{-0.2, 0.0, +0.2, +0.4, +0.6}. For CSPBasis_afe "
+                 "(no nebular; no FSPS needed at fit time).",
+    },
+    # Library-null control: same code/data/library, single solar plane.
+    "mist_c3k_lr_chab_null": {
+        "url": None,        # TODO after Zenodo upload
+        "sha256": None,
+        "size_mb": None,
+        "notes": "FSPS v4.0 (AFE_FLAG=0), MIST + C3K_LR, Chabrier IMF, "
+                 "n_afe=1. Null model separating C3K-library effects from "
+                 "alpha effects.",
+    },
+}
+
+
+def grid_cache_dir() -> Path:
+    """Cache directory: $CERIDWEN_GRID_DIR or ~/.ceridwen/grids."""
+    root = os.environ.get("CERIDWEN_GRID_DIR")
+    path = Path(root) if root else Path.home() / ".ceridwen" / "grids"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _sha256(path: Path, chunk: int = 1 << 20) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            b = f.read(chunk)
+            if not b:
+                break
+            h.update(b)
+    return h.hexdigest()
+
+
+def fetch_grid(name: str, *, force: bool = False, quiet: bool = False) -> Path:
+    """Return a local, checksum-verified path to a published grid.
+
+    Downloads on first use into :func:`grid_cache_dir`; later calls hit
+    the cache (re-verified against the pinned SHA-256 each time, which
+    costs ~1 s per GB and has caught both truncated downloads and
+    stealth-edited remote files).
+
+    Parameters
+    ----------
+    name : str
+        Registry key, e.g. ``"amist_c3k_lr_chab_afe"``.
+    force : bool
+        Re-download even if a cached file exists.
+    quiet : bool
+        Suppress progress output.
+    """
+    if name not in REGISTRY:
+        raise KeyError(
+            f"Unknown grid {name!r}. Available: {sorted(REGISTRY)}."
+        )
+    entry = REGISTRY[name]
+    if entry["url"] is None:
+        raise RuntimeError(
+            f"Grid {name!r} is defined but not yet published (no URL in the "
+            f"registry). Build it locally with scripts_afe/build_afe_grid.py, "
+            f"or publish it with scripts_afe/publish_grid_zenodo.py and "
+            f"paste the printed REGISTRY entry. Notes: {entry['notes']}"
+        )
+
+    dest = grid_cache_dir() / f"{name}.h5"
+
+    if dest.exists() and not force:
+        got = _sha256(dest)
+        if entry["sha256"] and got != entry["sha256"]:
+            raise RuntimeError(
+                f"Cached grid {dest} fails its checksum "
+                f"(got {got[:12]}..., expected {entry['sha256'][:12]}...). "
+                f"Delete it or call fetch_grid({name!r}, force=True)."
+            )
+        return dest
+
+    if not quiet:
+        size = f" (~{entry['size_mb']} MB)" if entry.get("size_mb") else ""
+        print(f"[ceridwen] fetching grid {name!r}{size} -> {dest}",
+              file=sys.stderr)
+
+    # Download to a temp file in the same directory, verify, then move
+    # into place atomically — a killed download never leaves a plausible-
+    # looking partial grid in the cache.
+    fd, tmp = tempfile.mkstemp(dir=dest.parent, suffix=".part")
+    os.close(fd)
+    tmp = Path(tmp)
+    try:
+        with urllib.request.urlopen(entry["url"]) as r, open(tmp, "wb") as f:
+            shutil.copyfileobj(r, f, length=1 << 20)
+        got = _sha256(tmp)
+        if entry["sha256"] and got != entry["sha256"]:
+            raise RuntimeError(
+                f"Downloaded grid {name!r} fails its checksum "
+                f"(got {got[:12]}..., expected {entry['sha256'][:12]}...). "
+                f"The remote file changed or the download was corrupted; "
+                f"not installing it."
+            )
+        tmp.replace(dest)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+    return dest
+
+
+def available_grids(published_only: bool = False) -> dict[str, str]:
+    """Map of grid name -> one-line description (for docs / CLI help)."""
+    return {
+        k: v["notes"] for k, v in REGISTRY.items()
+        if v["url"] is not None or not published_only
+    }

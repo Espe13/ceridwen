@@ -540,7 +540,7 @@ class DiagonalGaussianLikelihood(LikelihoodBase):
         aux : LikelihoodOutput
         """
         noise_out: NoiseModelOutput = self.noise_model.compute(
-            sigma_obs, mu, mask, params
+            sigma_obs, mu, mask, params, data=y
         )
         return lnlike_diag_gaussian(
             y, mu, noise_out.inv_var, noise_out.log_det, mask
@@ -600,7 +600,7 @@ class DiagonalGaussianLikelihood(LikelihoodBase):
             # the keys it needs (log_jitter, log_f_calib); all other keys are
             # ignored.  This avoids conditional dict construction inside the
             # JIT-compiled hot path and is safe for any noise model subclass.
-            noise_out = noise_model.compute(sigma_obs, mu, mask, theta)
+            noise_out = noise_model.compute(sigma_obs, mu, mask, theta, data=y)
             lnl, _    = lnlike_diag_gaussian(
                 y, mu, noise_out.inv_var, noise_out.log_det, mask
             )
@@ -712,7 +712,7 @@ class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
         aux : LikelihoodOutput
         """
         noise_out: NoiseModelOutput = self.noise_model.compute(
-            sigma_obs, mu, mask, params
+            sigma_obs, mu, mask, params, data=y
         )
         if is_upper_limit is None:
             is_upper_limit = jnp.zeros_like(mask, dtype=bool)
@@ -758,7 +758,7 @@ class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
         @jax.jit
         def lnprobfn(theta: dict[str, Array]) -> Array:
             mu = model.predict(theta)
-            noise_out = noise_model.compute(sigma_obs, mu, mask, theta)
+            noise_out = noise_model.compute(sigma_obs, mu, mask, theta, data=y)
             lnl, _    = lnlike_diag_gaussian_with_upper_limits(
                 y, mu, noise_out.inv_var, noise_out.log_det, mask, is_ul,
             )

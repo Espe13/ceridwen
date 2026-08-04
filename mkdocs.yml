@@ -1,31 +1,33 @@
 site_name: CERIDWEN
 site_description: JAX-native, GPU-capable spectral energy distribution (SED) fitting
+site_url: https://www.amanda-stoffers.de/ceridwen/
 repo_url: https://github.com/Espe13/ceridwen
 repo_name: Espe13/ceridwen
 docs_dir: docs
 
 theme:
   name: material
+  font:
+    text: Inter
+    code: Roboto Mono
   features:
     - navigation.sections
     - navigation.top
     - content.code.copy
     - toc.integrate
   palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: indigo
-      accent: indigo
-      toggle:
-        icon: material/weather-night
-        name: Switch to dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      primary: indigo
-      accent: indigo
+    # Night-sky dark is the default, matching amanda-stoffers.de.
+    - scheme: slate
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
+    - scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+
+extra_css:
+  - stylesheets/extra.css
 
 plugins:
   - search

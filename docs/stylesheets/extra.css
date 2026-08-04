@@ -1,0 +1,90 @@
+/* =========================================================
+   CERIDWEN docs, themed to match amanda-stoffers.de
+   Cambridge blue-green accent, Inter, night-sky dark mode.
+   ========================================================= */
+
+/* ---------- Light ("default") ---------- */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color:          #ffffff;
+  --md-primary-fg-color--light:   #ffffff;
+  --md-primary-fg-color--dark:    #eef1f5;
+  --md-primary-bg-color:          #1f2328;
+  --md-primary-bg-color--light:   #5b6573;
+
+  --md-accent-fg-color:           #237a59;
+  --md-typeset-a-color:           #2e9e74;
+
+  --md-default-bg-color:          #ffffff;
+  --md-default-fg-color:          #1f2328;
+  --md-default-fg-color--light:   #5b6573;
+  --md-default-fg-color--lighter: #8b93a1;
+  --md-default-fg-color--lightest:#e6e9ee;
+
+  --md-code-bg-color:             #f6f8fa;
+  --md-footer-bg-color:           #f6f8fa;
+  --md-footer-bg-color--dark:     #eef1f5;
+  --md-footer-fg-color:           #1f2328;
+  --md-footer-fg-color--light:    #5b6573;
+}
+
+/* ---------- Dark ("slate"), night sky ---------- */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:          #050711;
+  --md-primary-fg-color--light:   #0c1020;
+  --md-primary-fg-color--dark:    #050711;
+  --md-primary-bg-color:          #e8eef6;
+  --md-primary-bg-color--light:   #93a0b4;
+
+  --md-accent-fg-color:           #b6f0d2;
+  --md-typeset-a-color:           #8ce0b0;
+
+  --md-default-bg-color:          #050711;
+  --md-default-fg-color:          #e8eef6;
+  --md-default-fg-color--light:   #93a0b4;
+  --md-default-fg-color--lighter: #5f6b7d;
+  --md-default-fg-color--lightest:rgba(140, 224, 176, .16);
+
+  --md-code-bg-color:             #0c1020;
+  --md-code-fg-color:             #e8eef6;
+  --md-footer-bg-color:           #0c1020;
+  --md-footer-bg-color--dark:     #050711;
+}
+
+/* Deep-space gradient wash behind the page, like the site's night sky. */
+[data-md-color-scheme="slate"] body {
+  background:
+    radial-gradient(1200px 700px at 78% -8%, rgba(133, 176, 154, .10), transparent 60%),
+    radial-gradient(900px 600px at 10% 110%, rgba(108, 182, 227, .08), transparent 60%),
+    var(--md-default-bg-color);
+  background-attachment: fixed;
+}
+
+/* ---------- Typography: Inter, tight headings ---------- */
+.md-typeset h1 { font-weight: 800; letter-spacing: -.02em; }
+.md-typeset h2 {
+  font-weight: 700; letter-spacing: -.01em;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+  padding-bottom: .3em;
+}
+.md-typeset h3 { font-weight: 700; }
+
+/* ---------- Rounded corners, matching the site cards ---------- */
+.md-typeset pre > code,
+.md-typeset .highlight,
+.md-typeset .admonition,
+.md-typeset details,
+.md-typeset table:not([class]) {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* ---------- Header: minimal, thin border, blurred (site nav feel) ---------- */
+.md-header {
+  box-shadow: none;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+}
+
+/* Content links underline on hover, as on the site. */
+.md-typeset a:hover { text-decoration: underline; }

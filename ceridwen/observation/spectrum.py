@@ -639,7 +639,7 @@ class Spectrum(Observation):
             )
         return self.uncertainty
 
-    def _compute_residuals(self, model_flux):
+    def _compute_residuals(self, model_flux, return_sigma=False):
         """
         Internal: (sky-subtracted data − calibration × model) / sigma_eff,
         per pixel.  Accounts for sky subtraction, multiplicative flux
@@ -654,8 +654,14 @@ class Spectrum(Observation):
         data  = self._sky_corrected_data()
         sigma = self._effective_sigma(mf)
         if self.logify_spectrum:
-            return (jnp.log(data) - jnp.log(mf)) / (sigma / data)
-        return (data - mf) / sigma
+            denom = sigma / data
+            resid = (jnp.log(data) - jnp.log(mf)) / denom
+        else:
+            denom = sigma
+            resid = (data - mf) / denom
+        if return_sigma:
+            return resid, denom
+        return resid
 
     def chi_sq(self, model_flux):
         """
@@ -701,8 +707,9 @@ class Spectrum(Observation):
         .. math::
 
             \\log\\mathcal{L} =
-                -\\tfrac{1}{2}\\sum_{i\\,\\in\\,\\rm mask} r_i^2
-                + \\log p_{\\rm GP}(\\mathbf{r} \\mid \\mathrm{GP})
+                -\\tfrac{1}{2}\\,\\mathbf{r}^\\top \\Sigma^{-1}\\mathbf{r}
+                -\\tfrac{1}{2}\\ln|\\Sigma|
+                -\\tfrac{1}{2}\\sum_{i\\,\\in\\,\\rm mask}\\ln\\!\\big(2\\pi\\sigma_{\\rm eff,i}^2\\big)
 
         where :math:`r_i = ((d_i - s_i) - c_i m_i)/\\sigma_{\\rm eff,i}`
         (sky :math:`s_i` and calibration :math:`c_i` are optional; the
@@ -720,17 +727,41 @@ class Spectrum(Observation):
         float
             Log-likelihood (larger is better).
         """
-        resid  = self._compute_residuals(model_flux)
-        chi2   = float(jnp.sum(jnp.where(self.mask, resid ** 2, 0.0)))
-        log_ll = -0.5 * chi2
+        resid, sigma_r = self._compute_residuals(model_flux, return_sigma=True)
+        mask = self.mask
+
+        # Whitening Jacobian of r = (data - model) / sigma_r:
+        #     -1/2 sum_{i in mask} ln(sigma_r_i^2)  ( = -sum ln sigma_r_i ).
+        # The 2*pi factor / the -n/2 ln(2 pi) constant is already carried
+        # by ``lnL_struct`` below (both the GP and the diagonal branch
+        # include it), so only the log-variance Jacobian is added here.
+        # It is retained -- not dropped to a bare chi^2 -- because sigma_r
+        # can depend on the model through the noise floor.
+        safe_sigma = jnp.where(mask, sigma_r, 1.0)
+        lognorm    = float(
+            -0.5 * jnp.sum(jnp.where(mask, jnp.log(safe_sigma ** 2), 0.0))
+        )
 
         if self.noise is not None and self._wavelength is not None:
-            log_ll += self.noise.log_likelihood(
+            # GP path: a SINGLE Gaussian on the normalised residuals with
+            # covariance Sigma = I + a^2 SE + eps I.  GaussianProcess.
+            # log_likelihood already folds in the white-noise identity and
+            # the -n/2 ln(2 pi) constant, so we do NOT add a separate
+            # -1/2 sum r^2 here (that would double-count the white noise).
+            lnL_struct = float(self.noise.log_likelihood(
                 np.array(resid),
                 np.array(self._wavelength),
-                np.array(self.mask),
+                np.array(mask),
+            ))
+        else:
+            # Diagonal Gaussian on the normalised residuals: r ~ N(0, I).
+            r = jnp.where(mask, resid, 0.0)
+            n = float(jnp.sum(mask))
+            lnL_struct = float(
+                -0.5 * jnp.sum(r ** 2) - 0.5 * n * jnp.log(2.0 * jnp.pi)
             )
-        return float(log_ll)
+
+        return float(lnL_struct + lognorm)
 
     def fit_polynomial_calibration(self, model_flux, order: int = 3):
         """

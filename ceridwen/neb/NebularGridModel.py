@@ -62,6 +62,8 @@ inside both CLOUDY grids.
 
 from pathlib import Path
 
+import warnings
+import os
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -190,7 +192,8 @@ class NebularModel:
     smooth_velocity : bool
         ``True`` → ``sigma_smooth`` is in km/s; ``False`` → Å.
     sigma_smooth : float
-        Line-broadening σ.  Default 0.0 (matches FSPS).
+        Line-broadening σ.  Default 100.0 (km/s, since ``smooth_velocity``
+        defaults to ``True``); matches the FSPS ``nebular_smooth_init``.
     nebular_smooth_init : float or None
         Backwards-compatible alias for ``sigma_smooth``.
 
@@ -292,6 +295,51 @@ class NebularModel:
         else:
             self.young_mask = None
             self.young_idx  = None
+
+        # ── emlines_info.dat <-> cube ordering cross-check (2026-07-21) ──
+        # ``line_ind`` values used across the Prospector-compatible API
+        # index $SPS_HOME/data/emlines_info.dat, whose ROW ORDER is only
+        # guaranteed to match this cube if both files ship from the same
+        # FSPS vintage.  Hand-installed cubes (e.g. BPASS) next to a stock
+        # emlines_info.dat CAN disagree -- observed on Tursa, where an
+        # index-based gather silently returned neighbouring lines.  Consumers
+        # inside ceridwen match by wavelength (CSPBasis._neb_cube_rows_for)
+        # and are immune; this check warns ANY consumer at construction time
+        # and records the verdict in ``self.emline_index_consistent``.
+        self.emline_index_consistent = None
+        try:
+            _info_path = str(Path(sps_home) / "data" / "emlines_info.dat")
+            _info_wave = []
+            with open(_info_path) as _f:
+                for _row in _f:
+                    _parts = _row.split(",")
+                    if len(_parts) >= 2:
+                        _info_wave.append(float(_parts[0]))
+            _info_wave = np.asarray(_info_wave)
+            _pos = np.asarray(self.nebem_line_pos)
+            if _info_wave.size != _pos.size:
+                self.emline_index_consistent = False
+                warnings.warn(
+                    f"emlines_info.dat lists {_info_wave.size} lines but the "
+                    f"nebular cube {getattr(self, 'line_file', '?')} has "
+                    f"{_pos.size} -- the two files are from different FSPS "
+                    "vintages. Raw line_ind indices into this cube are "
+                    "UNRELIABLE; ceridwen's own predictions match lines by "
+                    "wavelength and are unaffected.", stacklevel=2)
+            else:
+                _n = min(_info_wave.size, _pos.size)
+                _bad = int(np.sum(np.abs(_info_wave[:_n] - _pos[:_n]) > 1.0))
+                self.emline_index_consistent = (_bad == 0)
+                if _bad:
+                    warnings.warn(
+                        f"{_bad}/{_n} rows of emlines_info.dat disagree with "
+                        "the nebular cube wavelengths by >1 A -- mixed FSPS "
+                        "vintages in $SPS_HOME. Raw line_ind indices into "
+                        "this cube are UNRELIABLE; ceridwen's own predictions "
+                        "match lines by wavelength and are unaffected.",
+                        stacklevel=2)
+        except OSError:
+            pass                              # no emlines_info.dat: nothing to check
 
     # ── file loaders ------------------------------------------------------
     #

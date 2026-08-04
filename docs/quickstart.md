@@ -2,7 +2,7 @@
 
 !!! tip "Run the bundled example first"
     The fastest way to confirm your whole setup works end to end. It loads an
-    SSP grid (building it from FSPS only if none is found — see
+    SSP grid (building it from FSPS only if none is found; see
     [Installation: Getting the SSP grid](installation.md#getting-the-ssp-grid)),
     generates mock UV-to-IR photometry, fits it with nested sampling, and
     writes a corner plot and a model-vs-data SED figure:
@@ -13,13 +13,13 @@
 
     `logmass` should land near the injected truth. `Z` and the dust parameters
     are only weakly constrained by broadband photometry alone, so their
-    posteriors are broad and can sit ~1 dex off truth — that is expected, not a
-    broken install (add spectroscopy or emission lines to pin them down).
+    posteriors are broad and can sit ~1 dex off truth. That is expected, not a
+    broken install; add spectroscopy or emission lines to pin them down.
 
     The two steps below are what the example does internally, shown so you can
     adapt them to your own observations.
 
-## Step 0 — build the SSP grid (once per FSPS configuration)
+## Step 0: build the SSP grid (once per FSPS configuration)
 
 CERIDWEN's forward model consumes an HDF5 cache of SSP spectra precomputed with
 FSPS. Build it once (a few minutes on CPU); subsequent runs reload it.
@@ -32,13 +32,22 @@ ssp = SSPData.from_fsps(imf_type=1, save_to="ssp_data.h5")
 ```
 
 `from_fsps` accepts only stellar-library / IMF kwargs (`imf_type` and friends);
-dust, SFH, nebular, IGM, redshift, or a fixed metallicity are rejected — the
-forward model owns those. The grid records its provenance (isochrone/spectral
+dust, SFH, nebular, IGM, redshift, or a fixed metallicity are rejected, because
+the forward model owns those. The grid records its provenance (isochrone/spectral
 library, `imf_type`, FSPS version, build kwargs) and `CSPBasis` picks up the
 isochrone library automatically, so **`isoc_type` never has to be set by hand**
 and the nebular grid always matches the SSP isochrones.
 
-## Step 1 — build a model and fit
+!!! tip "No FSPS? Download a published grid"
+    The canonical grids are on Zenodo and registered in
+    `ceridwen.ssps.grid_fetch`:
+    `ssp = SSPData.load(fetch_grid("mist_miles_chab_v3.2"))`. For
+    [α/Fe] fitting with `CSPBasis_afe` the download is the *recommended*
+    route — the α grids need a custom FSPS v4.0 build to generate, but
+    none at all to fit, since the α variant has no nebular model. See
+    [Installation: α-enhanced grids](installation.md#α-enhanced-grids-download-dont-build).
+
+## Step 1: build a model and fit
 
 A minimal photometry-only fit. For a full runnable joint
 photometry + spectroscopy example that generates its own self-consistent mock,
@@ -84,7 +93,7 @@ def logsfr_to_sfh(free_theta, _t=sfh_times_yr):
 model = SedModel(
     csp, observations=[phot],
     priors={
-        # Z is log10 ABSOLUTE metallicity (solar ~ -1.85) — keep inside your
+        # Z is log10 ABSOLUTE metallicity (solar ~ -1.85); keep inside your
         # SSP grid. Print the allowed range with
         #     print(float(csp.zmet.min()), float(csp.zmet.max()))
         # and call csp.check_param_ranges() to warn about out-of-grid values.
@@ -102,7 +111,7 @@ model = SedModel(
     zred=6.5,                                # fixed spec-z
 )
 
-# Pick ONE sampler. Option A — VI-preconditioned NUTS:
+# Pick ONE sampler. Option A, VI-preconditioned NUTS:
 result = fitSED(
     model,
     sampler="nuts", vi="tril",
@@ -111,7 +120,7 @@ result = fitSED(
     output_dir="./my_fit",
 )
 
-# Option B — nested sampling (gradient-free; also returns the evidence log Z):
+# Option B, nested sampling (gradient-free; also returns the evidence log Z):
 # result = fitSED(
 #     model,
 #     sampler="ns",
@@ -128,7 +137,7 @@ evidence, corner plots, and posterior summaries.
 
 !!! warning "Read the conventions first"
     The metallicity units and the lookback-time indexing are the two things most
-    likely to bite — see **[Conventions & gotchas](conventions.md)** before
+    likely to bite. See **[Conventions & gotchas](conventions.md)** before
     fitting real data.
 
 See `examples/quickstart.py` for a complete, runnable script (it also produces a
