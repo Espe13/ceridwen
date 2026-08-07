@@ -116,6 +116,89 @@ def _normalise_age_axis_to_log10yr(age, src_file):
     return out
 
 
+def _resolve_line_wavelengths(line_file, line_pos, payload):
+    """Return the wavelength row for a ZAU ``.lines`` cube, repairing the
+    stale-wavelength-row bug shipped by upstream FSPS for the dusty grids.
+
+    As of FSPS commit ``cbcd0ee`` (2026-08-03; first observed with the
+    C3K/[alpha/Fe] data release), the ``ZAU_WD_*.lines`` files were
+    regenerated with the new 166-line list in their 770 flux blocks, but
+    their header (``#128 cols``) and wavelength row were left at the old
+    128-line vintage.  The flux blocks ARE column-aligned with the matching
+    ``ZAU_ND_*.lines`` file (verified 2026-08-05: per-column WD/ND flux
+    ratios are smooth attenuation factors, e.g. H-alpha 0.19-1.0, and the
+    per-block ``(logZ, age, logU)`` metadata rows are identical), so the
+    correct wavelengths are the dust-free file's.  Note Fortran FSPS itself
+    misreads these files: its list-directed ``READ nebem_line_pos`` consumes
+    the first metadata row and part of the first flux block to fill 166
+    values -- so the file cannot be "matched", only repaired or refused.
+
+    Parameters
+    ----------
+    line_file : path
+        The ``.lines`` file being read (for messages and sibling lookup).
+    line_pos : (n,) ndarray
+        Wavelength row as read from line 2 of the file.
+    payload : list of str
+        The remaining lines of the file (alternating meta / flux rows).
+
+    Returns
+    -------
+    (nflux,) ndarray of wavelengths consistent with the flux-row width.
+
+    Raises
+    ------
+    ValueError if the wavelength row is inconsistent with the flux rows and
+    no trustworthy repair source is available.
+    """
+    nflux = len(payload[1].split())
+    if line_pos.size == nflux:
+        return line_pos                              # healthy file, any vintage
+
+    line_file = Path(line_file)
+    candidates = []
+    if '_WD_' in line_file.name:
+        candidates.append(('dust-free sibling cube',
+                           line_file.with_name(
+                               line_file.name.replace('_WD_', '_ND_'))))
+    candidates.append(('emlines_info.dat',
+                       line_file.parent.parent / 'data' / 'emlines_info.dat'))
+
+    for label, path in candidates:
+        try:
+            if path.suffix == '.dat':
+                waves = np.asarray([float(r.split(',')[0])
+                                    for r in open(path) if ',' in r])
+            else:
+                with open(path) as f:
+                    f.readline()                                  # header
+                    waves = np.asarray(f.readline().split(),
+                                       dtype=np.float64)
+                    f.readline()                                  # first meta row
+                    sib_nflux = len(f.readline().split())
+                if sib_nflux != waves.size:
+                    continue                    # sibling is broken too
+        except OSError:
+            continue
+        if waves.size == nflux:
+            warnings.warn(
+                f"{line_file.name}: wavelength row lists {line_pos.size} "
+                f"lines but the flux blocks contain {nflux} -- this is the "
+                "known upstream FSPS bug where ZAU_WD_*.lines flux blocks "
+                "were regenerated for the new line list without updating "
+                f"the header/wavelength row. Using the {nflux} wavelengths "
+                f"from {label} ({path.name}) instead, which the flux "
+                "columns are verified to align with.", stacklevel=3)
+            return waves
+
+    raise ValueError(
+        f"{line_file}: wavelength row lists {line_pos.size} lines but the "
+        f"flux blocks contain {nflux}, and no consistent repair source "
+        "(dust-free sibling cube or emlines_info.dat with a matching line "
+        "count) was found in this $SPS_HOME. The nebular data files are "
+        "internally inconsistent -- re-download or regenerate them.")
+
+
 def _locate(x, grid):
     """Index of the cell with ``grid[i] <= x < grid[i+1]``, clipped to ``[0, n-2]``."""
     return jnp.clip(jnp.searchsorted(grid, x) - 1, 0, grid.size - 2)
@@ -355,6 +438,21 @@ class NebularModel:
             readlamb = np.asarray(f.readline().split(), dtype=np.float64)
             payload  = f.readlines()
 
+        n_expected = 2 * self.nebnz * self.nebnage * self.nebnip
+        if len(payload) != n_expected:
+            raise ValueError(
+                f"{self.cont_file}: expected {n_expected} payload lines "
+                f"({self.nebnz}x{self.nebnage}x{self.nebnip} meta+flux "
+                f"blocks), found {len(payload)}. Grid dimensions and file "
+                "disagree.")
+        nflux = len(payload[1].split())
+        if readlamb.size != nflux:
+            raise ValueError(
+                f"{self.cont_file}: wavelength row has {readlamb.size} "
+                f"entries but the flux rows have {nflux}. The continuum "
+                "cube is internally inconsistent -- re-download or "
+                "regenerate the nebular data files.")
+
         cont = np.empty((self.nspec, self.nebnz, self.nebnage, self.nebnip),
                         dtype=np.float64)
         logz = np.empty(self.nebnz,   dtype=np.float64)
@@ -395,6 +493,18 @@ class NebularModel:
             f.readline()                                # header
             line_pos = np.asarray(f.readline().split(), dtype=np.float64)
             payload  = f.readlines()
+
+        n_expected = 2 * self.nebnz * self.nebnage * self.nebnip
+        if len(payload) != n_expected:
+            raise ValueError(
+                f"{self.line_file}: expected {n_expected} payload lines "
+                f"({self.nebnz}x{self.nebnage}x{self.nebnip} meta+flux "
+                f"blocks), found {len(payload)}. Grid dimensions and file "
+                "disagree.")
+        # Repair the upstream stale-wavelength-row bug in ZAU_WD_*.lines
+        # (128-entry header row on 166-column flux blocks); no-op for
+        # healthy files of any vintage.
+        line_pos = _resolve_line_wavelengths(self.line_file, line_pos, payload)
 
         nem = line_pos.size
         self.nemline = nem

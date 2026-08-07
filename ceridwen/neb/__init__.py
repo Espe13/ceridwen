@@ -24,12 +24,6 @@ The SVD-accelerated subclass is optional and inherits from the strict
 
 from .NebularGridModel import NebularModel
 
-# SVD-accelerated variant is optional — not present in all installations
-try:
-    from .NebularGridModelSVD import NebularModelSVD
-    _HAS_SVD = True
-except ImportError:
-    NebularModelSVD = None
-    _HAS_SVD = False
 
-__all__ = ["NebularModel"] + (["NebularModelSVD"] if _HAS_SVD else [])
+
+__all__ = ["NebularModel"]
