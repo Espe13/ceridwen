@@ -701,7 +701,7 @@ class CSPBasis:
         self._known_theta_keys = set(self.param_names) | {
             'lookback_time', 'Z', 'zh',
             'logmass', 'zred', 'igm_factor', 'eline_scaling',
-            'sigma_smooth', 'frac_obrun',
+            'sigma_smooth', 'frac_obrun', 'spectrum_scaling',
         }
 
     # -----------------------------------------------------------------------
@@ -1178,17 +1178,34 @@ class CSPBasis:
         ``(continuum, lines)`` decomposition.
         """
         # Decompose the model SED once (see get_spectrum_components), then
-        # build the two observer-facing spectra from it:
+        # build the three observer-facing spectra from it.  The Spectrum and
+        # the Lines observations carry SEPARATE, independent calibration
+        # nuisances (2026-08 change):
         #
         #   spectrum_phot -- continuum + emission lines at TRUE strength.
         #                    Photometry captures the full field of view, so
-        #                    it always sees the intrinsic line flux.
-        #   spectrum_slit -- continuum + eline_scaling * lines.
-        #                    Spectrum and Lines are slit-measured and lose
-        #                    flux; eline_scaling is the aperture correction
-        #                    (a FRACTION; 1.0 = no loss, 0.65 = lines at 65%,
-        #                    2.0 = lines doubled).  Absent from theta -> factor
-        #                    1.0, so spectrum_slit equals spectrum_phot.
+        #                    it always sees the intrinsic flux.  Never scaled.
+        #   spectrum_slit -- continuum + emission lines at TRUE strength, the
+        #                    intrinsic fibre/slit spectrum.  Its overall flux
+        #                    calibration relative to the photometry is handled
+        #                    SEPARATELY by ``spectrum_scaling`` at projection time
+        #                    (see _project_observations) -- a single
+        #                    multiplicative recalibration of the whole
+        #                    spectrum (continuum AND its lines together, since
+        #                    both share the fibre aperture).  ``eline_scaling``
+        #                    deliberately does NOT touch the spectrum.
+        #   line_slit     -- eline_scaling * lines: the emission-line-ONLY
+        #                    component with the LINE-CATALOGUE aperture
+        #                    correction.  This drives the Lines observation
+        #                    only (a FRACTION; 1.0 = no loss, 0.65 = 65%).
+        #
+        # Rationale for the split: ``spectrum_scaling`` is the spectrophotometric
+        # calibration of the spectrograph trace (continuum-dominated), whereas
+        # ``eline_scaling`` is the aperture loss of the separately-measured
+        # emission-line catalogue.  They are distinct instruments/measurements
+        # and must be free independently; entangling them (the pre-2026-08
+        # behaviour, where the spectrum's lines carried eline_scaling) biases
+        # whichever one is better constrained into the other.
         #
         # nebemlineinspec is intentionally NOT consulted here (it governs only
         # the default of the public get_spectrum); the observations must always
@@ -1196,24 +1213,27 @@ class CSPBasis:
         # out at trace time.
         spectrum_cont, line_component = self.get_spectrum_components(theta)
 
-        spectrum_phot = spectrum_cont + line_component       # lines unscaled
+        # Photometry and the (intrinsic) slit spectrum both carry the lines at
+        # true strength; the spectrum's separate flux calibration is applied
+        # via spectrum_scaling in _project_observations, NOT here.
+        spectrum_phot = spectrum_cont + line_component
+        spectrum_slit = spectrum_cont + line_component
+
+        # ``line_slit`` is the emission-line-ONLY component with the line
+        # aperture correction eline_scaling.  Lines observations are projected
+        # from this term (2026-07-21 fix): previously the full slit spectrum
+        # was used, so the Gaussian line apertures integrated the stellar +
+        # nebular CONTINUUM under every line as well.  Catalogue line fluxes
+        # are continuum-subtracted, so that continuum term entered the
+        # likelihood as a spurious "line" flux scaling with the evolved
+        # stellar mass -- the dominant faint-line bias in the JADES fits.
         if "eline_scaling" in theta:
             eline_factor = jnp.ravel(theta["eline_scaling"])[0]   # fraction; 1.0 = no loss
             line_slit = (eline_factor.astype(spectrum_cont.dtype)
                          * line_component)
         else:
             line_slit = line_component
-        spectrum_slit = spectrum_cont + line_slit
 
-        # ``line_slit`` is the emission-line-ONLY slit component.  Lines
-        # observations must be projected from this term (2026-07-21 fix):
-        # previously the full slit spectrum was used, so the Gaussian line
-        # apertures integrated the stellar + nebular CONTINUUM under every
-        # line as well.  Catalogue line fluxes are continuum-subtracted, so
-        # that continuum term entered the likelihood as a spurious "line"
-        # flux scaling with the evolved stellar mass -- the dominant
-        # faint-line bias in the JADES fits (inflated high-order H ladder,
-        # auroral and He lines; inverted ladders in low-sSFR posteriors).
         return spectrum_phot, spectrum_slit, line_slit
 
     def _apply_mass_redshift_igm(self, spectrum_phot, spectrum_slit,
@@ -1301,6 +1321,18 @@ class CSPBasis:
                         else None)
         out = {}
         free_z_in_theta = "zred" in theta
+        # Spectrophotometric normalisation (Prospector ``spec_norm``
+        # convention): an OPTIONAL scalar multiplicative recalibration applied
+        # to ``Spectrum`` predictions ONLY.  Photometry (and Lines) are left
+        # untouched, so they anchor the absolute flux scale while
+        # ``spectrum_scaling`` absorbs the uncertain slit/fibre flux calibration of
+        # the spectrum -- i.e. it rescales the model spectrum onto the
+        # photometric scale (equivalently, the observed spectrum onto the
+        # photometry).  Absent from theta -> factor 1.0, so every existing
+        # fit is bit-for-bit unchanged.  The ``"spectrum_scaling" in theta`` check
+        # is a Python-static dict-key test that folds out at trace time.
+        spectrum_scaling = (jnp.ravel(theta["spectrum_scaling"])[0]
+                     if "spectrum_scaling" in theta else None)
         # Velocity-broadening dispatch.
         #
         # ``Spectrum.fit_sigma_smooth`` is a static Python flag set at
@@ -1331,12 +1363,18 @@ class CSPBasis:
             elif (isinstance(obs, _Spectrum)
                   and getattr(obs, "fit_sigma_smooth", False)
                   and "sigma_smooth" in theta):
-                out[obs.name] = obs.predict(
+                pred = obs.predict(
                     spec_for_obs, self.wave,
                     sigma_smooth=jnp.ravel(theta["sigma_smooth"])[0],
                 )
+                out[obs.name] = (pred * spectrum_scaling.astype(pred.dtype)
+                                 if spectrum_scaling is not None else pred)
             else:
-                out[obs.name] = obs.predict(spec_for_obs, self.wave)
+                pred = obs.predict(spec_for_obs, self.wave)
+                # spectrum_scaling scales the Spectrum only (static isinstance check).
+                if spectrum_scaling is not None and isinstance(obs, _Spectrum):
+                    pred = pred * spectrum_scaling.astype(pred.dtype)
+                out[obs.name] = pred
         return out
 
     def _neb_cube_rows_for(self, obs):

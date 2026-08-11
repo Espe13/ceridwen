@@ -697,7 +697,7 @@ class CSPBasis_afe:
         self._known_theta_keys = set(self.param_names) | {
             'lookback_time', 'Z', 'zh', 'afe',
             'logmass', 'zred', 'igm_factor',
-            'sigma_smooth', 'frac_obrun',
+            'sigma_smooth', 'frac_obrun', 'spectrum_scaling',
         }
 
     # -----------------------------------------------------------------------
@@ -1165,13 +1165,22 @@ class CSPBasis_afe:
         """Build the photometry- and slit-facing spectra.
 
         In the parent ``CSPBasis`` this splits continuum from emission
-        lines and applies the ``eline_scaling`` slit-loss factor to the
-        line component.  Here the line component is identically zero, so
-        photometry- and slit-facing spectra are the SAME array (no copy;
-        XLA aliases it) and ``eline_scaling`` has nothing to act on — it
-        is intentionally not consulted (the theta typo-guard flags it as
-        unused if supplied).  The three-tuple return is retained for
-        interface parity with ``CSPBasis``.
+        lines and applies the ``eline_scaling`` LINE-catalogue aperture
+        factor to the line component only.  Here the line component is
+        identically zero, so photometry- and slit-facing spectra are the
+        SAME array (no copy; XLA aliases it) and ``eline_scaling`` has
+        nothing to act on — it is intentionally not consulted (the theta
+        typo-guard flags it as unused if supplied).
+
+        The SEPARATE spectrophotometric normalisation ``spectrum_scaling`` — the
+        one calibration nuisance that IS meaningful for a continuum-only
+        alpha fit — is applied to the ``Spectrum`` prediction in
+        :meth:`_project_observations`, exactly as in the parent class, and
+        rescales the whole model spectrum onto the photometric flux scale.
+        ``spectrum_scaling`` (spectrum calibration) and ``eline_scaling`` (line
+        aperture) are independent by construction; here only the former does
+        anything.  The three-tuple return is retained for interface parity
+        with ``CSPBasis``.
         """
         spectrum_cont, line_component = self.get_spectrum_components(theta)
         return (spectrum_cont, spectrum_cont, line_component)
@@ -1258,6 +1267,20 @@ class CSPBasis_afe:
             )
         out = {}
         free_z_in_theta = "zred" in theta
+        # Spectrophotometric normalisation (Prospector ``spec_norm``
+        # convention): an OPTIONAL scalar multiplicative recalibration applied
+        # to ``Spectrum`` predictions ONLY.  Photometry is left untouched, so
+        # it anchors the absolute flux scale while ``spectrum_scaling`` absorbs the
+        # uncertain slit/fibre flux calibration of the spectrum -- it rescales
+        # the model spectrum onto the photometric scale (equivalently, the
+        # observed spectrum onto the photometry).  Absent from theta -> factor
+        # 1.0, so existing alpha fits are bit-for-bit unchanged.  The
+        # ``"spectrum_scaling" in theta`` check is a Python-static dict-key test that
+        # folds out at trace time.  (Unlike ``eline_scaling``, which needs a
+        # nebular line component this variant lacks, ``spectrum_scaling`` acts on the
+        # continuum spectrum itself and is therefore meaningful here.)
+        spectrum_scaling = (jnp.ravel(theta["spectrum_scaling"])[0]
+                     if "spectrum_scaling" in theta else None)
         # Velocity-broadening dispatch.
         #
         # ``Spectrum.fit_sigma_smooth`` is a static Python flag set at
@@ -1281,12 +1304,18 @@ class CSPBasis_afe:
             elif (isinstance(obs, _Spectrum)
                   and getattr(obs, "fit_sigma_smooth", False)
                   and "sigma_smooth" in theta):
-                out[obs.name] = obs.predict(
+                pred = obs.predict(
                     spec_for_obs, self.wave,
                     sigma_smooth=jnp.ravel(theta["sigma_smooth"])[0],
                 )
+                out[obs.name] = (pred * spectrum_scaling.astype(pred.dtype)
+                                 if spectrum_scaling is not None else pred)
             else:
-                out[obs.name] = obs.predict(spec_for_obs, self.wave)
+                pred = obs.predict(spec_for_obs, self.wave)
+                # spectrum_scaling scales the Spectrum only (static isinstance check).
+                if spectrum_scaling is not None and isinstance(obs, _Spectrum):
+                    pred = pred * spectrum_scaling.astype(pred.dtype)
+                out[obs.name] = pred
         return out
 
     # -----------------------------------------------------------------------

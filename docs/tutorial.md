@@ -123,13 +123,23 @@ lines = Lines(
 )
 ```
 
-!!! tip "Slit losses and `eline_scaling`"
-    Photometry sees the full field of view, but slit spectroscopy and
-    aperture-measured line fluxes lose flux. The model parameter `eline_scaling`
-    is the fractional aperture correction applied to the **slit** spectra and
-    lines (1.0 = no loss, 0.65 = lines at 65%). Add a prior on it (below) to
-    marginalise over the aperture mismatch when fitting photometry together with
-    a slit spectrum/lines.
+!!! tip "Two independent calibrations: `eline_scaling` and `spectrum_scaling`"
+    Photometry sees the full field of view, but slit/fibre spectroscopy and
+    aperture-measured line fluxes lose (or miscalibrate) flux. CERIDWEN
+    exposes **two separate, independent** nuisances for this:
+
+    - `eline_scaling` — the fractional aperture correction applied to the
+      emission-**LINE** component only (1.0 = no loss, 0.65 = lines at 65%).
+      It drives the `Lines` observation and does **not** touch the spectrum.
+    - `spectrum_scaling` — a multiplicative spectrophotometric normalisation applied
+      to the whole **`Spectrum`** prediction (continuum + any lines), rescaling
+      it onto the photometric flux scale. Photometry is left unscaled, so it
+      anchors the absolute flux while `spectrum_scaling` absorbs the spectrum's
+      uncertain flux calibration (the Prospector `spec_norm` convention).
+
+    The two are decoupled by construction: `eline_scaling` scales lines,
+    `spectrum_scaling` scales the spectrum, and neither affects the photometry. Add a
+    prior on each nuisance you want to marginalise over (below).
 
 ## 5. Priors and the model
 
@@ -152,8 +162,12 @@ priors = {
     # Nebular (required for the Lines / nebular continuum).
     "gas_logz":          Uniform(low=-2.0, high=0.5),
     "gas_logu":          Uniform(low=-4.0, high=-1.0),
-    # Aperture correction for the slit spectrum + lines.
+    # Emission-line aperture correction (Lines observation only).
     "eline_scaling":     Uniform(low=0.1, high=2.0),
+    # Spectrophotometric normalisation of the spectrum onto the photometry
+    # (Spectrum observation only; independent of eline_scaling). Omit if the
+    # spectrum is already flux-calibrated to the photometric system.
+    "spectrum_scaling":         ClippedNormal(mean=1.0, sigma=0.3, low=0.2, high=3.0),
 }
 
 # The non-parametric SFH is sampled as logsfr_ratios and turned into the per-bin
@@ -229,9 +243,11 @@ script that also builds a corner plot and a model-vs-data figure.
   sets is the most common cause of a "good χ² per set but bad joint fit".
 - **Don't double-count lines.** If you fit both a spectrum *and* the line
   fluxes, mask the lines out of the continuum spectrum (`spec.mask_lines(...)`).
-- **Aperture.** Use `eline_scaling` (and, for the spectrum, `calibration`/
-  `noise_floor`) to absorb slit-vs-photometry aperture and flux-calibration
-  differences.
+- **Aperture and flux calibration.** Use `eline_scaling` for the emission-line
+  aperture loss (Lines) and `spectrum_scaling` for the spectrum's overall
+  flux-calibration offset relative to the photometry (Spectrum). They are
+  independent; fit whichever your data need. `noise_floor` (and a fixed
+  per-pixel `calibration` vector) further absorb residual systematics.
 - **Know your frames.** The spectrum's pixel grid is **observed-frame** vacuum
   Å (the model is redshifted onto it); line-list wavelengths and
   `mask_lines(...)` centres are **rest-frame** vacuum Å (redshifted internally

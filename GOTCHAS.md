@@ -85,6 +85,17 @@ prefer `predict`/`get_spectrum_components`.
   lines: `1.0` = no aperture loss, `0.65` = lines at 65%, `2.0` = lines doubled.
   (It was previously a percentage where 100 = no loss; changed to 1.0 for
   intuitiveness.)
+- `eline_scaling` vs `spectrum_scaling` — **two different calibrations, do not
+  conflate.** `eline_scaling` scales the emission-**LINE** component only
+  (the `Lines` observation). `spectrum_scaling` scales the whole **`Spectrum`**
+  prediction onto the photometric flux scale. Neither touches the photometry,
+  and the two are independent. Before 2026-08 the spectrum's lines were also
+  scaled by `eline_scaling`; now the spectrum is governed solely by
+  `spectrum_scaling`, so a joint Spectrum + Lines fit that previously leaned on
+  `eline_scaling` to set the spectrum level must add a `spectrum_scaling` prior.
+- `spectrum_scaling` acts on `Spectrum` **only** (a no-op for pure photometry/line
+  fits). In the nebular-free `CSPBasis_afe` it is the *only* spectrum
+  calibration knob (there are no lines, so `eline_scaling` is inert there).
 
 ## 6. Environment & data consistency (not auto-guarded — check yourself)
 
