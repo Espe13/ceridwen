@@ -91,6 +91,24 @@ REGISTRY: dict[str, dict] = {
                  "{-0.2, 0.0, +0.2, +0.4, +0.6}. For CSPBasis_afe "
                  "(no nebular; no FSPS needed at fit time).",
     },
+    # High-resolution alpha-enhanced grid (schema 2.0, 4-D, n_afe=5).  Same
+    # (afe, [Fe/H], age) node grid as amist_c3k_lr_chab_afe -- and the SAME
+    # log10 Z axis (Z = 0.0185 * 10**[Fe/H]) -- but the high-res C3K spectra
+    # (10992 lambda pts, R up to ~65000 in the optical) that are too large to
+    # ship in FSPS/python-FSPS.  Kroupa IMF (imf_type=2; the LR grid is
+    # Chabrier).  Built from M. J. Park's alpha-MC FITS via
+    # scripts_afe/build_afe_hr_grid.py.
+    "amist_c3k_hr_krou_afe": {
+        "url": None,        # TODO: fill after the Zenodo upload of the HR grid
+        "sha256": None,     # TODO: pin from the built file (publish_grid_zenodo.py)
+        "size_mb": 584,     # (5, 13, 107, 10992) float64 + metadata
+        "notes": "MIST v2.5 (aMIST) + C3K v2.3 high-res, Kroupa IMF, "
+                 "[alpha/Fe] = {-0.2, 0.0, +0.2, +0.4, +0.6}, "
+                 "[Fe/H] in [-2.5, +0.5], log10(age/yr) in [5.0, 10.3]. "
+                 "High-resolution twin of amist_c3k_lr_chab_afe for "
+                 "CSPBasis_afe (no nebular; no FSPS needed at fit time). "
+                 "Source: M. J. Park alpha-MC SSPs (2025-07-22).",
+    },
     # Library-null control: same code/data/library, single solar plane.
     "mist_c3k_lr_chab_null": {
         "url": None,        # TODO after Zenodo upload

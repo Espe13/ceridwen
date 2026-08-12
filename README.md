@@ -495,6 +495,21 @@ legacy 3-D grid raises a `TypeError` telling you to use `CSPBasis`;
 emission-line observations are rejected (continuum and photometry only)
 until α-enhanced photoionisation grids exist.
 
+Two α-enhanced grids are available. `amist_c3k_lr_chab_afe` is the
+**low-resolution** C3K grid (1936 λ points, Chabrier IMF) built from
+`AFE_FLAG=1` python-fsps and used for the method-paper mock suite.
+`amist_c3k_hr_krou_afe` is the **high-resolution** twin (10992 λ points,
+R up to ~65000 in the optical, Kroupa IMF), built from the alpha-MC C3K
+high-res SSPs (MIST v2.5 + C3K v2.3) that are too large to ship inside
+FSPS/python-FSPS. Both share the *same* `(afe, [Fe/H], age)` node grid and
+the same `log10 Z` axis (Z = 0.0185·10^[Fe/H]), so they are drop-in
+interchangeable — only the spectral resolution and the IMF differ (mind the
+Chabrier↔Kroupa mass-normalisation offset when comparing masses across the
+two). The high-res grid is rebuilt from the provider's FITS with
+[`scripts_afe/build_afe_hr_grid.py`](scripts_afe/build_afe_hr_grid.py) and
+published on Zenodo; fetch it by name exactly as above with
+`fetch_grid("amist_c3k_hr_krou_afe")`.
+
 ## Troubleshooting
 
 - **Run `python -m ceridwen.check` first.** It reports missing dependencies, an

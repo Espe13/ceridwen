@@ -44,7 +44,6 @@ from sedpy_jax.smoothing import make_vel_smoother
 from ceridwen.dust.DustModel import Dust, DiffuseDust
 from ceridwen.dust.DustEmission import DustEmission
 from ceridwen.neb.NebularGridModel            import NebularModel
-from ceridwen.neb.NebularGridModel_fsps_match import NebularModelFSPSMatch
 # Observation-type dispatch is handled by the polymorphic
 # obs.predict(spectrum, wave) method on each Observation subclass, so
 # CSPBasis.predict has zero isinstance/if branches and needs no imports here.
@@ -834,12 +833,19 @@ class CSPBasis:
             # matching the FSPS run-time formula; the nebular model is the
             # single source of truth for ``log_qq``.
             #
-            # ``match_fsps`` is consumed here rather than forwarded to
-            # NebularModel.  When True, ceridwen uses the FSPS-bug-replicating
-            # variant (both cubes interpolated on the line-cube axes), matching
-            # FSPS to better than 0.5%.  When False (default), it uses the
-            # physically strict per-cube-axis variant.
+            # ``match_fsps`` is obsolete: the historical FSPS-bug-replicating
+            # nebular variant (NebularModelFSPSMatch) is gone now that FSPS
+            # itself was fixed and the physically strict NebularModel matches
+            # it.  The key is still popped (so old callers that pass it do not
+            # crash), but it no longer selects a class; a True value just warns.
             match_fsps = init_neb_params.pop('match_fsps', False)
+            if match_fsps:
+                warnings.warn(
+                    "match_fsps=True is obsolete and ignored: NebularModelFSPSMatch "
+                    "has been removed (upstream FSPS was fixed and now matches the "
+                    "strict NebularModel). Remove match_fsps from your call.",
+                    stacklevel=2,
+                )
 
             # Auto-propagate the isochrone type from the SSP grid's recorded
             # provenance so the CLOUDY nebular grid always matches the SSP
@@ -855,7 +861,7 @@ class CSPBasis:
                 'ssp_flux':       self.flux,
                 'ssp_ages_lgyr':  self.ssp_ages_lgyr,
             })
-            NebClass = NebularModelFSPSMatch if match_fsps else NebularModel
+            NebClass = NebularModel
             print(f"Initializing Nebular Emission model ({NebClass.__name__}, "
                   f"isoc_type={init_neb_params['isoc_type']!r})...")
             self.neb = NebClass(**init_neb_params)

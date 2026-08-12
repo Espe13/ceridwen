@@ -32,7 +32,7 @@ from ceridwen.csp.csp import CSPBasis
 
 from _gridfixture import require_test_grid
 
-# Uses NebularModelFSPSMatch, which reads CLOUDY grids from $SPS_HOME/nebular/;
+# Uses NebularModel, which reads CLOUDY grids from $SPS_HOME/nebular/;
 # those ship with FSPS, so this module requires a working FSPS install.
 pytestmark = pytest.mark.fsps
 
@@ -59,7 +59,7 @@ def _build_dust_neb_csp():
         add_dust=True, add_diffuse_dust=True, add_dust_emission=False,
         add_neb=True, nebemlineinspec=True,
         # isoc_type is auto-resolved from the SSP grid's recorded provenance.
-        init_neb_params={"cloudy_dust": False, "match_fsps": True},
+        init_neb_params={"cloudy_dust": False},
         init_dust_params={"bin_edges": [(-jnp.inf, -1.97)], "laws": ["powerlaw"]},
         diffuse_law="kriek_conroy",
         verbose=False, sps_home=os.environ.get("SPS_HOME"),
