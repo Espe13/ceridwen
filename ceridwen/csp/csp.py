@@ -2048,6 +2048,84 @@ class CSPBasis:
             neb_young.astype(jnp.float32))
         return neb_all
 
+    # ── PERF (2026-08-12): factored nebular path ─────────────────────────
+    # ``_build_neb_array`` above allocates a full (n_z, n_age, n_wave) fp32
+    # cube to carry information that lives on only ``n_young`` age rows, and
+    # every consumer then contracted the metallicity axis straight back out
+    # again.  Combined with the ``jnp.where(kill_ion, ...)`` copy of
+    # ``self.flux`` and the ``stellar + neb`` sum, that was THREE full-size
+    # temporaries per forward call -- roughly doubled under ``jax.grad``
+    # (XLA keeps the einsum operands alive as backward residuals) and again
+    # by the chain width under ``vmap``.  It was the dominant term in peak
+    # device memory and the direct cause of OOM on multi-chain GPU runs.
+    #
+    # The two helpers below never form an (n_z, n_age, n_wave) array.  They
+    # exploit the fact that the nebular emission is RANK-1 in metallicity:
+    # the CLOUDY grid interpolation returns log-luminosities with no z axis,
+    # and the only z dependence is the ionising-photon rate ``log_qq``.  So
+    # the z sum folds into the SSP weights BEFORE the wavelength axis is
+    # touched.  ``_build_neb_array`` is kept for the picket-fence geometry
+    # and for external callers.
+    def _neb_weights_and_base(self, W_f32, theta, *, include_lines, amplitude):
+        """Return ``(v, base)`` for the young age rows.
+
+        ``v`` has shape ``(n_young,)`` and ``base`` shape
+        ``(n_young, n_wave)``, such that for any per-(age, wavelength)
+        multiplier ``A``
+
+            sum_z sum_{a in young} W[z,a] * neb[z,a,w] * A[a,w]
+              == sum_y v[y] * base[y,w] * A[young_idx[y], w]
+
+        exactly.  ``amplitude`` is the scalar ``(1 - f_esc)`` nebular scaling.
+        Computing ``v`` first collapses the metallicity axis at cost
+        ``n_z * n_young`` instead of dragging it through the wavelength
+        contraction at cost ``n_z * n_young * n_wave``.
+        """
+        base, scale = self.neb.evaluate_batch_factored(
+            theta["gas_logz"], theta["gas_logu"],
+            self._neb_ages_young, self._neb_logqq_young,
+            include_lines=include_lines,
+        )
+        yi = self._neb_young_idx
+        v = jnp.einsum("zy,zy->y", W_f32[:, yi],
+                       scale.astype(jnp.float32)) * amplitude
+        return v, base.astype(jnp.float32)
+
+    def _neb_spectrum_term(self, W_f32, theta, *, include_lines,
+                           attn_age=None, amplitude=jnp.float32(1.0)):
+        """Nebular contribution contracted straight down to ``(n_wave,)``.
+
+        ``attn_age`` is the full ``(n_age, n_wave)`` attenuation array; only
+        the young rows are read.  Pass ``None`` for the dust-free variant.
+        """
+        v, base = self._neb_weights_and_base(
+            W_f32, theta, include_lines=include_lines, amplitude=amplitude)
+        if attn_age is None:
+            return jnp.einsum("y,yw->w", v, base)
+        return jnp.einsum("y,yw,yw->w", v, base,
+                          attn_age[self._neb_young_idx, :])
+
+    def _ion_multiplier(self, theta):
+        """Return ``(ion_mult, neb_amp)`` replacing the dense ``kill_ion`` copy.
+
+        ``self.kill_ion`` has shape ``(n_age, n_wave)`` -- it carries no
+        metallicity axis -- so
+
+            jnp.where(kill_ion[None, :, :], f_esc * flux, flux)
+              == flux * jnp.where(kill_ion, f_esc, 1.0)
+
+        and the mask can be folded into the (tiny) attenuation array instead
+        of copying the (n_z, n_age, n_wave) flux cube.  Bit-identical: IEEE
+        multiplication is commutative and the mask entries are exactly 1.0
+        and exactly ``f_esc`` (or exactly 0.0 when ``frac_obrun`` is absent).
+        """
+        if "frac_obrun" in theta:
+            f_esc = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
+            return (jnp.where(self.kill_ion, f_esc, jnp.float32(1.0)),
+                    jnp.float32(1.0) - f_esc)
+        return (jnp.where(self.kill_ion, jnp.float32(0.0), jnp.float32(1.0)),
+                jnp.float32(1.0))
+
     def _spectrum_picket_nodem(self, theta, neb_all):
         """Picket-fence / partial-covering escape geometry (``fesc_geometry=
         'picket'``), no dust emission.
@@ -2096,13 +2174,15 @@ class CSPBasis:
             include_lines = self.nebemlineinspec
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
 
-        neb_all = self._build_neb_array(theta, include_lines=include_lines)
-
         # Picket-fence / partial-covering geometry: dedicated path (the
         # escaped channel bypasses ALL dust and the nebular emission gets no
         # bypass mix).  Static attribute -> resolved at trace time.
+        # PERF (2026-08-12): the dense nebular cube is now built ONLY on this
+        # branch, so the mainline path below never materialises it.
         if self.fesc_geometry == "picket" and "frac_obrun" in theta:
-            return self._spectrum_picket_nodem(theta, neb_all)
+            return self._spectrum_picket_nodem(
+                theta,
+                self._build_neb_array(theta, include_lines=include_lines))
 
         # Lyman / ionising-photon escape fraction (prospector-equivalent
         # ``frac_obrun``).  When present in theta:
@@ -2115,17 +2195,10 @@ class CSPBasis:
         # Absent → defaults to f_esc = 0 (no kill-ion restoration, no nebular
         # scaling).  The check is a Python-static dict-key lookup, free at
         # trace time.
-        if "frac_obrun" in theta:
-            f_esc = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
-            stellar_fluxes  = jnp.where(
-                self.kill_ion[None, :, :],
-                f_esc * self.flux,                        # restore frac_obrun
-                self.flux,
-            )
-            neb_all = neb_all * (jnp.float32(1.0) - f_esc)
-        else:
-            stellar_fluxes = jnp.where(self.kill_ion[None, :, :], 0.0, self.flux)
-        combined_fluxes = stellar_fluxes + neb_all                      # (n_z, n_age, n_wave) float32
+        # PERF (2026-08-12): ``ion_mult`` is an (n_age, n_wave) multiplier
+        # replacing the dense kill_ion copy of the flux cube; ``neb_amp`` is
+        # the (1 - f_esc) nebular scaling.  See ``_ion_multiplier``.
+        ion_mult, neb_amp = self._ion_multiplier(theta)
 
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
         # Cast dust curves to float32 — keeps the forward model in single
@@ -2162,8 +2235,17 @@ class CSPBasis:
             # but see the diffuse ISM (dust2).  No effect when frac_obrun absent/0.
             attn_age = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)
 
+        # PERF (2026-08-12): split the contraction rather than forming the
+        # stellar + nebular sum as a dense cube.  Algebraically identical:
+        #   sum_za W (S + N) A  ==  sum_za W S A  +  sum_z sum_{a young} W N A
+        # with S = flux * ion_mult (a scalar mask, folded into the attenuation
+        # array) and the nebular half rank-1 in z (see _neb_spectrum_term).
         W_f32 = W.astype(jnp.float32)
-        spectrum = jnp.einsum("za,zaw,aw->w", W_f32, combined_fluxes, attn_age)
+        spectrum = jnp.einsum("za,zaw,aw->w", W_f32, self.flux,
+                              ion_mult * attn_age)
+        spectrum = spectrum + self._neb_spectrum_term(
+            W_f32, theta, include_lines=include_lines,
+            attn_age=attn_age, amplitude=neb_amp)
         spectrum = spectrum * jnp.exp(-attn_diffuse.astype(jnp.float32))
 
         return spectrum.reshape((-1,))
@@ -2179,21 +2261,11 @@ class CSPBasis:
             include_lines = self.nebemlineinspec
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
 
-        neb_all = self._build_neb_array(theta, include_lines=include_lines)
-
         # Lyman / ionising-photon escape fraction.  See the long
         # comment on this block in get_spectrum_dattn_nodem_neb above.
-        if "frac_obrun" in theta:
-            f_esc = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
-            stellar_fluxes  = jnp.where(
-                self.kill_ion[None, :, :],
-                f_esc * self.flux,
-                self.flux,
-            )
-            neb_all = neb_all * (jnp.float32(1.0) - f_esc)
-        else:
-            stellar_fluxes = jnp.where(self.kill_ion[None, :, :], 0.0, self.flux)
-        combined_fluxes = stellar_fluxes + neb_all                      # float32
+        # PERF (2026-08-12): dense kill_ion copy replaced by an
+        # (n_age, n_wave) multiplier; nebular term contracted separately.
+        ion_mult, neb_amp = self._ion_multiplier(theta)
 
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
         M             = self._age_bin_mix
@@ -2223,9 +2295,19 @@ class CSPBasis:
             # but see the diffuse ISM (dust2).  No effect when frac_obrun absent/0.
             attn_age = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)
 
+        # PERF (2026-08-12): split contraction; the nebular grid is
+        # interpolated ONCE and reused for both the dust-free and the
+        # attenuated sum.  See get_spectrum_dattn_nodem_neb.
         W_f32 = W.astype(jnp.float32)
-        spectrum_dust_free = jnp.einsum("za,zaw->w",       W_f32, combined_fluxes)
-        attenuated         = jnp.einsum("za,zaw,aw->w",    W_f32, combined_fluxes, attn_age)
+        neb_v, neb_base = self._neb_weights_and_base(
+            W_f32, theta, include_lines=include_lines, amplitude=neb_amp)
+        yi = self._neb_young_idx
+        spectrum_dust_free = (
+            jnp.einsum("za,zaw,aw->w", W_f32, self.flux, ion_mult)
+            + jnp.einsum("y,yw->w", neb_v, neb_base))
+        attenuated = (
+            jnp.einsum("za,zaw,aw->w", W_f32, self.flux, ion_mult * attn_age)
+            + jnp.einsum("y,yw,yw->w", neb_v, neb_base, attn_age[yi, :]))
         attenuated         = attenuated * diffuse_curve
 
         dust_emi_spectrum, _mdust, _tduste = self.dust_emi.compute_dust_emission(
@@ -2309,21 +2391,15 @@ class CSPBasis:
             include_lines = self.nebemlineinspec
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
 
-        neb_all = self._build_neb_array(theta, include_lines=include_lines)
-
         # Suppress stellar ionizing part — with the optional
         # frac_obrun escape fraction (see get_spectrum_dattn_nodem_neb).
-        if "frac_obrun" in theta:
-            f_esc = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
-            stellar_fluxes = jnp.where(
-                self.kill_ion[None, :, :],
-                f_esc * self.flux,
-                self.flux,
-            )
-            neb_all = neb_all * (jnp.float32(1.0) - f_esc)
-        else:
-            stellar_fluxes = jnp.where(self.kill_ion[None, :, :], 0.0, self.flux)
+        # PERF (2026-08-12): dense kill_ion copy replaced by an
+        # (n_age, n_wave) multiplier; nebular term contracted separately over
+        # the young age rows.  No (n_z, n_age, n_wave) temporary is formed.
+        ion_mult, neb_amp = self._ion_multiplier(theta)
 
-        combined_fluxes = stellar_fluxes + neb_all  # float32
         W_f32 = W.astype(jnp.float32)
-        return jnp.einsum("za,zaw->w", W_f32, combined_fluxes)
+        return (jnp.einsum("za,zaw,aw->w", W_f32, self.flux, ion_mult)
+                + self._neb_spectrum_term(W_f32, theta,
+                                          include_lines=include_lines,
+                                          amplitude=neb_amp))

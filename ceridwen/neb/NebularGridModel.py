@@ -691,13 +691,101 @@ class NebularModel:
                                 self.nebem_line_age,
                                 self.nebem_line_logu)                     # (nlines, n_young)
 
-        cont_flux = jnp.power(10.0, log_cont[None, :, :] + logqq_young[:, None, :])
-        line_lum  = jnp.power(10.0, log_line[None, :, :] + logqq_young[:, None, :])
-        line_spec = jnp.einsum('wl,zly->zwy', self.gaussnebarr, line_lum)
+        # ── PERF (2026-08-12): factorise the metallicity axis OUT of the
+        # line-painting contraction. ``log_cont`` / ``log_line`` come out of
+        # ``_interp_cube`` with NO z axis -- the only z dependence in the whole
+        # expression is ``logqq_young``. The old form broadcast logqq into the
+        # exponent first and then contracted
+        #     einsum('wl,zly->zwy', gaussnebarr, line_lum)
+        # once per metallicity, costing n_z * n_wave * n_young * n_lines
+        # multiply-adds for a result that is rank-1 in z. Using
+        #     10**(log_X[.,y] + logqq[z,y])
+        #       = 10**(log_X[.,y] + ref[y]) * 10**(logqq[z,y] - ref[y])
+        # the sum over lines commutes through the second factor, so the
+        # contraction is done ONCE at (n_wave, n_young) and then scaled. That
+        # is an ~n_z-fold reduction in both FLOPs and bytes moved on what is
+        # otherwise the single most expensive op in the forward model.
+        #
+        # ``ref`` is the per-young-age MAXIMUM over z, which is what makes the
+        # split safe in float32: the first factor never exceeds the largest
+        # term the old code already formed (so no new overflow can appear --
+        # naively splitting into 10**log_X * 10**logqq WOULD overflow, since
+        # logqq ~ 10**46 photons/s alone exceeds the float32 range), and the
+        # second factor lies in (0, 1]. The ``isfinite`` guard covers ages
+        # whose ionising-photon rate is identically zero (log_qq = -inf):
+        # ref -> 0, scale -> 0, product -> 0, matching the old behaviour
+        # instead of producing 0 * inf = nan.
+        ref   = jnp.max(logqq_young, axis=0)                          # (n_young,)
+        ref   = jnp.where(jnp.isfinite(ref), ref, 0.0)
+        scale = jnp.power(10.0, logqq_young - ref[None, :])            # (n_z, n_young)
+
+        cont_base = jnp.power(10.0, log_cont + ref[None, :])           # (nspec , n_young)
+        line_base = jnp.einsum('wl,ly->wy', self.gaussnebarr,
+                               jnp.power(10.0, log_line + ref[None, :]))
+        cont_flux = cont_base[None, :, :] * scale[:, None, :]          # (n_z, nspec, n_young)
+        line_spec = line_base[None, :, :] * scale[:, None, :]          # (n_z, nspec, n_young)
         if return_components:
             return (cont_flux.transpose(0, 2, 1),
                     line_spec.transpose(0, 2, 1))
         return (cont_flux + line_spec).transpose(0, 2, 1)
+
+    def evaluate_batch_factored(self, logZ_gas, logU, ssp_ages_young,
+                                logqq_young, include_lines=True):
+        """Nebular emission in FACTORED (rank-1-in-z) form.
+
+        Returns ``(base, scale)`` with shapes ``(n_young, n_wave)`` and
+        ``(n_z, n_young)`` such that
+
+            neb[z, y, w] == scale[z, y] * base[y, w]
+
+        exactly (same arithmetic as :meth:`evaluate_batch`, just not
+        expanded). Consumers that immediately contract the metallicity axis
+        away -- which is every ``CSPBasis.get_spectrum_*_neb`` variant --
+        should use this instead of :meth:`evaluate_batch`, because the
+        ``(n_z, n_young, n_wave)`` product never has to be materialised:
+        the z sum can be folded into the SSP weights first.
+
+        See ``CSPBasis._neb_factored`` for the consuming side.
+        """
+        logZ_gas = jnp.squeeze(logZ_gas)
+        logU     = jnp.squeeze(logU)
+
+        def _interp_cube(cube, logz_grid, age_grid, logu_grid):
+            z1 = _locate(logZ_gas, logz_grid)
+            dz = _frac(logZ_gas,   logz_grid, z1)
+            u1 = _locate(logU,     logu_grid)
+            du = _frac(logU,       logu_grid, u1)
+            w00 = (1.0 - dz) * (1.0 - du)
+            w01 = (1.0 - dz) *       du
+            w10 =       dz   * (1.0 - du)
+            w11 =       dz   *       du
+            zu = (w00 * cube[..., z1,     :, u1    ]
+                + w01 * cube[..., z1,     :, u1 + 1]
+                + w10 * cube[..., z1 + 1, :, u1    ]
+                + w11 * cube[..., z1 + 1, :, u1 + 1])
+            a1 = jnp.clip(jnp.searchsorted(age_grid, ssp_ages_young) - 1,
+                          0, age_grid.shape[0] - 2)
+            da = jnp.clip(
+                (ssp_ages_young - age_grid[a1])
+                / (age_grid[a1 + 1] - age_grid[a1]),
+                0.0, 1.0,
+            )
+            return (1.0 - da)[None, :] * zu[..., a1] + da[None, :] * zu[..., a1 + 1]
+
+        log_cont = _interp_cube(self.nebem_cont, self.nebem_cont_logz,
+                                self.nebem_cont_age, self.nebem_cont_logu)
+        ref   = jnp.max(logqq_young, axis=0)
+        ref   = jnp.where(jnp.isfinite(ref), ref, 0.0)
+        scale = jnp.power(10.0, logqq_young - ref[None, :])            # (n_z, n_young)
+
+        base = jnp.power(10.0, log_cont + ref[None, :])                # (nspec, n_young)
+        if include_lines:
+            log_line = _interp_cube(self.nebem_line, self.nebem_line_logz,
+                                    self.nebem_line_age, self.nebem_line_logu)
+            base = base + jnp.einsum(
+                'wl,ly->wy', self.gaussnebarr,
+                jnp.power(10.0, log_line + ref[None, :]))
+        return base.T, scale                                           # (n_young, n_wave), (n_z, n_young)
 
     def evaluate_batch_line_lum(self, logZ_gas, logU, ssp_ages_young,
                                 logqq_young):
