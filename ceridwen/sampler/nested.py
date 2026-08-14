@@ -24,12 +24,23 @@ inner kernel.  The key parameters are:
 
 ``num_delete``
     Parallelisation: points removed per iteration.
-    Default: ``num_live // 2``.
+    Default: ``max(1, num_live // 5)``, adopted from the 2026-08 JADES
+    campaign tuning (64 at ``num_live = 300``).  Larger batches gain
+    little extra throughput once evaluation is vectorised, while the
+    naive single-deletion volume rule used by fallback evidence
+    estimators (not the anesthetic path) biases :math:`\\ln Z` high by
+    several nats at ``num_delete = num_live // 2``.  Must stay
+    strictly below ``num_live`` (a BlackJAX NSS constraint).
 
 ``logZ_tol``
     Convergence threshold :math:`\\ln(Z_\\mathrm{live}/Z)`.
     Iteration stops when the live contribution drops below this.
-    Default ``-3`` (:math:`\\approx 5\\%` of total evidence remaining).
+    Default ``-5``.  The fraction of the total evidence still in the
+    live set at termination is :math:`f = e^{tol}/(1 + e^{tol})`:
+    ``-5`` leaves 0.67 per cent (marginally stricter than nautilus's
+    ``f_live = 0.01``, which corresponds to ``-4.595``); ``-3`` leaves
+    4.7 per cent; a value as loose as ``-1`` leaves 27 per cent of the
+    evidence unaccounted for.
 
 Installation
 ------------
@@ -106,12 +117,28 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         Inner MCMC steps per NS iteration.  Default ``n_dims * 5``
         where ``n_dims`` is the total scalar dimension count.
     num_delete : int, optional
-        Live points discarded per iteration.  Default ``num_live // 2``.
+        Live points discarded per iteration.  Default
+        ``max(1, num_live // 5)`` — see the module docstring for the
+        rationale.  Must be strictly below ``num_live``.
     logZ_tol : float, optional
         Convergence threshold on :math:`\\ln(Z_\\mathrm{live}/Z)`.
-        Default ``-3.0``.
+        Default ``-5.0``, terminating with ~0.7 per cent of the
+        evidence still in the live set
+        (:math:`f = e^{tol}/(1 + e^{tol})`).
     verbose : bool, optional
         Print a ``tqdm`` progress bar and convergence info.  Default True.
+    checkpoint_interval_s : float, optional
+        Seconds between periodic checkpoints (default 1200 = 20 min;
+        ``<= 0`` disables).  Each checkpoint finalises the accumulated
+        dead points against the current live ensemble and dumps a
+        snapshot, so a run killed mid-flight still yields a recoverable
+        (partial) posterior; the same format is written at convergence
+        as the rescue pickle, and :meth:`load_checkpoint` reads either.
+    checkpoint_dir : str, optional
+        Checkpoint destination.  Resolved at run time as
+        ``checkpoint_dir`` → ``$CERIDWEN_CHECKPOINT_DIR`` →
+        ``$CERIDWEN_RESCUE_DIR``; when none is set, checkpointing is
+        silently skipped (no surprise writes).
     """
 
     def __init__(
@@ -120,7 +147,7 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         num_live        : int   = 500,
         num_inner_steps : Optional[int] = None,
         num_delete      : Optional[int] = None,
-        logZ_tol        : float = -3.0,
+        logZ_tol        : float = -5.0,
         verbose         : bool  = True,
         checkpoint_interval_s : float = 1200.0,
         checkpoint_dir        : Optional[str] = None,
@@ -128,7 +155,7 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         self.priors          = dict(priors)
         self.num_live        = int(num_live)
         self._num_inner_steps = num_inner_steps   # None → auto
-        self._num_delete      = num_delete         # None → num_live // 2
+        self._num_delete      = num_delete         # None → max(1, num_live // 5)
         self.logZ_tol        = float(logZ_tol)
         self.verbose         = bool(verbose)
         # Periodic checkpointing.  Every ``checkpoint_interval_s`` seconds
@@ -328,7 +355,7 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
                            else n_dims * 5)
         num_delete      = (self._num_delete
                            if self._num_delete is not None
-                           else self.num_live // 2)
+                           else max(1, self.num_live // 5))
 
         if self.verbose:
             print(

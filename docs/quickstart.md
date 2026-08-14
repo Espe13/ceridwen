@@ -124,7 +124,7 @@ result = fitSED(
 # result = fitSED(
 #     model,
 #     sampler="ns",
-#     sampler_kwargs={"num_live": 400, "num_delete": 100},
+#     sampler_kwargs={"num_live": 400, "num_delete": 80, "logZ_tol": -5.0},
 #     rng_key=jax.random.PRNGKey(42),
 #     output_dir="./my_fit",
 # )

@@ -57,12 +57,45 @@ import numpy as np
 # not on one of these.  fp32 (non-tensor-core) TFLOP/s and HBM TB/s.
 # ---------------------------------------------------------------------------
 ROOFLINE = {
-    "A100":   (19.5e12, 1.55e12),
-    "A100-80": (19.5e12, 2.04e12),
-    "V100":   (15.7e12, 0.90e12),
-    "H100":   (67.0e12, 3.35e12),
-    "cpu":    (0.20e12, 0.05e12),
+    "auto":    (None, None),          # resolved from the live device
+    "A100":    (19.5e12, 1.555e12),   # SXM4-40GB, HBM2
+    "A100-80": (19.5e12, 2.039e12),   # SXM4/PCIe-80GB, HBM2e
+    "V100":    (15.7e12, 0.900e12),
+    "H100":    (67.0e12, 3.350e12),   # SXM5-80GB
+    "cpu":     (0.20e12, 0.050e12),
 }
+
+
+def autodetect_roofline():
+    """Resolve (peak_flops, peak_bw, label) from the live device.
+
+    The A100 ships in 40 GB (HBM2, 1.555 TB/s) and 80 GB (HBM2e, 2.039 TB/s)
+    variants with IDENTICAL fp32 throughput, so the memory capacity is what
+    distinguishes them -- and getting it wrong by 31% silently shifts every
+    bandwidth-bound verdict in the report.  Detect rather than trust a flag.
+    """
+    try:
+        d = jax.devices()[0]
+    except Exception:                                       # noqa: BLE001
+        return ROOFLINE["cpu"] + ("cpu (no device)",)
+    if d.platform == "cpu":
+        return ROOFLINE["cpu"] + ("cpu",)
+    kind = (getattr(d, "device_kind", "") or "").upper()
+    gib = 0.0
+    try:
+        gib = (d.memory_stats() or {}).get("bytes_limit", 0) / 2**30
+    except Exception:                                       # noqa: BLE001
+        pass
+    if "H100" in kind:
+        return ROOFLINE["H100"] + (f"H100 ({gib:.0f} GiB)",)
+    if "V100" in kind:
+        return ROOFLINE["V100"] + (f"V100 ({gib:.0f} GiB)",)
+    if "A100" in kind:
+        # bytes_limit is ~90-95% of physical, so 40 GB reads as ~36 GiB.
+        if gib > 50:
+            return ROOFLINE["A100-80"] + (f"A100-80GB ({gib:.0f} GiB visible)",)
+        return ROOFLINE["A100"] + (f"A100-40GB ({gib:.0f} GiB visible)",)
+    return ROOFLINE["A100"] + (f"UNKNOWN '{kind}' -- assuming A100-40GB",)
 
 
 # ===========================================================================
@@ -229,21 +262,34 @@ def compiled_stats(fn, *args):
     return out
 
 
-def roofline_verdict(flops, byts, peak_flops, peak_bw):
-    """Classify a kernel: arithmetic intensity vs the machine ridge point."""
+def roofline_verdict(flops, byts, peak_flops, peak_bw, t_meas_ms=None):
+    """Return ``(ai, floor_ms, ratio, verdict)``.
+
+    Arithmetic intensity vs the ridge point tells you which resource *would*
+    limit the kernel if it were running at hardware speed.  It does NOT tell
+    you whether the kernel actually is limited by that resource -- for that you
+    must compare the MEASURED time against the roofline floor.  A kernel far
+    above its own floor is limited by neither bandwidth nor FLOPs but by
+    per-launch overhead, and the only fix is a bigger batch, not a better
+    kernel.  Reporting AI alone (as this function used to) labelled everything
+    "BANDWIDTH-BOUND" even when it was 20x above the bandwidth floor.
+    """
     if not byts or not np.isfinite(byts) or byts == 0:
-        return float("nan"), "n/a"
+        return float("nan"), float("nan"), float("nan"), "n/a"
     ai = flops / byts
     ridge = peak_flops / peak_bw
-    if ai < 0.1 * ridge:
-        v = "BANDWIDTH-BOUND (hard)"
-    elif ai < ridge:
-        v = "bandwidth-bound"
+    floor_ms = max(byts / peak_bw, flops / peak_flops) * 1e3
+    limiter = "bw" if ai < ridge else "flops"
+    if t_meas_ms is None or not np.isfinite(t_meas_ms) or floor_ms <= 0:
+        return ai, floor_ms, float("nan"), f"{limiter}-limited in principle"
+    ratio = t_meas_ms / floor_ms
+    if ratio < 2.0:
+        v = f"AT ROOFLINE ({limiter}-bound)"
+    elif ratio < 5.0:
+        v = f"near roofline ({limiter})"
     else:
-        v = "compute-bound"
-    t_bw = byts / peak_bw
-    t_fl = flops / peak_flops
-    return ai, f"{v}; roofline floor = {max(t_bw, t_fl)*1e3:.3f} ms"
+        v = "LATENCY-BOUND -> batch it"
+    return ai, floor_ms, ratio, v
 
 
 def mem_stats():
@@ -263,10 +309,14 @@ def mem_stats():
 # 4.  Analytic byte ledger — this is what explains the OOM
 # ===========================================================================
 def byte_ledger(csp):
-    """Every full-size intermediate the nebular path materialises, in MB.
+    """The full-size intermediates the OLD nebular path materialised, in MB.
 
-    Compares against the irreducible working set so you can see the
-    inflation factor directly.
+    HISTORICAL as of the 2026-08-12 refactor: rows 2-6 are what
+    ``_build_neb_array`` + the dense ``stellar + neb`` sum used to allocate on
+    every forward call.  The current code forms NONE of them -- see the XLA
+    temp-buffer table for what it actually allocates now.  The ledger is kept
+    because it is the clearest statement of what the refactor removed, and
+    because ``_build_neb_array`` is still live on the picket-fence branch.
     """
     f32 = 4
     n_z, n_age, n_wave = (int(s) for s in csp.flux.shape)
@@ -353,8 +403,8 @@ def main():
                     help="redshift setting the extra_young agebin grid")
     ap.add_argument("--no-frac-obrun", action="store_true",
                     help="drop frac_obrun from theta (fiducial, not fesc)")
-    ap.add_argument("--device", default="A100", choices=list(ROOFLINE),
-                    help="roofline reference device")
+    ap.add_argument("--device", default="auto", choices=list(ROOFLINE),
+                    help="roofline reference device ('auto' reads the live GPU)")
     ap.add_argument("--peak-flops", type=float, default=None)
     ap.add_argument("--peak-bw", type=float, default=None)
     ap.add_argument("--n", type=int, default=50, help="timing repeats")
@@ -362,19 +412,26 @@ def main():
     ap.add_argument("--mem-profile", default=None, help="write pprof here")
     args = ap.parse_args()
 
-    peak_flops, peak_bw = ROOFLINE[args.device]
+    if args.device == "auto":
+        peak_flops, peak_bw, dev_label = autodetect_roofline()
+    else:
+        peak_flops, peak_bw = ROOFLINE[args.device]
+        dev_label = f"{args.device} (forced by --device)"
     if args.peak_flops:
-        peak_flops = args.peak_flops
+        peak_flops, dev_label = args.peak_flops, dev_label + " +override"
     if args.peak_bw:
-        peak_bw = args.peak_bw
+        peak_bw, dev_label = args.peak_bw, dev_label + " +override"
 
     hr("ENVIRONMENT")
     print(f"  jax {jax.__version__}   backend: {jax.default_backend()}")
     for d in jax.devices():
         print(f"  device: {d}")
-    print(f"  x64 enabled: {jax.config.jax_enable_x64}")
-    print(f"  roofline ref: {args.device}  "
-          f"{peak_flops/1e12:.1f} TFLOP/s fp32, {peak_bw/1e12:.2f} TB/s")
+    # NB: ceridwen enables x64 at import time, which happens inside build()
+    # below -- so this reads False here and True in ceridwen's own banner.
+    # Same process, no contradiction; the flag is flipped between the two lines.
+    print(f"  x64 enabled: {jax.config.jax_enable_x64} (before ceridwen import)")
+    print(f"  roofline ref: {dev_label}  "
+          f"{peak_flops/1e12:.1f} TFLOP/s fp32, {peak_bw/1e12:.3f} TB/s")
     print(f"  ridge point : {peak_flops/peak_bw:.1f} FLOP/byte")
 
     jades_root = find_jades_root(args.jades_root)
@@ -393,18 +450,19 @@ def main():
     print(f"  n_lines = {L['n_lines']}")
     print(f"  one full (n_z,n_age,n_wave) fp32 cube = {L['cube_MB']:.1f} MB")
 
-    hr("MEMORY LEDGER  — full-size intermediates per forward evaluation")
-    print(f"  {'buffer':<44s} {'MB':>9s}   note")
+    hr("MEMORY LEDGER  — what the OLD path allocated  [HISTORICAL]")
+    print("  These buffers were REMOVED by the 2026-08-12 refactor.  The")
+    print("  current code allocates none of them; see the XLA temp table below")
+    print("  for what it actually allocates.  Shown to quantify the change.")
+    print()
+    print(f"  {'buffer (old path)':<44s} {'MB':>9s}   note")
     print("  " + "-" * 74)
     for name, mb, note in L["rows"]:
         print(f"  {name:<44s} {mb:9.1f}   {note}")
     print("  " + "-" * 74)
-    print(f"  {'transient nebular-path total':<44s} {L['transient_MB']:9.1f}")
+    print(f"  {'transient nebular-path total (OLD)':<44s} {L['transient_MB']:9.1f}")
     print(f"  {'information-carrying subset':<44s} {L['useful_MB']:9.1f}")
-    print(f"  {'inflation factor':<44s} {L['inflation']:9.1f}x")
-    print("\n  Under jax.grad, XLA must keep the einsum operands alive as")
-    print("  residuals for the backward pass, so multiply the transient total")
-    print("  by ~2. Under vmap over chains, multiply again by n_chains.")
+    print(f"  {'inflation factor (OLD)':<44s} {L['inflation']:9.1f}x")
 
     # ---- stage ablation ---------------------------------------------------
     neb = csp.neb
@@ -429,10 +487,12 @@ def main():
             th["gas_logz"], th["gas_logu"],
             csp._neb_ages_young, csp._neb_logqq_young, include_lines=True))
 
-    stages["3c. _neb_spectrum_term (NEW: contracted to n_wave)"] = (
-        lambda th: csp._neb_spectrum_term(
-            csp.calculate_ssp_weights(th).astype(jnp.float32), th,
-            include_lines=True))
+    # Weights precomputed as a CONSTANT so this stage times the nebular term
+    # alone.  Folding calculate_ssp_weights (stage 4) into it would double-count
+    # ~0.19 ms and make the new path look no faster than the old one.
+    _W_const = csp.calculate_ssp_weights(theta).astype(jnp.float32)
+    stages["3c. _neb_spectrum_term (NEW: neb term only, W precomputed)"] = (
+        lambda th: csp._neb_spectrum_term(_W_const, th, include_lines=True))
 
     stages["4. calculate_ssp_weights"] = csp.calculate_ssp_weights
 
@@ -478,18 +538,30 @@ def main():
                   f"{t_build - t_eval:8.3f} ms")
 
     # ---- roofline ---------------------------------------------------------
-    hr("ROOFLINE  (XLA cost analysis; whole-executable)")
-    print(f"  {'stage':<52s} {'GFLOP':>8s} {'MB':>8s} {'AI':>7s}  verdict")
-    print("  " + "-" * 100)
+    hr("ROOFLINE  (XLA cost analysis vs MEASURED forward time)")
+    print(f"  {'stage':<48s} {'GFLOP':>7s} {'MiB':>7s} {'AI':>6s} "
+          f"{'floor ms':>9s} {'meas ms':>8s} {'x floor':>8s}  verdict")
+    print("  " + "-" * 118)
     for name, fn in stages.items():
         st = compiled_stats(fn, theta)
         if "error" in st:
-            print(f"  {name:<52s}   {st['error'][:40]}")
+            print(f"  {name:<48s}   {st['error'][:40]}")
             continue
-        ai, verdict = roofline_verdict(st["flops"], st["bytes"],
-                                       peak_flops, peak_bw)
-        print(f"  {name:<52s} {st['flops']/1e9:8.2f} {st['bytes']/2**20:8.1f} "
-              f"{ai:7.2f}  {verdict}")
+        tm = fwd_times.get(name)
+        ai, floor_ms, ratio, verdict = roofline_verdict(
+            st["flops"], st["bytes"], peak_flops, peak_bw, tm)
+
+        def _f(x, w, p):
+            return (f"{x:{w}.{p}f}" if isinstance(x, float) and np.isfinite(x)
+                    else "n/a".rjust(w))
+        print(f"  {name:<48s} {st['flops']/1e9:7.3f} {st['bytes']/2**20:7.1f} "
+              f"{_f(ai,6,2)} {_f(floor_ms,9,4)} "
+              f"{_f(tm if tm else float('nan'),8,3)} {_f(ratio,8,1)}  {verdict}")
+    print("\n  'x floor' is measured time divided by the hardware floor. Values")
+    print("  >>1 mean the kernel is limited by per-launch overhead, not by")
+    print("  bandwidth or FLOPs -- batching is the only fix. AI vs the ridge")
+    print("  point tells you which resource would bind at hardware speed; the")
+    print("  ratio tells you whether you are anywhere near it.")
 
     hr("XLA TEMPORARY BUFFERS  (peak scratch per call)")
     print(f"  {'stage':<52s} {'args MB':>9s} {'temp MB':>9s} {'out MB':>8s}")
@@ -539,26 +611,30 @@ def main():
 
     hr("HOW TO READ THIS")
     print("""
-  * Compare stage 7 minus stage 6 against your 21 ms. That difference IS the
-    nebular cost; everything above it is the stellar contraction and dust.
-  * Stage 1 minus stage 2 isolates the line-painting einsum
-    'wl,zly->zwy'. If that dominates, note that line_lum factorises as
-    L[l,y] * Q[z,y] — log_line carries no z dependence, only logqq does — so
-    the contraction should be done once at (n_wave, n_young) and then scaled
-    by Q, not repeated n_z times. That is a free ~n_z-fold reduction in both
-    FLOPs and bytes on what is likely the most expensive op in the model.
-  * Stage 3 minus stage 1 isolates _build_neb_array's dense scatter. It
-    allocates a full (n_z, n_age, n_wave) zeros cube to hold information that
-    lives on only n_young age rows, and get_spectrum_*_neb then makes two more
-    full-size copies (the kill_ion jnp.where, and stellar + neb). See the
-    memory ledger for the inflation factor. Splitting the contraction
-      sum_za W (S + N) A  ->  sum_za W S A  +  sum_z sum_{a in young} W N A
-    removes all three temporaries and is algebraically identical.
-  * In the roofline table, arithmetic intensity far below the ridge point
-    means no kernel rewrite will help until you move fewer bytes.
-  * The grad temp-buffer table is the one that explains OOM: XLA keeps the
-    einsum operands alive as residuals, so every full-size temporary is
-    charged roughly twice.
+  * Stage 3 vs 3b/3c contrasts the OLD dense-cube path against the factored
+    one.  Stage 3c has the SSP weights precomputed, so compare it to
+    stage 3 minus nothing (both exclude calculate_ssp_weights, stage 4).
+  * The MEMORY LEDGER is historical -- those buffers no longer exist.  The XLA
+    temp-buffer tables are the live numbers.  The grad table is the
+    OOM-relevant one: XLA keeps einsum operands alive as backward residuals.
+  * In the ROOFLINE table look at 'x floor', not the AI column.  Everything in
+    this model has AI well below the ridge point, so AI alone labels
+    everything bandwidth-bound.  What matters is whether the measured time is
+    NEAR the floor (then bytes are the lever) or far above it (then per-launch
+    overhead is the lever, and only batching helps).
+  * The VMAP WIDTH SCAN is therefore the most important table here.  Read
+    ms/galaxy, not ms/call.  Where it stops falling is your throughput
+    saturation; that asymptote is the per-galaxy cost you can actually reach.
+    Compare it against the stage-7 'floor ms' -- if they agree, the batched
+    kernel is running at hardware speed and no further code change will help.
+  * Production consequence: tursa/common/ns_build.py evaluates the likelihood
+    vmapped over ns_eval_chunk particles (default 8) via lax.scan.  With
+    num_delete=25 that is 4 sequential launches per inner step.  The padding in
+    _chunked_loglikelihood is discarded before the return, so ns_eval_chunk is
+    a PURE performance knob -- it cannot change a single likelihood value.
+    Setting it >= num_delete collapses those 4 launches into 1.  num_delete
+    itself is NOT free: it changes the nested-sampling shells, so any increase
+    needs logZ and the marginals re-checked.
 """)
 
 

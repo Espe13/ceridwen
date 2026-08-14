@@ -206,8 +206,10 @@ def main() -> int:
     #   * num_inner_steps -- dominates the one-time JIT *compile* time of the
     #     step kernel (it is the unrolled inner MCMC chain) AND per-step cost.
     #   * num_live -- runtime<->quality (more = smoother contours, more steps).
-    # For publication use num_live >= 500, num_inner_steps >= n_dims*5, and a
-    # stricter logZ_tol (e.g. -3.0); expect much longer on CPU.
+    # For publication use num_live >= 500, num_inner_steps >= n_dims*5, and the
+    # library-default logZ_tol (-5.0, ~0.7% of the evidence left in the live
+    # set at termination); expect much longer on CPU.  The relaxed -2.0 below
+    # is a demo-runtime compromise only.
     adapter = BlackJAXNestedSamplerAdapter(
         priors=model.priors, num_live=150, num_inner_steps=max(8, n_dims * 2),
         logZ_tol=-2.0, verbose=True,

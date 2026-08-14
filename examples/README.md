@@ -35,7 +35,7 @@ data), i.e. an FSPS data checkout even with a downloaded grid.
 
 For spectroscopy, emission lines, free redshift, and VI-preconditioned NUTS, see
 the end-to-end template in the
-[README](../README.md#step-1--fit-a-galaxy-end-to-end) and the joint-fit walk-through
+[README](../README.md#step-1-fit-a-galaxy-end-to-end) and the joint-fit walk-through
 in [`docs/tutorial.md`](../docs/tutorial.md).
 
 ## `demo_afe_quiescent.py`

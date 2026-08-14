@@ -1476,9 +1476,11 @@ class CSPBasis:
                              +        lf[None, :] * tau_age[:, li + 1])
                 aal = jnp.exp(-tau_lines)                    # (n_age, n_lines)
                 if "frac_obrun" in theta and self.fesc_geometry != "picket":
-                    # runaway_bc: lines share the birth-cloud bypass mix.
-                    # picket: lines arise entirely in the covered channel and
-                    # are fully attenuated -- no bypass.
+                    # FSPS PARITY (add_dust.f90 L110-111): the line
+                    # luminosities receive the same runaway bypass mix as the
+                    # young continuum.  In the 'picket' geometry the lines
+                    # arise entirely in the covered channel and are fully
+                    # attenuated -- no bypass.
                     fo = jnp.ravel(theta["frac_obrun"])[0]
                     aal = (1.0 - fo) * aal + fo
                 attn_age_lines = aal[self._neb_young_idx, :]
@@ -2163,6 +2165,67 @@ class CSPBasis:
         clear = fo * jnp.einsum("za,zaw,a->w", W, self.flux, young)
         return (covered + clear).reshape((-1,))
 
+    def _spectrum_picket_dem(self, theta, neb_all):
+        """Picket-fence escape geometry WITH energy-balance dust emission
+        (``fesc_geometry='picket'``, ``add_dust_emission=True``).
+
+        Identical channel decomposition to ``_spectrum_picket_nodem``:
+        a fraction ``fo`` of the young stellar light (LyC included) escapes
+        through channels free of ALL dust; the covered ``1 - fo`` fraction
+        (young LyC absorbed by the gas, nebular scaled by ``1 - fo``) crosses
+        birth-cloud + diffuse dust.  The energy balance is built so that the
+        clear channel appears identically in the dust-free and attenuated
+        spectra and therefore cancels in ``L_abs`` -- by construction it
+        deposits no energy in the dust.  The gas-absorbed LyC of the covered
+        channel is excluded from BOTH spectra (it is reprocessed into the
+        nebular emission, which is present and whose dust-absorbed part
+        heats the grains), mirroring the FSPS ``lboln = csp1 + csp2``
+        convention in ``add_dust.f90``.  The DL07 re-emission and its
+        self-absorption iterate against the diffuse screen exactly as in the
+        default geometry; we do not grant the IR emission a picket bypass,
+        since the diffuse optical depth is negligible at those wavelengths."""
+        W  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
+        fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
+
+        attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+        M             = self._age_bin_mix
+        tau_age       = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
+        attn_age      = jnp.exp(-tau_age)            # full birth-cloud, no bypass
+        diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
+
+        young = self.young_mask.astype(jnp.float32)  # (n_age,)
+        # covered channel: LyC absorbed; young stellar weight (1 - fo), old 1;
+        # nebular (lines + continuum) scaled (1 - fo), fully attenuated.
+        F_cov = jnp.where(self.kill_ion[None, :, :], jnp.float32(0.0), self.flux)
+        cov_w = (jnp.float32(1.0) - fo) * young + (jnp.float32(1.0) - young)
+        neb32 = neb_all.astype(jnp.float32)
+        stellar_cov = jnp.einsum("za,zaw,aw,a->w", W, F_cov, attn_age, cov_w)
+        neb_cov = (jnp.float32(1.0) - fo) * jnp.einsum(
+            "za,zaw,aw->w", W, neb32, attn_age)
+        covered = (stellar_cov + neb_cov) * diffuse_curve
+        # clear channel: fraction fo of the young flux, LyC intact, dust-free.
+        clear = fo * jnp.einsum("za,zaw,a->w", W, self.flux, young)
+
+        # dust-free reference for the energy balance: the same covered-channel
+        # content WITHOUT any dust (LyC still gas-absorbed), plus the clear
+        # channel unchanged (cancels in L_abs = int dustfree - int attenuated).
+        stellar_cov_free = jnp.einsum("za,zaw,a->w", W, F_cov, cov_w)
+        neb_cov_free = (jnp.float32(1.0) - fo) * jnp.einsum(
+            "za,zaw->w", W, neb32)
+        spectrum_dust_free = clear + stellar_cov_free + neb_cov_free
+        attenuated         = clear + covered
+
+        dust_emi_spectrum, _mdust, _tduste = self.dust_emi.compute_dust_emission(
+            spec_attn     = attenuated,
+            spec_dustfree = spectrum_dust_free,
+            spec_lambda   = self.wave,
+            diffuse_curve = diffuse_curve,
+            duste_qpah    = theta["duste_qpah"],
+            duste_umin    = theta["duste_umin"],
+            duste_gamma   = theta["duste_gamma"],
+        )
+        return dust_emi_spectrum
+
     def get_spectrum_dattn_nodem_neb(self, theta, *, include_lines=None):
         """Dust attenuation + nebular emission, no dust emission.
 
@@ -2252,14 +2315,17 @@ class CSPBasis:
 
     def get_spectrum_dattn_dem_neb(self, theta, *, include_lines=None):
         """Dust attenuation + nebular emission + dust emission."""
-        if self.fesc_geometry == "picket":
-            raise NotImplementedError(
-                "fesc_geometry='picket' is implemented for the "
-                "no-dust-emission path only (build with add_dust_emission="
-                "False, as the JADES campaigns do).")
         if include_lines is None:
             include_lines = self.nebemlineinspec
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
+
+        # Picket-fence / partial-covering geometry: dedicated path with its
+        # own energy balance (the clear channel cancels in L_abs).  Static
+        # attribute -> resolved at trace time.  The dense nebular cube is
+        # built only on this branch (see _build_neb_array note above).
+        if self.fesc_geometry == "picket" and "frac_obrun" in theta:
+            return self._spectrum_picket_dem(
+                theta, self._build_neb_array(theta, include_lines=include_lines))
 
         # Lyman / ionising-photon escape fraction.  See the long
         # comment on this block in get_spectrum_dattn_nodem_neb above.

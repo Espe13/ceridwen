@@ -300,7 +300,10 @@ def _build_adapter(sampler: str, model, sampler_kwargs: dict, verbose: bool,
         defaults = dict(
             priors=model.priors,
             num_live=500,
-            num_delete=250,
+            # num_delete and logZ_tol are left to the adapter defaults
+            # (max(1, num_live // 5) = 100 here, and -5.0), adopted from
+            # the 2026-08 JADES campaign tuning — see the
+            # sampler/nested.py module docstring for the rationale.
             num_inner_steps=30,
         )
         defaults.update(sampler_kwargs)

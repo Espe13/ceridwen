@@ -18,7 +18,8 @@ pip install .
 This pulls everything needed to import CERIDWEN, build the forward model, and run
 NUTS / VI / nested sampling **including posterior plotting**: `jax`, `jaxlib`,
 `numpy`, `scipy`, `matplotlib`, `h5py`, `astropy`, `sedpy-jax`,
-`tensorflow-probability`, `blackjax`, `tqdm`, `optax`, and `anesthetic`. The only
+`tensorflow-probability`, `blackjax`, `tqdm`, `fastprogress`, `optax`,
+`anesthetic`, and `pytest`. The only
 thing not installed automatically is FSPS (see below).
 
 There are no extras to choose. `pip install .` includes VI, nested-sampling
@@ -36,7 +37,9 @@ documentation site needs `pip install ".[docs]"` (maintainers only).
 ## Getting the SSP grid
 
 Fitting needs a pre-computed SSP grid (an HDF5 file). The quickstart resolves
-it in the order `$SSP_FILE`, then `examples/ssp_data.h5`.
+it in the order `$SSP_FILE`, then `examples/ssp_data.h5`, then the bundled
+git-LFS test fixture `tests/fixtures/ssp_data_test.h5` (run
+`git lfs install && git lfs pull` to materialise it).
 
 1. **Build your own with FSPS (recommended for custom choices).** Install
    FSPS (below) and let the quickstart build the grid on first run, or call

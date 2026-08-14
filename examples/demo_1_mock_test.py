@@ -111,7 +111,7 @@ def main() -> None:
     result = fitSED(
         model,
         sampler="ns",
-        sampler_kwargs={"num_live": 300, "num_delete": 100},
+        sampler_kwargs={"num_live": 300},  # num_delete/logZ_tol: library defaults
         rng_key=jax.random.PRNGKey(SEED),
         output_dir="./demo_1_output",
     )
