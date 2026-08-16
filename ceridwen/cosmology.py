@@ -3,15 +3,19 @@ ceridwen/cosmology.py
 =====================
 Redshift helpers for ceridwen, with two back-ends:
 
-1. **JAX native (default, always available)** — flat LambdaCDM, matter
-   only, Planck-2018-like parameters, Simpson integrator on a fixed
-   128-node grid.  JIT-compilable, differentiable in z — **required
-   whenever zred is a sampled free parameter** (NUTS needs gradients).
+1. **JAX native (default, always available)** — flat LambdaCDM with
+   photons and massless neutrinos, Planck-2018 parameters, Simpson
+   integrator on a fixed 128-node grid.  The single massive neutrino is
+   folded into Omega_m as cold matter.  JIT-compilable, differentiable
+   in z — **required whenever zred is a sampled free parameter** (NUTS
+   needs gradients).
 
 2. **astropy (optional, auto-detected)** — uses
-   ``astropy.cosmology.Planck18.luminosity_distance`` and therefore
-   includes radiation + massive neutrinos, closing the ~0.5-1% gap
-   between the native integrator and published Planck18 tables.
+   ``astropy.cosmology`` and therefore includes radiation + massive
+   neutrinos exactly, closing the ~0.5-1% gap between the native
+   integrator and published tables.  It honours ``cosmo=``: the
+   Planck-2018 default calls ``Planck18`` directly, any other
+   ``Cosmology`` is converted to the matching ``FlatLambdaCDM``.
    astropy's code is NumPy-based, not JAX — so it can only be used when
    ``z`` is a concrete Python scalar (not a traced value), typically
    for the one-off precompute step at ``SedModel(csp, obs, priors,
@@ -36,6 +40,24 @@ Use
 >>> from ceridwen.cosmology import luminosity_distance_mpc
 >>> luminosity_distance_mpc(0.5)                   # JAX, any z
 >>> luminosity_distance_mpc(0.5, backend='astropy') # Planck18 exact, scalar z only
+
+Changing the cosmology
+----------------------
+Every distance/age helper takes a ``cosmo=`` argument, and the value used
+by the forward model is carried by :class:`~ceridwen.csp.CSPBasis` (and
+inherited by :class:`~ceridwen.model.SedModel`), so a non-default
+cosmology is set once at construction and applies to *both* places where
+cosmology enters: the luminosity-distance flux factor and the age of the
+Universe used to rescale the SFH time grid when ``zred`` is sampled.
+
+>>> from ceridwen import CSPBasis
+>>> from ceridwen.cosmology import Cosmology
+>>> csp = CSPBasis(ssp, ..., cosmo=Cosmology(H0=70.0, Om0=0.3))
+
+Any astropy cosmology can be converted directly:
+
+>>> from astropy.cosmology import WMAP9
+>>> csp = CSPBasis(ssp, ..., cosmo=Cosmology.from_astropy(WMAP9))
 """
 from __future__ import annotations
 
@@ -131,11 +153,96 @@ class Cosmology:
         """Dark-energy density today (flat: 1 - Om - Or)."""
         return 1.0 - self.Om0_eff - self.Or0
 
+    # -- interop / convenience ---------------------------------------
+    @classmethod
+    def from_astropy(cls, cosmo) -> "Cosmology":
+        """Build from any astropy ``FlatLambdaCDM``-like cosmology.
+
+        Reads ``H0``, ``Om0``, ``Tcmb0``, ``Neff`` and ``sum(m_nu)``.
+        Only flat cosmologies are supported; a non-flat input raises,
+        because the whole integrator assumes ``Ok0 = 0``.
+
+        >>> from astropy.cosmology import Planck18
+        >>> Cosmology.from_astropy(Planck18)
+        """
+        Ok0 = float(getattr(cosmo, "Ok0", 0.0))
+        if abs(Ok0) > 1e-8:
+            raise ValueError(
+                f"ceridwen's cosmology integrator assumes flatness, but the "
+                f"supplied cosmology has Ok0 = {Ok0:.3e}."
+            )
+        m_nu = getattr(cosmo, "m_nu", None)
+        if m_nu is None:
+            m_nu_sum = 0.0
+        else:
+            try:
+                m_nu_sum = float(m_nu.to("eV").value.sum())
+            except AttributeError:      # scalar Quantity
+                m_nu_sum = float(m_nu.to("eV").value)
+        return cls(
+            H0=float(cosmo.H0.to("km/(s Mpc)").value),
+            Om0=float(cosmo.Om0),
+            Tcmb0=float(cosmo.Tcmb0.to("K").value),
+            Neff=float(cosmo.Neff),
+            m_nu_ev_sum=m_nu_sum,
+        )
+
+    def to_astropy(self):
+        """Return the matching ``astropy.cosmology.FlatLambdaCDM``.
+
+        Used by the ``backend='astropy'`` path so that opting into the
+        higher-accuracy backend does not silently revert a user-supplied
+        cosmology to Planck18.  Requires astropy.
+        """
+        import math
+
+        import astropy.units as u
+        from astropy.cosmology import FlatLambdaCDM
+
+        kwargs = dict(
+            H0=self.H0 * u.km / u.s / u.Mpc,
+            Om0=self.Om0,
+            Tcmb0=self.Tcmb0 * u.K,
+            Neff=self.Neff,
+        )
+        # astropy requires len(m_nu) == floor(Neff) exactly (NOT ceil): for
+        # the Planck18 default Neff = 3.046 that is THREE species, and
+        # handing it four raises "unexpected number of neutrino masses".
+        # Distribute the total mass heaviest-last, matching the Planck18
+        # convention of one massive species and the rest massless.  When
+        # floor(Neff) == 0 (or Tcmb0 == 0) astropy has no neutrinos at all,
+        # so m_nu must be omitted rather than passed as an empty array.
+        n_species = math.floor(self.Neff)
+        if n_species > 0 and self.Tcmb0 > 0.0:
+            masses = [0.0] * n_species
+            masses[-1] = self.m_nu_ev_sum
+            kwargs["m_nu"] = u.Quantity(masses, u.eV)
+        return FlatLambdaCDM(**kwargs)
+
+    @property
+    def is_planck18(self) -> bool:
+        """True when this is the unmodified Planck-2018 default."""
+        return self == Cosmology()
+
 
 DEFAULT_COSMO = Cosmology()
 
 
-def E_of_z(z: Array, cosmo: Cosmology = DEFAULT_COSMO) -> Array:
+def resolve_cosmology(cosmo: "Cosmology | None" = None) -> Cosmology:
+    """Return ``cosmo``, or the package default when ``None``.
+
+    Every public helper in this module defaults to ``cosmo=None`` rather
+    than to ``DEFAULT_COSMO`` directly.  Python binds default arguments
+    once, at function-definition time, so a ``DEFAULT_COSMO`` default
+    would freeze whichever object existed at import and silently ignore
+    any later rebinding of the module attribute.  Resolving here makes
+    ``ceridwen.cosmology.DEFAULT_COSMO = Cosmology(H0=70)`` behave as a
+    user would expect, in addition to the explicit ``cosmo=`` argument.
+    """
+    return DEFAULT_COSMO if cosmo is None else cosmo
+
+
+def E_of_z(z: Array, cosmo: Cosmology | None = None) -> Array:
     r"""Dimensionless expansion rate
 
     .. math::
@@ -169,6 +276,7 @@ def E_of_z(z: Array, cosmo: Cosmology = DEFAULT_COSMO) -> Array:
     which is the form astropy uses to factor out one ``(1+z)^3`` for
     numerical stability at high z.
     """
+    cosmo = resolve_cosmology(cosmo)
     z = jnp.maximum(z, 0.0)
     opz = 1.0 + z
     return jnp.sqrt(
@@ -183,6 +291,7 @@ def _integrate_dz_over_E(z: Array, cosmo: Cosmology,
 
     ``n_nodes`` must be odd for Simpson; we pad to the next odd.
     """
+    cosmo = resolve_cosmology(cosmo)
     if n_nodes % 2 == 0:
         n_nodes += 1
 
@@ -201,11 +310,12 @@ def _integrate_dz_over_E(z: Array, cosmo: Cosmology,
     return (h / 3.0) * jnp.sum(w * y, axis=-1)
 
 
-def comoving_distance_mpc(z: Array, cosmo: Cosmology = DEFAULT_COSMO,
+def comoving_distance_mpc(z: Array, cosmo: Cosmology | None = None,
                           n_nodes: int = 128) -> Array:
     r"""Comoving (line-of-sight) distance
     :math:`D_C(z) = D_H \int_0^z dz'/E(z')`.
     """
+    cosmo = resolve_cosmology(cosmo)
     return cosmo.hubble_distance_mpc * _integrate_dz_over_E(z, cosmo, n_nodes)
 
 
@@ -213,7 +323,7 @@ def comoving_distance_mpc(z: Array, cosmo: Cosmology = DEFAULT_COSMO,
 _INV_H0_GYR_NUM = 977.7922216807891       # 3.0856775814913673e19 / 3.15576e16
 
 
-def age_gyr(z: Array, cosmo: Cosmology = DEFAULT_COSMO,
+def age_gyr(z: Array, cosmo: Cosmology | None = None,
             n_nodes: int = 257) -> Array:
     r"""Age of the Universe at redshift ``z`` in **Gyr** (JAX-native).
 
@@ -230,6 +340,7 @@ def age_gyr(z: Array, cosmo: Cosmology = DEFAULT_COSMO,
     :math:`0 \le z \le 20` (residual dominated by the massive-neutrino
     approximation in :func:`E_of_z`, not the integrator).
     """
+    cosmo = resolve_cosmology(cosmo)
     if n_nodes % 2 == 0:
         n_nodes += 1
     z = jnp.asarray(z, dtype=float)
@@ -248,21 +359,34 @@ def age_gyr(z: Array, cosmo: Cosmology = DEFAULT_COSMO,
     return (_INV_H0_GYR_NUM / cosmo.H0) * integral
 
 
-def _astropy_luminosity_distance_mpc(z) -> float:
-    """Use astropy.cosmology.Planck18 for the luminosity distance.
+def _astropy_luminosity_distance_mpc(z, cosmo: Cosmology | None = None) -> float:
+    """Use astropy for the luminosity distance.
 
     This is a *scalar-only* fallback (astropy returns a Quantity, not a
     JAX array) used when the user opts in with ``backend='astropy'``.
     Not importable into a traced function.
+
+    For the default Planck-2018 cosmology this calls
+    ``astropy.cosmology.Planck18`` directly, which is the published
+    reference.  For any OTHER cosmology it builds the matching
+    ``FlatLambdaCDM`` via :meth:`Cosmology.to_astropy`, so that opting
+    into this backend never silently reverts a user-supplied cosmology
+    to Planck18 -- the behaviour before v0.2.1, which made
+    ``backend='astropy'`` quietly ignore ``cosmo=``.
     """
-    from astropy.cosmology import Planck18
+    cosmo = resolve_cosmology(cosmo)
     # astropy accepts numpy floats; coerce JAX scalars to Python floats so
     # there is no traced path through this function.
     z_val = float(z)
-    return float(Planck18.luminosity_distance(z_val).to("Mpc").value)
+    if cosmo.is_planck18:
+        from astropy.cosmology import Planck18
+        ap = Planck18
+    else:
+        ap = cosmo.to_astropy()
+    return float(ap.luminosity_distance(z_val).to("Mpc").value)
 
 
-def luminosity_distance_mpc(z, cosmo: Cosmology = DEFAULT_COSMO,
+def luminosity_distance_mpc(z, cosmo: Cosmology | None = None,
                             n_nodes: int = 128,
                             backend: str = "native") -> Array:
     r"""Luminosity distance :math:`D_L(z) = (1+z) D_C(z)` in Mpc.
@@ -272,26 +396,31 @@ def luminosity_distance_mpc(z, cosmo: Cosmology = DEFAULT_COSMO,
     z : Array or float
         Redshift.  JAX arrays are supported by the native backend;
         scalars only for the astropy backend.
-    cosmo : Cosmology
-        Only used by the native backend (astropy uses Planck18 internally).
+    cosmo : Cosmology, optional
+        Cosmological parameters; ``None`` (default) uses ``DEFAULT_COSMO``
+        (Planck 2018).  Honoured by BOTH backends: the astropy backend
+        builds the matching ``FlatLambdaCDM`` when ``cosmo`` is not the
+        Planck-2018 default.
     n_nodes : int
         Simpson-integrator node count (native only).  128 is accurate to
         ~1e-6 for the integral itself; the residual error vs astropy is
         dominated by missing radiation + neutrinos, not the integrator.
     backend : {'native', 'astropy'}
         ``'native'`` (default) uses the JAX Simpson integrator and is
-        differentiable; ``'astropy'`` calls
-        :func:`astropy.cosmology.Planck18.luminosity_distance` and is
-        limited to concrete scalar z but is "ground-truth" accurate.
+        differentiable; ``'astropy'`` defers to ``astropy.cosmology``
+        (``Planck18`` for the default parameters, otherwise the matching
+        ``FlatLambdaCDM``) and is limited to concrete scalar z but is
+        "ground-truth" accurate.
     """
+    cosmo = resolve_cosmology(cosmo)
     if backend == "astropy":
-        return _astropy_luminosity_distance_mpc(z)
+        return _astropy_luminosity_distance_mpc(z, cosmo)
     if backend != "native":
         raise ValueError(f"Unknown cosmology backend {backend!r}")
     return (1.0 + z) * comoving_distance_mpc(z, cosmo, n_nodes)
 
 
-def flux_factor(z: Array, cosmo: Cosmology = DEFAULT_COSMO,
+def flux_factor(z: Array, cosmo: Cosmology | None = None,
                 n_nodes: int = 128) -> Array:
     r"""Cosmological flux factor to turn rest-frame per-Hz luminosity into
     observed-frame flux density, including the :math:`(1+z)` term for
@@ -315,6 +444,7 @@ def flux_factor(z: Array, cosmo: Cosmology = DEFAULT_COSMO,
     the forward model already does.  See
     :func:`flux_factor_maggies` for the maggies-ready version.
     """
+    cosmo = resolve_cosmology(cosmo)
     dL_mpc = luminosity_distance_mpc(z, cosmo, n_nodes)
     dL_cm = dL_mpc * MPC_TO_CM
     return (1.0 + z) / (4.0 * jnp.pi * dL_cm * dL_cm)
@@ -338,7 +468,7 @@ _MAGGIES_D_FID_PC = 10.0  # absolute-magnitude convention, 10 pc
 _LSUN_HZ_TO_FNU_CGS_AT_10PC = 3.1967965e-7   # erg s^-1 cm^-2 Hz^-1 per L_sun Hz^-1
 
 
-def flux_factor_maggies(z, cosmo: Cosmology = DEFAULT_COSMO,
+def flux_factor_maggies(z, cosmo: Cosmology | None = None,
                         n_nodes: int = 128,
                         backend: str = "native") -> Array:
     r"""Redshift scaling relative to the CSP's fiducial ``d = 10 pc``.
@@ -368,6 +498,7 @@ def flux_factor_maggies(z, cosmo: Cosmology = DEFAULT_COSMO,
         applies the astropy backend when a ``float`` ``zred`` is
         provided and the package is installed.
     """
+    cosmo = resolve_cosmology(cosmo)
     dL_pc = 1e6 * luminosity_distance_mpc(z, cosmo, n_nodes, backend=backend)
     # z <= 0 has no cosmological dimming in this convention (the CSP
     # normalisation is already "source at 10 pc"), so the distance ratio is
@@ -405,7 +536,8 @@ def have_astropy() -> bool:
 
 
 __all__ = [
-    "Cosmology", "DEFAULT_COSMO", "c_km_s", "MPC_TO_CM", "PC_TO_CM",
+    "Cosmology", "DEFAULT_COSMO", "resolve_cosmology",
+    "c_km_s", "MPC_TO_CM", "PC_TO_CM",
     "E_of_z", "comoving_distance_mpc", "luminosity_distance_mpc",
-    "flux_factor", "flux_factor_maggies", "have_astropy",
+    "age_gyr", "flux_factor", "flux_factor_maggies", "have_astropy",
 ]

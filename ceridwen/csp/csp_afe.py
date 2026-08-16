@@ -247,6 +247,7 @@ class CSPBasis_afe:
         track_zred_age=False,
         lookback_time=None,
         sfh_per_bin=False,
+        cosmo=None,
         **kwargs,
     ):
         """
@@ -418,6 +419,16 @@ class CSPBasis_afe:
                 "(your FSPS data directory) or pass sps_home=... explicitly."
             )
         self.sps_home   = sps_home
+        # --- Cosmology -----------------------------------------------------
+        # Single source of truth for this CSP, read by BOTH places cosmology
+        # enters the forward model: ``flux_factor_maggies`` (the observed-frame
+        # rescaling) and ``age_gyr`` (the age of the universe used by
+        # :meth:`_lookback_from_zred` when ``track_zred_age=True``).
+        # ``None`` selects ``ceridwen.cosmology.DEFAULT_COSMO`` (Planck 2018).
+        # Kept identical to :class:`~ceridwen.csp.csp.CSPBasis` on purpose:
+        # ``SedModel.cosmo`` forwards to whichever CSP it wraps.
+        from ..cosmology import resolve_cosmology as _resolve_cosmology
+        self.cosmo = _resolve_cosmology(cosmo)
         # Free-redshift age-grid tracking.  When True AND theta carries a
         # sampled ``zred`` (and NO explicit ``lookback_time``), the SFH
         # lookback grid is rescaled inside the forward pass so its oldest node
@@ -1202,7 +1213,7 @@ class CSPBasis_afe:
         if "zred" in theta:
             from ..cosmology import flux_factor_maggies
             z_scalar = jnp.ravel(theta["zred"])[0]
-            ff = jnp.float32(flux_factor_maggies(z_scalar))
+            ff = jnp.float32(flux_factor_maggies(z_scalar, self.cosmo))
             spectrum_phot = spectrum_phot * ff
             spectrum_slit = spectrum_slit * ff
             line_slit     = line_slit     * ff
@@ -1586,7 +1597,7 @@ class CSPBasis_afe:
         """
         from ceridwen.cosmology import age_gyr
         z = jnp.ravel(jnp.asarray(zred, dtype=float))[0]
-        tuniv_yr = age_gyr(z) * 1.0e9
+        tuniv_yr = age_gyr(z, self.cosmo) * 1.0e9
         ref_old_yr = self.sfh_times[-1]
         scaled = self.sfh_times * (tuniv_yr / ref_old_yr)
         return jnp.clip(scaled, 0.0, self._age_clip_hi)

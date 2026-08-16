@@ -146,12 +146,32 @@ class SedModel:
         transforms: dict[str, Callable] | None = None,
         free_param_init: dict[str, Any] | None = None,
         zred: float = 0.0,
+        cosmo=None,
     ):
         self.csp          = csp
         self.observations = list(observations)
         self.priors       = dict(priors) if priors is not None else {}
         self.transforms   = dict(transforms) if transforms is not None else {}
         self.zred         = float(zred)
+
+        # --- Cosmology ------------------------------------------------
+        # The CSP is the SINGLE owner of the cosmology: it is the object
+        # that evaluates both the flux factor and the age of the universe,
+        # so that is the only place the value is stored.  ``SedModel``
+        # exposes it through a read-only property (below) that forwards to
+        # ``self.csp.cosmo``; there is deliberately no second copy that
+        # could drift out of step with the CSP that actually does the
+        # arithmetic.  Setting it here is therefore refused outright
+        # rather than silently mutating the CSP behind the user's back.
+        if cosmo is not None:
+            raise TypeError(
+                "SedModel does not take a cosmology: the CSP owns it, so that "
+                "the flux factor and the SFH age grid can never disagree.  Set "
+                "it once at CSP construction instead, e.g.\n"
+                "    csp = CSPBasis(ssp, ..., cosmo=Cosmology(H0=70.0, Om0=0.3))\n"
+                "    model = SedModel(csp, observations, priors)\n"
+                "``model.cosmo`` then reports the CSP's cosmology."
+            )
 
         # Validate that all observation names are unique
         names = [obs.name for obs in self.observations]
@@ -226,9 +246,11 @@ class SedModel:
         # cosmological normalisation, while keeping zred out of the
         # sampled parameter vector.
         #
-        # When astropy is installed we prefer its Planck18 luminosity
-        # distance for this one-off scalar computation (it includes
-        # neutrinos + radiation and matches published tables to <0.1%),
+        # When astropy is installed we prefer its luminosity distance for
+        # this one-off scalar computation (it includes neutrinos +
+        # radiation exactly and matches published tables to <0.1%); the
+        # backend is handed ``self.cosmo``, so a user-supplied cosmology
+        # is honoured here as well as on the native path,
         # and bake the resulting flux factor into a static JAX scalar.
         # The sampled path (when zred is free) continues to use the
         # native differentiable backend, so NUTS gradients still work.
@@ -248,13 +270,32 @@ class SedModel:
                 )
                 if have_astropy():
                     ff = float(flux_factor_maggies(
-                        self.zred, backend="astropy"))
+                        self.zred, self.cosmo, backend="astropy"))
                     # Stored for diagnostics; the free-z fit path ignores
                     # this and recomputes via the native JAX backend.
                     self.flux_factor_astropy = ff
             except Exception:
                 # Non-fatal: fall through to the native backend.
                 self.flux_factor_astropy = None
+
+    # ------------------------------------------------------------------
+    # Cosmology (read-only view onto the CSP)
+    # ------------------------------------------------------------------
+
+    @property
+    def cosmo(self):
+        """The cosmology used by the forward model.
+
+        Read-only, and forwarded to ``self.csp.cosmo`` on every access:
+        the CSP is the single source of truth, so this can never report a
+        cosmology different from the one actually applied to the flux
+        factor and the SFH age grid.  To change it, construct the CSP with
+        ``cosmo=`` (or assign ``model.csp.cosmo`` before the first
+        ``predict``).  Falls back to the package default if the wrapped
+        object predates the ``cosmo`` attribute.
+        """
+        from ..cosmology import resolve_cosmology
+        return resolve_cosmology(getattr(self.csp, "cosmo", None))
 
     # ------------------------------------------------------------------
     # Transforms

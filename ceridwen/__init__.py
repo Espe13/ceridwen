@@ -40,6 +40,7 @@ from .fit import fitSED, read_result_h5, load_result_h5
 from .ssps import SSPData
 from .csp import CSPBasis
 from .model import SedModel
+from .cosmology import Cosmology, DEFAULT_COSMO
 
 # NB: do NOT import .check here — it is run as `python -m ceridwen.check`, and
 # importing it in the package __init__ triggers a runpy double-import warning.
@@ -76,6 +77,9 @@ __all__ = [
     "DustModel",
     "DustEmission",
     "NebularModel",
+    # cosmology
+    "Cosmology",
+    "DEFAULT_COSMO",
     # top-level entry points
     "fitSED",
     "read_result_h5",

@@ -272,6 +272,7 @@ class CSPBasis:
         lookback_time=None,
         sfh_per_bin=False,
         fesc_geometry="runaway_bc",
+        cosmo=None,
         **kwargs,
     ):
         """
@@ -424,6 +425,21 @@ class CSPBasis:
                 "(your FSPS data directory) or pass sps_home=... explicitly."
             )
         self.sps_home   = sps_home
+        # --- Cosmology -----------------------------------------------------
+        # Cosmology enters the forward model in TWO places, and both read
+        # this one object so they can never disagree:
+        #   1. ``flux_factor_maggies`` -- the (1+z)(10pc/D_L)^2 rescaling
+        #      applied to the spectrum, photometry and line predictions;
+        #   2. ``age_gyr`` -- the age of the universe used by
+        #      :meth:`_lookback_from_zred` to rescale the SFH time grid
+        #      when ``track_zred_age=True`` and ``zred`` is sampled.
+        # ``None`` selects ``ceridwen.cosmology.DEFAULT_COSMO`` (Planck 2018).
+        # The object is a frozen dataclass of Python scalars, so it
+        # constant-folds into the XLA graph: a non-default cosmology costs
+        # nothing at run time.  Any astropy cosmology can be converted with
+        # ``Cosmology.from_astropy``.
+        from ..cosmology import resolve_cosmology as _resolve_cosmology
+        self.cosmo = _resolve_cosmology(cosmo)
         # Free-redshift age-grid tracking.  When True AND theta carries a
         # sampled ``zred`` (and NO explicit ``lookback_time``), the SFH
         # lookback grid is rescaled inside the forward pass so its oldest node
@@ -1259,7 +1275,7 @@ class CSPBasis:
         if "zred" in theta:
             from ..cosmology import flux_factor_maggies
             z_scalar = jnp.ravel(theta["zred"])[0]
-            ff = jnp.float32(flux_factor_maggies(z_scalar))
+            ff = jnp.float32(flux_factor_maggies(z_scalar, self.cosmo))
             spectrum_phot = spectrum_phot * ff
             spectrum_slit = spectrum_slit * ff
             line_slit     = line_slit     * ff
@@ -1505,7 +1521,7 @@ class CSPBasis:
             # painted line spectrum (photometry/lines consistency) -- found
             # 2026-07-21 on the 1025955 rerun, where predictions were
             # exactly (1+z) = 2.87x above the painted-spectrum line fluxes.
-            F = F * flux_factor_maggies(z_scalar) / (1.0 + z_scalar)
+            F = F * flux_factor_maggies(z_scalar, self.cosmo) / (1.0 + z_scalar)
             if self.igm is not None:
                 if "igm_factor" in theta:
                     ig_factor = jnp.ravel(theta["igm_factor"])[0]
@@ -1545,7 +1561,7 @@ class CSPBasis:
         if "zred" in theta:
             from ..cosmology import flux_factor_maggies
             z_scalar = jnp.ravel(theta["zred"])[0]
-            line_only = line_only * jnp.float32(flux_factor_maggies(z_scalar))
+            line_only = line_only * jnp.float32(flux_factor_maggies(z_scalar, self.cosmo))
             if self.igm is not None:
                 if "igm_factor" in theta:
                     ig_factor = jnp.ravel(theta["igm_factor"])[0]
@@ -1812,7 +1828,7 @@ class CSPBasis:
         """
         from ceridwen.cosmology import age_gyr
         z = jnp.ravel(jnp.asarray(zred, dtype=float))[0]
-        tuniv_yr = age_gyr(z) * 1.0e9
+        tuniv_yr = age_gyr(z, self.cosmo) * 1.0e9
         ref_old_yr = self.sfh_times[-1]
         scaled = self.sfh_times * (tuniv_yr / ref_old_yr)
         return jnp.clip(scaled, 0.0, self._age_clip_hi)
