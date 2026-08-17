@@ -46,33 +46,37 @@ from pathlib import Path
 # ---------------------------------------------------------------------
 # Registry of published grids.
 #
-# TODO(release): fill url/sha256/size_mb after the Zenodo upload of each
-# grid.  Entries with url=None are defined-but-unpublished; fetch_grid
-# raises a clear error naming the build script instead of downloading.
+# Current release: v5 of the ceridwen-grids deposit, record 21977508
+# (doi:10.5281/zenodo.21977508, 2026-08-17).  All v5 files are schema-2.x
+# grids carrying the ssp_resolution dataset (library resolution curve =
+# element-wise max of the grid's own 2-pixel sampling floor and any
+# documented library LSF), required by the strict loaders.  Entries with
+# url=None are defined-but-unpublished; fetch_grid raises a clear error
+# naming the build script instead of downloading.
 # ---------------------------------------------------------------------
 REGISTRY: dict[str, dict] = {
-    # Legacy solar-scaled release grid (schema 1.0, 3-D; loads via
-    # SSPData.load or SSPDataAfe.load, which promotes it to n_afe=1).
-    # Published in the ceridwen-grids deposit as ssp_data.h5; the sha256
-    # is pinned from the repository's examples/ssp_data.h5 copy.
-    "mist_miles_chab_v3.2": {
-        "url": "https://zenodo.org/records/21221634/files/"
-               "ssp_data.h5?download=1",
-        "sha256": "57c54face30e78b3ecc25ac859fdc8578c36b886"
-                  "392fc47d9106398d94ed2854",
-        "size_mb": 62,
-        "notes": "FSPS 3.2 / python-fsps 0.4.x, MIST + MILES, Chabrier IMF. "
-                 "The v0.1.x release grid (nebular-capable via CSPBasis).",
+    # Solar-scaled MIST+MILES release grid (schema 2.0, 3-D).
+    "mist_miles_chab": {
+        "url": "https://zenodo.org/records/21977508/files/"
+               "ssp_data_mist_miles.h5?download=1",
+        "sha256": "d52f1940e4cfcf739a50e8afaea03898"
+                  "71bec9404653a7e023faa53f86382f31",
+        "size_mb": 67,
+        "notes": "python-fsps 0.5.0, MIST + MILES, Chabrier IMF "
+                 "(imf_type=1).  Schema 2.0: ssp_resolution = sampling "
+                 "floor max MILES LSF (FWHM 2.54 A, Falcon-Barroso+2011). "
+                 "Nebular-capable via CSPBasis.",
     },
-    # BPASS v2 binary-population release grid (schema 1.0, 3-D).
+    # BPASS v2 binary-population release grid (schema 2.0, 3-D).
     "mist_bpass_v2": {
-        "url": "https://zenodo.org/records/21221634/files/"
+        "url": "https://zenodo.org/records/21977508/files/"
                "ssp_data_bpass.h5?download=1",
-        "sha256": "5034b12a1d92cd09896a99def7f60601186807429"
-                  "ab02b52a817302341fc808f",
+        "sha256": "64c93ea751133cf3d34f4f33222af767"
+                  "d029a69b9ac3549059568055a489b9e9",
         "size_mb": 62,
-        "notes": "BPASS v2 binary SSPs, Chabrier IMF. The v0.1.x release "
-                 "grid used for the GN-z11 demonstration.",
+        "notes": "python-fsps 0.5.0, BPASS v2 binary SSPs, Chabrier IMF. "
+                 "Schema 2.0: ssp_resolution = grid sampling-floor curve "
+                 "(no documented LSF broader than the tabulation).",
     },
     # Alpha-enhanced grid (schema 2.0, 4-D, n_afe=5).  THE download path
     # for [alpha/Fe] fitting: CSPBasis_afe has no nebular model, so with
@@ -89,7 +93,11 @@ REGISTRY: dict[str, dict] = {
         "notes": "FSPS v4.0 alpha-MC (python-fsps >= 0.4.9.dev, AFE_FLAG=1), "
                  "aMIST + C3K_LR, Chabrier IMF, [alpha/Fe] = "
                  "{-0.2, 0.0, +0.2, +0.4, +0.6}. For CSPBasis_afe "
-                 "(no nebular; no FSPS needed at fit time).",
+                 "(no nebular; no FSPS needed at fit time).  NB: this "
+                 "published copy predates schema 2.x (no ssp_resolution); "
+                 "after download, convert it once with "
+                 "scripts/convert_grids_schema2.py, or use "
+                 "'amist_c3k_hr_krou_afe' (schema 2.1, published in v5).",
     },
     # High-resolution alpha-enhanced grid (schema 2.0, 4-D, n_afe=5).  Same
     # (afe, [Fe/H], age) node grid as amist_c3k_lr_chab_afe -- and the SAME
@@ -99,9 +107,15 @@ REGISTRY: dict[str, dict] = {
     # Chabrier).  Built from M. J. Park's alpha-MC FITS via
     # scripts_afe/build_afe_hr_grid.py.
     "amist_c3k_hr_krou_afe": {
-        "url": None,        # TODO: fill after the Zenodo upload of the HR grid
-        "sha256": None,     # TODO: pin from the built file (publish_grid_zenodo.py)
-        "size_mb": 584,     # (5, 13, 107, 10992) float64 + metadata
+        # Published 2026-08-17 in v5 of the ceridwen-grids deposit
+        # (record 21977508); schema 2.1 (ssp_resolution = grid
+        # sampling-floor curve; the stored 10992-pt wavelength grid, not
+        # the native C3K LSF, is the binding resolution of this file).
+        "url": "https://zenodo.org/records/21977508/files/"
+               "amist_c3k_hr_krou_afe.h5?download=1",
+        "sha256": "f6af03d813569f5982891d969f030d93"
+                  "45278a60de907b90b2a910d56af32a16",
+        "size_mb": 612,     # (5, 13, 107, 10992) float64 + metadata
         "notes": "MIST v2.5 (aMIST) + C3K v2.3 high-res, Kroupa IMF, "
                  "[alpha/Fe] = {-0.2, 0.0, +0.2, +0.4, +0.6}, "
                  "[Fe/H] in [-2.5, +0.5], log10(age/yr) in [5.0, 10.3]. "
