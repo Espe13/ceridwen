@@ -58,7 +58,7 @@ in the repository).
     from ceridwen.ssps import fetch_grid, available_grids, SSPData
 
     print(available_grids())                       # name -> description
-    ssp = SSPData.load(fetch_grid("mist_miles_chab_v3.2"))
+    ssp = SSPData.load(fetch_grid("mist_miles_chab"))
     ```
 
     or by hand, e.g. for the quickstart location:

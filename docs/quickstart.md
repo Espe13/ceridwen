@@ -41,7 +41,7 @@ and the nebular grid always matches the SSP isochrones.
 !!! tip "No FSPS? Download a published grid"
     The canonical grids are on Zenodo and registered in
     `ceridwen.ssps.grid_fetch`:
-    `ssp = SSPData.load(fetch_grid("mist_miles_chab_v3.2"))`. For
+    `ssp = SSPData.load(fetch_grid("mist_miles_chab"))`. For
     [α/Fe] fitting with `CSPBasis_afe` the download is the *recommended*
     route — the α grids need a custom FSPS v4.0 build to generate, but
     none at all to fit, since the α variant has no nebular model. See
