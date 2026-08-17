@@ -347,6 +347,13 @@ class CSPBasis:
         self.wave      = jnp.array(SSPData.ssp_wave)       # (n_wave,)
         self.ages      = jnp.array(SSPData.ssp_lg_age_gyr) # (n_age,)  log10(Gyr)
         self.zmet      = jnp.array(SSPData.ssp_lgmet)      # (n_z,) log10 absolute Z
+        # Library resolution curve (schema 2.0): (wave_rest, sigma_v[km/s]),
+        # plain numpy, Python-level only — SedModel threads it into the
+        # Spectrum projection for the automatic in-quadrature subtraction.
+        self.lib_resolution = (
+            (np.asarray(SSPData.ssp_wave, dtype=np.float64),
+             np.asarray(SSPData.ssp_resolution, dtype=np.float64))
+            if getattr(SSPData, "ssp_resolution", None) is not None else None)
         # The nebular model computes the ionising-photon rate from ``self.flux``
         # internally (see ``initialize_neb`` / ``NebularModel.compute_log_qq``).
         self.zlegend   = 10 ** self.zmet                   # linear metallicity

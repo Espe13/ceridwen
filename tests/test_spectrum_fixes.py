@@ -200,3 +200,56 @@ class TestMaskLinesRedshift:
 if __name__ == "__main__":
     import sys
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+# -----------------------------------------------------------------------------
+# Resolution convention (sigma vs FWHM)
+# -----------------------------------------------------------------------------
+class TestResolutionConvention:
+    """smoothtype='R' must be disambiguated; 'fwhm' converts by 2.3548."""
+
+    CKMS = 2.998e5
+    F = 2.0 * np.sqrt(2.0 * np.log(2.0))   # 2.3548...
+
+    def _spec(self, **kw):
+        wave = np.linspace(4000.0, 8000.0, 100)
+        return Spectrum(wavelength=wave, flux=np.ones(100),
+                        uncertainty=np.ones(100), name="c", **kw)
+
+    def test_R_without_convention_raises(self):
+        with pytest.raises(ValueError, match="res_convention"):
+            self._spec(resolution=1000.0, smoothtype="R")
+
+    def test_bad_convention_raises(self):
+        with pytest.raises(ValueError, match="not.*recognised|recognised"):
+            self._spec(resolution=100.0, smoothtype="vel",
+                       res_convention="FWHM_AA")
+
+    def test_convention_without_smoothing_raises(self):
+        with pytest.raises(ValueError, match="smoothtype is"):
+            self._spec(res_convention="sigma")
+
+    def test_R_sigma_vs_fwhm_factor(self):
+        s_sig = self._spec(resolution=1000.0, smoothtype="R",
+                           res_convention="sigma")
+        s_fwm = self._spec(resolution=1000.0, smoothtype="R",
+                           res_convention="fwhm")
+        sig = s_sig._resolution_as_sigma()
+        fwm = s_fwm._resolution_as_sigma()
+        assert np.isclose(sig, self.CKMS / 1000.0, rtol=1e-3)
+        assert np.isclose(sig / fwm, self.F, rtol=1e-12)
+
+    def test_vel_fwhm_equals_sigma_over_2p3548(self):
+        s_sig = self._spec(resolution=100.0, smoothtype="vel")   # default sigma
+        s_fwm = self._spec(resolution=100.0 * self.F, smoothtype="vel",
+                           res_convention="fwhm")
+        assert np.isclose(s_sig._resolution_as_sigma(),
+                          s_fwm._resolution_as_sigma(), rtol=1e-12)
+
+    def test_lsf_fwhm_array_converted(self):
+        res = np.full(100, 2.3548200450309493)
+        s = self._spec(resolution=res, smoothtype="lsf",
+                       res_convention="fwhm", inres=0.0)
+        out = s._resolution_as_sigma()
+        assert out.shape == res.shape
+        assert np.allclose(out, 1.0, rtol=1e-10)

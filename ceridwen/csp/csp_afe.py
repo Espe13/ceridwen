@@ -361,6 +361,13 @@ class CSPBasis_afe:
         self.ages      = jnp.array(SSPData.ssp_lg_age_gyr) # (n_age,)  log10(Gyr)
         self.zmet      = jnp.array(SSPData.ssp_lgmet)      # (n_z,) log10 absolute Z
         self.zlegend   = 10 ** self.zmet                   # linear metallicity
+        # Library resolution curve (schema 2.0): threaded by SedModel into
+        # the Spectrum projection (automatic in-quadrature subtraction).
+        import numpy as _np_lr
+        self.lib_resolution = (
+            (_np_lr.asarray(SSPData.ssp_wave, dtype=_np_lr.float64),
+             _np_lr.asarray(SSPData.ssp_resolution, dtype=_np_lr.float64))
+            if getattr(SSPData, "ssp_resolution", None) is not None else None)
         self.ssp_ages_lgyr = self.ages + 9                 # log10(yr)
 
         # Static provenance carried by the SSP grid (Python-level only, never a

@@ -14,6 +14,9 @@ from sedpy_jax.smoothing import (
     make_lsf_smoother,
 )
 from .base import Observation, _CKMS
+
+# FWHM = 2 sqrt(2 ln 2) sigma for a Gaussian kernel.
+_FWHM_TO_SIGMA = 1.0 / (2.0 * np.sqrt(2.0 * np.log(2.0)))   # 1/2.3548
 from .gp import GaussianProcess
 
 
@@ -54,10 +57,16 @@ class Spectrum(Observation):
         Type of instrumental broadening to apply in ``predict``.  See the
         ``__init__`` docstring and ``setup_for_model`` for full details.
         Default ``None`` (no smoothing, backward-compatible).
-    inres : float, optional
-        Intrinsic resolution of the model library, subtracted in quadrature
-        before applying the target smoothing.  Units match ``smoothtype``:
-        km/s for vel/R, Å for lambda/lsf.  Default 0.0.
+    inres : "auto" or float, optional
+        Intrinsic resolution of the model (SSP library), subtracted in
+        quadrature before applying the target smoothing.  Default
+        ``"auto"``: the wavelength-dependent library curve stored in the
+        SSP grid (``SSPData.ssp_resolution``) is used, threaded in by
+        ``SedModel`` via ``setup_for_model(..., lib_resolution=...)``;
+        when smoothing is enabled and no curve is available this is a
+        hard error.  An explicit float is an expert override (a constant
+        width in the units of ``smoothtype``: km/s for vel/R, Å for
+        lambda/lsf; ``0.0`` disables the subtraction entirely).
     calibration : array-like, shape (n_pix,), optional
         Multiplicative flux-calibration vector (model × calibration ≈ data).
         When set, it is applied as a per-pixel multiplicative correction to
@@ -142,7 +151,8 @@ class Spectrum(Observation):
         calibration  = None,
         logify_spectrum = False,
         smoothtype   = None,
-        inres        = 0.0,
+        res_convention = None,
+        inres        = "auto",
         sky          = None,
         noise_floor  = 0.0,
         sigma_losvd  = None,
@@ -156,31 +166,55 @@ class Spectrum(Observation):
             Which instrumental smoothing kernel to apply in ``predict``:
 
             ``"vel"``
-                Constant velocity dispersion.  ``resolution`` is σ_v [km/s].
-                Uses a log-λ FFT so the kernel is shift-invariant in velocity.
+                Constant velocity dispersion.  ``resolution`` is a velocity
+                width [km/s].  Uses a log-λ FFT so the kernel is
+                shift-invariant in velocity.
             ``"R"``
-                Constant spectral resolving power R = λ/Δλ = c/σ_v.
-                ``resolution`` is the scalar R value; converted internally to
-                σ_v = c/R [km/s].
+                Constant spectral resolving power.  ``resolution`` is the
+                scalar R value.  Because "R" is quoted in BOTH conventions
+                in the literature (R = λ/FWHM on instrument datasheets,
+                e.g. NIRSpec "R = 1000"; R = λ/σ_λ in the sedpy/Prospector
+                tradition), ``res_convention`` is REQUIRED for this
+                smoothtype — there is no safe default.
             ``"lambda"``
-                Constant wavelength dispersion.  ``resolution`` is σ_λ [Å].
+                Constant wavelength width.  ``resolution`` is in Å.
                 Uses a linear-λ FFT.
             ``"lsf"``
                 Wavelength-dependent line-spread function.  ``resolution``
-                must be a 1-D array of σ(λ) [Å] evaluated at the *observed*
-                pixel wavelengths (``self.wavelength``).  The kernel is
-                interpolated to the model wavelength grid inside
-                ``setup_for_model``.
+                must be a 1-D array of the wavelength width [Å] evaluated
+                at the *observed* pixel wavelengths (``self.wavelength``).
+                The kernel is interpolated to the model wavelength grid
+                inside ``setup_for_model``.
             ``None`` (default)
                 No smoothing applied; ``predict`` performs pure linear
                 interpolation (``_H @ spectrum``).  ``resolution`` is stored
                 but unused in this mode.
 
-        inres : float, optional
+        res_convention : {"sigma", "fwhm"} or None
+            Whether ``resolution`` quotes a Gaussian dispersion σ or a
+            FWHM (FWHM = 2.3548 σ).  Applies to every smoothtype:
+
+            * ``"sigma"`` — ``resolution`` is σ_v ("vel"), R = λ/σ_λ
+              ("R"), or σ_λ ("lambda"/"lsf").
+            * ``"fwhm"``  — ``resolution`` is FWHM_v ("vel"),
+              R = λ/FWHM_λ ("R", the usual instrument-datasheet number),
+              or FWHM_λ ("lambda"/"lsf").
+
+            Default: ``"sigma"`` for "vel"/"lambda"/"lsf" (the standard
+            convention for those quantities).  For ``smoothtype="R"`` it
+            MUST be given explicitly — passing a datasheet R = λ/FWHM
+            where λ/σ is expected silently over-broadens the model by
+            2.3548×, so the constructor raises rather than guess.
+
+        inres : "auto" or float, optional
             Intrinsic (library) resolution of the input model spectrum,
             subtracted in quadrature before applying the target smoothing.
-            Units must match ``smoothtype``: km/s for "vel"/"R", Å for
-            "lambda"/"lsf".  Default 0.0.
+            ``"auto"`` (default) uses the wavelength-dependent curve stored
+            in the schema-2.x SSP grid (see the class docstring) — leave it
+            alone unless you know better.  An explicit float is a constant
+            expert override, ALWAYS a Gaussian σ (never FWHM), in km/s for
+            "vel"/"R" and Å for "lambda"/"lsf"; 0.0 disables the
+            subtraction entirely.
         """
         # Store wavelength via the property setter so subclasses can override.
         self._wavelength    = (
@@ -194,7 +228,37 @@ class Spectrum(Observation):
         )
         self.logify_spectrum = logify_spectrum
         self.smoothtype      = smoothtype
-        self.inres           = float(inres)
+        # ── Resolution convention (σ vs FWHM) ─────────────────────────────
+        if smoothtype is None:
+            if res_convention is not None:
+                raise ValueError(
+                    "Spectrum: res_convention was given but smoothtype is "
+                    "None (no smoothing) — remove res_convention or set a "
+                    "smoothtype."
+                )
+        else:
+            if res_convention is None:
+                if smoothtype == "R":
+                    raise ValueError(
+                        "Spectrum: smoothtype='R' requires "
+                        "res_convention='fwhm' or res_convention='sigma', "
+                        "because published R values use both conventions "
+                        "and they differ by 2.3548x.  Use 'fwhm' if your R "
+                        "is an instrument-datasheet resolving power "
+                        "R = lambda/FWHM (e.g. NIRSpec 'R = 1000'); use "
+                        "'sigma' if it is R = lambda/sigma_lambda (the "
+                        "sedpy/Prospector convention)."
+                    )
+                res_convention = "sigma"
+            if res_convention not in ("sigma", "fwhm"):
+                raise ValueError(
+                    f"Spectrum: res_convention={res_convention!r} is not "
+                    f"recognised; use 'sigma' or 'fwhm'."
+                )
+        self.res_convention  = res_convention
+        self.inres           = ("auto" if (isinstance(inres, str)
+                                           and inres == "auto")
+                                else float(inres))
         self.sky             = (None if sky is None
                                 else jnp.asarray(sky, dtype=float))
         self.noise_floor     = float(noise_floor)
@@ -224,6 +288,27 @@ class Spectrum(Observation):
         )
 
     # ------------------------------------------------------------------
+    def _resolution_as_sigma(self):
+        """``self.resolution`` converted to the internal Gaussian-σ form.
+
+        Returns σ_v [km/s] for smoothtype "vel"/"R", σ_λ [Å] (scalar) for
+        "lambda", or the σ_λ(λ_obs) [Å] array for "lsf".  The
+        ``res_convention`` chosen at construction is applied here — a
+        FWHM-quoted resolution is divided by 2√(2 ln 2) ≈ 2.3548 (for
+        "R", R = λ/FWHM implies σ_v = c/(R·2.3548), i.e. the same
+        factor).  All downstream smoothing code is σ-based.
+        """
+        f = (_FWHM_TO_SIGMA if self.res_convention == "fwhm" else 1.0)
+        st = self.smoothtype
+        if st == "vel":
+            return float(self.resolution) * f
+        if st == "R":
+            return float(_CKMS / self.resolution) * f
+        if st == "lambda":
+            return float(self.resolution) * f
+        return np.asarray(self.resolution, dtype=np.float64) * f  # "lsf"
+
+    # ------------------------------------------------------------------
     @property
     def wavelength(self):
         return self._wavelength
@@ -240,7 +325,48 @@ class Spectrum(Observation):
     # GPU / JIT projection interface
     # ------------------------------------------------------------------
 
-    def setup_for_model(self, wave_model, zred: float = 0.0):
+    def _warn_floor(self, target, lib, units, wave=None):
+        """Setup-time diagnostics for the library-resolution subtraction.
+
+        Warns (once, Python-level) when the quadrature floor engages —
+        i.e. the library is coarser than the requested resolution, so the
+        model CANNOT be sharpened to the target there — and when the
+        library curve is unknown (NaN) over part of the fitted window, so
+        nothing is subtracted there.
+        """
+        import warnings as _w
+        target = np.asarray(target, dtype=np.float64)
+        lib    = np.asarray(lib, dtype=np.float64)
+        fin    = np.isfinite(lib)
+        if fin.any():
+            bad = fin & (lib >= target)
+            if bad.any():
+                frac = 100.0 * bad.sum() / bad.size
+                rng = ("" if wave is None else
+                       f" over [{np.asarray(wave)[bad].min():.0f}, "
+                       f"{np.asarray(wave)[bad].max():.0f}] AA")
+                _w.warn(
+                    f"Spectrum {self.name!r}: the SSP library resolution "
+                    f"meets or exceeds the target resolution on "
+                    f"{frac:.0f}% of pixels{rng} ({units}); those pixels "
+                    f"stay at LIBRARY resolution (no deconvolution is "
+                    f"attempted).  The model cannot be as sharp as the "
+                    f"data there — use a higher-resolution SSP grid.",
+                    stacklevel=3)
+        if (~fin).any():
+            frac = 100.0 * (~fin).sum() / fin.size
+            rng = ("" if wave is None else
+                   f" (e.g. [{np.asarray(wave)[~fin].min():.0f}, "
+                   f"{np.asarray(wave)[~fin].max():.0f}] AA)")
+            _w.warn(
+                f"Spectrum {self.name!r}: the library resolution is "
+                f"unknown (NaN) on {frac:.0f}% of the fitted pixels{rng}; "
+                f"no library subtraction is applied there and the model "
+                f"is over-broadened by the (unknown) library width.",
+                stacklevel=3)
+
+    def setup_for_model(self, wave_model, zred: float = 0.0,
+                        lib_resolution=None):
         """
         Precompute projection matrices and/or smoothing kernels, then build
         ``_predict_fn`` — the single callable used by ``predict``.
@@ -275,6 +401,16 @@ class Spectrum(Observation):
             ``(1 + zred) * wave_model`` onto ``self.wavelength`` (which is
             interpreted as observed-frame pixel wavelengths), preserving
             the predict-time GEMV fast path.
+        lib_resolution : (wave_rest, sigma_v_kms) tuple, optional
+            The SSP library resolution curve: rest-frame wavelengths [Å]
+            and per-pixel Gaussian dispersion sigma_v [km/s] (NaN where
+            unknown), as stored in ``SSPData.ssp_resolution``.
+            ``SedModel`` threads this in automatically.  Consumed only
+            when ``self.inres == "auto"`` and instrumental smoothing is
+            enabled; sigma_v is frame-invariant, so the curve applies at
+            observed pixel ``(1+z)·λ_rest`` unchanged.  Required in that
+            case — a smoothing-enabled Spectrum with ``inres="auto"`` and
+            no curve raises (pass an explicit ``inres`` float to opt out).
         """
         if self._wavelength is None:
             raise ValueError(
@@ -377,104 +513,161 @@ class Spectrum(Observation):
                         return _s(spec_trim, sigma_v)
 
             if has_instr:
-                if st == "vel":
-                    # Constant velocity dispersion σ_v [km/s].
-                    sigma_v   = float(self.resolution)
-                    _instr_sm = make_vel_smoother(_wm_trim, wo, inres=self.inres)
-                    if fit_lo:
-                        _Lrt = _apply_losvd_rt
-                        self._predict_fn = (
-                            lambda spec, sigma_lo, _sm=_instr_sm, _sv=sigma_v,
-                                   _L=_Lrt:
-                                _sm(_L(spec[_idx], sigma_lo), _sv)
-                        )
-                    elif has_losvd:
-                        _L = _apply_losvd
-                        self._predict_fn = (
-                            lambda spec, _sm=_instr_sm, _sv=sigma_v, _L=_L:
-                                _sm(_L(spec[_idx]), _sv)
-                        )
-                    else:
-                        self._predict_fn = (
-                            lambda spec, _sm=_instr_sm, _sv=sigma_v:
-                                _sm(spec[_idx], _sv)
-                        )
-
-                elif st == "R":
-                    # Constant resolving power R = λ/σ_λ = c/σ_v → σ_v = c/R.
-                    sigma_v   = float(_CKMS / self.resolution)
-                    _instr_sm = make_vel_smoother(_wm_trim, wo, inres=self.inres)
-                    if fit_lo:
-                        _Lrt = _apply_losvd_rt
-                        self._predict_fn = (
-                            lambda spec, sigma_lo, _sm=_instr_sm, _sv=sigma_v,
-                                   _L=_Lrt:
-                                _sm(_L(spec[_idx], sigma_lo), _sv)
-                        )
-                    elif has_losvd:
-                        _L = _apply_losvd
-                        self._predict_fn = (
-                            lambda spec, _sm=_instr_sm, _sv=sigma_v, _L=_L:
-                                _sm(_L(spec[_idx]), _sv)
-                        )
-                    else:
-                        self._predict_fn = (
-                            lambda spec, _sm=_instr_sm, _sv=sigma_v:
-                                _sm(spec[_idx], _sv)
-                        )
-
-                elif st == "lambda":
-                    # Constant wavelength dispersion σ_λ [Å].
-                    sigma_l   = float(self.resolution)
-                    _instr_sm = make_wave_smoother(_wm_trim, wo, inres=self.inres)
-                    if fit_lo:
-                        _Lrt = _apply_losvd_rt
-                        self._predict_fn = (
-                            lambda spec, sigma_lo, _sm=_instr_sm, _sl=sigma_l,
-                                   _L=_Lrt:
-                                _sm(_L(spec[_idx], sigma_lo), _sl)
-                        )
-                    elif has_losvd:
-                        _L = _apply_losvd
-                        self._predict_fn = (
-                            lambda spec, _sm=_instr_sm, _sl=sigma_l, _L=_L:
-                                _sm(_L(spec[_idx]), _sl)
-                        )
-                    else:
-                        self._predict_fn = (
-                            lambda spec, _sm=_instr_sm, _sl=sigma_l:
-                                _sm(spec[_idx], _sl)
-                        )
-
-                elif st == "lsf":
-                    # Wavelength-dependent LSF: resolution is σ(λ) [Å] at
-                    # the *observed* pixel grid.  Interpolate to trimmed grid.
-                    res_obs        = np.asarray(self.resolution, dtype=np.float64)
-                    sigma_lsf_trim = np.interp(_wm_trim, wo, res_obs)
-                    _instr_sm      = make_lsf_smoother(_wm_trim, sigma_lsf_trim, wo,
-                                                       inres=self.inres)
-                    if fit_lo:
-                        _Lrt = _apply_losvd_rt
-                        self._predict_fn = (
-                            lambda spec, sigma_lo, _sm=_instr_sm, _L=_Lrt:
-                                _sm(_L(spec[_idx], sigma_lo))
-                        )
-                    elif has_losvd:
-                        _L = _apply_losvd
-                        self._predict_fn = (
-                            lambda spec, _sm=_instr_sm, _L=_L:
-                                _sm(_L(spec[_idx]))
-                        )
-                    else:
-                        self._predict_fn = (
-                            lambda spec, _sm=_instr_sm:
-                                _sm(spec[_idx])
-                        )
-
-                else:
+                if st not in ("vel", "R", "lambda", "lsf"):
                     raise ValueError(
                         f"Spectrum.smoothtype={st!r} is not recognised.  "
                         "Valid choices: None, 'vel', 'R', 'lambda', 'lsf'."
+                    )
+
+                # ── Library (input) resolution on the trimmed model grid ──
+                # sigma_v is frame-invariant, so the rest-frame curve is
+                # evaluated at λ_rest = λ_obs/(1+z) and used unchanged.
+                # NaN = "unknown here" → nothing subtracted at that pixel.
+                auto = (self.inres == "auto")
+                if auto and lib_resolution is None:
+                    raise ValueError(
+                        f"Spectrum {self.name!r}: smoothtype={st!r} needs "
+                        "the SSP library resolution to subtract in "
+                        "quadrature, but inres='auto' and no "
+                        "lib_resolution curve was provided.  Load a "
+                        "schema-2.0 SSP grid (SedModel threads its curve "
+                        "in automatically), or pass an explicit inres "
+                        "float to override."
+                    )
+                if auto:
+                    _lw = np.asarray(lib_resolution[0], dtype=np.float64)
+                    _ls = np.asarray(lib_resolution[1], dtype=np.float64)
+                    if _lw.shape != _ls.shape:
+                        raise ValueError(
+                            "lib_resolution wave/sigma shape mismatch: "
+                            f"{_lw.shape} vs {_ls.shape}")
+                    # NaN-aware interpolation onto the trimmed grid: NaN
+                    # segments stay NaN (np.interp would smear them).
+                    _rest_trim = _wm_trim / opz
+                    fin = np.isfinite(_ls)
+                    sig_v_lib = np.full(_wm_trim.shape, np.nan)
+                    if fin.any():
+                        sig_v_lib = np.where(
+                            (_rest_trim >= _lw[fin].min())
+                            & (_rest_trim <= _lw[fin].max()),
+                            np.interp(_rest_trim, _lw[fin], _ls[fin]),
+                            np.nan)
+                        # pixels inside coverage but adjacent to NaN gaps:
+                        # mark as NaN when the nearest native pixel is NaN
+                        near = np.clip(np.searchsorted(_lw, _rest_trim),
+                                       0, _lw.size - 1)
+                        sig_v_lib = np.where(np.isfinite(_ls[near]),
+                                             sig_v_lib, np.nan)
+                else:
+                    sig_v_lib = None      # explicit scalar override path
+
+                # ── Target width and the library curve, per smoothtype ────
+                # Everything reduces to ONE of two smoother kinds:
+                #   scalar-σ FFT (shift-invariant target, constant or no
+                #   library curve) or the CDF-transform LSF smoother
+                #   (any wavelength dependence, in target or library).
+                def _flat(a):
+                    f = a[np.isfinite(a)]
+                    return f.size and (np.ptp(f) < 1e-6) and \
+                        np.isfinite(a).all()
+
+                _sig_lam = _wm_trim / _CKMS   # dλ/dv at each trimmed pixel
+
+                # An all-NaN curve (resolution unknown everywhere) subtracts
+                # nothing: take the scalar inres=0 fast path so the result
+                # is BIT-identical to an explicit inres=0.0, and warn.
+                all_nan = auto and not np.isfinite(sig_v_lib).any()
+                if all_nan:
+                    self._warn_floor(np.full_like(_wm_trim, np.inf),
+                                     sig_v_lib, "km/s", _wm_trim)
+
+                if st in ("vel", "R"):
+                    sigma_v_t = self._resolution_as_sigma()
+                    if not auto or all_nan:
+                        _in = 0.0 if all_nan else float(self.inres)
+                        _instr_sm = make_vel_smoother(
+                            _wm_trim, wo, inres=_in)
+                        _apply_instr = (lambda spec_trim, _sm=_instr_sm,
+                                        _sv=sigma_v_t: _sm(spec_trim, _sv))
+                        self._warn_floor(np.full(1, sigma_v_t),
+                                         np.full(1, _in), "km/s")
+                    elif _flat(sig_v_lib):
+                        _in = float(sig_v_lib[np.isfinite(sig_v_lib)][0])
+                        _instr_sm = make_vel_smoother(_wm_trim, wo, inres=_in)
+                        _apply_instr = (lambda spec_trim, _sm=_instr_sm,
+                                        _sv=sigma_v_t: _sm(spec_trim, _sv))
+                        self._warn_floor(np.full(1, sigma_v_t),
+                                         np.full(1, _in), "km/s")
+                    else:
+                        # wavelength-dependent library curve → LSF route in
+                        # wavelength space: σ_λ = λ σ_v / c for both target
+                        # and library.
+                        tgt = sigma_v_t * _sig_lam
+                        lib = sig_v_lib * _sig_lam
+                        _instr_sm = make_lsf_smoother(
+                            _wm_trim, tgt, wo, inres=lib)
+                        _apply_instr = (lambda spec_trim, _sm=_instr_sm:
+                                        _sm(spec_trim))
+                        self._warn_floor(np.full_like(_wm_trim, sigma_v_t),
+                                         sig_v_lib, "km/s", _wm_trim)
+
+                elif st == "lambda":
+                    sigma_l_t = self._resolution_as_sigma()
+                    if not auto or all_nan:
+                        _in = 0.0 if all_nan else float(self.inres)
+                        _instr_sm = make_wave_smoother(
+                            _wm_trim, wo, inres=_in)
+                        _apply_instr = (lambda spec_trim, _sm=_instr_sm,
+                                        _sl=sigma_l_t: _sm(spec_trim, _sl))
+                        self._warn_floor(np.full(1, sigma_l_t),
+                                         np.full(1, _in), "AA")
+                    else:
+                        # constant-λ target, velocity-defined library curve
+                        # → always wavelength-dependent in λ: LSF route.
+                        tgt = np.full_like(_wm_trim, sigma_l_t)
+                        lib = sig_v_lib * _sig_lam
+                        _instr_sm = make_lsf_smoother(
+                            _wm_trim, tgt, wo, inres=lib)
+                        _apply_instr = (lambda spec_trim, _sm=_instr_sm:
+                                        _sm(spec_trim))
+                        self._warn_floor(tgt, lib, "AA", _wm_trim)
+
+                else:   # st == "lsf"
+                    # Wavelength-dependent target LSF: resolution is σ(λ)
+                    # [Å] at the *observed* pixel grid → trimmed model grid.
+                    res_obs        = self._resolution_as_sigma()
+                    sigma_lsf_trim = np.interp(_wm_trim, wo, res_obs)
+                    if not auto or all_nan:
+                        lib = 0.0 if all_nan else float(self.inres)
+                        _instr_sm = make_lsf_smoother(
+                            _wm_trim, sigma_lsf_trim, wo, inres=lib)
+                        self._warn_floor(sigma_lsf_trim,
+                                         np.full_like(sigma_lsf_trim, lib),
+                                         "AA", _wm_trim)
+                    else:
+                        lib = sig_v_lib * _sig_lam
+                        _instr_sm = make_lsf_smoother(
+                            _wm_trim, sigma_lsf_trim, wo, inres=lib)
+                        self._warn_floor(sigma_lsf_trim, lib, "AA", _wm_trim)
+                    _apply_instr = (lambda spec_trim, _sm=_instr_sm:
+                                    _sm(spec_trim))
+
+                # ── One wrapper set for every smoothtype ──────────────────
+                if fit_lo:
+                    _Lrt = _apply_losvd_rt
+                    self._predict_fn = (
+                        lambda spec, sigma_lo, _A=_apply_instr, _L=_Lrt:
+                            _A(_L(spec[_idx], sigma_lo))
+                    )
+                elif has_losvd:
+                    _L = _apply_losvd
+                    self._predict_fn = (
+                        lambda spec, _A=_apply_instr, _L=_L:
+                            _A(_L(spec[_idx]))
+                    )
+                else:
+                    self._predict_fn = (
+                        lambda spec, _A=_apply_instr: _A(spec[_idx])
                     )
 
             else:
@@ -842,9 +1035,11 @@ class Spectrum(Observation):
         if self.resolution is None:
             res_str = "none"
         elif np.ndim(self.resolution) == 0:
-            res_str = f"R = {float(self.resolution):.1f}"
+            res_str = f"{float(self.resolution):.1f}"
         else:
             res_str = f"array, shape {np.shape(self.resolution)}"
+        if self.resolution is not None and self.smoothtype is not None:
+            res_str += f" ({self.res_convention} convention)"
 
         lines = [
             f"Spectrum ({self.name})",

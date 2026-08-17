@@ -80,16 +80,26 @@ model redshifts the model spectrum by `(1 + zred)` onto these pixels; at
 `zred = 0` observed and rest frame coincide) and flux in `F_ν` (same system as
 the model).
 Set `resolution` + `smoothtype` to have the forward model apply instrumental
-broadening.
+broadening. All resolutions are Gaussian **sigmas** by default; if your number
+is FWHM-based (instrument datasheets usually are), say so with
+`res_convention="fwhm"` and CERIDWEN converts for you. For `smoothtype="R"`
+the convention is *required*, because published R values mean lambda/FWHM on
+datasheets but lambda/sigma in the sedpy/Prospector tradition — a silent guess
+would be wrong by 2.35x. The SSP library's own resolution (stored in every
+schema-2 grid) is subtracted in quadrature automatically (`inres="auto"`, the
+default) — you do not need to set anything for that.
 
 ```python
 spec = Spectrum(
     wavelength=my_obs_wave_aa,      # Å, vacuum, OBSERVED frame, shape (n_pix,)
     flux=my_spec_fnu,               # F_nu per pixel
     uncertainty=my_spec_unc,
-    resolution=120.0,               # see smoothtype for the unit
-    smoothtype="vel",               # "vel" (km/s), "R", "lambda" (Å), or "lsf"
-    inres=0.0,                      # model library intrinsic resolution to deconvolve
+    resolution=120.0,               # Gaussian sigma by default (see below)
+    smoothtype="vel",               # "vel" (km/s) | "R" | "lambda" (Å) | "lsf"
+    # res_convention="fwhm",        # add this when quoting FWHM-based numbers
+    #                               # (REQUIRED for smoothtype="R")
+    # inres="auto" (default): the SSP library resolution is subtracted in
+    # quadrature automatically; inres=0.0 would turn that OFF — don't.
     noise_floor=0.01,               # 1% multiplicative calibration floor (optional)
     name="spec",
 )

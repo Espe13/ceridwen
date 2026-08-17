@@ -48,7 +48,9 @@ def main():
     ap.add_argument("--snr", type=float, default=25.0)
     ap.add_argument("--sfh", choices=sorted(SFH_LIBRARY), default="fastquench")
     ap.add_argument("--resolution", type=float, default=1000.0,
-                    help="spectral R (smoothtype='R')")
+                    help="spectral R = lambda/sigma_lambda "
+                         "(sigma-based; smoothtype='R', "
+                         "res_convention='sigma')")
     ap.add_argument("--wave-obs", type=float, nargs=2,
                     default=(6000.0, 18000.0),
                     help="observed-frame wavelength range [A]")
@@ -106,8 +108,11 @@ def main():
                     flux=np.zeros_like(wave_obs),
                     uncertainty=np.ones_like(wave_obs),
                     resolution=args.resolution, smoothtype="R",
+                    res_convention="sigma",
                     name="mockspec")
-    proj.setup_for_model(csp.wave, zred=args.zred)
+    proj.setup_for_model(
+        csp.wave, zred=args.zred,
+        lib_resolution=getattr(csp, "lib_resolution", None))
     truth_flux = np.asarray(csp.predict(theta_true, [proj])["mockspec"])
 
     sigma = np.abs(truth_flux) / args.snr
@@ -115,6 +120,7 @@ def main():
 
     obs = Spectrum(wavelength=wave_obs, flux=mock_flux, uncertainty=sigma,
                    resolution=args.resolution, smoothtype="R",
+                   res_convention="sigma",
                    name="mockspec")
 
     # ----------------------------------------------------------------- truths

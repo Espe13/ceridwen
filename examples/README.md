@@ -26,9 +26,9 @@ curl -L -o examples/ssp_data.h5 \
     "https://zenodo.org/records/21221634/files/ssp_data.h5?download=1"
 ```
 
-or use the bundled LFS test grid (`git lfs install && git lfs pull`). The
-script resolves the grid in this order: `$SSP_FILE` →
-`examples/ssp_data.h5` → the LFS fixture `tests/fixtures/ssp_data_test.h5`.
+The script resolves the grid in this order: `$SSP_FILE` →
+`examples/ssp_data.h5` → the local developer grid
+`ceridwen/data/test_data/ssp_data_bpass.h5` (not shipped in the repository).
 
 `add_neb=True` additionally needs `$SPS_HOME` at runtime (CLOUDY nebular
 data), i.e. an FSPS data checkout even with a downloaded grid.

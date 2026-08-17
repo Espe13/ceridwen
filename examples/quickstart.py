@@ -18,8 +18,9 @@ Requirements
 FSPS is NOT required to run this demo (``add_neb=False``: no CLOUDY data is
 read). An SSP grid is resolved in this order: ``$SSP_FILE`` ->
 ``examples/ssp_data.h5`` (build it with FSPS — recommended — or download it
-from Zenodo, see docs/installation.md "Getting the SSP grid") -> the git-lfs
-test fixture ``tests/fixtures/ssp_data_test.h5``. Only if no grid is found
+from Zenodo, see docs/installation.md "Getting the SSP grid") -> the local
+developer grid ``ceridwen/data/test_data/ssp_data_bpass.h5`` (not shipped in
+the repository). Only if no grid is found
 does the script fall back to building one, which then does need FSPS +
 ``$SPS_HOME``. Flipping ``add_neb=True`` (CLOUDY nebular emission) also needs
 ``$SPS_HOME`` at runtime.
@@ -55,12 +56,10 @@ HERE = pathlib.Path(__file__).resolve().parent
 def _default_ssp_file() -> str:
     """Resolve a usable SSP grid without requiring FSPS.
 
-    Order: $SSP_FILE -> examples/ssp_data.h5 -> the git-lfs test
-    fixture tests/fixtures/ssp_data_test.h5 (present in every clone
-    where `git lfs install && git lfs pull` has been run).  A tiny
-    file at the fixture path is a git-lfs POINTER, not the data —
-    detect it and explain, because the resulting HDF5 error is
-    otherwise cryptic in a tutorial setting.
+    Order: $SSP_FILE -> examples/ssp_data.h5 -> the local developer grid
+    ceridwen/data/test_data/ssp_data_bpass.h5 (not shipped in the
+    repository; download the BPASS grid from Zenodo or build it with
+    FSPS if you want this fallback).
     """
     env = os.environ.get("SSP_FILE")
     if env:
@@ -68,18 +67,10 @@ def _default_ssp_file() -> str:
     local = HERE / "ssp_data.h5"
     if local.is_file():
         return str(local)
-    fixture = HERE.parent / "tests" / "fixtures" / "ssp_data_test.h5"
-    if fixture.is_file():
-        if fixture.stat().st_size < 10_000:
-            raise SystemExit(
-                f"{fixture} is a git-lfs pointer, not the actual grid.\n"
-                "Run `git lfs install && git lfs pull` in the repository, "
-                "then re-run this script.\n"
-                "No git-lfs? Download the grid from Zenodo instead and save "
-                "it as examples/ssp_data.h5 — see docs/installation.md "
-                "('Getting the SSP grid')."
-            )
-        return str(fixture)
+    dev_grid = (HERE.parent / "ceridwen" / "data" / "test_data"
+                / "ssp_data_bpass.h5")
+    if dev_grid.is_file():
+        return str(dev_grid)
     return str(local)   # absent: step0 falls through to the FSPS build
 
 

@@ -333,12 +333,11 @@ def ssp_data_with_agb_dust(
     )
     new_flux = jnp.asarray(ssp_data.ssp_flux) * jnp.asarray(
         ratio, dtype=ssp_data.ssp_flux.dtype)
-    return SSPData(
-        ssp_lgmet      = ssp_data.ssp_lgmet,
-        ssp_lg_age_gyr = ssp_data.ssp_lg_age_gyr,
-        ssp_wave       = ssp_data.ssp_wave,
-        ssp_flux       = new_flux,
-    )
+    # dataclasses.replace preserves EVERY other field (provenance AND the
+    # schema-2.0 library resolution curve) bit-for-bit, as documented —
+    # the previous four-field reconstruction silently dropped them.
+    import dataclasses as _dc
+    return _dc.replace(ssp_data, ssp_flux=new_flux)
 
 
 __all__ = [

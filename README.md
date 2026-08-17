@@ -243,7 +243,8 @@ wavelengths only), which is all `predict` needs.
 print("[mock] building the generator model (empty observations) ...")
 gen = build_model([
     Photometry(filters=FILTERS, name="phot"),
-    Spectrum(wavelength=SPEC_WAVE, resolution=150.0, smoothtype="vel", name="spec"),
+    Spectrum(wavelength=SPEC_WAVE, resolution=150.0, smoothtype="vel",  # sigma_v [km/s]
+             name="spec"),
 ])
 print("[mock] predicting TRUTH through the forward model ...")
 truth_pred = gen.predict(TRUTH)                    # AB maggies (phot), F_nu (spec)
@@ -267,7 +268,7 @@ print("[obs] building phot ...")
 phot = Photometry(filters=FILTERS, flux=mag_obs, uncertainty=mag_unc, name="phot")
 print("[obs] building spec ...")
 spec = Spectrum(wavelength=SPEC_WAVE, flux=sfx_obs, uncertainty=sfx_unc,
-                resolution=150.0, smoothtype="vel", name="spec")
+                resolution=150.0, smoothtype="vel", name="spec")  # sigma_v [km/s]
 phot.display(); spec.display()                     # sanity-check the observations
 print("[model] building the fit model ...")
 model = build_model([phot, spec])

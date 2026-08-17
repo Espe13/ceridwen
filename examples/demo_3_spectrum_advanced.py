@@ -96,9 +96,12 @@ def main() -> None:
         return Spectrum(
             wavelength=SPEC_WAVE,
             flux=flux, uncertainty=uncertainty,
-            resolution=SPEC_RES, smoothtype="vel",   # instrument broadening
-            # inres=<library sigma_v>  would deconvolve the SSP library
-            # resolution in quadrature; 0 (default) treats it as exact.
+            resolution=SPEC_RES, smoothtype="vel",   # sigma_v [km/s]
+            # (sigma convention is the default; res_convention="fwhm" if
+            # your width is FWHM-based — REQUIRED for smoothtype="R".)
+            # inres="auto" (default): the library resolution curve stored
+            # in the schema-2 SSP grid is subtracted in quadrature
+            # automatically.
             fit_sigma_smooth=True,                   # LOSVD from theta
             noise_floor=0.01,                        # 1% error floor
             name="spec",

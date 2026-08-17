@@ -60,7 +60,14 @@ def _setup(obs_list, csp):
     """
     for o in obs_list:
         if hasattr(o, "setup_for_model"):
-            o.setup_for_model(csp.wave, zred=ZRED)
+            if isinstance(o, Spectrum):
+                # schema-2 grids: thread the library resolution curve,
+                # as SedModel would (inres='auto' raises without it).
+                o.setup_for_model(
+                    csp.wave, zred=ZRED,
+                    lib_resolution=getattr(csp, "lib_resolution", None))
+            else:
+                o.setup_for_model(csp.wave, zred=ZRED)
     return obs_list
 
 

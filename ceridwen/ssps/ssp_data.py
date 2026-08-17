@@ -17,8 +17,27 @@ Grids built with :meth:`SSPData.from_fsps` record *how* they were made
 used, wavelength range, and a schema tag).  This metadata is stored as
 plain-Python static fields on :class:`SSPData` — it is never a JAX array
 leaf and never enters a ``@jit`` kernel — and is persisted to / restored
-from the HDF5 attrs.  Legacy files written before provenance tracking
-load fine, with every metadata field defaulting to ``None`` / ``{}``.
+from the HDF5 attrs.
+
+Library resolution (schema 2.0)
+-------------------------------
+Every grid carries the intrinsic spectral resolution of its stellar
+library as a per-pixel Gaussian dispersion in velocity units,
+``ssp_resolution`` = sigma_v(lambda) [km/s] on ``ssp_wave`` (velocity
+units are redshift-invariant, so the observation layer needs no frame
+bookkeeping).  Grids written by :meth:`SSPData.from_fsps` or by
+``scripts/convert_grids_schema2.py`` build this curve automatically as
+the element-wise maximum of the grid's own 2-pixel sampling floor
+(derived from ``ssp_wave`` itself) and any documented library LSF
+segments, so their curves are finite at every pixel.  NaN marks pixels
+where the resolution is unknown (possible only in hand-built curves);
+the Spectrum projection subtracts nothing there.  The observation layer
+subtracts this curve in quadrature from the target instrumental
+resolution automatically, so models are never over-broadened by the
+library width.  Schema 2.0 files REQUIRE this dataset: :meth:`load`
+raises on files without it (convert old grids with
+``scripts/convert_grids_schema2.py``) and :meth:`save` refuses to write
+a grid whose curve is missing.
 
 Only the kwargs that legitimately define the stellar library / IMF are
 accepted by :meth:`from_fsps`; anything the composite-stellar-population
@@ -57,7 +76,9 @@ except (ImportError, RuntimeError):
 DEFAULT_SSP_BNAME = "ssp_data_fsps_v3.2_lgmet_age.h5"
 
 # Bumped whenever the on-disk metadata schema changes.
-SSP_SCHEMA_VERSION = "1.0"
+# 2.0 (2026-08): ssp_resolution (library sigma_v(lambda) [km/s]) is a
+# REQUIRED dataset; loaders reject schema-1.x files.
+SSP_SCHEMA_VERSION = "2.0"
 
 
 # ----------------------------------------------------------------------
@@ -256,6 +277,13 @@ class SSPData:
     ssp_wave: jnp.ndarray           # wavelength grid (Angstrom)
     ssp_flux: jnp.ndarray           # (n_met, n_ages, n_wave) in Lsun/Hz/Msun
 
+    # --- library resolution (schema 2.0; static numpy, not a JAX leaf) ----
+    # sigma_v(lambda) [km/s] on ssp_wave; NaN = unknown at that pixel.
+    # Optional at the CONSTRUCTOR level only (intermediate in-memory
+    # objects); save()/load() REQUIRE it, so every on-disk grid carries it.
+    ssp_resolution: Optional[np.ndarray] = field(default=None, compare=False)
+    resolution_source: Optional[str] = field(default=None, compare=False)
+
     # --- provenance (static Python metadata; not array leaves) ------------
     isoc_type: Optional[str] = field(default=None, compare=False)
     spec_library: Optional[str] = field(default=None, compare=False)
@@ -277,6 +305,49 @@ class SSPData:
                 f"{self.ssp_wave.size}) but got {self.ssp_flux.shape}.  "
                 f"Grid dimensions must be consistent (n_met, n_ages, n_wave)."
             )
+        if self.ssp_resolution is not None:
+            res = np.asarray(self.ssp_resolution, dtype=np.float64)
+            if res.shape != (int(self.ssp_wave.size),):
+                raise ValueError(
+                    f"ssp_resolution shape {res.shape} must match ssp_wave "
+                    f"({int(self.ssp_wave.size)},): one sigma_v(lambda) "
+                    f"[km/s] per wavelength pixel (NaN where unknown)."
+                )
+            finite = res[np.isfinite(res)]
+            if finite.size and (finite <= 0.0).any():
+                raise ValueError(
+                    "ssp_resolution must be positive (km/s) where finite; "
+                    "use NaN to mark pixels of unknown library resolution."
+                )
+            # normalise storage to a plain float64 numpy array
+            object.__setattr__(self, "ssp_resolution", res)
+
+    # ------------------------------------------------------------------
+    # Library resolution attachment
+    # ------------------------------------------------------------------
+    def with_resolution(self, *, sigma_v=None, segments=None, source=None):
+        """Return a copy carrying the library resolution curve.
+
+        Exactly one of ``sigma_v`` (a per-pixel sigma_v(lambda) [km/s]
+        array on ``ssp_wave``, NaN where unknown) or ``segments`` (a
+        piecewise spec understood by
+        :func:`ceridwen.ssps.library_resolution.sigma_v_from_segments`)
+        must be given.  ``source`` is a short free-text provenance note
+        (e.g. the literature reference for the numbers) stored alongside.
+        """
+        import dataclasses as _dc
+        from .library_resolution import sigma_v_from_segments
+        if (sigma_v is None) == (segments is None):
+            raise ValueError(
+                "with_resolution: pass exactly one of sigma_v= or segments=")
+        if segments is not None:
+            sigma_v = sigma_v_from_segments(
+                np.asarray(self.ssp_wave), segments)
+        return _dc.replace(
+            self,
+            ssp_resolution=np.asarray(sigma_v, dtype=np.float64),
+            resolution_source=(str(source) if source is not None else None),
+        )
 
     # ------------------------------------------------------------------
     # Human-readable summary
@@ -342,6 +413,25 @@ class SSPData:
             f"  flux (n_met,n_age,n_wave): {tuple(int(s) for s in self.ssp_flux.shape)}  "
             f"[L_sun Hz^-1 M_sun^-1]  {np.asarray(self.ssp_flux).dtype}  {size_str}",
         ]
+        if self.ssp_resolution is None:
+            lines += ["  library resolution       : MISSING "
+                      "(cannot be saved; attach with with_resolution)"]
+        else:
+            res = np.asarray(self.ssp_resolution, dtype=np.float64)
+            fin = np.isfinite(res)
+            if fin.any():
+                cov_lo = wave[fin].min(); cov_hi = wave[fin].max()
+                lines += [
+                    f"  library resolution       : sigma_v "
+                    f"[{res[fin].min():.1f}, {res[fin].max():.1f}] km/s over "
+                    f"[{cov_lo:.0f}, {cov_hi:.0f}] AA "
+                    f"({100.0 * fin.mean():.0f}% of pixels; NaN elsewhere)",
+                ]
+            else:
+                lines += ["  library resolution       : all-NaN "
+                          "(unknown everywhere; no subtraction will occur)"]
+            if self.resolution_source:
+                lines += [f"  resolution source        : {self.resolution_source}"]
         if self.isoc_type is None:
             lines += [
                 "note",
@@ -363,26 +453,41 @@ class SSPData:
         """
         Serialise the SSP grids (and provenance metadata) to HDF5.
 
-        Provenance fields are written to the file ``attrs``; any that are
-        ``None`` are simply omitted, so re-saving a legacy grid does not
-        invent metadata.  ``fsps_kwargs`` is stored as a JSON string.
+        Schema 2.0: the library resolution curve is REQUIRED — a grid
+        without ``ssp_resolution`` cannot be written (attach one with
+        :meth:`with_resolution` first).  Provenance fields are written to
+        the file ``attrs``; any that are ``None`` are omitted.
+        ``fsps_kwargs`` is stored as a JSON string.
 
         Parameters
         ----------
         filename : str or Path
             Output file path.  Will be overwritten if it exists.
         """
+        if self.ssp_resolution is None:
+            raise ValueError(
+                "SSPData.save(): this grid carries no library resolution "
+                "curve (ssp_resolution is None).  Schema 2.0 files require "
+                "one — attach it with with_resolution(segments=...) or "
+                "with_resolution(sigma_v=...) before saving."
+            )
         with h5py.File(filename, 'w') as f:
             f.create_dataset('ssp_lgmet',      data=np.array(self.ssp_lgmet))
             f.create_dataset('ssp_lg_age_gyr', data=np.array(self.ssp_lg_age_gyr))
             f.create_dataset('ssp_wave',       data=np.array(self.ssp_wave))
             f.create_dataset('ssp_flux',       data=np.array(self.ssp_flux))
+            f.create_dataset('ssp_resolution',
+                             data=np.asarray(self.ssp_resolution,
+                                             dtype=np.float64))
 
             f.attrs['description']        = 'FSPS SSP interpolation grids'
             f.attrs['units_lgmet']        = 'log10(absolute_metallicity)'
             f.attrs['units_lg_age_gyr']   = 'log10(age/Gyr)'
             f.attrs['units_wave']         = 'Angstrom'
             f.attrs['units_flux']         = 'L_sun Hz^-1 M_sun^-1'
+            f.attrs['units_resolution']   = 'sigma_v [km/s]; NaN = unknown'
+            if self.resolution_source is not None:
+                f.attrs['resolution_source'] = str(self.resolution_source)
 
             # --- provenance -------------------------------------------------
             for key in ('schema_version', 'isoc_type', 'spec_library',
@@ -402,13 +507,14 @@ class SSPData:
     @classmethod
     def load(cls, filename):
         """
-        Load an :class:`SSPData` from an HDF5 file.
+        Load an :class:`SSPData` from an HDF5 file (schema 2.0).
 
-        Backward compatible: files written before provenance tracking carry
-        none of the metadata attrs, so every provenance field is populated
-        as ``None`` / ``{}`` rather than raising.  Any legacy ``log_qq``
-        dataset is silently ignored — the nebular model computes its own
-        ionising-photon rate from ``ssp_flux``.
+        The file MUST carry the library resolution dataset
+        ``ssp_resolution`` (sigma_v(lambda) [km/s], NaN where unknown);
+        files written under schema 1.x raise with a pointer to the
+        converter.  Any legacy ``log_qq`` dataset is silently ignored —
+        the nebular model computes its own ionising-photon rate from
+        ``ssp_flux``.
         """
         def _decode(v):
             if isinstance(v, (bytes, bytearray)):
@@ -416,13 +522,26 @@ class SSPData:
             return v
 
         with h5py.File(filename, 'r') as f:
+            if 'ssp_resolution' not in f:
+                raise ValueError(
+                    f"{filename}: no 'ssp_resolution' dataset — this grid "
+                    f"predates SSP schema 2.0.  Convert it (no FSPS rebuild "
+                    f"needed) with scripts/convert_grids_schema2.py, which "
+                    f"copies the existing arrays and attaches the library "
+                    f"resolution curve."
+                )
             ssp_lgmet      = jnp.array(f['ssp_lgmet'][:])
             ssp_lg_age_gyr = jnp.array(f['ssp_lg_age_gyr'][:])
             ssp_wave       = jnp.array(f['ssp_wave'][:])
             ssp_flux       = jnp.array(f['ssp_flux'][:])
+            ssp_resolution = np.asarray(f['ssp_resolution'][:],
+                                        dtype=np.float64)
 
             a = f.attrs
             meta = {
+                'ssp_resolution':    ssp_resolution,
+                'resolution_source': _decode(a['resolution_source'])
+                                     if 'resolution_source' in a else None,
                 'schema_version': _decode(a['schema_version'])
                                   if 'schema_version' in a else None,
                 'isoc_type':      _decode(a['isoc_type'])
@@ -447,9 +566,25 @@ class SSPData:
     # ------------------------------------------------------------------
     @classmethod
     def from_fsps(cls, save_to: Optional[str] = None,
+                  resolution_segments=None,
+                  resolution_source: Optional[str] = None,
                   **fsps_kwargs) -> "SSPData":
         """
         Build an :class:`SSPData` directly from FSPS, recording provenance.
+
+        Schema 2.0: the library resolution curve is built AUTOMATICALLY as
+        the element-wise maximum of the grid's own 2-pixel sampling floor
+        — derived from the built ``ssp_wave`` itself, no external numbers
+        needed (:func:`ceridwen.ssps.library_resolution.sampling_floor_sigma_v`)
+        — and, when given, ``resolution_segments`` describing the parent
+        library's documented line-spread function (the piecewise spec of
+        :func:`ceridwen.ssps.library_resolution.sigma_v_from_segments`).
+        Supply segments only when the library LSF is broader than the
+        stored sampling (e.g. MILES: ``[(3525., 7500., 'fwhm_AA', 2.54)]``,
+        Falcon-Barroso et al. 2011) and cite them via ``resolution_source``;
+        for libraries whose only documented resolution IS their tabulation
+        (e.g. BPASS at 1 Angstrom) pass nothing — the sampling floor is
+        the honest curve.  The stored curve is finite at every pixel.
 
         Only kwargs that define the **stellar library / IMF** are accepted —
         the things that legitimately belong at SSP-build time.  Anything the
@@ -479,9 +614,32 @@ class SSPData:
         Raises
         ------
         ValueError
-            If any kwarg is not a library/IMF-defining parameter.
+            If any kwarg is not a library/IMF-defining parameter, or if
+            ``resolution_source`` is given without ``resolution_segments``
+            (the floor's provenance is generated automatically; a source
+            note only makes sense for supplied LSF numbers).
         """
+        if resolution_source is not None and resolution_segments is None:
+            raise ValueError(
+                "from_fsps(): resolution_source was given without "
+                "resolution_segments.  The sampling-floor provenance is "
+                "recorded automatically; a source note only accompanies "
+                "explicit library-LSF segments."
+            )
+        if resolution_segments is not None and resolution_source is None:
+            raise ValueError(
+                "from_fsps(): resolution_segments were given without "
+                "resolution_source.  Cite where the LSF numbers come from "
+                "(e.g. resolution_source='MILES FWHM 2.54A "
+                "(Falcon-Barroso et al. 2011)') — uncited resolution "
+                "numbers must not ship in a released grid."
+            )
+        from .library_resolution import combined_sigma_v, combined_source
         data = collect_ssp_data_wrapper(**fsps_kwargs)
+        sigma_v = combined_sigma_v(np.asarray(data.ssp_wave),
+                                   segments=resolution_segments)
+        data = data.with_resolution(
+            sigma_v=sigma_v, source=combined_source(resolution_source))
         if save_to is not None:
             data.save(save_to)
         return data

@@ -64,6 +64,24 @@ class Observation:
                  name=None,
                  **kwargs):
 
+        # Unknown keyword arguments are a hard error: silently swallowing
+        # them hides typos with real consequences (e.g. ``res_type=`` in
+        # place of ``smoothtype=`` used to disable instrumental smoothing
+        # without any sign of it).
+        if kwargs:
+            hints = {"res_type": "smoothtype", "restype": "smoothtype",
+                     "sigma_v": "sigma_losvd", "lsf": "resolution",
+                     "convention": "res_convention",
+                     "resolution_convention": "res_convention",
+                     "res_units": "res_convention",
+                     "fwhm": "res_convention"}
+            hint = "; ".join(f"did you mean {hints[k]!r} instead of {k!r}?"
+                             for k in kwargs if k in hints)
+            raise TypeError(
+                f"{type(self).__name__}: unknown keyword argument(s) "
+                f"{sorted(kwargs)}.{' ' + hint if hint else ''}"
+            )
+
         self.flux        = None if flux        is None else jnp.asarray(flux,        dtype=float)
         self.uncertainty = None if uncertainty is None else jnp.asarray(uncertainty, dtype=float)
 

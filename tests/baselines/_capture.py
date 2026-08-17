@@ -33,8 +33,10 @@ from ceridwen.observation.observation import Photometry
 
 # Paths
 THIS_DIR = pathlib.Path(__file__).resolve().parent
+# Canonical test grid (see tests/_gridfixture.py; the old
+# ceridwen/data/test_data/ssp_data.h5 was retired 2026-08-17).
 SSP_FILE = str(THIS_DIR.parent.parent
-               / "ceridwen/data/test_data/ssp_data.h5")
+               / "ceridwen/data/test_data/ssp_data_bpass.h5")
 
 
 # Fiducial physical SFH on the NEW (post-2026-06-03 refactor) lookback

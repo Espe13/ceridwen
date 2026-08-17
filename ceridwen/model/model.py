@@ -228,7 +228,16 @@ class SedModel:
         # :meth:`predict` injects into the CSP theta (see below) — both
         # things are needed for observed-frame calibration.
         for obs in self.observations:
-            obs.setup_for_model(self.wave, zred=self.zred)
+            if getattr(obs, "_kind", None) == "spectrum":
+                # Thread the SSP library resolution curve (schema 2.0)
+                # into the Spectrum projection so the library width is
+                # subtracted in quadrature from the instrumental
+                # smoothing automatically (inres="auto").
+                obs.setup_for_model(
+                    self.wave, zred=self.zred,
+                    lib_resolution=getattr(self.csp, "lib_resolution", None))
+            else:
+                obs.setup_for_model(self.wave, zred=self.zred)
 
         # If the user supplied a non-trivial fixed redshift, store it so
         # :meth:`predict` can inject it into the CSP theta at trace time.

@@ -89,9 +89,11 @@ def test_validate_accepts_library_imf_kwargs():
 
 
 # ----------------------------------------------------------------------
-# 2. metadata save -> load round trip
+# 2. metadata save -> load round trip (schema 2.0)
 # ----------------------------------------------------------------------
 def test_metadata_roundtrip(tmp_path):
+    import numpy as np
+
     meta = dict(
         isoc_type="mist",
         spec_library="miles",
@@ -100,9 +102,11 @@ def test_metadata_roundtrip(tmp_path):
         fsps_kwargs={"imf_type": 1, "tpagb_norm_type": 2},
         wave_min=1000.0,
         wave_max=10000.0,
-        schema_version="1.0",
+        schema_version="2.0",
     )
-    ssp = _tiny_ssp(**meta)
+    ssp = _tiny_ssp(**meta).with_resolution(
+        segments=[(1000.0, 10000.0, "fwhm_AA", 2.54)],
+        source="test segments")
     path = str(tmp_path / "grid.h5")
     ssp.save(path)
 
@@ -114,41 +118,145 @@ def test_metadata_roundtrip(tmp_path):
     assert loaded.fsps_kwargs == {"imf_type": 1, "tpagb_norm_type": 2}
     assert loaded.wave_min == 1000.0
     assert loaded.wave_max == 10000.0
-    assert loaded.schema_version == "1.0"
-    # arrays survive too
+    assert loaded.schema_version == "2.0"
+    # arrays survive too, including the library resolution curve
     assert loaded.ssp_flux.shape == ssp.ssp_flux.shape
+    assert np.array_equal(np.asarray(loaded.ssp_resolution),
+                          np.asarray(ssp.ssp_resolution), equal_nan=True)
+    assert loaded.resolution_source == "test segments"
 
 
 # ----------------------------------------------------------------------
-# 3. backward compatibility: legacy (pre-provenance) metadata-less grid
+# 3. schema 2.0 strictness: no resolution -> no save, no load
 # ----------------------------------------------------------------------
 def _legacy_ssp():
-    """A genuinely metadata-less SSPData (arrays only), emulating a grid built
-    before provenance tracking. Reuses the committed fixture's arrays but drops
-    all provenance, so the test does not depend on the fixture being legacy."""
+    """An arrays-only SSPData (no provenance, no resolution) — legal in
+    memory as an intermediate object, but not serialisable (schema 2.0)."""
     full = SSPData.load(str(require_test_grid()))
     return SSPData(full.ssp_lgmet, full.ssp_lg_age_gyr, full.ssp_wave, full.ssp_flux)
 
 
-def test_legacy_grid_loads_without_metadata(tmp_path):
-    out = str(tmp_path / "legacy.h5")
-    _legacy_ssp().save(out)                 # save() omits None attrs -> truly legacy on disk
-    ssp = SSPData.load(out)
-    assert ssp.ssp_flux.ndim == 3           # grids present...
-    assert ssp.isoc_type is None            # ...but no provenance
-    assert ssp.spec_library is None
-    assert ssp.imf_type is None
-    assert ssp.fsps_version is None
-    assert ssp.fsps_kwargs == {}
-    assert ssp.schema_version is None
+def test_save_without_resolution_raises(tmp_path):
+    with pytest.raises(ValueError, match="with_resolution"):
+        _legacy_ssp().save(str(tmp_path / "nope.h5"))
 
 
-def test_resave_legacy_does_not_invent_metadata(tmp_path):
-    out = str(tmp_path / "resaved.h5")
-    _legacy_ssp().save(out)
-    again = SSPData.load(out)
-    assert again.isoc_type is None
-    assert again.fsps_kwargs == {}
+def test_load_schema1_file_raises_with_converter_pointer(tmp_path):
+    import h5py
+    import numpy as np
+
+    path = str(tmp_path / "schema1.h5")
+    tiny = _tiny_ssp()
+    with h5py.File(path, "w") as f:            # a schema-1.x file by hand
+        f.create_dataset("ssp_lgmet",      data=np.asarray(tiny.ssp_lgmet))
+        f.create_dataset("ssp_lg_age_gyr", data=np.asarray(tiny.ssp_lg_age_gyr))
+        f.create_dataset("ssp_wave",       data=np.asarray(tiny.ssp_wave))
+        f.create_dataset("ssp_flux",       data=np.asarray(tiny.ssp_flux))
+    with pytest.raises(ValueError, match="convert_grids_schema2"):
+        SSPData.load(path)
+
+
+def test_with_resolution_validates_shape():
+    import numpy as np
+
+    with pytest.raises(ValueError, match="shape"):
+        _tiny_ssp().with_resolution(sigma_v=np.ones(3), source="bad shape")
+    with pytest.raises(ValueError, match="exactly one"):
+        _tiny_ssp().with_resolution(source="neither given")
+
+
+# ----------------------------------------------------------------------
+# 3b. resolution curve construction (pure numpy, no FSPS)
+# ----------------------------------------------------------------------
+def test_sampling_floor_and_combined_curve():
+    import numpy as np
+    from ceridwen.ssps.library_resolution import (
+        CKMS, FWHM_TO_SIGMA, sampling_floor_sigma_v, combined_sigma_v,
+        miles_segments, sigma_v_from_segments)
+
+    # uniform log grid: the floor is analytic
+    wave = np.exp(np.linspace(np.log(3000.0), np.log(9000.0), 4000))
+    dln = np.log(wave[1]) - np.log(wave[0])
+    floor = sampling_floor_sigma_v(wave)
+    assert np.all(np.isfinite(floor)) and np.all(floor > 0)
+    assert np.allclose(floor, FWHM_TO_SIGMA * CKMS * 2.0 * dln)
+
+    # combined = element-wise max(floor, LSF); floor where LSF is NaN
+    comb = combined_sigma_v(wave, segments=miles_segments())
+    lsf = sigma_v_from_segments(wave, miles_segments())
+    assert np.all(np.isfinite(comb))
+    inside = np.isfinite(lsf)
+    assert inside.any() and (~inside).any()
+    assert np.allclose(comb[inside], np.maximum(floor[inside], lsf[inside]))
+    assert np.allclose(comb[~inside], floor[~inside])
+
+    # no segments -> floor alone
+    assert np.array_equal(combined_sigma_v(wave), floor)
+
+    # non-monotonic wave is rejected, not silently differentiated
+    with pytest.raises(ValueError, match="strictly increasing"):
+        sampling_floor_sigma_v(wave[::-1])
+
+
+def test_from_fsps_source_without_segments_raises():
+    with pytest.raises(ValueError, match="resolution_source"):
+        SSPData.from_fsps(resolution_source="orphan citation")
+
+
+def test_from_fsps_segments_without_source_raises():
+    with pytest.raises(ValueError, match="resolution_source"):
+        SSPData.from_fsps(
+            resolution_segments=[(3525.0, 7500.0, "fwhm_AA", 2.54)])
+
+
+# ----------------------------------------------------------------------
+# 3c. SSPDataAfe schema 2.1 strictness (no FSPS)
+# ----------------------------------------------------------------------
+def _tiny_afe(**meta):
+    from ceridwen.ssps.ssp_data_afe import SSPDataAfe
+    lgmet = jnp.array([-2.0, -1.0])
+    afe = jnp.array([0.0])
+    lgage = jnp.array([-1.0, 0.0, 1.0])
+    wave = jnp.linspace(1000.0, 10000.0, 5)
+    flux = jnp.ones((1, 2, 3, 5))
+    return SSPDataAfe(lgmet, afe, lgage, wave, flux, **meta)
+
+
+def test_afe_save_without_resolution_raises(tmp_path):
+    with pytest.raises(ValueError, match="with_resolution"):
+        _tiny_afe().save(str(tmp_path / "nope.h5"))
+
+
+def test_afe_resolution_roundtrip(tmp_path):
+    import numpy as np
+    from ceridwen.ssps.ssp_data_afe import SSPDataAfe
+
+    ssp = _tiny_afe(schema_version="2.1").with_resolution(
+        sigma_v=np.full(5, 50.0), source="test curve")
+    path = str(tmp_path / "afe.h5")
+    ssp.save(path)
+    loaded = SSPDataAfe.load(path)
+    assert np.array_equal(np.asarray(loaded.ssp_resolution), np.full(5, 50.0))
+    assert loaded.resolution_source == "test curve"
+    assert loaded.ssp_flux.shape == (1, 2, 3, 5)
+    assert loaded.schema_version == "2.1"
+
+
+def test_afe_load_without_resolution_raises_with_converter_pointer(tmp_path):
+    import h5py
+    import numpy as np
+    from ceridwen.ssps.ssp_data_afe import SSPDataAfe
+
+    tiny = _tiny_afe()
+    path = str(tmp_path / "afe_old.h5")
+    with h5py.File(path, "w") as f:          # a schema-2.0 afe file by hand
+        f.create_dataset("ssp_lgmet",      data=np.asarray(tiny.ssp_lgmet))
+        f.create_dataset("ssp_afe",        data=np.asarray(tiny.ssp_afe))
+        f.create_dataset("ssp_lg_age_gyr", data=np.asarray(tiny.ssp_lg_age_gyr))
+        f.create_dataset("ssp_wave",       data=np.asarray(tiny.ssp_wave))
+        f.create_dataset("ssp_flux",       data=np.asarray(tiny.ssp_flux))
+    with pytest.raises(ValueError, match="convert_grids_schema2"):
+        SSPDataAfe.load(path)
 
 
 # ----------------------------------------------------------------------

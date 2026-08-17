@@ -257,7 +257,9 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
         smoothtype="vel",
         resolution=300.0,
     )
-    spec_obs.setup_for_model(csp.wave)
+    spec_obs.setup_for_model(
+        csp.wave,
+        lib_resolution=getattr(csp, "lib_resolution", None))
     observations = [phot, spec_obs]
 
     predictions = csp.predict(theta, observations)

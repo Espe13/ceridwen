@@ -37,9 +37,9 @@ documentation site needs `pip install ".[docs]"` (maintainers only).
 ## Getting the SSP grid
 
 Fitting needs a pre-computed SSP grid (an HDF5 file). The quickstart resolves
-it in the order `$SSP_FILE`, then `examples/ssp_data.h5`, then the bundled
-git-LFS test fixture `tests/fixtures/ssp_data_test.h5` (run
-`git lfs install && git lfs pull` to materialise it).
+it in the order `$SSP_FILE`, then `examples/ssp_data.h5`, then a local
+developer grid at `ceridwen/data/test_data/ssp_data_bpass.h5` (not shipped
+in the repository).
 
 1. **Build your own with FSPS (recommended for custom choices).** Install
    FSPS (below) and let the quickstart build the grid on first run, or call
