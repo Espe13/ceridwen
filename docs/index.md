@@ -29,6 +29,7 @@ runs on CPU or GPU.
 
 - [Installation](installation.md): Python 3.11, dependencies, and the FSPS / `$SPS_HOME` setup.
 - [Quick start](quickstart.md): build a model and fit it end to end.
+- [Tutorial: joint fit](tutorial.md): photometry, a spectrum, and emission-line fluxes fitted together.
 - [Conventions & gotchas](conventions.md): the unit and indexing conventions that catch people out. Read this before fitting real data.
 - [API reference](api.md): the public classes and functions.
 

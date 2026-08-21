@@ -18,7 +18,7 @@ version: "0.2.0"
 date-released: "2026-08-04"
 license: MIT
 repository-code: "https://github.com/Espe13/ceridwen"
-url: "https://github.com/Espe13/ceridwen"
+url: "https://www.amanda-stoffers.de/ceridwen/"
 keywords:
   - astronomy
   - astrophysics
@@ -29,12 +29,19 @@ keywords:
   - nested sampling
   - JAX
 
-# Pre-built SSP grids (MIST+MILES+Chabrier and BPASS) used by the quickstart
-# and usable by the test suite:
+# Pre-built stellar-population grids (standard SSPs, BPASS, and the
+# alpha-enhanced aMIST/C3K grid) used by the quickstart, the test suite,
+# and ceridwen.ssps.fetch_grid:
 references:
   - type: dataset
-    title: "CERIDWEN quickstart SSP grids"
-    doi: 10.5281/zenodo.21221634
+    title: "CERIDWEN Stellar Population Grids: Standard SSPs, BPASS, and Alpha Enhancement"
+    doi: 10.5281/zenodo.21977508
+    authors:
+      - family-names: Stoffers
+        given-names: Amanda
+  - type: dataset
+    title: "CERIDWEN quickstart SSP and alpha-enhanced grids"
+    doi: 10.5281/zenodo.21794924
     authors:
       - family-names: Stoffers
         given-names: Amanda

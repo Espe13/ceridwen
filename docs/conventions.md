@@ -15,7 +15,7 @@ grid and gets clamped.
 
 !!! danger "Common mistake"
     A prior like `Uniform(low=-2.5, high=0.2)` puts most of its mass off the
-    grid. Use something like `ClippedNormal(mean=-2.0, low=-4.0, high=-1.4)`. If
+    grid. Use something like `ClippedNormal(mean=-2.0, sigma=0.5, low=-4.0, high=-1.4)`. If
     you are unsure of your grid bounds, print them with
     `print(float(csp.zmet.min()), float(csp.zmet.max()))`, or call
     `csp.check_param_ranges(theta)` to warn about out-of-grid values.
@@ -56,6 +56,19 @@ is simply not read, so the parameter takes its default. `predict()` and
 `get_spectrum_components()` emit a warning listing unrecognised keys at trace
 time, at no cost to the hot path. Model-level free parameters like
 `logsfr_ratios` are registered automatically and do not warn.
+
+## Resolving powers: σ or FWHM?
+
+Published resolutions come in two conventions that differ by
+`2√(2 ln 2) ≈ 2.35`: instrument datasheets quote `R = λ/FWHM`, the
+sedpy/Prospector tradition uses `R = λ/σ`. CERIDWEN will not guess: a
+`Spectrum` with `smoothtype="R"` refuses to build until you declare the
+convention (`res_convention="fwhm"` for datasheet numbers, `"sigma"` for the
+Prospector one). For the other smooth types, widths are Gaussian sigmas unless
+you pass `res_convention="fwhm"`. The SSP library's own resolution is stored in
+every schema-2 grid and subtracted in quadrature automatically (`inres="auto"`,
+the default); setting `inres=0.0` turns that off and over-broadens the model —
+don't.
 
 ## FSPS at runtime
 

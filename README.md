@@ -27,8 +27,8 @@ Everything is written against `jax.numpy` with `@jit` and `vmap`/`pmap` in mind:
 
 ## Installation
 
-**Requires Python 3.11.** The pinned `blackjax` (nested sampling) insists on
-it. Create the environment with exactly that version:
+**Requires Python 3.11 or newer.** The pinned `blackjax` (nested sampling)
+insists on it:
 
 ```bash
 conda create -n ceridwen python=3.11 -y
@@ -470,8 +470,8 @@ from ceridwen.ssps import fetch_grid, SSPDataAfe
 from ceridwen.csp import CSPBasis_afe
 
 # One call: downloads once into ~/.ceridwen/grids, sha256-verified.
-ssp = SSPDataAfe.load(fetch_grid("amist_c3k_lr_chab_afe"))
-ssp.display()                       # (n_afe, n_Z, n_age, n_wave) = (5, 13, 107, 1936)
+ssp = SSPDataAfe.load(fetch_grid("amist_c3k_hr_krou_afe"))
+ssp.display()                       # (n_afe, n_Z, n_age, n_wave) = (5, 13, 107, 10992)
 
 csp = CSPBasis_afe(ssp, lookback_time=jnp.linspace(0.0, 12.0, 9),
                    zh_const=True, verbose=False)
@@ -497,26 +497,29 @@ emission-line observations are rejected (continuum and photometry only)
 until α-enhanced photoionisation grids exist.
 
 Two α-enhanced grids are available. `amist_c3k_lr_chab_afe` is the
-**low-resolution** C3K grid (1936 λ points, Chabrier IMF) built from
+**low-resolution** C3K grid (1936 λ points, Chabrier IMF, 108 MB) built from
 `AFE_FLAG=1` python-fsps and used for the method-paper mock suite.
-`amist_c3k_hr_krou_afe` is the **high-resolution** twin (10992 λ points,
-R up to ~65000 in the optical, Kroupa IMF), built from the alpha-MC C3K
+`amist_c3k_hr_krou_afe` (used above) is the **high-resolution** twin (10992 λ
+points, R up to ~65000 in the optical, Kroupa IMF), built from the alpha-MC C3K
 high-res SSPs (MIST v2.5 + C3K v2.3) that are too large to ship inside
-FSPS/python-FSPS. Both share the *same* `(afe, [Fe/H], age)` node grid and
+FSPS/python-FSPS. The published copy of the LR grid predates schema 2, so the
+strict loader rejects it until a one-time upgrade
+(`python scripts/convert_grids_schema2.py ~/.ceridwen/grids/amist_c3k_lr_chab_afe.h5`,
+then load the `_schema2.h5` it writes); the HR grid loads as downloaded. Both share the *same* `(afe, [Fe/H], age)` node grid and
 the same `log10 Z` axis (Z = 0.0185·10^[Fe/H]), so they are drop-in
 interchangeable — only the spectral resolution and the IMF differ (mind the
 Chabrier↔Kroupa mass-normalisation offset when comparing masses across the
 two). The high-res grid is rebuilt from the provider's FITS with
 [`scripts_afe/build_afe_hr_grid.py`](scripts_afe/build_afe_hr_grid.py) and
-published on Zenodo; fetch it by name exactly as above with
-`fetch_grid("amist_c3k_hr_krou_afe")`.
+published on Zenodo; the LR grid is fetched by name in exactly the same way,
+`fetch_grid("amist_c3k_lr_chab_afe")`.
 
 ## Troubleshooting
 
 - **Run `python -m ceridwen.check` first.** It reports missing dependencies, an
   unset or wrong `$SPS_HOME`, a too-old `sedpy-jax`, and whether nested sampling
   is available, each with the fix.
-- **Install needs Python 3.11** (see Installation); the pinned `blackjax`
+- **Install needs Python 3.11+** (see Installation); the pinned `blackjax`
   requires it.
 - **Common scientific pitfalls** (the metallicity-units trap, silently-ignored
   `theta` typos, the lookback-time convention) are documented in

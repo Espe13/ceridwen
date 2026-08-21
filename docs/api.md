@@ -7,9 +7,13 @@ treat everything else as internal.
 
 ::: ceridwen.ssps.SSPData
 
+::: ceridwen.ssps.SSPDataAfe
+
 ## Composite stellar population (forward model)
 
 ::: ceridwen.csp.CSPBasis
+
+::: ceridwen.csp.CSPBasis_afe
 
 ## Observations
 

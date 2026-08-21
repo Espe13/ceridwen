@@ -1,8 +1,8 @@
 # Installation
 
-!!! warning "Requires Python 3.11"
+!!! warning "Requires Python 3.11+"
     Nested sampling depends on the official `blackjax` (its merged NSS), which
-    requires Python 3.11. Create the environment with exactly that version.
+    requires Python 3.11 or newer. The examples below use 3.11.
 
 A fresh conda environment is the easy route:
 
@@ -29,10 +29,12 @@ documentation site needs `pip install ".[docs]"` (maintainers only).
 
 !!! note "blackjax"
     Nested sampling uses `blackjax.nss`, which is merged into the official
-    blackjax but not yet in a tagged PyPI release, so CERIDWEN pins a fixed
-    blackjax commit (`f73e12956`), so everyone installs the same validated state.
-    This is why CERIDWEN installs from source/GitHub rather than PyPI for now;
-    once a blackjax release ships NSS it becomes a normal version pin.
+    blackjax but not yet in a tagged PyPI release. CERIDWEN therefore pins a
+    fixed blackjax commit (`f73e12956`) and installs it from GitHub, so every
+    install gets the same validated state. The pin is also why CERIDWEN itself
+    is installed from a clone rather than PyPI (PyPI refuses packages with
+    direct-URL dependencies). Both revert to normal version pins once a
+    blackjax release ships NSS.
 
 ## Getting the SSP grid
 
@@ -48,11 +50,13 @@ in the repository).
    anyway for nebular and dust emission, which read the CLOUDY and Draine & Li
    data from `$SPS_HOME`.
 2. **Download from Zenodo (no FSPS needed):**
-   [doi:10.5281/zenodo.21221634](https://doi.org/10.5281/zenodo.21221634).
-   The canonical grids are registered in `ceridwen.ssps.grid_fetch`, so the
+   [doi:10.5281/zenodo.21977508](https://doi.org/10.5281/zenodo.21977508).
+   The canonical grids are registered in `ceridwen.ssps.grid_fetch`
+   (`mist_miles_chab` for MIST+MILES with a Chabrier IMF, `mist_bpass_v2`
+   for BPASS binary populations, plus the α-enhanced grids below), so the
    easiest route is by name — downloaded once into `~/.ceridwen/grids`
    (override with `$CERIDWEN_GRID_DIR`) and verified against a pinned
-   SHA-256 on every load:
+   SHA-256 on every fetch:
 
     ```python
     from ceridwen.ssps import fetch_grid, available_grids, SSPData
@@ -65,7 +69,7 @@ in the repository).
 
     ```bash
     curl -L -o examples/ssp_data.h5 \
-        "https://zenodo.org/records/21221634/files/ssp_data.h5?download=1"
+        "https://zenodo.org/records/21977508/files/ssp_data_mist_miles.h5?download=1"
     ```
 
 ## α-enhanced grids: download, don't build
@@ -86,11 +90,23 @@ from ceridwen.ssps import fetch_grid, SSPDataAfe
 from ceridwen.csp import CSPBasis_afe
 import jax.numpy as jnp
 
-path = fetch_grid("amist_c3k_lr_chab_afe")     # cached + checksummed
+path = fetch_grid("amist_c3k_hr_krou_afe")     # cached + checksummed (~612 MB)
 ssp  = SSPDataAfe.load(path)                   # (n_afe, n_Z, n_age, n_wave)
 csp  = CSPBasis_afe(ssp, lookback_time=jnp.linspace(0.0, 12.0, 9),
                     zh_const=True, verbose=False)
 ```
+
+Two grids are published: `amist_c3k_hr_krou_afe` (high-resolution C3K,
+Kroupa IMF, 612 MB, schema 2.1 — loads as-is, shown above) and
+`amist_c3k_lr_chab_afe` (low-resolution, Chabrier IMF, 108 MB, the grid
+behind the methods-paper mock suite). The published copy of the LR grid
+predates schema 2, so the strict loader rejects it until you upgrade it once:
+
+```bash
+python scripts/convert_grids_schema2.py ~/.ceridwen/grids/amist_c3k_lr_chab_afe.h5
+```
+
+which writes `amist_c3k_lr_chab_afe_schema2.h5` next to it; load that path.
 
 `CSPBasis_afe` accepts only α-aware (4-D) grids; passing a solar-scaled 3-D
 grid raises a `TypeError` pointing you back to `CSPBasis`. Conversely the

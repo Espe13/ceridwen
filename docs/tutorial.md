@@ -115,8 +115,12 @@ smoothing), and `mask=`.
 
 ## 4. (c) Emission lines
 
-Integrated line fluxes. `line_ind` are **1-based** indices into FSPS's
-`emlines_info.dat`; `wavelength` are the vacuum rest wavelengths in Å.
+Integrated line fluxes. `line_ind` are indices into FSPS's
+`emlines_info.dat`; `wavelength` are the vacuum rest wavelengths in Å. The
+forward model matches each line to the nebular grid **by rest wavelength**
+(and raises if no grid line lies within 1 Å), so the wavelengths are what must
+be right — the indices are bookkeeping, checked against the wavelength match
+and warned about on disagreement.
 
 ```python
 # Catalogue line fluxes are often quoted in 1e-20 erg s^-1 cm^-2; scale to
