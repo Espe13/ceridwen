@@ -96,17 +96,19 @@ csp  = CSPBasis_afe(ssp, lookback_time=jnp.linspace(0.0, 12.0, 9),
                     zh_const=True, verbose=False)
 ```
 
-Two grids are published: `amist_c3k_hr_krou_afe` (high-resolution C3K,
-Kroupa IMF, 612 MB, schema 2.1 — loads as-is, shown above) and
-`amist_c3k_lr_chab_afe` (low-resolution, Chabrier IMF, 108 MB, the grid
-behind the methods-paper mock suite). The published copy of the LR grid
-predates schema 2, so the strict loader rejects it until you upgrade it once:
+The current deposit ships one α grid: `amist_c3k_hr_krou_afe`
+(high-resolution C3K, Kroupa IMF, 612 MB, schema 2.1 — loads as downloaded,
+shown above). The low-resolution Chabrier grid behind the methods-paper mock
+suite, `amist_c3k_lr_chab_afe`, lives only in an older version of the deposit
+and predates schema 2; if you need it to reproduce the paper,
+`fetch_grid("amist_c3k_lr_chab_afe")` still downloads it, then upgrade it once
+with
 
 ```bash
 python scripts/convert_grids_schema2.py ~/.ceridwen/grids/amist_c3k_lr_chab_afe.h5
 ```
 
-which writes `amist_c3k_lr_chab_afe_schema2.h5` next to it; load that path.
+and load the `amist_c3k_lr_chab_afe_schema2.h5` it writes alongside.
 
 `CSPBasis_afe` accepts only α-aware (4-D) grids; passing a solar-scaled 3-D
 grid raises a `TypeError` pointing you back to `CSPBasis`. Conversely the

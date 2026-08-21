@@ -496,23 +496,22 @@ legacy 3-D grid raises a `TypeError` telling you to use `CSPBasis`;
 emission-line observations are rejected (continuum and photometry only)
 until α-enhanced photoionisation grids exist.
 
-Two α-enhanced grids are available. `amist_c3k_lr_chab_afe` is the
-**low-resolution** C3K grid (1936 λ points, Chabrier IMF, 108 MB) built from
-`AFE_FLAG=1` python-fsps and used for the method-paper mock suite.
-`amist_c3k_hr_krou_afe` (used above) is the **high-resolution** twin (10992 λ
-points, R up to ~65000 in the optical, Kroupa IMF), built from the alpha-MC C3K
-high-res SSPs (MIST v2.5 + C3K v2.3) that are too large to ship inside
-FSPS/python-FSPS. The published copy of the LR grid predates schema 2, so the
-strict loader rejects it until a one-time upgrade
+The grid used above, `amist_c3k_hr_krou_afe`, is the one shipped in the
+current Zenodo deposit: **high-resolution** C3K (10992 λ points, R up to
+~65000 in the optical, Kroupa IMF), built from the alpha-MC C3K high-res SSPs
+(MIST v2.5 + C3K v2.3) that are too large to ship inside FSPS/python-FSPS.
+Its **low-resolution** twin `amist_c3k_lr_chab_afe` (1936 λ points, Chabrier
+IMF, 108 MB), built from `AFE_FLAG=1` python-fsps and used for the
+method-paper mock suite, lives only in an older version of the deposit and
+predates schema 2: `fetch_grid("amist_c3k_lr_chab_afe")` still downloads it,
+but the strict loader wants a one-time upgrade
 (`python scripts/convert_grids_schema2.py ~/.ceridwen/grids/amist_c3k_lr_chab_afe.h5`,
-then load the `_schema2.h5` it writes); the HR grid loads as downloaded. Both share the *same* `(afe, [Fe/H], age)` node grid and
+then load the `_schema2.h5` it writes). Both share the *same* `(afe, [Fe/H], age)` node grid and
 the same `log10 Z` axis (Z = 0.0185·10^[Fe/H]), so they are drop-in
 interchangeable — only the spectral resolution and the IMF differ (mind the
 Chabrier↔Kroupa mass-normalisation offset when comparing masses across the
 two). The high-res grid is rebuilt from the provider's FITS with
-[`scripts_afe/build_afe_hr_grid.py`](scripts_afe/build_afe_hr_grid.py) and
-published on Zenodo; the LR grid is fetched by name in exactly the same way,
-`fetch_grid("amist_c3k_lr_chab_afe")`.
+[`scripts_afe/build_afe_hr_grid.py`](scripts_afe/build_afe_hr_grid.py).
 
 ## Troubleshooting
 
