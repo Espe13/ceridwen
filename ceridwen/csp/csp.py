@@ -1376,7 +1376,14 @@ class CSPBasis:
         for obs in observations:
             if isinstance(obs, _Lines):
                 if _line_fluxes is not None:
-                    out[obs.name] = _line_fluxes[self._neb_cube_rows_for(obs)]
+                    _B = self._neb_blend_matrix_for(obs)
+                    if _B is not None:
+                        # Unresolved doublets / blends: each observed line is
+                        # the SUM of its component grid lines (static 0/1
+                        # matrix, constant-folded under jit).
+                        out[obs.name] = _B @ _line_fluxes
+                    else:
+                        out[obs.name] = _line_fluxes[self._neb_cube_rows_for(obs)]
                 else:
                     # no nebular module: line component is identically zero
                     out[obs.name] = obs.predict(line_slit, self.wave)
@@ -1448,6 +1455,43 @@ class CSPBasis:
                 stacklevel=2)
         obs._neb_cube_rows = jnp.asarray(idx)
         return obs._neb_cube_rows
+
+    def _neb_blend_matrix_for(self, obs):
+        """(n_obs, n_grid) 0/1 summation matrix for observations whose lines
+        are unresolved doublets / blends (``Lines.components``), or ``None``
+        when every observed line is a single grid line (the default; the
+        gather path in ``_neb_cube_rows_for`` is then used unchanged).
+
+        Each component wavelength is matched to the nebular cube BY REST
+        WAVELENGTH with the same 1 A tolerance as ``_neb_cube_rows_for``, so
+        the blend path is immune to the emlines_info.dat / ZAU vintage
+        mismatch too.  Cached on the observation (static at trace time).
+        Motivation: JADES DR4/DR5 R1000 tables report C IV 1548,1551,
+        C III] 1907,1909, O III] 1660,1666 and [O II] 3726,3729 as single
+        unresolved sums; comparing a summed measurement with ONE grid
+        component under-predicts the line by the missing component's share.
+        """
+        if hasattr(obs, "_neb_blend_matrix"):
+            return obs._neb_blend_matrix
+        comps = getattr(obs, "line_components", None)
+        if comps is None or not any(len(c) > 1 for c in comps):
+            obs._neb_blend_matrix = None
+            return None
+        pos = np.asarray(self.neb.nebem_line_pos, dtype=float)
+        names = getattr(obs, "line_names", None) or ["?"] * len(comps)
+        B = np.zeros((len(comps), pos.size), dtype=np.float32)
+        for k, comp in enumerate(comps):
+            for lam in comp:
+                j = int(np.argmin(np.abs(pos - float(lam))))
+                if abs(pos[j] - float(lam)) > 1.0:
+                    raise ValueError(
+                        "Emission-line blend matching failed: component at "
+                        f"{float(lam):.2f} A of observed line {names[k]!r} has "
+                        f"no nebular-cube line within 1 A (nearest "
+                        f"{pos[j]:.2f} A).")
+                B[k, j] += 1.0
+        obs._neb_blend_matrix = jnp.asarray(B)
+        return obs._neb_blend_matrix
 
     def predict_line_fluxes(self, theta):
         """Observed-frame integrated emission-line fluxes for EVERY line in

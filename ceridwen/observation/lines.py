@@ -51,6 +51,15 @@ class Lines(Observation):
         1-sigma line-flux uncertainties, same units as ``flux``.
     mask : array-like of bool, optional
         True for lines to include in chi-squared.  Defaults to all-True.
+    components : list of sequences of float, optional
+        Blend / unresolved-doublet support.  One entry per observed line: the
+        vacuum rest-frame wavelengths [Å] of ALL nebular-grid lines whose
+        fluxes must be SUMMED to reproduce that catalogue measurement.  A
+        catalogue that reports the unresolved [O II] 3726,3729 doublet as one
+        number gets ``components[k] = (3727.1, 3730.1)``; a resolved single
+        line gets ``(wavelength[k],)``.  Default None -> every line is its
+        own single component (bit-for-bit the previous behaviour).  Consumed
+        by ``CSPBasis._neb_blend_matrix_for`` on the direct grid-flux path.
     upper_limit : array-like of bool, shape (n_lines,), optional
         If True for a given line, that line is treated as a non-detection
         upper limit rather than a positive detection.  The chi-squared
@@ -104,6 +113,7 @@ class Lines(Observation):
         wavelength  = None,
         name        = None,
         upper_limit = None,
+        components  = None,
         **kwargs,
     ):
         if line_ind is None:
@@ -125,7 +135,37 @@ class Lines(Observation):
             None if upper_limit is None
             else jnp.asarray(np.atleast_1d(upper_limit), dtype=bool)
         )
+        # Blend components (static Python data, never traced).  Normalised
+        # to a list of tuples of floats, one tuple per observed line.
+        n_lines = int(np.atleast_1d(line_ind).size)
+        if components is None:
+            self.line_components = [
+                (float(w),) for w in np.atleast_1d(np.asarray(wavelength, dtype=float))
+            ]
+        else:
+            comps = [tuple(float(x) for x in np.atleast_1d(c)) for c in components]
+            if len(comps) != n_lines:
+                raise ValueError(
+                    f"components has {len(comps)} entries but there are "
+                    f"{n_lines} lines")
+            if any(len(c) == 0 for c in comps):
+                raise ValueError("every components entry needs >= 1 wavelength")
+            self.line_components = comps
         super().__init__(name=name, **kwargs)
+
+    # ------------------------------------------------------------------
+    def to_json(self):
+        """Base JSON plus ``line_names`` and ``line_components`` so a blended
+        observation round-trips with its doublet definition."""
+        d = json.loads(super().to_json())
+        d["line_names"] = self.line_names
+        d["line_components"] = [list(c) for c in self.line_components]
+        return json.dumps(d)
+
+    @property
+    def has_blends(self) -> bool:
+        """True when at least one observed line sums several grid lines."""
+        return any(len(c) > 1 for c in getattr(self, "line_components", []))
 
     # ------------------------------------------------------------------
     @property
@@ -199,6 +239,46 @@ class Lines(Observation):
         c_kms  = 2.998e5  # km/s
         opz = 1.0 + float(zred)
 
+        # Unresolved doublets / blends (``components``): the aperture for an
+        # observed line is the ENVELOPE (pixel-wise maximum) of one Gaussian
+        # window per component, so every component is integrated once and
+        # the overlap between close components (e.g. [O II] 3726/3729, 3 A
+        # apart at sigma_v = 200 km/s) is not double counted.  The f_nu ->
+        # integrated-flux factor c / lambda_obs^2 is applied per pixel here.
+        # This painted-spectrum path then returns the same "sum of
+        # components" quantity as the direct grid path
+        # (``CSPBasis._neb_blend_matrix_for``), up to the usual aperture
+        # response.  Single-component lines take the original construction
+        # below, bit-for-bit.
+        comps = getattr(self, "line_components", None)
+        if comps is not None and any(len(c) > 1 for c in comps):
+            wm = opz * wm_rest
+            dlam = np.empty(len(wm), dtype=np.float64)
+            dlam[1:-1] = 0.5 * (wm[2:] - wm[:-2])
+            dlam[0] = 0.5 * (wm[1] - wm[0])
+            dlam[-1] = 0.5 * (wm[-1] - wm[-2])
+            c_aa_s = 2.998e18
+            W = np.zeros((len(comps), len(wm)), dtype=np.float64)
+            for k, comp in enumerate(comps):
+                for lam_c in comp:
+                    l0 = opz * float(lam_c)
+                    sig = l0 * (sigma_v / c_kms)
+                    W[k] = np.maximum(W[k], np.exp(-0.5 * ((wm - l0) / sig) ** 2))
+            W = W * (dlam * c_aa_s / wm ** 2)[None, :]
+            self._W = jnp.array(W.astype(np.float32))
+            return
+        self._W = jnp.array(self._aperture_rows(wm_rest, lam0_rest, sigma_v, opz))
+
+    @staticmethod
+    def _aperture_rows(wm_rest, lam0_rest, sigma_v, opz):
+        """(n_lines, n_wave) Gaussian-aperture weight rows for line centres
+        ``lam0_rest`` (NaN -> an all-zero row, used to pad blends with fewer
+        components).  Physics exactly as documented in ``setup_for_model``."""
+        c_kms = 2.998e5
+        lam0_rest = np.asarray(lam0_rest, dtype=np.float64)
+        pad = ~np.isfinite(lam0_rest)
+        lam0_rest = np.where(pad, 1.0, lam0_rest)
+
         # Both the model grid and the line centres move together into the
         # observed frame by the (1 + zred) factor.  The Gaussian shape is
         # preserved because the velocity aperture sigma_v is defined in
@@ -249,7 +329,8 @@ class Lines(Observation):
         W = np.exp(-0.5 * (diff / sigma_aa[:, None]) ** 2)
         W = (W * dlam[None, :]).astype(np.float32)     # (n_lines, n_wave)
         W = (W * norm[:, None].astype(np.float32))
-        self._W = jnp.array(W)
+        W[pad, :] = 0.0
+        return W
 
     def predict(self, spectrum, wave_model):
         """
@@ -404,6 +485,7 @@ class Lines(Observation):
             uncertainty = _pick(self.uncertainty),
             mask        = np.array(self.mask)[idx],
             upper_limit = _pick(self.upper_limit) if self.upper_limit is not None else None,
+            components  = [self.line_components[i] for i in idx],
             name        = self.name + "_sel",
         )
 
@@ -432,6 +514,14 @@ class Lines(Observation):
             f"  line_names    : {names_str}",
             f"  masked lines  : {n - self.ndof} / {n}",
         ]
+        comps = getattr(self, "line_components", None)
+        if comps is not None and any(len(c) > 1 for c in comps):
+            nb = sum(1 for c in comps if len(c) > 1)
+            names = self.line_names or [f"line{i}" for i in range(n)]
+            blends = ", ".join(
+                f"{names[i]} = sum of {len(c)} ({', '.join(f'{w:.1f}' for w in c)} A)"
+                for i, c in enumerate(comps) if len(c) > 1)
+            text.append(f"  blended lines : {nb} -> {blends}")
         return "\n".join(text)
 
     # ------------------------------------------------------------------
