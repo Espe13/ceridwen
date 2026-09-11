@@ -1262,7 +1262,7 @@ class CSPBasis:
 
 
     def _build_neb_array(self, theta, *, include_lines):
-        """Dense (n_z, n_age, n_wave) nebular array (young rows only non-zero); picket geometry only."""
+        """Dense (n_z, n_age, n_wave) nebular array (young rows only non-zero); not used by the forward model."""
         logZ_gas = theta["gas_logz"]
         logU     = theta["gas_logu"]
         cont_young, line_young = self.neb.evaluate_batch(
@@ -1309,55 +1309,53 @@ class CSPBasis:
         return (jnp.where(self.kill_ion, jnp.float32(0.0), jnp.float32(1.0)),
                 jnp.float32(1.0))
 
-    def _spectrum_picket_nodem(self, theta, neb_all):
+    def _picket_terms(self, theta, include_lines):
+        """Picket-fence ingredients: ``(W, fo, attn_age, diffuse_curve, A_cov, A_clear, neb_v, neb_base)``
+        with the stellar cube contracted against per-(age, wave) multipliers only:
+        ``A_cov`` = covered channel (LyC removed, young weight 1 - fo, birth-cloud dust),
+        ``A_clear`` = fo x young rows (no dust, LyC kept); the nebular term is the factored one
+        scaled by 1 - fo."""
+        W  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
+        fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
+        attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+        tau_age = jnp.einsum("ab,bw->aw", self._age_bin_mix, attn.astype(jnp.float32))
+        attn_age = jnp.exp(-tau_age)                 # full birth-cloud, no bypass
+        diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
+        young = self.young_mask.astype(jnp.float32)  # (n_age,)
+        cov_w = (jnp.float32(1.0) - fo) * young + (jnp.float32(1.0) - young)
+        no_ion = jnp.where(self.kill_ion, jnp.float32(0.0), jnp.float32(1.0))   # (n_age, n_wave)
+        A_cov = no_ion * cov_w[:, None]
+        A_clear = fo * young[:, None]
+        neb_v, neb_base = self._neb_weights_and_base(
+            W, theta, include_lines=include_lines, amplitude=jnp.float32(1.0) - fo)
+        return W, fo, attn_age, diffuse_curve, A_cov, A_clear, neb_v, neb_base
+
+    def _spectrum_picket_nodem(self, theta, include_lines):
         """Picket-fence geometry, no dust emission: a fraction ``frac_obrun`` of the young light (LyC
         included) escapes free of all dust; the covered fraction powers the nebular emission and is
-        attenuated by birth-cloud and diffuse dust.
+        attenuated by birth-cloud and diffuse dust.  One contraction of the stellar cube.
         """
-        W  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
-        fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
+        W, fo, attn_age, diffuse_curve, A_cov, A_clear, neb_v, neb_base = \
+            self._picket_terms(theta, include_lines)
+        stellar = jnp.einsum("za,zaw,aw->w", W, self.flux,
+                             A_cov * attn_age * diffuse_curve[None, :] + A_clear)
+        neb = jnp.einsum("y,yw,yw->w", neb_v, neb_base,
+                         attn_age[self._neb_young_idx, :]) * diffuse_curve
+        return (stellar + neb).reshape((-1,))
 
-        attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
-        M        = self._age_bin_mix
-        tau_age  = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
-        attn_age = jnp.exp(-tau_age)                 # full birth-cloud, no bypass
-
-        young = self.young_mask.astype(jnp.float32)  # (n_age,)
-        F_cov = jnp.where(self.kill_ion[None, :, :], jnp.float32(0.0), self.flux)
-        cov_w = (jnp.float32(1.0) - fo) * young + (jnp.float32(1.0) - young)
-        stellar_cov = jnp.einsum("za,zaw,aw,a->w", W, F_cov, attn_age, cov_w)
-        neb_cov = (jnp.float32(1.0) - fo) * jnp.einsum(
-            "za,zaw,aw->w", W, neb_all.astype(jnp.float32), attn_age)
-        covered = (stellar_cov + neb_cov) * jnp.exp(-attn_diffuse.astype(jnp.float32))
-        clear = fo * jnp.einsum("za,zaw,a->w", W, self.flux, young)
-        return (covered + clear).reshape((-1,))
-
-    def _spectrum_picket_dem(self, theta, neb_all):
-        """Picket-fence geometry with energy-balance dust emission; the clear channel cancels in L_abs."""
-        W  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
-        fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
-
-        attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
-        M             = self._age_bin_mix
-        tau_age       = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
-        attn_age      = jnp.exp(-tau_age)            # full birth-cloud, no bypass
-        diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
-
-        young = self.young_mask.astype(jnp.float32)  # (n_age,)
-        F_cov = jnp.where(self.kill_ion[None, :, :], jnp.float32(0.0), self.flux)
-        cov_w = (jnp.float32(1.0) - fo) * young + (jnp.float32(1.0) - young)
-        neb32 = neb_all.astype(jnp.float32)
-        stellar_cov = jnp.einsum("za,zaw,aw,a->w", W, F_cov, attn_age, cov_w)
-        neb_cov = (jnp.float32(1.0) - fo) * jnp.einsum(
-            "za,zaw,aw->w", W, neb32, attn_age)
-        covered = (stellar_cov + neb_cov) * diffuse_curve
-        clear = fo * jnp.einsum("za,zaw,a->w", W, self.flux, young)
-
-        stellar_cov_free = jnp.einsum("za,zaw,a->w", W, F_cov, cov_w)
-        neb_cov_free = (jnp.float32(1.0) - fo) * jnp.einsum(
-            "za,zaw->w", W, neb32)
-        spectrum_dust_free = clear + stellar_cov_free + neb_cov_free
-        attenuated         = clear + covered
+    def _spectrum_picket_dem(self, theta, include_lines):
+        """Picket-fence geometry with energy-balance dust emission; the clear channel cancels in L_abs.
+        Two contractions of the stellar cube (dust-free and attenuated), like the mainline."""
+        W, fo, attn_age, diffuse_curve, A_cov, A_clear, neb_v, neb_base = \
+            self._picket_terms(theta, include_lines)
+        yi = self._neb_young_idx
+        spectrum_dust_free = (
+            jnp.einsum("za,zaw,aw->w", W, self.flux, A_cov + A_clear)
+            + jnp.einsum("y,yw->w", neb_v, neb_base))
+        attenuated = (
+            jnp.einsum("za,zaw,aw->w", W, self.flux,
+                       A_cov * attn_age * diffuse_curve[None, :] + A_clear)
+            + jnp.einsum("y,yw,yw->w", neb_v, neb_base, attn_age[yi, :]) * diffuse_curve)
 
         dust_emi_spectrum, _mdust, _tduste = self.dust_emi.compute_dust_emission(
             spec_attn     = attenuated,
@@ -1377,9 +1375,7 @@ class CSPBasis:
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
 
         if self.fesc_geometry == "picket" and "frac_obrun" in theta:
-            return self._spectrum_picket_nodem(
-                theta,
-                self._build_neb_array(theta, include_lines=include_lines))
+            return self._spectrum_picket_nodem(theta, include_lines)
 
         ion_mult, neb_amp = self._ion_multiplier(theta)
 
@@ -1410,8 +1406,7 @@ class CSPBasis:
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
 
         if self.fesc_geometry == "picket" and "frac_obrun" in theta:
-            return self._spectrum_picket_dem(
-                theta, self._build_neb_array(theta, include_lines=include_lines))
+            return self._spectrum_picket_dem(theta, include_lines)
 
         ion_mult, neb_amp = self._ion_multiplier(theta)
 
