@@ -60,8 +60,8 @@ def _rel_resid(act: np.ndarray, exp: np.ndarray) -> float:
     if not m.any():
         return 0.0
     a, e = a[m], e[m]
-    denom = np.where(np.abs(e) > 0, np.abs(e), 1.0)
-    return float(np.max(np.abs(a - e) / denom))
+    scale = float(np.max(np.abs(e))) if e.size else 0.0
+    return float(np.max(np.abs(a - e)) / scale) if scale > 0 else float(np.max(np.abs(a - e)))
 
 
 def _coord(arrays: dict):

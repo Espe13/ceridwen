@@ -1,28 +1,25 @@
+import os
 import jax
-jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_enable_x64", os.environ.get("CERIDWEN_X64", "1") != "0")
+
+# CERIDWEN_MATMUL_PRECISION=high: TF32 matmuls (off by default)
+_matmul_prec = os.environ.get("CERIDWEN_MATMUL_PRECISION")
+if _matmul_prec:
+    jax.config.update("jax_default_matmul_precision", _matmul_prec)
 
 
 def _patch_tfp_jax_compat():
-    """Restore symbols newer JAX removed from ``jax.interpreters.xla`` that the
-    tensorflow-probability JAX substrate still imports.
-
-    TFP references e.g. ``jax.interpreters.xla.pytype_aval_mappings``, which JAX
-    moved to ``jax.core`` (same object) and then removed the old alias. We re-add
-    the alias so ``tensorflow_probability.substrates.jax`` imports on JAX >= 0.7.
-    Harmless on older JAX (the attributes already exist).
-    """
+    """Re-add ``jax.interpreters.xla`` aliases that tensorflow-probability's JAX substrate imports."""
     import warnings
     try:
         import jax.interpreters.xla as _xla
         import jax.core as _core
-        # jax.core members are themselves deprecated; probing them warns. We
-        # only need the object, so silence the deprecation during the copy.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             for _name in ("pytype_aval_mappings", "abstractify"):
                 if not hasattr(_xla, _name) and hasattr(_core, _name):
                     setattr(_xla, _name, getattr(_core, _name))
-    except Exception:  # pragma: no cover - never let the shim break import
+    except Exception:  # pragma: no cover
         pass
 
 
@@ -30,60 +27,47 @@ _patch_tfp_jax_compat()
 
 from .dust import DustModel, DustEmission
 from .neb import NebularModel
-from .fit import fitSED, read_result_h5, load_result_h5
+from .fit import fitSED, read_result_h5, load_result_h5, result_cosmology
+from .postprocess import PostProcess, SpectrumSample, load_postprocess
+from . import plotting
 
-# Primary model builders, re-exported at the top level for a flat public API
-# (`from ceridwen import CSPBasis, SSPData, SedModel`). Observation containers
-# stay under `ceridwen.observation` and priors under `ceridwen.priors` for
-# clarity; the namespaced paths (ceridwen.ssps, ceridwen.csp, ceridwen.model)
-# also remain available.
 from .ssps import SSPData
 from .csp import CSPBasis
 from .model import SedModel
 from .cosmology import Cosmology, DEFAULT_COSMO
-
-# NB: do NOT import .check here — it is run as `python -m ceridwen.check`, and
-# importing it in the package __init__ triggers a runpy double-import warning.
-# Use it via the CLI, or `from ceridwen.check import check_environment`.
+from .broadening import Kinematics, Instrument, TIED, DEFAULT_KINEMATICS
 
 try:
     from ._version import __version__
-except ImportError:  # pragma: no cover - _version may be absent in a bare checkout
+except ImportError:  # pragma: no cover
     __version__ = "0.0.0+unknown"
 
-# Deploy/build stamp.  ``ceridwen/_buildstamp.py`` is written by the deploy
-# tooling at push time and records the git short hash + dirty flag + UTC
-# timestamp of the source tree the install was pushed from; greppable on the
-# cluster to verify which ceridwen revision a job is running.  Absent in a
-# bare/dev checkout, in which case the hash is None.
-#
-# WARNING: keep the ``_buildstamp`` import SEPARATE from the ``_version``
-# import above.  ``_version.py`` does not define ``__githash__``, so combining
-# them makes the import always raise ImportError and silently mask the real
-# ``__version__`` as "0.0.0+unknown".
+# keep separate from the _version import: _version.py has no __githash__
 try:
     from ._buildstamp import __githash__, __dirty__, __build_time__
-except ImportError:  # pragma: no cover - stamp absent in a dev checkout
+except ImportError:  # pragma: no cover
     __githash__ = None
     __dirty__ = None
     __build_time__ = None
 
 __all__ = [
-    # primary model builders
+    "Kinematics", "Instrument", "TIED", "DEFAULT_KINEMATICS",
     "SSPData",
     "CSPBasis",
     "SedModel",
-    # physics components
     "DustModel",
     "DustEmission",
     "NebularModel",
-    # cosmology
     "Cosmology",
     "DEFAULT_COSMO",
-    # top-level entry points
     "fitSED",
     "read_result_h5",
     "load_result_h5",
+    "result_cosmology",
+    "PostProcess",
+    "SpectrumSample",
+    "load_postprocess",
+    "plotting",
     "__version__",
     "__githash__",
 ]

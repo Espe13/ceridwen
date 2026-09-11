@@ -1,68 +1,18 @@
-"""
-ceridwen/observation/gp.py
-==========================
-Gaussian Process noise model for spectral residuals.
-"""
+"""Gaussian Process noise model for spectral residuals."""
 
-import json
 import jax.numpy as jnp
 import numpy as np
-from sedpy_jax.observate import FilterSet
-from sedpy_jax.smoothing import (
-    make_vel_smoother,
-    make_wave_smoother,
-    make_lsf_smoother,
-)
 
-
-
-# =====================================================================
-# Gaussian Process noise model
-# =====================================================================
 
 class GaussianProcess:
-    """
-    Squared-exponential Gaussian Process noise model for spectral residuals.
-
-    Adds correlated residual structure to the spectral likelihood beyond the
-    usual pixel-independent Gaussian noise, accounting for systematic
-    calibration residuals or continuum modelling errors.
-
-    The GP log-likelihood contribution is:
-
-    .. math::
-
-        \\log p(\\mathbf{r} \\mid \\mathrm{GP}) =
-            -\\tfrac{1}{2} \\mathbf{r}^\\top K^{-1} \\mathbf{r}
-            -\\tfrac{1}{2} \\log |K|
-            -\\tfrac{n}{2} \\log 2\\pi
-
-    where :math:`\\mathbf{r}` is the vector of (unmasked) normalised residuals
-    :math:`(d_i - m_i)/\\sigma_i` and :math:`K` is the correlation matrix:
-
-    .. math::
-
-        K_{ij} = \\delta_{ij} + a^2 \\exp\\!\\left[-\\tfrac{1}{2}
-            \\left(\\frac{\\lambda_i - \\lambda_j}{\\ell}\\right)^2\\right]
-            + \\delta_{ij}\\,\\varepsilon
+    """Squared-exponential GP on normalised spectral residuals, with
+    covariance K = I + a^2 SE(l) + jitter I.
 
     Parameters
     ----------
-    amplitude : float
-        GP kernel amplitude (dimensionless, in units of the per-pixel noise
-        :math:`\\sigma`).  Typical values: 0.01–0.5.
-    length_scale : float
-        Correlation length [Å].  Residuals separated by more than
-        ~3× the length scale are effectively uncorrelated.
-    jitter : float, optional
-        Diagonal white-noise jitter added to the kernel matrix for
-        numerical stability.  Default 1e-6.
-
-    Examples
-    --------
-    >>> gp = GaussianProcess(amplitude=0.1, length_scale=50.0)
-    >>> spec = Spectrum(..., noise=gp)
-    >>> ll  = spec.log_likelihood(model_flux)   # includes GP correction
+    amplitude : float, dimensionless -- kernel amplitude in units of the per-pixel sigma.
+    length_scale : float, Å -- correlation length.
+    jitter : float -- diagonal added for numerical stability.
     """
 
     def __init__(self, amplitude: float, length_scale: float,
@@ -75,96 +25,42 @@ class GaussianProcess:
                        residuals: np.ndarray,
                        wavelength: np.ndarray,
                        mask: np.ndarray | None = None) -> float:
-        """
-        Compute the GP log-likelihood for normalised spectral residuals.
-
-        Parameters
-        ----------
-        residuals : array-like, shape (n_pix,)
-            Per-pixel normalised residuals ``(data - model) / sigma``.
-        wavelength : array-like, shape (n_pix,)
-            Wavelengths corresponding to ``residuals`` [Å].
-        mask : array-like of bool, shape (n_pix,), optional
-            If provided, only pixels with ``mask=True`` are included.
-
-        Returns
-        -------
-        float
-            Full Gaussian log-likelihood of the normalised residuals
-            under covariance K = I + a^2 SE + eps I.  This already
-            includes the white-noise (identity) term and the -n/2 ln(2
-            pi) constant, so it must NOT be summed with a separate
-            -1/2 sum r_i^2 diagonal term (that would double-count the
-            white noise).  The per-pixel sigma_eff normalisation is
-            applied by the caller.
-        """
+        """Full Gaussian log-likelihood of the normalised residuals under K,
+        including the white-noise identity term and the -n/2 ln(2 pi) constant;
+        do NOT add a separate -1/2 sum r^2 term."""
         r   = np.asarray(residuals,  dtype=np.float64)
         wav = np.asarray(wavelength, dtype=np.float64)
-
         if mask is not None:
             m   = np.asarray(mask, dtype=bool)
             r   = r[m]
             wav = wav[m]
-
         n = len(r)
         if n == 0:
             return 0.0
+        L, logdet = self._factor(wav)
+        if L is None:
+            return -np.inf
+        from scipy.linalg import cho_solve
+        alpha = cho_solve((L, True), r)
+        return (-0.5 * float(r @ alpha) - logdet - 0.5 * n * float(np.log(2.0 * np.pi)))
 
-        # Squared-exponential kernel matrix
-        dlam = wav[:, None] - wav[None, :]                          # (n, n)
-        K    = (self.amplitude ** 2
-                * np.exp(-0.5 * (dlam / self.length_scale) ** 2))
-        # Fold in the unit white-noise identity so this is a SINGLE,
-        # self-consistent Gaussian on the normalised residuals r (which
-        # already carry unit variance by construction).  The caller must
-        # therefore NOT also add a separate -1/2 sum r_i^2 diagonal term
-        # -- doing so would double-count the white noise.
-        K   += (1.0 + self.jitter) * np.eye(n)
-
-        # Log-likelihood via Cholesky decomposition
+    def _factor(self, wav):
+        """Cached Cholesky factor and log|K|^(1/2) on ``wav``."""
+        key = (wav.shape[0], float(wav[0]), float(wav[-1]), float(wav.sum()))
+        cache = getattr(self, "_chol_cache", None)
+        if cache is not None and cache[0] == key:
+            return cache[1], cache[2]
+        dlam = wav[:, None] - wav[None, :]
+        K = self.amplitude ** 2 * np.exp(-0.5 * (dlam / self.length_scale) ** 2)
+        K[np.diag_indices_from(K)] += 1.0 + self.jitter
         try:
-            L      = np.linalg.cholesky(K)
-            alpha  = np.linalg.solve(K, r)
-            log_ll = (-0.5 * float(r @ alpha)
-                      - float(np.sum(np.log(np.diag(L))))
-                      - 0.5 * n * float(np.log(2.0 * np.pi)))
+            L = np.linalg.cholesky(K)
+            logdet = float(np.sum(np.log(np.diag(L))))
         except np.linalg.LinAlgError:
-            log_ll = -np.inf
-
-        return log_ll
+            L, logdet = None, np.inf
+        self._chol_cache = (key, L, logdet)
+        return L, logdet
 
     def __repr__(self):
         return (f"GaussianProcess(amplitude={self.amplitude}, "
                 f"length_scale={self.length_scale}, jitter={self.jitter})")
-
-
-# =====================================================================
-# GPU / JIT-friendly projection protocol
-# =====================================================================
-#
-# Every Observation subclass exposes two methods:
-#
-#   setup_for_model(wave_model)
-#       Called ONCE (Python-level, not inside JIT) after the CSP wave grid is
-#       known.  Precomputes any static matrices (interpolation matrix,
-#       Gaussian weight matrix) that are needed by ``predict``.  Subclasses
-#       that need no precomputation can ignore this method (the base-class
-#       no-op is inherited automatically).
-#
-#   predict(spectrum, wave_model) -> jax.Array
-#       Callable inside jax.jit with NO Python if/isinstance branches.
-#       For Spectrum and Lines this is a single dense matrix–vector multiply
-#       (the static matrix was computed once in ``setup_for_model``), giving
-#       optimal throughput on both CPU and GPU.
-#
-# CSPBasis.predict(theta, observations) simply calls
-#       { obs.name: obs.predict(spectrum, wave) for obs in observations }
-# The Python loop is unrolled at trace-time; no dynamic dispatch reaches the
-# XLA-compiled kernel.
-# =====================================================================
-
-
-# =====================================================================
-# Base class
-# =====================================================================
-

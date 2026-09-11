@@ -9,9 +9,8 @@ This is a self-contained, runnable demo:
   Step 1  build the CSP forward model
   Step 2  generate MOCK photometry from known "true" parameters
   Step 3  fit it back with BlackJAX nested sampling
-  Step 4  report recovered vs. true; write a corner plot (quickstart_corner.png)
-          and a model-vs-data SED plot with a chi residual strip
-          (quickstart_sed.png)
+  Step 4  post-process with PostProcess: recovered vs. true, and the summary,
+          corner and sampling-diagnostic figures in quickstart_figures/
 
 Requirements
 ------------
@@ -37,18 +36,18 @@ import pathlib
 import numpy as np
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 
 # 64-bit floats are required for accurate Bayesian evidence estimates.
 jax.config.update("jax_enable_x64", True)
 
-from ceridwen import SSPData, CSPBasis, SedModel
+from ceridwen import SSPData, CSPBasis, SedModel, PostProcess
 from ceridwen.observation import Photometry
 from ceridwen.model import logsfr_ratios_to_sfh
 from ceridwen.priors import Uniform, ClippedNormal, StudentT
 from ceridwen.likelihood import DiagonalGaussianLikelihood, MultiObservationLikelihood
 from ceridwen.sampler import run_sampler
 from ceridwen.sampler.nested import BlackJAXNestedSamplerAdapter
+from ceridwen.cosmology import Cosmology
 
 HERE = pathlib.Path(__file__).resolve().parent
 
@@ -128,7 +127,6 @@ def main() -> int:
                # Z is log10 of ABSOLUTE metallicity (= ssp_lgmet), NOT log10(Z/Zsun).
                # This FSPS grid spans roughly [-4.0, -1.4]; solar ~ -1.85.
                "Z": jnp.array([-2.0])},
-        tuniv=T_UNIV,
         zh_const=True,
         sfh_interp="step",
         add_dust=False,
@@ -136,6 +134,7 @@ def main() -> int:
         add_neb=False,        # set True to include CLOUDY nebular emission
         sps_home=SPS_HOME,
         verbose=False,
+        cosmo=Cosmology.planck18(),
     )
 
     # ---- Step 2: mock photometry from known truth ------------------------
@@ -189,6 +188,7 @@ def main() -> int:
         transforms={"sfh": logsfr_to_sfh},
         free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 1),
                          "logmass": TRUE_LOGMASS},
+        broaden_photometry=False,   # the mock above was made without kinematic broadening
     )
 
     n_dims = sum(int(jnp.size(v)) for v in model.theta_init.values())
@@ -212,126 +212,28 @@ def main() -> int:
     result = run_sampler(model, likelihood, adapter, RNG)
     print(f"\nln Z = {result.log_evidence:.3f} +/- {result.log_evidence_err:.3f}")
 
-    # ---- Step 4: recovered vs. true --------------------------------------
+    # ---- Step 4: post-process --------------------------------------------
+    # PostProcess resamples the nested-sampling draws to equal weight, pushes
+    # them through the forward model and writes three figures per galaxy.
     TRUTH = {
         "Z": float(TRUE_Z[0]),
         "logmass": float(TRUE_LOGMASS[0]),
         "diffuse_tau_kc": float(TRUE_DIFFDUST[0]),
         "diffuse_dust_index": float(TRUE_DUST_INDEX[0]),
     }
-    LABELS = {
-        "Z": r"$\log_{10} Z$",
-        "logmass": r"$\log_{10} M_\star$",
-        "diffuse_tau_kc": r"$\hat{\tau}_V$",
-        "diffuse_dust_index": r"$\delta_{\rm dust}$",
-    }
-    try:
-        ns = result.to_anesthetic(labels=LABELS)
-        post = ns.sample(4000, replace=True)   # weighted draw, with replacement
-    except Exception as exc:
-        ns, post = None, None
-        print(f"\n(posterior post-processing unavailable: {exc})")
+    pp = PostProcess(model, result, n_samples=2000)
+    out = pp.run()
 
-    if post is not None:
-        params = list(TRUTH)
+    print("\nparameter             true     posterior median (16-84%)")
+    for p, t in TRUTH.items():
+        lo, med, hi = np.percentile(out["theta"][p], [16, 50, 84])
+        print(f"  {p:<20}{t:+7.3f}   {med:+7.3f}  (-{med - lo:.3f} / +{hi - med:.3f})")
 
-        # Posterior medians vs. injected truth.
-        print("\nparameter             true     posterior median")
-        for p in params:
-            print(f"  {p:<20}{TRUTH[p]:+7.3f}   {float(np.median(post[p])):+7.3f}")
-
-        # (a) Corner plot with the truth overlaid as red dashed lines.
-        try:
-            out = HERE / "quickstart_corner.png"
-            axes = ns.plot_2d(params)
-            for yp in params:
-                for xp in params:
-                    try:
-                        ax = axes.loc[yp, xp]
-                    except Exception:
-                        ax = None
-                    if ax is None:
-                        continue
-                    ax.axvline(TRUTH[xp], color="red", lw=1.1, ls="--")
-                    if yp != xp:
-                        ax.axhline(TRUTH[yp], color="red", lw=1.1, ls="--")
-            fig = axes.iloc[0, 0].figure
-            fig.suptitle("CERIDWEN quickstart — red = injected truth", fontsize=11)
-            fig.savefig(out, dpi=150, bbox_inches="tight")
-            print(f"corner plot (truth overlaid) -> {out}")
-        except Exception as exc:
-            print(f"(corner plot skipped: {exc})")
-
-        # (b) Model-vs-data SED with a chi residual strip. The "model" is the
-        #     posterior-median fit: predicted photometry over the observed
-        #     points, with the predicted spectrum behind them.
-        try:
-            ratio_cols = [f"logsfr_ratios[{i}]" for i in range(N_TIME - 1)]
-            logmass_med = float(np.median(post["logmass"]))
-            theta_med = {
-                "logsfr_ratios": jnp.asarray(
-                    [float(np.median(post[c])) for c in ratio_cols]),
-                "Z": jnp.asarray([float(np.median(post["Z"]))]),
-                "logmass": jnp.asarray([logmass_med]),
-                "diffuse_tau_kc": jnp.asarray([float(np.median(post["diffuse_tau_kc"]))]),
-                "diffuse_dust_index": jnp.asarray(
-                    [float(np.median(post["diffuse_dust_index"]))]),
-            }
-            pred_maggies = np.asarray(model.predict(theta_med)["phot"])
-            model_theta = model.apply_transforms(theta_med)
-            spec = np.asarray(csp.get_spectrum(model_theta)) * 10.0 ** logmass_med
-            wave_model = np.asarray(csp.wave)
-            wave_eff = np.asarray(phot_obs.wave_eff)
-
-            # Put the model spectrum on the photometry (maggies) scale by matching
-            # it to the predicted points at the filter effective wavelengths.
-            spec_at_eff = np.interp(wave_eff, wave_model, spec)
-            good = spec_at_eff > 0
-            scale = float(np.median(pred_maggies[good] / spec_at_eff[good])) if good.any() else 1.0
-            spec_maggies = spec * scale
-
-            # The injected (true) spectrum, on the same maggies scale.
-            true_spec = np.asarray(spec_unit) * 10.0 ** float(TRUE_LOGMASS[0])
-            true_maggies = true_spec * scale
-
-            chi = (maggies_obs - pred_maggies) / sigma
-
-            fig, (axsed, axchi) = plt.subplots(
-                2, 1, sharex=True, figsize=(7.5, 5.2),
-                gridspec_kw={"height_ratios": [3, 1], "hspace": 0.06},
-            )
-            axsed.plot(wave_model, true_maggies, color="C0", lw=1.0, alpha=0.9,
-                       zorder=1, label="true spectrum")
-            axsed.plot(wave_model, spec_maggies, color="0.5", lw=1.0, ls="--",
-                       zorder=2, label="model spectrum (median)")
-            axsed.errorbar(wave_eff, maggies_obs, yerr=sigma, fmt="o", color="k",
-                           ms=5, capsize=2, zorder=3, label="observed")
-            axsed.scatter(wave_eff, pred_maggies, marker="s", facecolors="none",
-                          edgecolors="red", s=70, zorder=4, label="model (median)")
-            axsed.set_xscale("log")
-            axsed.set_yscale("log")
-            axsed.set_ylabel("flux  [maggies]")
-            axsed.legend(frameon=False, fontsize=9)
-            axsed.set_title("CERIDWEN quickstart — model vs data")
-            _lo = float(min(maggies_obs.min(), pred_maggies.min()))
-            _hi = float(max(maggies_obs.max(), pred_maggies.max()))
-            axsed.set_ylim(_lo * 0.3, _hi * 3.0)
-            axsed.set_xlim(float(wave_eff.min()) * 0.7, float(wave_eff.max()) * 1.4)
-
-            axchi.axhline(0.0, color="0.5", lw=0.8)
-            for s in (-1.0, 1.0):
-                axchi.axhline(s, color="0.8", lw=0.6, ls="--")
-            axchi.scatter(wave_eff, chi, color="red", s=30, zorder=3)
-            axchi.set_ylabel(r"$\chi$")
-            axchi.set_xlabel(r"wavelength  [$\mathrm{\AA}$]  (rest frame)")
-            _c = max(3.5, float(np.abs(chi).max()) * 1.2)
-            axchi.set_ylim(-_c, _c)
-
-            sed_out = HERE / "quickstart_sed.png"
-            fig.savefig(sed_out, dpi=150, bbox_inches="tight")
-            print(f"model-vs-data plot -> {sed_out}")
-        except Exception as exc:
-            print(f"(model-vs-data plot skipped: {exc})")
+    figdir = HERE / "quickstart_figures"
+    paths = pp.figures(figdir, title="CERIDWEN quickstart (green = injected truth)", truths=TRUTH)
+    for name, path in paths.items():
+        print(f"{name:<12} -> {path}")
+    pp.save(figdir / "quickstart_post.npz")
 
     return 0
 

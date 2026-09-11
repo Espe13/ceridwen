@@ -34,10 +34,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from ceridwen import SSPData, CSPBasis, SedModel, fitSED
+from ceridwen import SSPData, CSPBasis, SedModel, fitSED, PostProcess
 from ceridwen.observation import Photometry, Lines
 from ceridwen.model import logsfr_ratios_to_sfh
 from ceridwen.priors import Uniform, ClippedNormal, StudentT
+from ceridwen.cosmology import Cosmology
 
 HERE = pathlib.Path(__file__).resolve().parent
 SSP_FILE = HERE / "ssp_data.h5"
@@ -91,6 +92,7 @@ def main() -> None:
         zh_const=True, sfh_interp="step",
         add_dust=False, add_diffuse_dust=True, add_neb=True,
         verbose=False,
+        cosmo=Cosmology.planck18(),
     )
     sfh_times_yr = np.array(csp.sfh_times)
 
@@ -113,7 +115,8 @@ def main() -> None:
                         logsfr_ratios_to_sfh(th["logsfr_ratios"],
                                              sfh_times_yr=_t)},
             free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 1),
-                             "logmass": jnp.array([10.0])},
+                             "logmass": jnp.array([10.0]),
+                             "eline_scaling": jnp.array([1.0])},
             zred=ZRED,
         )
 
@@ -152,14 +155,18 @@ def main() -> None:
         output_dir="./demo_2_output",
     )
 
-    # ── Recovered vs true ─────────────────────────────────────────────────
-    lw = np.asarray(result.log_weights)
-    w = np.exp(lw - lw.max()); w /= w.sum()
-    idx = rng.choice(w.size, size=2000, p=w)
-    for p in ("logmass", "Z", "gas_logz", "gas_logu", "eline_scaling"):
-        s = np.asarray(result.samples[p])[idx].ravel()
-        print(f"{p:>15}: true {float(TRUTH[p][0]):+7.3f}   "
+    # ── Post-process ──────────────────────────────────────────────────────
+    params = ("logmass", "Z", "gas_logz", "gas_logu", "eline_scaling")
+    truths = {p: float(TRUTH[p][0]) for p in params}
+    pp = PostProcess(model, result, n_samples=2000)
+    out = pp.run()
+    pp.figures("./demo_2_output/figures", title="demo 2: photometry + lines", truths=truths)
+    for p in params:
+        s = out["theta"][p]
+        print(f"{p:>15}: true {truths[p]:+7.3f}   "
               f"fit {np.median(s):+7.3f} +/- {np.std(s):.3f}")
+    print(f"log xi_ion = {np.median(np.log10(out['extras']['ionizing']['xion'])):.2f} Hz/erg; "
+          f"figures in demo_2_output/figures/")
     # Expect: gas_logz / gas_logu pinned by the [OIII]/Hbeta and [NII]/Halpha
     # ratios; eline_scaling recovered because the photometry anchors the
     # ABSOLUTE line luminosity while the Lines observation sees only 80%.

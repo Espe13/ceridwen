@@ -1,37 +1,5 @@
-"""
-Download-on-demand registry for pre-built ceridwen SSP grids.
-
-Rationale
----------
-ceridwen needs FSPS only at grid-GENERATION time; every fit loads a
-cached HDF5.  For the alpha-enhanced grids the generation step requires
-an unreleased python-fsps compiled from source with ``AFE_FLAG=1``
-against FSPS v4.0 data — a barrier users should not face, and an easy
-source of silent misbuilds.  We therefore publish the canonical grids
-(Zenodo) and users fetch them by name:
-
-    from ceridwen.ssps.grid_fetch import fetch_grid
-    from ceridwen.ssps.ssp_data_afe import SSPDataAfe
-
-    path = fetch_grid("amist_c3k_lr_chab_afe")   # cached after first call
-    ssp  = SSPDataAfe.load(path)                 # also loads legacy 3-D grids
-
-Files are cached in ``$CERIDWEN_GRID_DIR`` (default ``~/.ceridwen/grids``)
-and verified against a pinned SHA-256 on every fetch, so a truncated
-download or a silently updated remote file fails loudly instead of
-producing subtly wrong SEDs.
-
-Publishing a new grid
----------------------
-1. Build it with ``scripts_afe/build_afe_grid.py`` (records provenance).
-2. Run ``scripts_afe/publish_grid_zenodo.py --file the_grid.h5 --name
-   <registry_key>`` wherever the file and network access coexist (Tursa
-   login node, or laptop after scp).  With ``$ZENODO_TOKEN`` set it
-   drives the Zenodo API (new version of the ceridwen-grids deposit,
-   upload, checksum verify); without a token it prints the manual
-   checklist.  Either way it prints the finished REGISTRY entry.
-3. Paste that entry below, commit, release.
-"""
+"""Download-on-demand registry of published ceridwen SSP grids (cached in
+$CERIDWEN_GRID_DIR, default ~/.ceridwen/grids; SHA-256 verified on every fetch)."""
 
 from __future__ import annotations
 
@@ -43,19 +11,7 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-# ---------------------------------------------------------------------
-# Registry of published grids.
-#
-# Current release: v5 of the ceridwen-grids deposit, record 21977508
-# (doi:10.5281/zenodo.21977508, 2026-08-17).  All v5 files are schema-2.x
-# grids carrying the ssp_resolution dataset (library resolution curve =
-# element-wise max of the grid's own 2-pixel sampling floor and any
-# documented library LSF), required by the strict loaders.  Entries with
-# url=None are defined-but-unpublished; fetch_grid raises a clear error
-# naming the build script instead of downloading.
-# ---------------------------------------------------------------------
 REGISTRY: dict[str, dict] = {
-    # Solar-scaled MIST+MILES release grid (schema 2.0, 3-D).
     "mist_miles_chab": {
         "url": "https://zenodo.org/records/21977508/files/"
                "ssp_data_mist_miles.h5?download=1",
@@ -67,7 +23,6 @@ REGISTRY: dict[str, dict] = {
                  "floor max MILES LSF (FWHM 2.54 A, Falcon-Barroso+2011). "
                  "Nebular-capable via CSPBasis.",
     },
-    # BPASS v2 binary-population release grid (schema 2.0, 3-D).
     "mist_bpass_v2": {
         "url": "https://zenodo.org/records/21977508/files/"
                "ssp_data_bpass.h5?download=1",
@@ -78,18 +33,12 @@ REGISTRY: dict[str, dict] = {
                  "Schema 2.0: ssp_resolution = grid sampling-floor curve "
                  "(no documented LSF broader than the tabulation).",
     },
-    # Alpha-enhanced grid (schema 2.0, 4-D, n_afe=5).  THE download path
-    # for [alpha/Fe] fitting: CSPBasis_afe has no nebular model, so with
-    # this file no FSPS install (and no $SPS_HOME) is needed at all.
     "amist_c3k_lr_chab_afe": {
-        # Published 2026-08-04 as v2 of the ceridwen-grids deposit
-        # (concept DOI 10.5281/zenodo.21221633); sha256 pinned by
-        # scripts_afe/publish_grid_zenodo.py from the built grid.
         "url": "https://zenodo.org/records/21794924/files/"
                "amist_c3k_lr_chab_afe.h5?download=1",
         "sha256": "0ae3ca192f1ba3a7825c83d77dd927ec069f4107"
                   "a52051b2e4484f80d5a47ef7",
-        "size_mb": 108,     # (5, 13, 107, 1936) float64 + metadata
+        "size_mb": 108,
         "notes": "FSPS v4.0 alpha-MC (python-fsps >= 0.4.9.dev, AFE_FLAG=1), "
                  "aMIST + C3K_LR, Chabrier IMF, [alpha/Fe] = "
                  "{-0.2, 0.0, +0.2, +0.4, +0.6}. For CSPBasis_afe "
@@ -99,23 +48,12 @@ REGISTRY: dict[str, dict] = {
                  "scripts/convert_grids_schema2.py, or use "
                  "'amist_c3k_hr_krou_afe' (schema 2.1, published in v5).",
     },
-    # High-resolution alpha-enhanced grid (schema 2.0, 4-D, n_afe=5).  Same
-    # (afe, [Fe/H], age) node grid as amist_c3k_lr_chab_afe -- and the SAME
-    # log10 Z axis (Z = 0.0185 * 10**[Fe/H]) -- but the high-res C3K spectra
-    # (10992 lambda pts, R up to ~65000 in the optical) that are too large to
-    # ship in FSPS/python-FSPS.  Kroupa IMF (imf_type=2; the LR grid is
-    # Chabrier).  Built from M. J. Park's alpha-MC FITS via
-    # scripts_afe/build_afe_hr_grid.py.
     "amist_c3k_hr_krou_afe": {
-        # Published 2026-08-17 in v5 of the ceridwen-grids deposit
-        # (record 21977508); schema 2.1 (ssp_resolution = grid
-        # sampling-floor curve; the stored 10992-pt wavelength grid, not
-        # the native C3K LSF, is the binding resolution of this file).
         "url": "https://zenodo.org/records/21977508/files/"
                "amist_c3k_hr_krou_afe.h5?download=1",
         "sha256": "f6af03d813569f5982891d969f030d93"
                   "45278a60de907b90b2a910d56af32a16",
-        "size_mb": 612,     # (5, 13, 107, 10992) float64 + metadata
+        "size_mb": 612,
         "notes": "MIST v2.5 (aMIST) + C3K v2.3 high-res, Kroupa IMF, "
                  "[alpha/Fe] = {-0.2, 0.0, +0.2, +0.4, +0.6}, "
                  "[Fe/H] in [-2.5, +0.5], log10(age/yr) in [5.0, 10.3]. "
@@ -123,9 +61,8 @@ REGISTRY: dict[str, dict] = {
                  "CSPBasis_afe (no nebular; no FSPS needed at fit time). "
                  "Source: M. J. Park alpha-MC SSPs (2025-07-22).",
     },
-    # Library-null control: same code/data/library, single solar plane.
     "mist_c3k_lr_chab_null": {
-        "url": None,        # TODO after Zenodo upload
+        "url": None,
         "sha256": None,
         "size_mb": None,
         "notes": "FSPS v4.0 (AFE_FLAG=0), MIST + C3K_LR, Chabrier IMF, "
@@ -155,22 +92,8 @@ def _sha256(path: Path, chunk: int = 1 << 20) -> str:
 
 
 def fetch_grid(name: str, *, force: bool = False, quiet: bool = False) -> Path:
-    """Return a local, checksum-verified path to a published grid.
-
-    Downloads on first use into :func:`grid_cache_dir`; later calls hit
-    the cache (re-verified against the pinned SHA-256 each time, which
-    costs ~1 s per GB and has caught both truncated downloads and
-    stealth-edited remote files).
-
-    Parameters
-    ----------
-    name : str
-        Registry key, e.g. ``"amist_c3k_lr_chab_afe"``.
-    force : bool
-        Re-download even if a cached file exists.
-    quiet : bool
-        Suppress progress output.
-    """
+    """Return a local, checksum-verified path to the registry grid ``name``,
+    downloading into :func:`grid_cache_dir` on first use (``force`` re-downloads)."""
     if name not in REGISTRY:
         raise KeyError(
             f"Unknown grid {name!r}. Available: {sorted(REGISTRY)}."
@@ -201,9 +124,6 @@ def fetch_grid(name: str, *, force: bool = False, quiet: bool = False) -> Path:
         print(f"[ceridwen] fetching grid {name!r}{size} -> {dest}",
               file=sys.stderr)
 
-    # Download to a temp file in the same directory, verify, then move
-    # into place atomically — a killed download never leaves a plausible-
-    # looking partial grid in the cache.
     fd, tmp = tempfile.mkstemp(dir=dest.parent, suffix=".part")
     os.close(fd)
     tmp = Path(tmp)
@@ -227,7 +147,7 @@ def fetch_grid(name: str, *, force: bool = False, quiet: bool = False) -> Path:
 
 
 def available_grids(published_only: bool = False) -> dict[str, str]:
-    """Map of grid name -> one-line description (for docs / CLI help)."""
+    """Map of grid name -> one-line description."""
     return {
         k: v["notes"] for k, v in REGISTRY.items()
         if v["url"] is not None or not published_only

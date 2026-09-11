@@ -36,6 +36,7 @@ import matplotlib.pyplot as plt
 
 from ceridwen.ssps.ssp_data import SSPData
 from ceridwen.csp.csp import CSPBasis
+from ceridwen.cosmology import Cosmology
 from ceridwen.observation.observation import Photometry, Spectrum, Lines
 
 from _gridfixture import require_test_grid
@@ -52,7 +53,7 @@ _sfr = jnp.exp(-0.5 * ((_lb - 0.05) / 0.03) ** 2) + 0.7 * jnp.exp(-0.5 * ((_lb -
 
 
 def _kw(**over):
-    kw = dict(tuniv=_T, zh_const=True, add_dust=False, add_diffuse_dust=False,
+    kw = dict(cosmo=Cosmology.planck18(), zh_const=True, add_dust=False, add_diffuse_dust=False,
               add_dust_emission=False, add_neb=False, add_igm=False,
               verbose=False, sfh_interp="linear")
     kw.update(over)
@@ -119,7 +120,7 @@ def run_scenarios():
          lambda: (lambda sp: (sp.setup_for_model(csp.wave), sp.chi_sq(sp.predict(csp.get_spectrum(th), csp.wave)))) (
                   Spectrum(wavelength=jnp.linspace(4000, 7000, 40), flux=jnp.ones(40),
                            uncertainty=jnp.zeros(40), name="s"))),
-        ("Photometry.predict before setup (fallback)", {"WARN", "SILENT"},
+        ("Photometry.predict before setup", {"ERROR"},
          lambda: Photometry(filters=["sdss_g0"], name="p").predict(csp.get_spectrum(th), csp.wave)),
     ]
 

@@ -27,8 +27,7 @@ units as the SSP grid: `log10` of the absolute metallicity** (`ssp_lgmet`),
   **outside the grid** and is **silently clamped** to the maximum grid node.
 - **Guard:** `CSPBasis.__init__` now calls `check_param_ranges(theta_init)` and
   warns at construction; call `csp.check_param_ranges(theta)` yourself on sampled
-  `theta`/bounds before a fit. (The class docstring's "log10 Z/Zsun" comment is
-  misleading and should be read as "grid log10-metallicity units".)
+  `theta`/bounds before a fit.
 
 ## 2. `theta` is a dict — typos are silently ignored
 
@@ -68,19 +67,27 @@ prefer `predict`/`get_spectrum_components`.
   `const_zh` output is unchanged (it already used `1e-30`), `var_zh` now shares
   the floor, and `const_zh == var_zh` for a constant metallicity history
   (regression-tested in `test_misuse.py`).
-- `lookback_time` is **static** (baked at construction). Changing it in `theta`
-  at predict time has no effect.
+- `lookback_time` fixes the number of nodes and the bin structure at
+  construction and is not a free parameter, but a `theta['lookback_time']`
+  supplied at predict time (a registered `lookback_time` transform, in Gyr)
+  overrides the construction grid for that evaluation, and with
+  `track_zred_age=True` the grid is rescaled to `age(zred)`. Its *length* can
+  never change after construction.
 
 ## 5. Observations must be set up before `predict`
 
 - Call `obs.setup_for_model(wave_model[, …])` once before the first
   `predict`/JIT trace. **Guard:** `Spectrum.predict` / `Lines.predict` now raise
   a clear `RuntimeError` instead of a cryptic `AttributeError`.
-- `Photometry.predict` *intentionally* falls back to `get_maggies` if setup was
-  skipped (supported, but slower and not the GEMV fast path).
-- **All-zero uncertainties** → `AssertionError: no valid unmasked data points`
-  (clear) at setup.
+- `Photometry.predict` before `setup_for_model` raises `RuntimeError` (no
+  rest-frame fallback).
+- **All-zero uncertainties** → `ValueError` at construction.
 - **Unknown filter name** → `FileNotFoundError` naming the missing `.par` file.
+- `SedModel` calls `setup_for_model` for every observation at construction, so
+  you never call it yourself there. If you replace `model.observations`
+  afterwards, call `model.setup_observations()` (it also drops the cached
+  jitted predictors); `fitSED(model, observations)` does this automatically. A
+  `Spectrum` needs `wavelength=` at construction for this (flux may come later).
 - `eline_scaling` is a **fraction / direct multiplier** on the model emission
   lines: `1.0` = no aperture loss, `0.65` = lines at 65%, `2.0` = lines doubled.
   (It was previously a percentage where 100 = no loss; changed to 1.0 for
@@ -95,12 +102,25 @@ prefer `predict`/`get_spectrum_components`.
   `eline_scaling` to set the spectrum level must add a `spectrum_scaling` prior.
 - `spectrum_scaling` acts on `Spectrum` **only** (a no-op for pure photometry/line
   fits). In the nebular-free `CSPBasis_afe` it is the *only* spectrum
-  calibration knob (there are no lines, so `eline_scaling` is inert there).
+  level knob (there are no lines, so `eline_scaling` is inert there).
+- `spectrum_calib` (2026-08-31) is the wavelength-dependent companion of
+  `spectrum_scaling`: Legendre coefficients `c_1..c_order` (shape `(order,)`)
+  multiplying the `Spectrum` prediction by `1 + sum_k c_k P_k(x)`, `x` = observed
+  pixel wavelength mapped onto [-1, 1] over **all** pixels of `obs.wavelength`
+  (mask-independent, so the coefficients keep their meaning across runs). No
+  `c_0` term: the level is `spectrum_scaling`. Photometry untouched. Fitting it
+  without photometry in the likelihood leaves the continuum shape degenerate
+  with dust and age — always keep the photometry in. Order too high eats real
+  features; look at the recovered curve (`legendre_design_matrix` rebuilds it
+  from the posterior).
 
 ## 6. Environment & data consistency (not auto-guarded — check yourself)
 
-- **`SPS_HOME`** must point at an FSPS install for the nebular model, dust
-  emission, and `SSPBasis`/`FastStepBasis`. Unset → `RuntimeError` at import/use.
+- **`SPS_HOME`** must point at an FSPS data checkout for the nebular model and
+  dust emission (`CSPBasis`/`CSPBasis_afe` raise a `ValueError` at construction
+  when `add_neb=True` or `add_dust_emission=True` and neither `sps_home=` nor
+  `$SPS_HOME` is set), and at a full python-fsps install for
+  `SSPBasis`/`FastStepBasis`.
 - **SSP grid ↔ nebular library — now auto-enforced (was a silent trap).**
   CERIDWEN records the isochrone library in the SSP grid's provenance, and
   `CSPBasis` picks the matching CLOUDY nebular grid automatically; a conflicting
@@ -117,13 +137,138 @@ prefer `predict`/`get_spectrum_components`.
   `jax_enable_x64=True`; on Metal force `JAX_PLATFORMS=cpu` for float64 parity.
 - Pin **`jax>=0.4.30`** (uses `jnp.trapezoid`, modern tree-util/PRNG).
 
-## 7. `FastStepBasis` (FSPS-backed)
+## 7. Broadening: where the widths come from (2026-09-03)
+
+- There are exactly three widths and each is set once: the galaxy's
+  `sigma_gal` / `sigma_gas` in `Kinematics` (on `SedModel`), the instrument's
+  LSF in `Instrument` (on each `Spectrum`), the library resolution in the SSP
+  grid (read automatically). Nothing else broadens anything: `get_spectrum` is
+  no longer velocity-broadened, and the old `sigma_losvd_kms` (CSP),
+  `sigma_losvd` / `fit_sigma_smooth` / `resolution` / `smoothtype` /
+  `res_convention` / `inres` (Spectrum) and `theta["sigma_smooth"]` are gone.
+  Before this pass a `Spectrum(sigma_losvd=...)` was applied **on top of** the
+  CSP's hidden 300 km/s, so a fitted width was a residual, not the dispersion.
+- `Kinematics(sigma_gal=...)` has no default; `SedModel` defaults to
+  `DEFAULT_KINEMATICS = Kinematics(sigma_gal=300.0)` (stars and gas) and prints
+  it. A float is fixed, a string is a theta key. **Guards:** a key missing from
+  `theta` → `KeyError` (no prior → the usual warning); a fixed width that is
+  *also* in `theta` → `ValueError`; a bounded prior reaching above `sigma_max`
+  (2000 km/s) → `ValueError`; a sampled value above `sigma_max` is clipped
+  (zero gradient there, so keep the prior inside).
+- `Instrument` puts the unit *and* the R convention in the constructor name
+  (`R_fwhm`, `R_sigma`, `fwhm_aa`, `sigma_aa`, `sigma_kms`, `fwhm_kms`); there
+  is no plain `R`. Non-positive or non-finite widths, an array without `wave=`,
+  or an array not covering the spectrum's pixels → `ValueError`.
+- Library subtraction: instrument finer than the library at some pixels →
+  warning with the pixel count and range; the continuum stays at library
+  resolution there, which is the correct model for a grid coarser than the
+  instrument (`C3K_lr` at 70 km/s, say). A whole-spectrum warning with a
+  high-resolution grid means a wrong `Instrument` unit. `instrument=None`
+  subtracts nothing.
+- Photometry is computed from the `sigma_gal`-broadened spectrum by default
+  (`SedModel(broaden_photometry=True)`); < 5e-4 mag for broad bands at
+  300 km/s, per-cent level for a narrow band with a line on its edge. With
+  `broaden_photometry=False` nothing in the photometry is broadened: the
+  continuum enters the filters at model-grid resolution and the lines at the
+  grid's pixel-floor width, so `sigma_gas` plays no role there. A mock made
+  with one setting must be fitted with the same setting
+  (`examples/quickstart.py` sets it False for that reason).
+- Lines in the photometry: with a **fixed** `sigma_gas` they enter through a
+  static line-to-band basis built at that width (no painting on the model
+  grid, the fast path); with a **sampled** `sigma_gas` they are painted onto
+  the grid and broadened at runtime (slower, chosen automatically). Free-z
+  photometry always paints. `csp._force_paint_lines = True` forces painting.
+- `add_neb=False` + a `Lines` observation is refused at `predict` in every
+  basis (`ValueError`), not answered with zeros.
+- `Lines` (integrated fluxes) never see a width: they are read directly from
+  the grid (blends summed).
+
+## 8. `FastStepBasis` (FSPS-backed)
 
 - It wraps FSPS Fortran and is **not** JIT-compatible (do not `jax.jit` it).
-- `convert_sfh` requires age-bin spacing ≥ 1 Myr (validated) and currently has a
-  pre-existing ordering sensitivity in how it builds the FSPS tabular SFH for
-  arbitrary `agebins` (FSPS may reject as "Ages must be increasing"). Use the
-  prospector agebin convention.
+- `convert_sfh(agebins, mformed)` builds the FSPS tabular SFH from
+  `agebins` (log10 yr) without validating the bin spacing; use increasing,
+  non-overlapping bins or FSPS rejects the table ("Ages must be increasing").
+
+## 9. Cosmology and distances (2026-09-03)
+
+- `CSPBasis(cosmo=...)` is **required** (`TypeError` otherwise). Use the
+  presets `Cosmology.planck18()`, `planck15()`, `wmap9()`, or
+  `Cosmology.flat(H0, Om0)`, `from_name`, `from_astropy`. `tuniv` is gone;
+  passing it is a `TypeError`. Use `csp.age_at(z)` / `cosmo.age(z)` instead.
+- `SedModel` refuses a fixed-`zred` fit whose oldest SFH node is more than
+  0.5 % older than the universe at that redshift; the message gives both
+  numbers. `linspace(0, 13.8, n)` still passes at `z = 0` (13.787 Gyr under
+  Planck18) but not at `z = 0.5` (8.59 Gyr). Not checked when the CSP
+  rescales the grid itself (`track_zred_age=True`, which acts on a fixed
+  non-zero `zred` as well) or a `lookback_time` transform supplies it.
+- `SedModel(cosmo=...)` is accepted only when equal to `csp.cosmo`;
+  different values raise, because the CSP is what evaluates distances and
+  ages.
+- `zred = 0` means **no flux factor** (predictions in `L_sun/Hz x
+  10^logmass`), not "a source at 10 pc" and not physical maggies. For a
+  nearby object pass `lumdist_mpc=` to `SedModel`. The summary and the
+  `fitSED` log print which case is in force; check them. `lumdist_mpc`
+  makes `SedModel` inject `zred` (even 0) into theta, so with
+  `track_zred_age=True` the SFH grid is rescaled to `age(zred)` exactly as
+  for any fixed non-zero redshift.
+- The cosmology is written to the HDF5 result (`cosmo_*` attrs).
+  `ceridwen.result_cosmology(path)` reads it back; files written before
+  2026-09-03 carry none (KeyError).
+- `csp.cosmo` is read-only: assigning it after construction raises, because
+  compiled predictions would keep the old one. Build a new basis.
+- `CSPBasis`/`CSPBasis_afe` now refuse unknown keyword arguments
+  (`TypeError`). Before, `**kwargs` swallowed anything — `tuniv=`, a
+  misspelt `cosmolgy=`, or `add_neb=True` on `CSPBasis_afe`, which has no
+  nebular module — without a word.
+- Two warnings you will see and should read: `SedModel(zred=0)` with
+  observations ("NO flux factor"), and `lumdist_mpc` together with
+  `zred > 0` ("replaces D_L(zred)"). `Cosmology.flat(0.3, 0.7)` is a
+  `ValueError` (H0 outside 10-1000 km/s/Mpc: the order is H0, Om0).
+- With a redshift (or `lumdist_mpc`) in force the predictions are physical:
+  `Photometry` in AB maggies, `Spectrum` in observed-frame F_nu
+  [erg s^-1 cm^-2 Hz^-1] (cgs), `Lines` in erg s^-1 cm^-2. The flux factor is
+  `ceridwen.cosmology.flux_factor_cgs` (`flux_factor_maggies` is a
+  backwards-compatible alias of the same function; it does not return maggies).
+
+## 10. Nested-sampling weights are aligned with the samples (2026-09-03)
+
+- `result.log_weights` of a BlackJAX NSS fit are now computed by
+  `ceridwen.sampler.ns_weights.nested_log_weights(logL, logL_birth)` in the
+  order of `result.samples`. Before, they came from anesthetic's `logw()`,
+  which sorts by likelihood (and drops `logL <= logL_birth`), so the stored
+  weights of older `.h5` files are misaligned with the sample arrays for the
+  final live points. Do not zip `samples[p]` with `log_weights` from an old
+  file; `PostProcess` recomputes the weights from `log_likelihoods_birth`
+  (stored in every NSS file) and warns when the stored ones differ.
+- `result.log_evidence` and its error bar come from anesthetic's
+  `NestedSamples.logZ()` when anesthetic is installed (it is, with
+  `pip install .`); without it, `log_evidence = logsumexp(log_weights)` and the
+  error is NaN. Either way `log_weights` are the aligned per-point weights.
+
+## 11. Behaviour changes of the 2026-09-04 optimisation pass
+
+- A sampled `zred` now routes `Photometry` through the per-sample filter
+  projection automatically (before, the projection stayed at the fixed setup
+  redshift while the flux factor moved: silently wrong). A `Spectrum` with a
+  sampled `zred` uses a redshift-aware projector built for the prior's support
+  (`Spectrum(zred_range=...)` when the prior is unbounded or `zred` is a
+  transform): the model is read at `theta["zred"]` per call and the lines are
+  painted at `lambda_rest (1+z)`; the library width of the fixed kernel is the
+  one at the reference redshift (a warning above 10 % change over the range).
+  Every parameter can therefore be sampled with every observation type.
+- `Photometry.predict` before `setup_for_model` raises (no rest-frame fallback).
+- `Lines(sigma_v=)` is a constructor argument.
+- `fitSED` honours `noise_floor`, `sky`, `calibration` and `upper_limit` and logs
+  them; `logify_spectrum` and a `GaussianProcess` noise model are refused
+  (`NotImplementedError`) instead of ignored.
+- `SedModel` raises for a prior on a name that is not sampled and warns for
+  sampled parameters without a prior; `free_param_init` is applied without
+  transforms too; prior constructors reject unknown/missing arguments.
+- `CSPBasis(verbose=False)` is silent; `SSPData.load(..., flux_dtype="float32")`
+  halves the grid memory.
+- `pp.figures(dir)` writes the summary / corner / diagnostics figures
+  (`ceridwen.plotting`).
 
 ---
 

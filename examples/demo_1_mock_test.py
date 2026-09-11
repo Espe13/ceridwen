@@ -25,10 +25,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from ceridwen import SSPData, CSPBasis, SedModel, fitSED
+from ceridwen import SSPData, CSPBasis, SedModel, fitSED, PostProcess
 from ceridwen.observation import Photometry
 from ceridwen.model import logsfr_ratios_to_sfh
 from ceridwen.priors import Uniform, ClippedNormal, StudentT
+from ceridwen.cosmology import Cosmology
 
 HERE = pathlib.Path(__file__).resolve().parent
 SSP_FILE = HERE / "ssp_data.h5"
@@ -72,6 +73,7 @@ def main() -> None:
         zh_const=True, sfh_interp="step",
         add_dust=False, add_diffuse_dust=True, add_neb=False,
         verbose=False,
+        cosmo=Cosmology.planck18(),
     )
     sfh_times_yr = np.array(csp.sfh_times)
 
@@ -116,17 +118,17 @@ def main() -> None:
         output_dir="./demo_1_output",
     )
 
-    # ── Recovered vs true, with pulls ─────────────────────────────────────
-    # Nested samples carry importance weights: resample to equal weight
-    # before ANY summary statistic (unweighted medians drift to the prior).
-    lw = np.asarray(result.log_weights)
-    w = np.exp(lw - lw.max()); w /= w.sum()
-    idx = rng.choice(w.size, size=2000, p=w)
+    # ── Post-process: equal-weight draws, derived quantities, figures ─────
+    pp = PostProcess(model, result, n_samples=2000)
+    out = pp.run()
+    truths = {p: float(TRUTH[p][0]) for p in ("Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index")}
+    pp.figures("./demo_1_output/figures", title="demo 1: mock photometry", truths=truths)
+    pp.save("./demo_1_output/post.npz")
 
     print("\nparameter             true      fit               pull")
     n_bad = 0
-    for p in ("Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index"):
-        s = np.asarray(result.samples[p])[idx].ravel()
+    for p in truths:
+        s = out["theta"][p]
         med, sig = np.median(s), np.std(s)
         pull = (med - float(TRUTH[p][0])) / sig
         n_bad += abs(pull) > 3.0
@@ -134,10 +136,12 @@ def main() -> None:
               f"{med:+7.3f} +/- {sig:5.3f}   {pull:+5.2f}")
 
     # A healthy mock test has |pull| < 3 for every parameter. If a pull is
-    # large AND the corner looks tight, suspect a forward-model asymmetry
-    # between generation and fitting (units, zred, SSP grid mismatch).
+    # large AND the corner (demo_1_output/figures/corner.pdf) looks tight,
+    # suspect a forward-model asymmetry between generation and fitting.
     print("\nPASS: all pulls < 3 sigma" if n_bad == 0 else
           f"FAIL: {n_bad} parameter(s) with |pull| > 3 -- investigate!")
+    print(f"sfr10 = {np.median(out['extras']['sfh']['sfr10']):.3g} M_sun/yr, "
+          f"MUV = {np.median(out['extras']['uv']['MUV']):.2f}; figures in demo_1_output/figures/")
 
 
 if __name__ == "__main__":

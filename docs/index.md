@@ -21,16 +21,19 @@ runs on CPU or GPU.
 - Dust emission (Draine & Li grids)
 - Nebular continuum and emission lines (CLOUDY grids)
 - Broadband photometry, spectra, and emission-line fluxes, fit on their own or jointly
+- One broadening kernel: galaxy stellar and gas velocity dispersions (`Kinematics`, fixed or sampled) combined in quadrature with the instrument's line-spread function (`Instrument`, unit and convention in the constructor name) and the SSP library resolution, which is removed automatically
 - Redshift-aware forward model with cosmological flux normalisation
 - IGM attenuation (Madau 1995), extensible through an `IGMModel` base class
 - NUTS, nested sampling, and VI-preconditioned NUTS
+- Post-processing (`PostProcess`): derived quantities, posterior-predictive data, and per-galaxy summary, corner and sampling-diagnostic figures
 
 ## Where to next
 
 - [Installation](installation.md): Python 3.11, dependencies, and the FSPS / `$SPS_HOME` setup.
 - [Quick start](quickstart.md): build a model and fit it end to end.
 - [Tutorial: joint fit](tutorial.md): photometry, a spectrum, and emission-line fluxes fitted together.
-- [Conventions & gotchas](conventions.md): the unit and indexing conventions that catch people out. Read this before fitting real data.
+- [Post-processing](postprocessing.md): derived quantities, predictions, and the figures.
+- [Conventions & gotchas](conventions.md): the unit and indexing conventions that catch people out, and where the three spectral widths are set. Read this before fitting real data.
 - [API reference](api.md): the public classes and functions.
 
 ## Citing

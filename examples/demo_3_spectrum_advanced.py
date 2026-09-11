@@ -5,29 +5,31 @@ demo_3_spectrum_advanced.py — fitting a spectrum with the special machinery.
 Spectra carry far more information than photometry, and correspondingly more
 ways to go wrong. This demo exercises the spectrum-specific features:
 
-    - instrumental smoothing:   ``smoothtype="vel"`` + ``resolution`` [km/s]
-      (alternatives: "R" resolving power, "lambda" sigma in A, or "lsf" with
-      a per-pixel sigma(lambda) array for real instrument LSFs)
-    - fitted stellar velocity dispersion: ``fit_sigma_smooth=True`` promotes
-      the galaxy LOSVD to a free theta parameter ``sigma_smooth`` [km/s]
+    - instrumental line-spread function: ``Spectrum(instrument=Instrument.
+      sigma_kms(150.0))``; the unit and the R convention are the constructor
+      name (``R_fwhm``, ``R_sigma``, ``fwhm_aa``, ``sigma_aa``, ``sigma_kms``,
+      ``fwhm_kms``, each also as a per-pixel array with ``wave=``)
+    - fitted stellar velocity dispersion: ``Kinematics(sigma_gal="sigma_gal")``
+      on the model names a free theta parameter ``sigma_gal`` [km/s]; the gas
+      dispersion of the emission lines is tied to it unless set separately
     - pixel masking:            ``spec.mask_lines(...)`` to exclude emission
       line regions from a continuum-only fit
-    - noise floor:              ``noise_floor`` adds a fractional error floor
-      in quadrature (guards against overconfident pipeline uncertainties)
+    - noise floor:              ``noise_floor`` adds a fractional (model-anchored)
+      error floor in quadrature; fitSED honours it (and ``sky``, ``calibration``,
+      ``upper_limit``) and records it in the fit log
     - joint photometry anchor:  broadband fluxes constrain the continuum
       shape outside the spectral window
 
-Division of labor for the LOSVD: the CSPBasis applies a SOURCE-side LOSVD
-(``sigma_losvd_kms``, default 300 km/s) to the full SED before any
-projection. When the Spectrum observation fits ``sigma_smooth`` at runtime,
-set ``sigma_losvd_kms=0.0`` on the CSPBasis so the dispersion is applied
-exactly once, by the observation that measures it.
+Division of labour: the galaxy's dispersions live in ONE place, the
+``Kinematics`` object on the model, and the instrument's LSF in ONE place,
+the ``Instrument`` on the spectrum. The projection combines them in
+quadrature with the SSP library resolution removed, so nothing is broadened
+twice and the fitted ``sigma_gal`` is the dispersion itself, not a residual.
 
-Not shown but available: ``calibration=`` (per-pixel multiplicative vector),
-``spec.fit_polynomial_calibration(model_flux, order)`` for post-hoc
-calibration checks, and ``noise=GaussianProcess(amplitude, length_scale)``
-for correlated-residual modeling (enters via ``Spectrum.log_likelihood`` in
-custom likelihood pipelines; fitSED's default likelihood is diagonal).
+Not shown but available: ``calibration=`` (per-pixel multiplicative vector on
+the model) and ``spec.fit_polynomial_calibration(model_flux, order)`` for
+post-hoc calibration checks.  ``noise=GaussianProcess(...)`` is a diagnostic for
+``Spectrum.log_likelihood`` only; fitSED refuses it.
 
     conda activate <your-env>
     python examples/demo_3_spectrum_advanced.py
@@ -40,10 +42,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from ceridwen import SSPData, CSPBasis, SedModel, fitSED
+from ceridwen import SSPData, CSPBasis, SedModel, fitSED, Kinematics, Instrument, PostProcess
 from ceridwen.observation import Photometry, Spectrum
 from ceridwen.model import logsfr_ratios_to_sfh
 from ceridwen.priors import Uniform, ClippedNormal, StudentT
+from ceridwen.cosmology import Cosmology
 
 HERE = pathlib.Path(__file__).resolve().parent
 SSP_FILE = HERE / "ssp_data.h5"
@@ -55,7 +58,7 @@ SNR_PHOT, SNR_SPEC = 20.0, 25.0
 FILTERS = ["galex_NUV", "sdss_u0", "sdss_g0", "sdss_r0", "sdss_i0",
            "sdss_z0", "twomass_J", "twomass_Ks", "wise_w1"]
 SPEC_WAVE = np.linspace(3800.0, 7200.0, 800)    # OBSERVED-frame vacuum [A]
-SPEC_RES = 150.0                                # instrument sigma_v [km/s]
+SPEC_RES = 150.0                                # instrument LSF sigma [km/s]
 
 TRUTH = {
     "logsfr_ratios":      jnp.array([+0.3, +0.2, -0.1, -0.4, -0.6]),
@@ -63,7 +66,7 @@ TRUTH = {
     "logmass":            jnp.array([10.5]),
     "diffuse_tau_kc":     jnp.array([0.5]),
     "diffuse_dust_index": jnp.array([-0.7]),
-    "sigma_smooth":       jnp.array([180.0]),   # galaxy LOSVD [km/s], FITTED
+    "sigma_gal":          jnp.array([180.0]),   # stellar velocity dispersion [km/s], FITTED
 }
 
 # Strong optical lines to mask in this continuum-only fit (rest vacuum A).
@@ -79,31 +82,32 @@ def main() -> None:
         print("[grid] building SSP grid with FSPS (a few minutes) ...")
         ssp = SSPData.from_fsps(imf_type=1, save_to=str(SSP_FILE))
 
-    # sigma_losvd_kms=0: the Spectrum observation owns the LOSVD here
-    # (fit_sigma_smooth=True below); leaving the CSP default of 300 km/s
-    # would smooth the SED twice.
     csp = CSPBasis(
         ssp,
         lookback_time=jnp.linspace(0.0, 12.0, N_TIME),
         zh_const=True, sfh_interp="step",
         add_dust=False, add_diffuse_dust=True, add_neb=False,
-        sigma_losvd_kms=0.0,
         verbose=False,
+        cosmo=Cosmology.planck18(),
     )
     sfh_times_yr = np.array(csp.sfh_times)
+
+    # The galaxy's stellar dispersion is a free parameter named "sigma_gal";
+    # the gas dispersion is tied to it (no lines in this fit anyway).
+    kin = Kinematics(sigma_gal="sigma_gal")
 
     def make_spectrum(flux=None, uncertainty=None):
         return Spectrum(
             wavelength=SPEC_WAVE,
             flux=flux, uncertainty=uncertainty,
-            resolution=SPEC_RES, smoothtype="vel",   # sigma_v [km/s]
-            # (sigma convention is the default; res_convention="fwhm" if
-            # your width is FWHM-based — REQUIRED for smoothtype="R".)
-            # inres="auto" (default): the library resolution curve stored
-            # in the schema-2 SSP grid is subtracted in quadrature
-            # automatically.
-            fit_sigma_smooth=True,                   # LOSVD from theta
-            noise_floor=0.01,                        # 1% error floor
+            instrument=Instrument.sigma_kms(SPEC_RES),   # LSF sigma [km/s]
+            # Instrument.R_fwhm(2000) for a datasheet R = lambda/FWHM,
+            # Instrument.R_sigma(...) for the sedpy/Prospector R = lambda/sigma,
+            # Instrument.fwhm_aa(2.5) for a FWHM in Angstrom; any of them
+            # with wave= for a per-pixel curve. The SSP library resolution
+            # stored in the schema-2 grid is removed in quadrature
+            # automatically (subtract_library=True).
+            noise_floor=0.01,   # 1 % of the model flux added in quadrature
             name="spec",
         )
 
@@ -117,16 +121,18 @@ def main() -> None:
                                                 low=0.0, high=4.0),
                 "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
                 "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=1.0),
-                # the fitted stellar velocity dispersion
-                "sigma_smooth": Uniform(low=50.0, high=400.0),
+                # the fitted stellar velocity dispersion (upper bound must
+                # stay below Kinematics.sigma_max, 2000 km/s by default)
+                "sigma_gal": Uniform(low=50.0, high=400.0),
             },
             transforms={"sfh": lambda th, _t=sfh_times_yr:
                         logsfr_ratios_to_sfh(th["logsfr_ratios"],
                                              sfh_times_yr=_t)},
             free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 1),
                              "logmass": jnp.array([10.0]),
-                             "sigma_smooth": jnp.array([200.0])},
+                             "sigma_gal": jnp.array([200.0])},
             zred=ZRED,
+            kinematics=kin,                          # galaxy dispersions, once
         )
 
     # ── Mock: photometry + spectrum through the same forward model ────────
@@ -162,13 +168,18 @@ def main() -> None:
         output_dir="./demo_3_output",
     )
 
-    # ── Recovered vs true (NUTS samples are unweighted) ───────────────────
-    for p in ("logmass", "Z", "sigma_smooth",
-              "diffuse_tau_kc", "diffuse_dust_index"):
-        s = np.asarray(result.samples[p]).ravel()
-        print(f"{p:>20}: true {float(TRUTH[p][0]):+8.3f}   "
+    # ── Post-process (NUTS draws are uniform-weight; the diagnostics page
+    #    shows the per-chain traces with split-R-hat and ESS) ───────────────
+    params = ("logmass", "Z", "sigma_gal", "diffuse_tau_kc", "diffuse_dust_index")
+    truths = {p: float(TRUTH[p][0]) for p in params}
+    pp = PostProcess(model, result)
+    out = pp.run()
+    pp.figures("./demo_3_output/figures", title="demo 3: photometry + spectrum", truths=truths)
+    for p in params:
+        s = out["theta"][p]
+        print(f"{p:>20}: true {truths[p]:+8.3f}   "
               f"fit {np.median(s):+8.3f} +/- {np.std(s):.3f}")
-    # sigma_smooth should recover ~180 km/s: the spectrum resolves the
+    # sigma_gal should recover ~180 km/s: the spectrum resolves the
     # absorption-line widths, which photometry cannot see at all. Z and the
     # dust parameters tighten dramatically compared to the photometry-only
     # fit of demo_1 -- that comparison is the whole argument for spectra.

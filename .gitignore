@@ -250,7 +250,7 @@ GPU/
 forAmandaDir/
 notebooks/
 results/
-sampler/
+/sampler/
 scripts/
 runs/
 my_fit/

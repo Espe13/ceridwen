@@ -25,7 +25,7 @@ API differs):
     this package is the user-supplied SFH ``lookback_time`` grid, not a
     cosmological quantity).  We instead baseline the distance / flux-factor
     functions that DO exist: ``comoving_distance_mpc``,
-    ``luminosity_distance_mpc``, ``flux_factor``, ``flux_factor_maggies``,
+    ``luminosity_distance_mpc``, ``flux_factor``, ``flux_factor_maggies`` (= ``flux_factor_cgs``),
     ``E_of_z``.  These take a *scalar* z, so we ``vmap`` over the z grid.
   * IGM exposes ``IGMModel.attenuation(wave, zred, factor)`` rather than a
     ``transmission`` function; ``attenuation`` returns exp(-tau*factor), i.e.
@@ -56,6 +56,7 @@ os.environ.setdefault("JAX_PLATFORMS", "cpu")
 import numpy as np
 import jax
 import jax.numpy as jnp
+from ceridwen.broadening import Instrument, Kinematics
 
 jax.config.update("jax_enable_x64", True)
 
@@ -151,12 +152,13 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
         "comoving_distance_mpc": np.asarray(jax.vmap(cosmo.comoving_distance_mpc)(zg)),
         "luminosity_distance_mpc": np.asarray(jax.vmap(cosmo.luminosity_distance_mpc)(zg)),
         "flux_factor": np.asarray(jax.vmap(cosmo.flux_factor)(zg)),
-        "flux_factor_maggies": np.asarray(jax.vmap(cosmo.flux_factor_maggies)(zg)),
+        "flux_factor_maggies": np.asarray(jax.vmap(cosmo.flux_factor_cgs)(zg)),
     }
 
     # ----- CSP (full pipeline) ---------------------------------------------
     from ceridwen.ssps.ssp_data import SSPData
     from ceridwen.csp.csp import CSPBasis
+    from ceridwen.cosmology import Cosmology
     from ceridwen.observation.observation import Photometry, Spectrum
 
     ssp_data = SSPData.load(SSP_FILE)
@@ -168,7 +170,7 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
     csp = CSPBasis(
         ssp_data,
         theta=base_theta,
-        tuniv=p["T_UNIV"],
+        cosmo=Cosmology.planck18(),   # the pre-2026-09-03 default, so the baselines still apply
         tiny_logt=-70,
         zh_const=True,
         add_dust=True,
@@ -254,11 +256,10 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
         flux=jnp.ones(p["spec_n"]),
         uncertainty=jnp.ones(p["spec_n"]),
         name="spec",
-        smoothtype="vel",
-        resolution=300.0,
+        instrument=Instrument.sigma_kms(300.0),
     )
     spec_obs.setup_for_model(
-        csp.wave,
+        csp.wave, kinematics=Kinematics.none(),
         lib_resolution=getattr(csp, "lib_resolution", None))
     observations = [phot, spec_obs]
 

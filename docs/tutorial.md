@@ -9,9 +9,11 @@ them, or all three together, with no change to the model or sampler.
 This tutorial builds one of each and fits them jointly. Replace the mock arrays
 with your own data.
 
-!!! tip "Runnable notebook"
-    A notebook version of this tutorial is in the repository at
-    [`examples/tutorial_joint_fit.ipynb`](https://github.com/Espe13/ceridwen/blob/main/examples/tutorial_joint_fit.ipynb).
+!!! tip "Runnable scripts"
+    The runnable counterparts of this tutorial are
+    `examples/demo_2_photometry_lines.py` (photometry + lines) and
+    `examples/demo_3_spectrum_advanced.py` (photometry + spectrum with an
+    `Instrument`, a fitted `sigma_gal`, line masking and a noise floor).
 
 !!! note "Before you start"
     Read **[Conventions & gotchas](conventions.md)**, especially that `Z` is
@@ -28,7 +30,7 @@ birth-cloud dust here.
 import jax, jax.numpy as jnp
 import numpy as np
 
-from ceridwen import SSPData, CSPBasis, SedModel, fitSED
+from ceridwen import SSPData, CSPBasis, SedModel, fitSED, Kinematics, Instrument, Cosmology
 from ceridwen.observation import Photometry, Spectrum, Lines
 from ceridwen.priors import Uniform, ClippedNormal, StudentT
 from ceridwen.model import logsfr_ratios_to_sfh
@@ -39,14 +41,47 @@ ssp = SSPData.load("ssp_data.h5")          # built once via SSPData.from_fsps(..
 
 ZRED = 0.5                                  # spectroscopic redshift of the galaxy
 
+# The cosmology is a property of the analysis: choose it once, here, and every
+# distance and age in the fit comes from it.  Presets: Cosmology.planck18(),
+# planck15(), wmap9() (prospector's); Cosmology.flat(H0, Om0) for the two
+# numbers a paper quotes; Cosmology.from_astropy(...) for any flat astropy
+# cosmology.  CSPBasis requires it; SedModel reads it from the CSP.
+cosmo = Cosmology.planck18()
+
+# lookback_time is the static SFH node grid (Gyr, increasing, index 0 = today,
+# >= 2 nodes). Its oldest node must not exceed the age of the universe at ZRED,
+# cosmo.age(0.5) = 8.6 Gyr under Planck18; SedModel refuses a grid that does.
+# CSPBasis refuses to build without a grid (or an explicit theta).
+lookback = jnp.linspace(0.0, 8.0, 5)        # 5 nodes -> 4 free logsfr_ratios
 csp = CSPBasis(
     ssp,
+    lookback_time=lookback,
+    cosmo=cosmo,
+    zh_const=True, sfh_interp="step",       # one metallicity "Z"; zh_const=False samples a history "zh"
     add_dust=True, add_diffuse_dust=True,   # birth-cloud + diffuse attenuation
     add_neb=True,                           # nebular continuum + lines (needs $SPS_HOME)
     add_igm=True,                           # Madau (1995), auto-scales with zred
     # sps_home defaults to $SPS_HOME
 )
 ```
+
+The galaxy's velocity dispersions are a property of the galaxy, not of any one
+observation, so they are set once, on the model (section 5), through a
+`Kinematics` object. Here we fit the stellar dispersion and tie the gas
+dispersion of the emission lines to it:
+
+```python
+kin = Kinematics(sigma_gal="sigma_gal")     # free (theta key); sigma_gas tied to sigma_gal
+# Kinematics(sigma_gal=250.0, sigma_gas="sigma_gas")   stars fixed, gas free
+# Kinematics(sigma_gal=300.0)                          both fixed (the SedModel default)
+```
+
+For photometry this choice has a cost: with a *sampled* `sigma_gas` (here tied
+to the sampled `sigma_gal`) the emission lines are painted onto the model grid
+and broadened at run time for every likelihood call; with a *fixed* `sigma_gas`
+(`Kinematics(sigma_gal="sigma_gal", sigma_gas=150.0)`, or both fixed) they enter
+the photometry through a static line-to-band basis, which is cheaper. Free
+redshift always uses the painted path. See [Conventions](conventions.md).
 
 ## 2. (a) Photometry
 
@@ -77,29 +112,32 @@ non-detections enter as one-sided χ²).
 A densely-sampled spectrum. Pass the **observed-frame, vacuum** wavelength grid
 in Å (the pixel wavelengths as delivered by the instrument, since the forward
 model redshifts the model spectrum by `(1 + zred)` onto these pixels; at
-`zred = 0` observed and rest frame coincide) and flux in `F_ν` (same system as
-the model).
-Set `resolution` + `smoothtype` to have the forward model apply instrumental
-broadening. All resolutions are Gaussian **sigmas** by default; if your number
-is FWHM-based (instrument datasheets usually are), say so with
-`res_convention="fwhm"` and CERIDWEN converts for you. For `smoothtype="R"`
-the convention is *required*, because published R values mean lambda/FWHM on
-datasheets but lambda/sigma in the sedpy/Prospector tradition — a silent guess
-would be wrong by 2.35x. The SSP library's own resolution (stored in every
-schema-2 grid) is subtracted in quadrature automatically (`inres="auto"`, the
-default) — you do not need to set anything for that.
+`zred = 0` observed and rest frame coincide) and flux in observed-frame `F_ν`
+in erg s⁻¹ cm⁻² Hz⁻¹ (cgs, the model's unit; 1 nJy = 1e-32).
+The instrument's line-spread function is attached to the spectrum as an
+`Instrument`. Its unit **and** its convention are the name of the constructor,
+because published resolutions come in several units and in two resolving-power
+conventions that differ by 2.35x (datasheets quote `R = λ/FWHM`, the
+sedpy/Prospector tradition `R = λ/σ`); there is deliberately no plain `R`.
+The SSP library's own resolution (stored in every schema-2 grid) is subtracted
+in quadrature from the instrumental width automatically, pixel by pixel; you do
+not need to set anything for that. The galaxy's own dispersion is **not** set
+here: it comes from the model-level `Kinematics` (section 1) and is combined
+with the instrument in quadrature at projection time, so nothing is broadened
+twice.
 
 ```python
 spec = Spectrum(
     wavelength=my_obs_wave_aa,      # Å, vacuum, OBSERVED frame, shape (n_pix,)
-    flux=my_spec_fnu,               # F_nu per pixel
+    flux=my_spec_fnu,               # F_nu per pixel, erg s^-1 cm^-2 Hz^-1 (cgs)
     uncertainty=my_spec_unc,
-    resolution=120.0,               # Gaussian sigma by default (see below)
-    smoothtype="vel",               # "vel" (km/s) | "R" | "lambda" (Å) | "lsf"
-    # res_convention="fwhm",        # add this when quoting FWHM-based numbers
-    #                               # (REQUIRED for smoothtype="R")
-    # inres="auto" (default): the SSP library resolution is subtracted in
-    # quadrature automatically; inres=0.0 would turn that OFF — don't.
+    instrument=Instrument.sigma_kms(120.0),   # LSF: sigma in km/s
+    # Instrument.R_fwhm(2700)                 # datasheet R = lambda/FWHM
+    # Instrument.R_sigma(6358)                # sedpy / Prospector R = lambda/sigma (= R_fwhm(2700))
+    # Instrument.fwhm_aa(2.5)                 # FWHM in Angstrom, observed frame
+    # Instrument.R_fwhm(R_arr, wave=my_obs_wave_aa)   # per-pixel curve (prism)
+    # subtract_library=True (default): the SSP library resolution is removed
+    # in quadrature; False only for a grid whose stored curve you distrust.
     noise_floor=0.01,               # 1% multiplicative calibration floor (optional)
     name="spec",
 )
@@ -110,8 +148,11 @@ spec.mask_lines([4861.3, 5006.8, 6562.8], dv=500.0, zred=ZRED)
 ```
 
 Other optional knobs: `calibration=` (per-pixel multiplicative flux-calibration
-vector), `sigma_losvd=` (galaxy velocity dispersion applied before instrumental
-smoothing), and `mask=`.
+vector) and `mask=`. If the instrument is *finer* than the library at some
+pixels the continuum stays at library resolution there (the right model for a
+coarse grid) and you are warned with the pixel count and range; a warning over
+the whole spectrum with a high-resolution grid means a wrong unit on the
+`Instrument`.
 
 ## 4. (c) Emission lines
 
@@ -137,6 +178,13 @@ lines = Lines(
 )
 ```
 
+The model prediction for a `Lines` observation is the line luminosity read
+from the nebular grid and carried through dust, mass, distance and IGM like the
+continuum; no profile and no width enter, so `Kinematics` and `Instrument`
+play no role here. A basis built with `add_neb=False` (and `CSPBasis_afe`,
+which has no nebular model) refuses a `Lines` observation with a `ValueError`
+rather than predicting zeros for it.
+
 !!! tip "Two independent calibrations: `eline_scaling` and `spectrum_scaling`"
     Photometry sees the full field of view, but slit/fibre spectroscopy and
     aperture-measured line fluxes lose (or miscalibrate) flux. CERIDWEN
@@ -155,6 +203,32 @@ lines = Lines(
     `spectrum_scaling` scales the spectrum, and neither affects the photometry. Add a
     prior on each nuisance you want to marginalise over (below).
 
+!!! tip "Wavelength-dependent calibration: `spectrum_calib`"
+    A grey factor cannot absorb a *shape* error in the spectrophotometric
+    calibration (relative throughput, differential refraction, aperture colour
+    terms; typical for slit spectra flux-calibrated against broad-band
+    photometry). `spectrum_calib` is a vector of Legendre coefficients
+    `c_1 .. c_order` multiplying the `Spectrum` prediction by
+    `1 + sum_k c_k P_k(x)`, with `x` the observed pixel wavelength mapped
+    affinely onto [-1, 1] (the Prospector `polyorder` / pPXF `mdegree`
+    idea, but sampled, not solved analytically). There is no `c_0`: the
+    level is `spectrum_scaling`, and the total factor is
+    `spectrum_scaling * (1 + sum_k c_k P_k(x))`. Photometry is untouched, so
+    keep photometry in the fit: it is what pins the continuum shape while the
+    polynomial soaks up the spectrum-vs-photometry mismatch. Orders 2-6 are
+    typical; higher orders start to eat real features (the 4000 Å break, wide
+    molecular bands), so watch the recovered curve. Give it one prior, which is
+    broadcast over the vector exactly like `logsfr_ratios`:
+
+    ```python
+    priors["spectrum_calib"] = Uniform(low=-0.2, high=0.2)
+    free_param_init["spectrum_calib"] = jnp.zeros(4)      # order 4
+    ```
+
+    Absent from `theta`, the factor is exactly 1 (existing fits are unchanged).
+    Implementation: `ceridwen/csp/spectrum_calibration.py`, applied in
+    `_project_observations` of both `CSPBasis` and `CSPBasis_afe`.
+
 ## 5. Priors and the model
 
 Collect the observations into a single list. Any subset is fine; use an empty
@@ -164,7 +238,9 @@ list for a type you are not fitting. Then define priors for every free parameter
 observations = [phot, spec, lines]
 
 priors = {
-    # Stellar population. Z is log10 ABSOLUTE metallicity (grid ~[-4, -1.4]).
+    # Stellar population. Z is log10 ABSOLUTE metallicity (MIST grids ~[-4.35, -1.35]).
+    # Birth-cloud dust ("tau_pow", "alpha_pow" for the powerlaw law) and every
+    # other registered parameter needs a prior: print csp.param_names.
     "Z":                 ClippedNormal(mean=-2.0, sigma=0.5, low=-4.0, high=-1.4),
     "logmass":           Uniform(low=7.0, high=12.5),
     "logsfr_ratios":     StudentT(df=2.0, mean=0.0, scale=0.3),   # non-parametric SFH
@@ -182,6 +258,9 @@ priors = {
     # (Spectrum observation only; independent of eline_scaling). Omit if the
     # spectrum is already flux-calibrated to the photometric system.
     "spectrum_scaling":         ClippedNormal(mean=1.0, sigma=0.3, low=0.2, high=3.0),
+    # Stellar velocity dispersion [km/s], the free key named in Kinematics above.
+    # The upper bound must stay below Kinematics.sigma_max (2000 by default).
+    "sigma_gal":         Uniform(low=20.0, high=600.0),
 }
 
 # The non-parametric SFH is sampled as logsfr_ratios and turned into the per-bin
@@ -197,17 +276,44 @@ model = SedModel(
     priors=priors,
     transforms={"sfh": logsfr_to_sfh},        # REQUIRED for logsfr_ratios
     free_param_init={"logsfr_ratios": jnp.zeros(N_RATIOS),
-                     "logmass": jnp.array([10.0])},
+                     "logmass": jnp.array([10.0]),
+                     "sigma_gal": jnp.array([150.0]),
+                     "eline_scaling": jnp.array([1.0]),      # sampled nuisances that are
+                     "spectrum_scaling": jnp.array([1.0])},  # not CSP parameters need a start value
     zred=ZRED,                                # fixed spectroscopic redshift
+    kinematics=kin,                           # galaxy dispersions (default: Kinematics(sigma_gal=300.0))
+    broaden_photometry=True,                  # photometry sees the sigma_gal-broadened spectrum (default)
 )
-
-# Fixed knob not sampled here: the birth-cloud (Charlot & Fall) slope.
-model.theta_init["alpha_pow"] = jnp.array([-1.0])
 ```
 
-To fit redshift instead of fixing it, omit `zred` and add a `"zred"` prior (and,
-for a non-parametric SFH, register a `"lookback_time"` transform so the SFH
-age-bin grid tracks the sampled redshift).
+`SedModel` checks the `Kinematics` against `theta` and the priors at setup:
+a free key that is missing from `theta`, a fixed width that also appears in
+`theta`, or a bounded prior reaching above `sigma_max` all raise before
+anything is compiled (a free key without a prior gets the usual
+"no prior for sampled parameter" warning). Leaving `kinematics=` out uses `DEFAULT_KINEMATICS`,
+`Kinematics(sigma_gal=300.0)` for stars and gas, which the model summary
+prints so that it is never a hidden number.
+
+To fit redshift instead of fixing it, add `"zred"` to `free_param_init` with a
+bounded prior (`Uniform` / `ClippedNormal`) and, for a non-parametric SFH,
+build the CSP with `track_zred_age=True` so the SFH age-bin grid tracks the
+sampled redshift. Every observation type follows the sampled value: the flux
+factor, the IGM and the line fluxes are evaluated at `theta["zred"]`;
+`Photometry` is projected through the filters per sample; a `Spectrum` gets
+a redshift-aware projector whose log-wavelength window covers the prior's
+support: the model is read at the sampled redshift on every call and the
+lines are painted at `lambda_rest (1 + z)` (pass `Spectrum(zred_range=(z_min,
+z_max))` when the prior has no finite bounds or `zred` comes from a
+transform). The log grid is the fixed-z grid of the reference redshift (the
+`zred` start value) extended over the range, so at that redshift the free-z
+projection equals the fixed-z one exactly; elsewhere the model is read at a
+different node phase (per-mille level for a MILES-resolution grid), and the
+library width in the fixed kernel stays the one at the reference redshift
+(`build` warns when it would change by more than 10 %). The gradient with
+respect to `zred` is that of the linear interpolation: exact for the current
+node configuration, piecewise constant on the scale of one log-grid node
+(1e-8 in z), which NUTS never resolves. Keep the prior as tight as the data
+allow; the window must fit on the model grid for the whole range.
 
 ## 6. Fit
 
@@ -227,31 +333,40 @@ result = fitSED(
 print(f"ln Z = {result.log_evidence:.2f} +/- {result.log_evidence_err:.2f}")
 ```
 
+`fitSED(model, observations)` replaces `model.observations` and re-runs
+`model.setup_observations()`; if you assign `model.observations = [...]`
+yourself, call `model.setup_observations()` before predicting or fitting.
+
 ## 7. Posterior and diagnostics
 
 ```python
-ns = result.to_anesthetic()                      # nested-sampling posterior
-post = ns.sample(2000, replace=True)
-print("median logmass:", float(np.median(post["logmass"])))
+from ceridwen import PostProcess
 
-# Predicted data for any posterior point (keyed by observation name):
-theta = {k: jnp.asarray([float(np.median(post[k]))]) for k in
-         ("Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index",
-          "tau_pow", "alpha_pow", "gas_logz", "gas_logu", "eline_scaling")}
-theta["logsfr_ratios"] = jnp.asarray(
-    [float(np.median(post[f"logsfr_ratios[{i}]"])) for i in range(4)])
+pp  = PostProcess(model, result, n_samples=2000)   # equal-weight draws, nested weights recomputed
+out = pp.run()
+print("median logmass:", float(np.median(out["theta"]["logmass"])))
 
-pred = model.predict(theta)        # {"phot": maggies, "spec": F_nu, "lines": fluxes}
+out["prediction"]["photometry"]["phot"]      # posterior-predictive maggies (draws x bands)
+out["prediction"]["spectra"][spec.name]      # posterior-predictive spectrum (draws x pixels)
+out["prediction"]["lines"][lines.name]       # posterior-predictive line fluxes
+out["bestfit"]["theta"]                      # the maximum-likelihood sample
+out["extras"]["sfh"]["sfr10"]                # derived quantities
+
+# Summary (SED + chi, line residuals, SFH, marginals), corner and sampling
+# diagnostics for this galaxy:
+pp.figures("./joint_fit/figures", title="joint fit")
+pp.save("./joint_fit/post.npz")
 ```
 
-`result.samples` holds the posterior keyed by parameter name; the HDF5 file in
+`result.samples` holds the raw posterior keyed by parameter name; the HDF5 file in
 `output_dir` stores the observations, priors, samples, and (for nested sampling)
-the log-evidence. See `examples/quickstart.py` for a complete photometry-only
-script that also builds a corner plot and a model-vs-data figure.
+the log-evidence, and `PostProcess(model, "joint_fit/ceridwen_result.h5")`
+reloads it. See [Post-processing](postprocessing.md) for the output layout and
+`examples/demo_3_spectrum_advanced.py` for a runnable photometry + spectrum fit.
 
 ## Consistency checklist for real joint fits
 
-- **Flux systems must agree.** Photometry (maggies), spectrum (`F_ν`) and line
+- **Flux systems must agree.** Photometry (maggies), spectrum (`F_ν` in cgs, erg s⁻¹ cm⁻² Hz⁻¹) and line
   fluxes (erg s⁻¹ cm⁻²) must be calibrated to the same physical normalisation
   the model produces at `zred`. Inconsistent absolute calibration between data
   sets is the most common cause of a "good χ² per set but bad joint fit".
@@ -262,6 +377,11 @@ script that also builds a corner plot and a model-vs-data figure.
   flux-calibration offset relative to the photometry (Spectrum). They are
   independent; fit whichever your data need. `noise_floor` (and a fixed
   per-pixel `calibration` vector) further absorb residual systematics.
+- **One width per source.** The galaxy's `sigma_gal`/`sigma_gas` are set once
+  in `Kinematics`; each `Spectrum` carries only its `Instrument`. If a fitted
+  `sigma_gal` comes out at the edge of its prior, check the `Instrument` unit
+  first (a datasheet `R` passed as `R_sigma`, or the reverse, is a factor 2.35
+  in width).
 - **Know your frames.** The spectrum's pixel grid is **observed-frame** vacuum
   Å (the model is redshifted onto it); line-list wavelengths and
   `mask_lines(...)` centres are **rest-frame** vacuum Å (redshifted internally

@@ -1,9 +1,7 @@
 """
-Tests for the three Spectrum-class bug fixes:
-
-1. ``inres`` is now honoured in ``smoothtype="lsf"`` mode.
-2. ``self.calibration`` is applied inside chi_sq / residuals / log_likelihood.
-3. ``mask_lines`` accepts ``zred`` and redshifts line centres before masking.
+Spectrum: library-resolution subtraction through ``Instrument``, ``calibration``
+inside chi_sq / residuals / log_likelihood, ``mask_lines`` with ``zred``, and
+the Instrument unit conventions.
 """
 from __future__ import annotations
 
@@ -15,6 +13,9 @@ import pytest
 jax.config.update("jax_enable_x64", True)
 
 from ceridwen.observation.spectrum import Spectrum
+from ceridwen.broadening import Instrument, Kinematics
+
+_KIN = Kinematics(sigma_gal=0.0, sigma_max=10.0)   # test grid has a 50 A buffer only
 
 
 # -----------------------------------------------------------------------------
@@ -37,62 +38,45 @@ def _model_spectrum(wave_model, lines=((5500.0, 8.0), (6000.0, 5.0))):
 
 
 # =============================================================================
-# Issue 1 — LSF inres
+# Library subtraction
 # =============================================================================
 
-class TestLSFInres:
+class TestLibrarySubtraction:
 
-    def test_inres_equivalent_to_quadrature_reduced_sigma(self):
-        """A Spectrum with constant σ_LSF = c1 and inres = i must match a
-        Spectrum with σ_LSF = sqrt(c1² − i²) and inres = 0, to numerical
-        precision."""
+    def test_library_subtraction_equals_quadrature_reduced_width(self):
+        """An Instrument of sigma c1 with the library width i subtracted must
+        match an Instrument of sigma sqrt(c1^2 - i^2) with no subtraction."""
         wave_obs, wave_model = _make_test_grids()
-        sigma_target = 4.0   # Å
-        inres        = 2.5   # Å
+        sigma_target = 4.0   # A
+        inres        = 2.5   # A
         sigma_eff    = float(np.sqrt(sigma_target**2 - inres**2))
-
-        sigma_lsf_a = np.full(wave_obs.size, sigma_target)
-        sigma_lsf_b = np.full(wave_obs.size, sigma_eff)
-
-        flux_dummy = np.zeros_like(wave_obs)
-        unc_dummy  = np.ones_like(wave_obs)
-
-        spec_a = Spectrum(wavelength=wave_obs, flux=flux_dummy,
-                          uncertainty=unc_dummy, mask=np.ones_like(wave_obs, bool),
-                          resolution=sigma_lsf_a, smoothtype="lsf", inres=inres)
-        spec_b = Spectrum(wavelength=wave_obs, flux=flux_dummy,
-                          uncertainty=unc_dummy, mask=np.ones_like(wave_obs, bool),
-                          resolution=sigma_lsf_b, smoothtype="lsf", inres=0.0)
-
-        spec_a.setup_for_model(wave_model)
-        spec_b.setup_for_model(wave_model)
-
+        lib_kms = inres / wave_model * 2.99792458e5
+        spec_a = Spectrum(wavelength=wave_obs, flux=np.zeros_like(wave_obs),
+                          uncertainty=np.ones_like(wave_obs), mask=np.ones_like(wave_obs, bool),
+                          instrument=Instrument.sigma_aa(np.full(wave_obs.size, sigma_target), wave=wave_obs))
+        spec_b = Spectrum(wavelength=wave_obs, flux=np.zeros_like(wave_obs),
+                          uncertainty=np.ones_like(wave_obs), mask=np.ones_like(wave_obs, bool),
+                          instrument=Instrument.sigma_aa(np.full(wave_obs.size, sigma_eff), wave=wave_obs),
+                          subtract_library=False)
+        spec_a.setup_for_model(wave_model, kinematics=_KIN, lib_resolution=(wave_model, lib_kms))
+        spec_b.setup_for_model(wave_model, kinematics=_KIN)
         m = _model_spectrum(wave_model)
         out_a = np.asarray(spec_a.predict(m, jnp.asarray(wave_model)))
         out_b = np.asarray(spec_b.predict(m, jnp.asarray(wave_model)))
-
         assert np.allclose(out_a, out_b, rtol=1e-6, atol=1e-8), (
-            f"LSF inres path disagrees with explicit-quadrature path. "
-            f"max abs diff = {np.max(np.abs(out_a - out_b)):.3e}"
-        )
+            f"max abs diff = {np.max(np.abs(out_a - out_b)):.3e}")
 
-    def test_inres_floor_no_nans(self):
-        """When inres > σ_LSF at every pixel, σ_eff floors at 0 and the
-        smoother must not produce NaNs."""
+    def test_library_wider_than_instrument_warns_and_is_finite(self):
+        """Instrument narrower than the library: warning, width floored at 0, no NaN."""
         wave_obs, wave_model = _make_test_grids()
-        sigma_lsf = np.full(wave_obs.size, 1.0)   # 1 Å
-        inres     = 5.0                           # > all σ_LSF
-
+        lib_kms = 5.0 / wave_model * 2.99792458e5
         spec = Spectrum(wavelength=wave_obs, flux=np.zeros_like(wave_obs),
-                        uncertainty=np.ones_like(wave_obs),
-                        mask=np.ones_like(wave_obs, bool),
-                        resolution=sigma_lsf, smoothtype="lsf", inres=inres)
-        spec.setup_for_model(wave_model)
-
-        m   = _model_spectrum(wave_model)
-        out = np.asarray(spec.predict(m, jnp.asarray(wave_model)))
-
-        assert np.all(np.isfinite(out)), "LSF predict produced non-finite values"
+                        uncertainty=np.ones_like(wave_obs), mask=np.ones_like(wave_obs, bool),
+                        instrument=Instrument.sigma_aa(1.0))
+        with pytest.warns(UserWarning, match="narrower than the SSP library"):
+            spec.setup_for_model(wave_model, kinematics=_KIN, lib_resolution=(wave_model, lib_kms))
+        out = np.asarray(spec.predict(_model_spectrum(wave_model), jnp.asarray(wave_model)))
+        assert np.all(np.isfinite(out))
 
 
 # =============================================================================
@@ -205,51 +189,41 @@ if __name__ == "__main__":
 # -----------------------------------------------------------------------------
 # Resolution convention (sigma vs FWHM)
 # -----------------------------------------------------------------------------
-class TestResolutionConvention:
-    """smoothtype='R' must be disambiguated; 'fwhm' converts by 2.3548."""
+class TestInstrumentConvention:
+    """R_fwhm and R_sigma differ by 2.3548; the removed keywords are refused."""
 
-    CKMS = 2.998e5
-    F = 2.0 * np.sqrt(2.0 * np.log(2.0))   # 2.3548...
+    CKMS = 2.99792458e5
+    F = 2.0 * np.sqrt(2.0 * np.log(2.0))
 
     def _spec(self, **kw):
         wave = np.linspace(4000.0, 8000.0, 100)
         return Spectrum(wavelength=wave, flux=np.ones(100),
                         uncertainty=np.ones(100), name="c", **kw)
 
-    def test_R_without_convention_raises(self):
-        with pytest.raises(ValueError, match="res_convention"):
-            self._spec(resolution=1000.0, smoothtype="R")
+    def test_removed_keywords_raise(self):
+        for kw in ({"resolution": 1000.0, "smoothtype": "R"}, {"res_convention": "sigma"},
+                   {"sigma_losvd": 200.0}, {"fit_sigma_smooth": True}, {"inres": 0.0}):
+            with pytest.raises(TypeError, match="was removed"):
+                self._spec(**kw)
 
-    def test_bad_convention_raises(self):
-        with pytest.raises(ValueError, match="not.*recognised|recognised"):
-            self._spec(resolution=100.0, smoothtype="vel",
-                       res_convention="FWHM_AA")
-
-    def test_convention_without_smoothing_raises(self):
-        with pytest.raises(ValueError, match="smoothtype is"):
-            self._spec(res_convention="sigma")
+    def test_non_instrument_raises(self):
+        with pytest.raises(TypeError, match="Instrument"):
+            self._spec(instrument=100.0)
 
     def test_R_sigma_vs_fwhm_factor(self):
-        s_sig = self._spec(resolution=1000.0, smoothtype="R",
-                           res_convention="sigma")
-        s_fwm = self._spec(resolution=1000.0, smoothtype="R",
-                           res_convention="fwhm")
-        sig = s_sig._resolution_as_sigma()
-        fwm = s_fwm._resolution_as_sigma()
-        assert np.isclose(sig, self.CKMS / 1000.0, rtol=1e-3)
+        w = np.array([5000.0])
+        sig = Instrument.R_sigma(1000.0).sigma_kms_at(w)[0]
+        fwm = Instrument.R_fwhm(1000.0).sigma_kms_at(w)[0]
+        assert np.isclose(sig, self.CKMS / 1000.0, rtol=1e-12)
         assert np.isclose(sig / fwm, self.F, rtol=1e-12)
 
-    def test_vel_fwhm_equals_sigma_over_2p3548(self):
-        s_sig = self._spec(resolution=100.0, smoothtype="vel")   # default sigma
-        s_fwm = self._spec(resolution=100.0 * self.F, smoothtype="vel",
-                           res_convention="fwhm")
-        assert np.isclose(s_sig._resolution_as_sigma(),
-                          s_fwm._resolution_as_sigma(), rtol=1e-12)
+    def test_fwhm_kms_equals_sigma_over_2p3548(self):
+        w = np.array([5000.0])
+        assert np.isclose(Instrument.sigma_kms(100.0).sigma_kms_at(w)[0],
+                          Instrument.fwhm_kms(100.0 * self.F).sigma_kms_at(w)[0], rtol=1e-12)
 
-    def test_lsf_fwhm_array_converted(self):
+    def test_fwhm_aa_array_converted(self):
+        wave = np.linspace(4000.0, 8000.0, 100)
         res = np.full(100, 2.3548200450309493)
-        s = self._spec(resolution=res, smoothtype="lsf",
-                       res_convention="fwhm", inres=0.0)
-        out = s._resolution_as_sigma()
-        assert out.shape == res.shape
-        assert np.allclose(out, 1.0, rtol=1e-10)
+        out = Instrument.fwhm_aa(res, wave=wave).sigma_kms_at(wave)
+        assert np.allclose(out, self.CKMS / wave, rtol=1e-10)

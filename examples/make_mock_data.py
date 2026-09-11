@@ -31,9 +31,10 @@ os.environ.setdefault("JAX_PLATFORMS", "cpu")   # runs fine on any laptop
 import jax.numpy as jnp
 import numpy as np
 
-from ceridwen import SSPData, CSPBasis, SedModel
+from ceridwen import SSPData, CSPBasis, SedModel, Instrument
 from ceridwen.observation import Photometry, Spectrum
 from ceridwen.model import logsfr_ratios_to_sfh
+from ceridwen.cosmology import Cosmology
 
 HERE = pathlib.Path(__file__).resolve().parent
 SSP_FILE = HERE / "ssp_data.h5"
@@ -48,7 +49,7 @@ FILTERS = ["galex_FUV", "galex_NUV",
            "twomass_J", "twomass_H", "twomass_Ks",
            "wise_w1", "wise_w2"]
 SPEC_WAVE = np.linspace(4000.0, 8000.0, 600)     # AA, vacuum, OBSERVED frame
-SPEC_RES = 150.0                        # km/s instrumental sigma (smoothtype="vel")
+SPEC_RES = 150.0                        # km/s instrumental LSF sigma (Instrument.sigma_kms)
 SNR_PHOT, SNR_SPEC = 20.0, 25.0
 
 TRUTH = {
@@ -76,6 +77,7 @@ def main() -> None:
         zh_const=True, sfh_interp="step",
         add_dust=False, add_diffuse_dust=True, add_neb=False,
         verbose=False,
+        cosmo=Cosmology.planck18(),
     )
     sfh_times_yr = np.array(csp.sfh_times)
 
@@ -84,14 +86,16 @@ def main() -> None:
         csp,
         observations=[
             Photometry(filters=FILTERS, name="phot"),
-            Spectrum(wavelength=SPEC_WAVE, resolution=SPEC_RES,
-                     smoothtype="vel", name="spec"),
+            Spectrum(wavelength=SPEC_WAVE,
+                     instrument=Instrument.sigma_kms(SPEC_RES), name="spec"),
         ],
         transforms={"sfh": lambda th, _t=sfh_times_yr:
                     logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)},
         free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 1),
                          "logmass": jnp.array([10.0])},
         zred=ZRED,
+        # kinematics= not given: DEFAULT_KINEMATICS, sigma_gal = 300 km/s fixed,
+        # applied to the spectrum and (broaden_photometry=True) the photometry.
     )
 
     noiseless = model.predict(TRUTH)          # dict keyed by obs.name
@@ -111,7 +115,8 @@ def main() -> None:
         filters=np.array(FILTERS),
         maggies=maggies_obs, maggies_unc=maggies_unc,
         spec_wave_obs=SPEC_WAVE, spec_flux=flux_obs, spec_unc=flux_unc,
-        spec_resolution=SPEC_RES,
+        spec_resolution=SPEC_RES,           # Instrument.sigma_kms(...) to rebuild the Spectrum
+        sigma_gal=300.0,                    # DEFAULT_KINEMATICS used for the mock
         # model setup needed to reproduce the fit
         zred=ZRED, lookback_time=np.linspace(0.0, T_OLDEST, N_TIME),
         # injected truth (for a recovered-vs-true table)

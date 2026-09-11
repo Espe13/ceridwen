@@ -28,6 +28,7 @@ import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 
 from ceridwen.ssps.ssp_data import SSPData
+from ceridwen.cosmology import Cosmology
 from ceridwen.csp.csp     import CSPBasis
 from ceridwen.observation.observation import Photometry
 
@@ -69,7 +70,7 @@ def _build_csp(ssp, theta, *, sfh_interp, zh_const):
     return CSPBasis(
         ssp,
         theta             = theta,
-        tuniv             = T_UNIV,
+        cosmo=Cosmology.planck18(),
         zh_const          = zh_const,
         add_dust          = False,
         add_diffuse_dust  = False,

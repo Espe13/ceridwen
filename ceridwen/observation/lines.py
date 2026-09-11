@@ -1,98 +1,26 @@
-"""
-ceridwen/observation/lines.py
-=============================
-Observed nebular emission-line flux container.
-"""
+"""Observed nebular emission-line flux container."""
 
 import json
 import jax.numpy as jnp
 import numpy as np
-from sedpy_jax.observate import FilterSet
-from sedpy_jax.smoothing import (
-    make_vel_smoother,
-    make_wave_smoother,
-    make_lsf_smoother,
-)
 from .base import Observation
 
 
 class Lines(Observation):
-    """
-    Observed nebular emission-line fluxes.
-
-    Stores a set of emission-line fluxes together with their FSPS line-array
-    indices, vacuum rest-frame wavelengths, and per-line 1-sigma uncertainties.
-    The interface is deliberately compatible with
-    ``prospect.observation.Lines``: the ``line_ind`` attribute holds integer
-    indices into the FSPS ``emline_luminosity`` array, and the ``alias``
-    mapping exposes ``"line_inds"`` as an alias for ``line_ind`` so that
-    existing Prospector model code can address this object without modification.
-
-    Beyond Prospector, this class adds JAX-native ``chi_sq`` / ``residuals``
-    (JIT-compilable through a fitter), and ``mask_by_name`` / ``select_by_name``
-    helpers that operate on human-readable line names.
+    """Observed emission-line fluxes with line indices, rest wavelengths and uncertainties.
 
     Parameters
     ----------
-    line_ind : array-like of int
-        Indices of the observed lines in the FSPS emission-line array
-        (``$SPS_HOME/data/emlines_info.dat``).  Required.
-    line_names : list of str, optional
-        Human-readable names, one per line (e.g. ``"Halpha"``,
-        ``"[OIII]5007"``).  Required for ``mask_by_name`` and
-        ``select_by_name``.
-    wavelength : array-like of float, optional
-        Vacuum rest-frame wavelengths [Å], length = ``len(line_ind)``.
-    flux : array-like of float, optional
-        Observed line fluxes.  Units should be consistent with any model
-        prediction passed to ``chi_sq`` / ``residuals`` (typically
-        erg s⁻¹ cm⁻²).
-    uncertainty : array-like of float, optional
-        1-sigma line-flux uncertainties, same units as ``flux``.
-    mask : array-like of bool, optional
-        True for lines to include in chi-squared.  Defaults to all-True.
-    components : list of sequences of float, optional
-        Blend / unresolved-doublet support.  One entry per observed line: the
-        vacuum rest-frame wavelengths [Å] of ALL nebular-grid lines whose
-        fluxes must be SUMMED to reproduce that catalogue measurement.  A
-        catalogue that reports the unresolved [O II] 3726,3729 doublet as one
-        number gets ``components[k] = (3727.1, 3730.1)``; a resolved single
-        line gets ``(wavelength[k],)``.  Default None -> every line is its
-        own single component (bit-for-bit the previous behaviour).  Consumed
-        by ``CSPBasis._neb_blend_matrix_for`` on the direct grid-flux path.
-    upper_limit : array-like of bool, shape (n_lines,), optional
-        If True for a given line, that line is treated as a non-detection
-        upper limit rather than a positive detection.  The chi-squared
-        contribution for such lines is one-sided: a penalty is applied only
-        when the model flux *exceeds* the observed value (i.e., the model
-        predicts more emission than the upper limit allows):
-
-        .. math::
-
-            \\chi^2_{\\rm UL} =
-            \\begin{cases}
-                \\left(\\frac{d - m}{\\sigma}\\right)^2 & m > d \\\\
-                0 & m \\leq d
-            \\end{cases}
-
-        where :math:`d` is the observed upper-limit flux and :math:`m` is the
-        model prediction.  Physically this corresponds to integrating the
-        likelihood over all undetected flux values below the upper limit.
-        Default None (all lines treated as detections).
-
-    Examples
-    --------
-    >>> lines = Lines(
-    ...     line_ind   = [59, 63, 71],
-    ...     line_names = ["Hbeta", "[OIII]5007", "Halpha"],
-    ...     wavelength = [4861., 5007., 6563.],
-    ...     flux       = obs_fluxes,
-    ...     uncertainty= obs_unc,
-    ...     upper_limit= [False, True, False],  # [OIII]5007 is a non-detection
-    ... )
-    >>> lines.mask_by_name(["[OIII]5007"])   # exclude one line
-    >>> chi2 = lines.chi_sq(model_fluxes)
-    >>> subset = lines.select_by_name(["Hbeta", "Halpha"])
+    line_ind : array-like of int -- indices of the observed lines in the SPS emission-line array
+    line_names : list of str, optional -- one name per line; needed by ``mask_by_name`` / ``select_by_name``
+    wavelength : array-like of float, vacuum rest-frame Angstrom
+    flux, uncertainty : array-like of float, same units as the model prediction (typically erg/s/cm^2)
+    components : list of sequences of float, optional -- per observed line, the vacuum rest wavelengths
+        [Angstrom] of all grid lines summed into that measurement (unresolved doublets); default one per line
+    upper_limit : array-like of bool, optional -- True treats the line as a non-detection: chi^2 penalises
+        only model > data
+    sigma_v : float, km/s -- Gaussian aperture width of ``predict`` (integration of a painted
+        spectrum); ``CSPBasis.predict`` does not use it, it reads the line fluxes from the grid
     """
 
     _kind = "lines"
@@ -101,7 +29,7 @@ class Lines(Observation):
         unc        = "uncertainty",
         wavelength = "wavelength",
         mask       = "mask",
-        line_inds  = "line_ind",     # Prospector-compatible alias
+        line_inds  = "line_ind",
     )
     _meta = ("kind", "name")
     _data = ("wavelength", "flux", "uncertainty", "mask", "line_ind")
@@ -114,8 +42,10 @@ class Lines(Observation):
         name        = None,
         upper_limit = None,
         components  = None,
+        sigma_v     = 200.0,
         **kwargs,
     ):
+        self.sigma_v = float(sigma_v)
         if line_ind is None:
             raise ValueError(
                 "line_ind is required: pass the indices of the observed lines "
@@ -135,8 +65,6 @@ class Lines(Observation):
             None if upper_limit is None
             else jnp.asarray(np.atleast_1d(upper_limit), dtype=bool)
         )
-        # Blend components (static Python data, never traced).  Normalised
-        # to a list of tuples of floats, one tuple per observed line.
         n_lines = int(np.atleast_1d(line_ind).size)
         if components is None:
             self.line_components = [
@@ -153,10 +81,8 @@ class Lines(Observation):
             self.line_components = comps
         super().__init__(name=name, **kwargs)
 
-    # ------------------------------------------------------------------
     def to_json(self):
-        """Base JSON plus ``line_names`` and ``line_components`` so a blended
-        observation round-trips with its doublet definition."""
+        """Base JSON plus ``line_names`` and ``line_components``."""
         d = json.loads(super().to_json())
         d["line_names"] = self.line_names
         d["line_components"] = [list(c) for c in self.line_components]
@@ -167,89 +93,40 @@ class Lines(Observation):
         """True when at least one observed line sums several grid lines."""
         return any(len(c) > 1 for c in getattr(self, "line_components", []))
 
-    # ------------------------------------------------------------------
     @property
     def wavelength(self):
         return self._wavelength
 
     @wavelength.setter
     def wavelength(self, value):
-        """Allow base-class ``rectify`` to set wavelength = None."""
         self._wavelength = (
             None if value is None
             else jnp.asarray(np.atleast_1d(value), dtype=float)
         )
 
-    # ------------------------------------------------------------------
-    # GPU / JIT projection interface
-    # ------------------------------------------------------------------
+    def setup_for_model(self, wave_model, zred: float = 0.0, sigma_v=None):
+        """Record the model wavelength grid [Angstrom, rest, increasing], aperture ``sigma_v`` [km/s]
+        and redshift used to build the ``_W`` aperture matrix; must precede ``predict``."""
+        self._W_args = (np.asarray(wave_model, dtype=np.float64),
+                        float(self.sigma_v if sigma_v is None else sigma_v), float(zred))
+        self.__dict__.pop("_W", None)
 
-    def setup_for_model(self, wave_model, sigma_v=200.0, zred: float = 0.0):
-        """
-        Precompute the (n_lines, n_wave) Gaussian-aperture weight matrix
-        ``_W`` that extracts line fluxes from a model spectrum via a single
-        matrix–vector multiply.
+    @property
+    def _W(self):
+        """(n_lines, n_wave) float32 NumPy Gaussian-aperture weights, built on first use (kept as
+        NumPy so that a first use inside a jit trace never caches a tracer)."""
+        if "_W" not in self.__dict__:
+            if getattr(self, "_W_args", None) is None:
+                raise RuntimeError("Lines.setup_for_model() has not been called")
+            self.__dict__["_W"] = self._build_W(*self._W_args)
+        return self.__dict__["_W"]
 
-        Must be called once before ``predict`` (and before JIT-compiling any
-        function containing ``predict``).  ``SedModel.__init__`` calls this
-        automatically.
-
-        Physical description
-        --------------------
-        For each emission line centred at wavelength :math:`\\lambda_k`, the
-        integrated line flux is estimated as a Gaussian-weighted integral over
-        the model spectrum:
-
-        .. math::
-
-            F_k = \\int w_k(\\lambda)\\, f_\\nu(\\lambda)\\, \\mathrm{d}\\lambda
-
-        where
-
-        .. math::
-
-            w_k(\\lambda) = \\exp\\!\\left[-\\frac{1}{2}
-            \\left(\\frac{\\lambda - \\lambda_k}{\\sigma_k}\\right)^2\\right],
-            \\quad \\sigma_k = \\lambda_k\\, \\frac{\\sigma_v}{c}
-
-        Discretised with the trapezoidal rule on the model wavelength grid,
-        this becomes ``_W @ spectrum`` where
-        ``_W[k, j] = w_k(wave_j) * dlambda_j`` and ``dlambda_j`` are the
-        trapezoidal quadrature weights.
-
-        Parameters
-        ----------
-        wave_model : array-like, shape (n_wave,)
-            Model wavelength grid [Å], strictly increasing.
-        sigma_v : float, optional
-            1-sigma Gaussian aperture width [km/s].  Default 200 km/s.
-            Sufficient to capture narrow nebular lines as generated by
-            ``NebularGridModel`` while excluding continuum and neighbouring
-            lines spaced by more than ~600 km/s.  The same aperture is applied
-            to both model and data so the absolute calibration cancels in the
-            likelihood.
-
-            ``sigma_v`` is a construction-time hyperparameter; it is not part
-            of ``theta`` and is not differentiable through ``predict``.
-            Catalogued line fluxes are single scalars per line and carry no
-            shape information, so HMC cannot constrain it.
-        """
-        wm_rest = np.asarray(wave_model,        dtype=np.float64)   # (n_wave,)
-        lam0_rest = np.asarray(self._wavelength, dtype=np.float64)   # (n_lines,)
-        c_kms  = 2.998e5  # km/s
+    def _build_W(self, wm_rest, sigma_v, zred):
+        lam0_rest = np.asarray(self._wavelength, dtype=np.float64)
+        c_kms  = 2.998e5
         opz = 1.0 + float(zred)
 
-        # Unresolved doublets / blends (``components``): the aperture for an
-        # observed line is the ENVELOPE (pixel-wise maximum) of one Gaussian
-        # window per component, so every component is integrated once and
-        # the overlap between close components (e.g. [O II] 3726/3729, 3 A
-        # apart at sigma_v = 200 km/s) is not double counted.  The f_nu ->
-        # integrated-flux factor c / lambda_obs^2 is applied per pixel here.
-        # This painted-spectrum path then returns the same "sum of
-        # components" quantity as the direct grid path
-        # (``CSPBasis._neb_blend_matrix_for``), up to the usual aperture
-        # response.  Single-component lines take the original construction
-        # below, bit-for-bit.
+        # blends: row = pixel-wise max of the component Gaussians (no double counting of overlap)
         comps = getattr(self, "line_components", None)
         if comps is not None and any(len(c) > 1 for c in comps):
             wm = opz * wm_rest
@@ -265,127 +142,53 @@ class Lines(Observation):
                     sig = l0 * (sigma_v / c_kms)
                     W[k] = np.maximum(W[k], np.exp(-0.5 * ((wm - l0) / sig) ** 2))
             W = W * (dlam * c_aa_s / wm ** 2)[None, :]
-            self._W = jnp.array(W.astype(np.float32))
-            return
-        self._W = jnp.array(self._aperture_rows(wm_rest, lam0_rest, sigma_v, opz))
+            return W.astype(np.float32)
+        return self._aperture_rows(wm_rest, lam0_rest, sigma_v, opz)
 
     @staticmethod
     def _aperture_rows(wm_rest, lam0_rest, sigma_v, opz):
-        """(n_lines, n_wave) Gaussian-aperture weight rows for line centres
-        ``lam0_rest`` (NaN -> an all-zero row, used to pad blends with fewer
-        components).  Physics exactly as documented in ``setup_for_model``."""
+        """(n_lines, n_wave) float32 aperture rows in the observed frame; rows are scaled by
+        c / lambda_obs^2 so ``W @ F_nu`` is an integrated flux [erg/s/cm^2]; NaN centre -> zero row."""
         c_kms = 2.998e5
         lam0_rest = np.asarray(lam0_rest, dtype=np.float64)
         pad = ~np.isfinite(lam0_rest)
         lam0_rest = np.where(pad, 1.0, lam0_rest)
 
-        # Both the model grid and the line centres move together into the
-        # observed frame by the (1 + zred) factor.  The Gaussian shape is
-        # preserved because the velocity aperture sigma_v is defined in
-        # velocity units — at higher redshift the wavelength sigma grows
-        # proportionally with the line wavelength, so (lambda - lambda_0) /
-        # sigma is invariant.
         wm   = opz * wm_rest
         lam0 = opz * lam0_rest
 
-        # Trapezoidal quadrature weights along the (observed-frame) model
-        # wavelength axis.  At zred > 0 these pick up one factor of
-        # (1 + zred) naturally — this is the dlambda_obs = (1+z) dlambda_rest
-        # Jacobian — so integrated line fluxes scale with (1+z) as expected
-        # for a redshift-preserving Gaussian aperture.
         dlam        = np.empty(len(wm), dtype=np.float64)
         dlam[1:-1]  = 0.5 * (wm[2:] - wm[:-2])
         dlam[0]     = 0.5 * (wm[1]  - wm[0])
         dlam[-1]    = 0.5 * (wm[-1] - wm[-2])
 
-        # Absolute-flux normalisation.  Without this per-line factor,
-        # ``_W @ F_nu`` returns ``F_line * lambda_obs**2 / c`` (units:
-        # erg s^-1 cm^-2 Hz^-1 * A — a mixed-unit "aperture proxy"), NOT
-        # the integrated line flux in erg s^-1 cm^-2.  The raw proxy is
-        # fine if you feed *both* data and model through the same
-        # aperture (the docstring's "calibration cancels" regime), but
-        # catalogue emission-line tables almost always quote already-
-        # reduced integrated line fluxes in erg s^-1 cm^-2 — so we
-        # normalise once here and have ``_W @ spectrum`` return flux
-        # in the catalogue's own unit system.
-        #
-        # Derivation: FSPS Cloudy lines are added to the spectrum with
-        # a Gaussian of width sigma_v_model = nebular_smooth_init km/s
-        # (floor of ~2 pixel widths).  This is typically narrower than
-        # the sigma_v = 200 km/s aperture used here.  In the narrow-
-        # model-line limit the aperture integral reduces to
-        #   _W @ F_nu ≈ F_line * lambda_obs^2 / c .
-        # Multiplying each row by c / lambda_obs^2 restores
-        #   _W @ F_nu ≈ F_line [erg s^-1 cm^-2] ,
-        # letting observed data in the same units be passed in directly
-        # as ``Lines.flux``.
-        c_aa_s = 2.998e18                          # speed of light [Å/s]
-        norm = c_aa_s / (lam0 ** 2)                # (n_lines,)
+        c_aa_s = 2.998e18
+        norm = c_aa_s / (lam0 ** 2)
 
-        # Bake W into a static (n_lines, n_wave) JAX constant.  XLA
-        # constant-folds at trace time.
-        diff     = wm[None, :] - lam0[:, None]         # (n_lines, n_wave)
-        sigma_aa = lam0 * (sigma_v / c_kms)            # (n_lines,)
+        diff     = wm[None, :] - lam0[:, None]
+        sigma_aa = lam0 * (sigma_v / c_kms)
         W = np.exp(-0.5 * (diff / sigma_aa[:, None]) ** 2)
-        W = (W * dlam[None, :]).astype(np.float32)     # (n_lines, n_wave)
+        W = (W * dlam[None, :]).astype(np.float32)
         W = (W * norm[:, None].astype(np.float32))
         W[pad, :] = 0.0
         return W
 
     def predict(self, spectrum, wave_model):
-        """
-        Extract emission-line fluxes from the model spectrum via Gaussian-
-        aperture integration: computes ``_W @ spectrum`` where ``_W`` was
-        precomputed once in ``setup_for_model``.  On GPU this is a single
-        GEMV; XLA constant-folds ``_W`` into the compiled graph.
-
-        Must call ``setup_for_model(wave_model, sigma_v=...)`` first.
-
-        Parameters
-        ----------
-        spectrum : jax.Array, shape (n_wave,)
-            Model spectrum in F_nu units.
-        wave_model : jax.Array, shape (n_wave,)
-            Accepted for interface consistency; not used inside this method.
-
-        Returns
-        -------
-        jax.Array, shape (n_lines,)
-            Gaussian-aperture integrated flux for each line.
-        """
-        if not hasattr(self, "_W"):
+        """Return ``_W @ spectrum``: Gaussian-aperture line fluxes, shape (n_lines,), from an F_nu
+        model spectrum; ``wave_model`` is unused, ``setup_for_model`` must have been called."""
+        if getattr(self, "_W_args", None) is None:
             raise RuntimeError(
-                "Lines.predict() called before setup_for_model(): the "
-                "Gaussian aperture weight matrix has not been built. "
-                "Call lines.setup_for_model(wave_model, sigma_v=...) "
-                "once before the first predict / JIT trace."
-            )
-        return self._W @ spectrum
+                "Lines.predict() called before setup_for_model(): call "
+                "lines.setup_for_model(wave_model) once before the first "
+                "predict / JIT trace.")
+        return jnp.asarray(self._W) @ spectrum
 
-    # ------------------------------------------------------------------
     def chi_sq(self, model_fluxes):
-        """
-        Chi-squared contribution from the observed line fluxes.
-
-        For lines flagged as upper limits (``self.upper_limit[k] = True``),
-        the contribution is one-sided: a penalty is applied only when the
-        model flux exceeds the observed upper-limit value.
-
-        Parameters
-        ----------
-        model_fluxes : array-like, shape (n_lines,)
-            Predicted line fluxes, same units as ``self.flux``.
-
-        Returns
-        -------
-        chi2 : float
-        """
+        """Return chi^2 over unmasked lines; upper-limit lines are penalised only when model > data."""
         mf    = jnp.asarray(model_fluxes, dtype=float)
-        resid = (self.flux - mf) / self.uncertainty       # (data - model)/sigma
+        resid = (self.flux - mf) / self.uncertainty
 
         if self.upper_limit is not None:
-            # For upper-limit lines: only penalise when model > data,
-            # i.e., when resid < 0  (model exceeded the observed limit).
             resid_sq = jnp.where(
                 self.upper_limit,
                 jnp.where(resid < 0.0, resid ** 2, 0.0),
@@ -397,20 +200,12 @@ class Lines(Observation):
         return float(jnp.sum(jnp.where(self.mask, resid_sq, 0.0)))
 
     def residuals(self, model_fluxes):
-        """
-        Per-line ``(data − model) / sigma``.  Masked lines are set to NaN.
-        Upper-limit lines where the model does not exceed the limit are set
-        to zero (no tension) rather than showing a negative residual.
-
-        Returns
-        -------
-        res : jnp.ndarray, shape (n_lines,)
-        """
+        """Return per-line ``(data - model) / sigma``, shape (n_lines,); masked lines NaN,
+        upper-limit lines with model <= data set to 0."""
         mf    = jnp.asarray(model_fluxes, dtype=float)
         resid = (self.flux - mf) / self.uncertainty
 
         if self.upper_limit is not None:
-            # Show zero residual when model is safely below the upper limit
             resid = jnp.where(
                 self.upper_limit & (resid >= 0.0),
                 0.0,
@@ -419,19 +214,8 @@ class Lines(Observation):
 
         return jnp.where(self.mask, resid, jnp.nan)
 
-    # ------------------------------------------------------------------
     def mask_by_name(self, names):
-        """
-        Exclude lines whose name appears in ``names`` from chi-squared.
-
-        Sets ``self.mask[i] = False`` for all lines whose entry in
-        ``self.line_names`` matches any element of ``names``.  A no-op if
-        ``self.line_names`` is not set.
-
-        Parameters
-        ----------
-        names : list of str
-        """
+        """Set ``mask = False`` for lines whose name is in ``names``; no-op without ``line_names``."""
         if self.line_names is None:
             return
         names_set = set(names)
@@ -441,25 +225,7 @@ class Lines(Observation):
         self.mask = self.mask & ~exclude
 
     def select_by_name(self, names):
-        """
-        Return a new ``Lines`` instance containing only the named lines.
-
-        Parameters
-        ----------
-        names : list of str
-            Must all be present in ``self.line_names``.
-
-        Returns
-        -------
-        Lines
-
-        Raises
-        ------
-        ValueError
-            If ``self.line_names`` is not set.
-        KeyError
-            If any element of ``names`` is absent from ``self.line_names``.
-        """
+        """Return a new ``Lines`` containing only the named lines (KeyError on an unknown name)."""
         if self.line_names is None:
             raise ValueError(
                 "line_names not set on this Lines object; "
@@ -489,7 +255,6 @@ class Lines(Observation):
             name        = self.name + "_sel",
         )
 
-    # ------------------------------------------------------------------
     def __str__(self):
         n = len(self.line_ind)
         if self.line_names is not None:
@@ -524,12 +289,8 @@ class Lines(Observation):
             text.append(f"  blended lines : {nb} -> {blends}")
         return "\n".join(text)
 
-    # ------------------------------------------------------------------
     def _display_str(self, max_rows: int = 80) -> str:
-        """Per-line table: #, line name, FSPS idx (1-based), λ, flux,
-        σ, S/N, mask.  Used as a sanity check after building a Lines
-        observation — all emission-line mysteries (missing lines,
-        swapped FSPS indices, wrong units) show up here."""
+        """Per-line table (name, index, wavelength, flux, sigma, S/N, mask)."""
         header = str(self)
         if self.flux is None or len(self.line_ind) == 0:
             return header + "\n  (no line vector)"

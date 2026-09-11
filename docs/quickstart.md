@@ -5,7 +5,8 @@
     SSP grid (building it from FSPS only if none is found; see
     [Installation: Getting the SSP grid](installation.md#getting-the-ssp-grid)),
     generates mock UV-to-IR photometry, fits it with nested sampling, and
-    writes a corner plot and a model-vs-data SED figure:
+    post-processes the fit with `PostProcess`, writing the summary, corner and
+    sampling-diagnostic figures to `examples/quickstart_figures/`:
 
     ```bash
     python examples/quickstart.py
@@ -57,24 +58,31 @@ emission see the [tutorial](tutorial.md).
 ```python
 import jax, jax.numpy as jnp
 import numpy as np
-from ceridwen import SSPData, CSPBasis, SedModel, fitSED
+from ceridwen import SSPData, CSPBasis, SedModel, fitSED, Kinematics, Cosmology
 from ceridwen.observation import Photometry
 from ceridwen.model import logsfr_ratios_to_sfh
 from ceridwen.priors import Uniform, ClippedNormal, StudentT
 
 ssp = SSPData.load("ssp_data.h5")
 
+# Cosmology: set once, here, on the object that computes distances and ages.
+# Cosmology.planck18() / planck15() / wmap9() / flat(H0, Om0) / from_name(...)
+# / from_astropy(...).  It is printed by every summary and stored in the result.
+cosmo = Cosmology.planck18()
+
 # Composite-stellar-population forward model. lookback_time is the static SFH
-# node grid (Gyr, increasing, index 0 = today-at-z, >= 2 nodes); the oldest
-# node must not exceed the age of the universe at the fit redshift (~0.85 Gyr
-# at z = 6.5). sps_home defaults to $SPS_HOME (needed because add_neb=True).
+# node grid (Gyr, increasing, index 0 = today-at-z, >= 2 nodes); its oldest
+# node must not exceed the age of the universe at the fit redshift,
+# cosmo.age(6.5) = 0.84 Gyr here (SedModel refuses a grid that does).
+# sps_home defaults to $SPS_HOME (needed because add_neb=True).
 lookback = jnp.linspace(0.0, 0.8, 6)         # 6 nodes -> 5 free logsfr_ratios
 csp = CSPBasis(
     ssp,
     lookback_time=lookback,
+    cosmo=cosmo,
     zh_const=True, sfh_interp="step",
-    add_dust=True, add_diffuse_dust=True, add_neb=True, add_igm=True,
-)
+    add_dust=False, add_diffuse_dust=True, add_neb=True, add_igm=True,
+)   # add_dust=True adds the birth-cloud parameters (tau_pow, alpha_pow): give them priors too
 
 # Observations (any combination of Photometry / Spectrum / Lines, fit jointly).
 phot = Photometry(
@@ -109,6 +117,10 @@ model = SedModel(
     free_param_init={"logsfr_ratios": jnp.zeros(5),
                      "logmass": jnp.array([10.0])},
     zred=6.5,                                # fixed spec-z
+    # kinematics=Kinematics(sigma_gal=300.0) is the default: the galaxy's
+    # velocity dispersion, applied to the spectrum the filters integrate. For
+    # broad bands any value changes the photometry by < 5e-4 mag; pass
+    # Kinematics(sigma_gal="sigma_gal") plus a prior to sample it instead.
 )
 
 # Pick ONE sampler. Option A, VI-preconditioned NUTS:
@@ -131,14 +143,39 @@ result = fitSED(
 ```
 
 `result` carries posterior samples keyed by parameter name, plus the VI trace and
-per-phase timings. For nested sampling, `result.to_anesthetic()` gives an
-[anesthetic](https://anesthetic.readthedocs.io) `NestedSamples` object for
-evidence, corner plots, and posterior summaries.
+per-phase timings (nested sampling also returns `result.log_evidence`).
+
+Predictions and data are in physical units because `zred=6.5` is fixed: AB
+maggies for photometry, cgs F_nu (erg s^-1 cm^-2 Hz^-1) for spectra,
+erg s^-1 cm^-2 for lines. Omitting `zred` (and `lumdist_mpc`) leaves the model
+at `zred = 0`, where no flux factor is applied and `SedModel` warns; see
+[Conventions](conventions.md).
+
+## Step 2: post-process
+
+`PostProcess` resamples the draws to equal weight (nested-sampling weights are
+recomputed from the birth contours), pushes them through the fitted forward
+model, and writes three figures per galaxy:
+
+```python
+from ceridwen import PostProcess
+
+pp  = PostProcess(model, result, n_samples=2000)
+out = pp.run()
+print(np.percentile(out["theta"]["logmass"], [16, 50, 84]))
+out["extras"]["sfh"]["sfr10"]              # derived quantities, see postprocessing.md
+pp.figures("./my_fit/figures", title="my galaxy")   # summary.pdf, corner.pdf, diagnostics.pdf
+pp.save("./my_fit/post.npz")
+```
+
+`truths={name: value}` marks injected values in the summary and corner
+figures of a mock test. The full output layout and the individual figure
+functions are described in [Post-processing](postprocessing.md).
 
 !!! warning "Read the conventions first"
     The metallicity units and the lookback-time indexing are the two things most
     likely to bite. See **[Conventions & gotchas](conventions.md)** before
     fitting real data.
 
-See `examples/quickstart.py` for a complete, runnable script (it also produces a
-truth-overlaid corner plot and a model-vs-data SED with a χ residual panel).
+See `examples/quickstart.py` for a complete, runnable script (it post-processes
+the fit and writes the truth-overlaid summary, corner and diagnostic figures).

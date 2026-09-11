@@ -34,10 +34,11 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from _gridfixture import require_test_grid  # noqa: E402
 
-from ceridwen import CSPBasis, SSPData  # noqa: E402
+from ceridwen import CSPBasis, SSPData, Cosmology  # noqa: E402
 
 KW = dict(zh_const=True, add_neb=False, add_igm=False,
-          add_dust=False, add_diffuse_dust=True, verbose=False)
+          add_dust=False, add_diffuse_dust=True, verbose=False,
+          cosmo=Cosmology.planck18())
 
 
 @pytest.fixture(scope="module")
@@ -103,3 +104,25 @@ def test_missing_lookback_time_is_a_valueerror_not_keyerror(ssp):
 def test_single_node_grid_rejected(ssp):
     with pytest.raises(ValueError, match="at least"):
         CSPBasis(ssp, lookback_time=jnp.array([0.0]), **KW)
+
+
+def test_cosmology_is_required(ssp):
+    kw = dict(KW); del kw["cosmo"]
+    with pytest.raises(TypeError, match="explicit cosmology"):
+        CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6), **kw)
+    with pytest.raises(TypeError, match="ceridwen Cosmology"):
+        CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6), **dict(kw, cosmo="Planck18"))
+
+
+def test_tuniv_is_gone(ssp):
+    with pytest.raises(TypeError, match="tuniv"):
+        CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6), tuniv=13.8, **KW)
+
+
+def test_age_at_and_repr(ssp):
+    csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6), **KW)
+    assert isinstance(csp.age_at(0.0), float)
+    assert csp.age_at(0.0) == pytest.approx(13.787, abs=0.02)      # Planck18
+    assert csp.age_at(2.0) < csp.age_at(0.5) < csp.age_at(0.0)
+    text = repr(csp)
+    assert "Planck18" in text and "tuniv" not in text

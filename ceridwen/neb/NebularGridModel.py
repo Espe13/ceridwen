@@ -1,63 +1,8 @@
-"""
-NebularGridModel.py
-===================
-Physically strict JAX/JIT implementation of the FSPS-style nebular
-emission model.
+"""CLOUDY-grid nebular emission model.
 
-This module's :class:`NebularModel` interpolates each CLOUDY cube
-(``ZAU_ND_<isoc>.cont`` and ``ZAU_ND_<isoc>.lines``) against its **own**
-``(logZ, age, logU)`` grid, rather than against the line-cube's grid
-which FSPS's run-time uses for both.  As of FSPS commit
-``0db2d3e`` (2023-09-21) those two files are no longer tabulated on the
-same physical grid — see the project docs / supervisor note for the
-detailed trace — and using the FSPS convention silently evaluates the
-continuum cube at axes that do not describe its data.  Here every cube
-is interpolated against the labels it was generated with.
-
-If you want to *match FSPS exactly* (e.g. for SED-fitting comparisons
-against upstream FSPS posteriors), import
-:class:`ceridwen.neb.NebularGridModel_fsps_match.NebularModelFSPSMatch`
-instead.  It is bit-identical to FSPS's behaviour and agrees with FSPS
-to better than 0.5% on the SFH-integrated nebular spectrum; this
-default class will disagree with FSPS by up to ~50% in the FUV
-continuum at young ages because *FSPS itself* is using the wrong axes
-there.
-
-Physical model
---------------
-For each (single-stellar) age :math:`t` below the maximum age in the
-CLOUDY grid, FSPS does::
-
-    Q                = (L_sun / h)  ×  ∫ L_nu / λ  dλ        (0 < λ < 912 Å)
-    L_neb_cont(λ)    = 10**logcont(logZ, logage, logU; λ)  ×  Q
-    L_neb_line(λ)    = Σ_l  10**logline_l(logZ, logage, logU)  ×  Q  ×  g_l(λ)
-
-with line profile
-
-    dlam   = max(λ_l · σ_smooth / c · 1e13, 2 · Δλ_pix)   (smooth_velocity=True)
-    dlam   = max(σ_smooth, 2 · Δλ_pix)                     (smooth_velocity=False)
-    g_l(λ) = (1 / √(2π) / dlam) · exp(-(λ-λ_l)²/(2 dlam²)) · λ_l² / c.
-
-The two log10 cubes are interpolated linearly in (logZ, logage, logU)
-and exponentiated, identical to FSPS — only the axis arrays differ
-between this class and the FSPS-matching one.
-
-Defaults (match FSPS ``sps_vars.f90``)
---------------------------------------
-gas_logz             : 0.0    (log10 Z/Zsun)
-gas_logu             : -2.0   (log10 U)
-smooth_velocity      : True
-sigma_smooth         : 0.0
-cloudy_dust          : False
-isoc_type            : 'mist'
-
-Public interface
-----------------
-The class signature accepted by :class:`ceridwen.csp.csp.CSPBasis` is
-preserved.  Pass ``ssp_flux=`` to have the model compute a
-self-consistent ``log_qq`` table from the SSP fluxes (FSPS-equivalent
-formula); ``ssp_ages_lgyr=`` to flag the young SSPs whose ages lie
-inside both CLOUDY grids.
+Each cube (``ZAU_<ND|WD>_<isoc>.cont`` / ``.lines``) is interpolated linearly in
+(logZ, log age, logU) against its own axes and scaled by the ionising-photon rate Q of
+each SSP; lines are painted as Gaussians of width max(sigma_smooth, res_floor_factor pixels).
 """
 
 from pathlib import Path
@@ -69,34 +14,16 @@ import jax
 import jax.numpy as jnp
 
 
-# ── Physical constants in CGS (match FSPS sps_vars.f90) ──────────────────────
-CLIGHT_AA_S    = 2.9979e18     # speed of light, Angstrom / s        (clight)
-HPLANK_ERG_S   = 6.6261e-27    # Planck constant, erg * s            (hplank)
-LSUN_ERG_S     = 3.839e33      # solar luminosity, erg / s           (lsun)
+CLIGHT_AA_S    = 2.9979e18     # A/s
+HPLANK_ERG_S   = 6.6261e-27    # erg s
+LSUN_ERG_S     = 3.839e33      # erg/s
 LYMAN_LIMIT_AA = 912.0         # Lyman limit, Angstrom
 SQRT_2PI       = float(np.sqrt(2.0 * np.pi))
-TINY           = 1.0e-95       # FSPS floor for log10
+TINY           = 1.0e-95       # floor for log10
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Module-level helpers (also imported by NebularGridModelSVD).
-# ─────────────────────────────────────────────────────────────────────────────
 def _normalise_age_axis_to_log10yr(age, src_file):
-    """Normalise a CLOUDY-cube age axis to log10(age/yr), whatever unit the
-    file was tabulated in, and fail loudly on anything unrecognisable.
-
-    Conventions seen in FSPS ``ZAU_*`` files across libraries:
-      * log10(yr)  -- values ~ 5..9        (e.g. 6.0 .. 7.301)
-      * linear yr  -- values ~ 1e6..1e8
-      * linear Myr -- values ~ 0.5..100
-
-    The old heuristic (``if age.max() > 30: log10``) silently misreads a
-    linear-Myr axis (max <= 30) as log10(yr), which would break BOTH the
-    young-SSP mask and the age interpolation for every SSP.  This version
-    disambiguates on the value range and validates the result, so a nebular
-    library with a different age tabulation either works or raises
-    immediately.
-    """
+    """Cube age axis as log10(age/yr), whether the file lists log10(yr), yr or Myr; raises on an unrecognisable range."""
     a = np.asarray(age, dtype=np.float64)
     if a.min() >= 4.5 and a.max() <= 10.5:            # already log10(yr)
         out = a
@@ -117,39 +44,8 @@ def _normalise_age_axis_to_log10yr(age, src_file):
 
 
 def _resolve_line_wavelengths(line_file, line_pos, payload):
-    """Return the wavelength row for a ZAU ``.lines`` cube, repairing the
-    stale-wavelength-row bug shipped by upstream FSPS for the dusty grids.
-
-    As of FSPS commit ``cbcd0ee`` (2026-08-03; first observed with the
-    C3K/[alpha/Fe] data release), the ``ZAU_WD_*.lines`` files were
-    regenerated with the new 166-line list in their 770 flux blocks, but
-    their header (``#128 cols``) and wavelength row were left at the old
-    128-line vintage.  The flux blocks ARE column-aligned with the matching
-    ``ZAU_ND_*.lines`` file (verified 2026-08-05: per-column WD/ND flux
-    ratios are smooth attenuation factors, e.g. H-alpha 0.19-1.0, and the
-    per-block ``(logZ, age, logU)`` metadata rows are identical), so the
-    correct wavelengths are the dust-free file's.  Note Fortran FSPS itself
-    misreads these files: its list-directed ``READ nebem_line_pos`` consumes
-    the first metadata row and part of the first flux block to fill 166
-    values -- so the file cannot be "matched", only repaired or refused.
-
-    Parameters
-    ----------
-    line_file : path
-        The ``.lines`` file being read (for messages and sibling lookup).
-    line_pos : (n,) ndarray
-        Wavelength row as read from line 2 of the file.
-    payload : list of str
-        The remaining lines of the file (alternating meta / flux rows).
-
-    Returns
-    -------
-    (nflux,) ndarray of wavelengths consistent with the flux-row width.
-
-    Raises
-    ------
-    ValueError if the wavelength row is inconsistent with the flux rows and
-    no trustworthy repair source is available.
+    """Wavelength row of a ``.lines`` cube, taken from the dust-free sibling cube or
+    ``emlines_info.dat`` when the file's own row has fewer entries than its flux rows.
     """
     nflux = len(payload[1].split())
     if line_pos.size == nflux:
@@ -210,14 +106,7 @@ def _frac(x, grid, i):
 
 
 def _trilinear(cube, z1, dz, a1, da, u1, du):
-    """
-    Trilinear interpolation on a cube of shape ``(..., nz, nage, nu)``.
-
-    Leading axes (typically the spectral axis) are broadcast.  Implemented
-    as eight scalar-weighted slice gathers so the XLA graph is just
-    gather + axpy ops — no scatter / dynamic shapes; JIT-, vmap-, and
-    grad-friendly.
-    """
+    """Trilinear interpolation on a cube of shape ``(..., nz, nage, nu)``."""
     w000 = (1.0 - dz) * (1.0 - da) * (1.0 - du)
     w001 = (1.0 - dz) * (1.0 - da) *       du
     w010 = (1.0 - dz) *       da   * (1.0 - du)
@@ -236,76 +125,27 @@ def _trilinear(cube, z1, dz, a1, da, u1, du):
           + w111 * cube[..., z1 + 1, a1 + 1, u1 + 1])
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Main class
-# ─────────────────────────────────────────────────────────────────────────────
 class NebularModel:
-    """
-    CLOUDY-grid nebular emission model — *physically strict* variant.
-
-    The continuum cube and the line cube are each interpolated against
-    their own ``(logZ, age, logU)`` axes, ensuring that the returned
-    nebular spectrum corresponds to the parameters CLOUDY was actually
-    run at.  This differs from FSPS's run-time convention; see the
-    module docstring and
-    :class:`ceridwen.neb.NebularGridModel_fsps_match.NebularModelFSPSMatch`
-    for the FSPS-matching variant.
+    """Nebular continuum and lines from the CLOUDY cubes under ``<sps_home>/nebular``.
 
     Parameters
     ----------
-    cloudy_dust : bool
-        ``False`` → load the dust-free grids ``ZAU_ND_<isoc>.{cont,lines}``.
-        ``True`` → load the dust-attenuated grids ``ZAU_WD_<isoc>.…``.
-    sps_home : str | Path
-        FSPS root directory; expects ``<sps_home>/nebular/`` to contain
-        the ZAU grids.
-    csp_lambda : array, shape (nspec,)
-        Wavelength grid (Å) the nebular spectrum will be projected onto.
-    ssp_flux : array, shape (n_z, n_age, n_wave) or None
-        Optional.  If provided, ``log_qq`` is computed internally from
-        the SSP fluxes via the FSPS-equivalent formula.
-    ssp_ages_lgyr : array, shape (n_age,) or None
-        Optional.  ``log10(age / yr)`` of every SSP in ``ssp_flux``.
-        Used to flag the SSPs whose age lies inside **both** CLOUDY
-        grids (intersection of the two age ranges).
-    isoc_type : {'mist', 'pdva', 'prsc', 'bpss'}
-        Isochrone tag identifying the ZAU file suffix.
-    nebnz, nebnage, nebnip : int
-        Dimensions of each CLOUDY grid (default 11, 10, 7 for MIST).
-    smooth_velocity : bool
-        ``True`` → ``sigma_smooth`` is in km/s; ``False`` → Å.
-    sigma_smooth : float
-        Line-broadening σ.  Default 100.0 (km/s, since ``smooth_velocity``
-        defaults to ``True``); matches the FSPS ``nebular_smooth_init``.
-    nebular_smooth_init : float or None
-        Backwards-compatible alias for ``sigma_smooth``.
+    cloudy_dust : bool -- ``ZAU_WD`` (True) or ``ZAU_ND`` (False) grids.
+    csp_lambda : (nspec,) -- model wavelength grid [A].
+    ssp_flux : (n_z, n_age, n_wave) -- SSP L_nu [L_sun/Hz]; gives ``log_qq`` (n_z, n_age).
+    ssp_ages_lgyr : (n_age,) -- log10(age/yr) of the SSPs; ages inside both cubes are "young".
+    isoc_type : str -- ZAU file suffix.
+    nebnz, nebnage, nebnip : int -- cube dimensions.
+    smooth_velocity : bool -- ``sigma_smooth`` in km/s (True) or A.
+    sigma_smooth : float -- intrinsic width of the painted lines (0: pixel floor only).
+    res_floor_factor : float -- minimum painted width in local pixels.
 
-    Attributes
-    ----------
-    nebem_cont : (nspec, nebnz, nebnage, nebnip)
-        ``log10`` of nebular continuum (L_ν / Q) on ``csp_lambda``.
-    nebem_line : (nemline, nebnz, nebnage, nebnip)
-        ``log10`` of per-line luminosities (Lsun / Q).
-    nebem_cont_logz, nebem_cont_age, nebem_cont_logu : 1-D
-        The ``.cont`` cube's *own* grid axes (ascending).
-    nebem_line_logz, nebem_line_age, nebem_line_logu : 1-D
-        The ``.lines`` cube's *own* grid axes (ascending).
-    nebem_logz, nebem_age, nebem_logu : 1-D
-        Legacy aliases — point at the **line** axes for compatibility
-        with code (e.g. ``NebularGridModelSVD``) that expects the FSPS
-        canonical axis names.
-    nebem_line_pos : (nemline,)
-        Rest-frame emission-line centroids in Å.
-    gaussnebarr : (nspec, nemline)
-        Pre-computed Gaussian profiles including the FSPS ``λ²/c`` factor.
-    log_qq : (n_z, n_age) or None
-        Self-consistent ``log10(Q)`` derived from ``ssp_flux``.
-    young_mask, young_idx :
-        Boolean mask / index array over ``ssp_ages_lgyr`` selecting ages
-        inside the intersection of both cubes' age ranges.
+    Attributes: ``nebem_cont`` (nspec, nz, nage, nu) and ``nebem_line`` (nemline, nz, nage, nu)
+    are log10(L_nu / Q) and log10(L / Q); ``nebem_line_pos`` (nemline,) rest wavelengths [A];
+    ``gaussnebarr`` (nspec, nemline) painted profiles including lambda^2/c; ``young_mask`` /
+    ``young_idx`` over ``ssp_ages_lgyr``.
     """
 
-    # ---- construction --------------------------------------------------
     def __init__(self,
                  cloudy_dust,
                  sps_home,
@@ -315,14 +155,9 @@ class NebularModel:
                  isoc_type='mist',
                  nebnz=11, nebnage=10, nebnip=7,
                  smooth_velocity=True,
-                 sigma_smooth=100.0,
+                 sigma_smooth=0.0,
                  res_floor_factor=2.0,
                  nebular_smooth_init=None):
-        # Defaults match FSPS verbatim:
-        #   nebular_smooth_init = 100 km/s  (sps_vars.f90)
-        #   smooth_velocity     = .true.    (sps_vars.f90)
-        #   pixel floor         = neb_res_min * 2  (sps_setup.f90)
-        # Prospector inherits this through python-fsps.
         if nebular_smooth_init is not None:
             sigma_smooth = float(nebular_smooth_init)
 
@@ -352,9 +187,6 @@ class NebularModel:
         else:
             self.log_qq = None
 
-        # Restrict nebular emission to SSPs whose age lies inside BOTH
-        # cubes' age ranges (intersection).  This is the safest choice
-        # given that the two grids may differ.
         if ssp_ages_lgyr is not None:
             ages = jnp.asarray(ssp_ages_lgyr)
             max_age = min(float(self.nebem_cont_age[-1]),
@@ -362,9 +194,6 @@ class NebularModel:
             young = ages <= max_age
             self.young_mask = young
             self.young_idx  = jnp.where(young)[0]
-            # Sanity guard (2026-07-21): the mask must actually restrict to
-            # the CLOUDY grid's age range.  With a mis-normalised age axis
-            # every SSP passes and old populations acquire nebular emission.
             n_young = int(np.asarray(young).sum())
             oldest_young_yr = (10.0 ** float(np.asarray(ages)[
                 np.asarray(young)].max()) if n_young else 0.0)
@@ -379,16 +208,6 @@ class NebularModel:
             self.young_mask = None
             self.young_idx  = None
 
-        # ── emlines_info.dat <-> cube ordering cross-check (2026-07-21) ──
-        # ``line_ind`` values used across the Prospector-compatible API
-        # index $SPS_HOME/data/emlines_info.dat, whose ROW ORDER is only
-        # guaranteed to match this cube if both files ship from the same
-        # FSPS vintage.  Hand-installed cubes (e.g. BPASS) next to a stock
-        # emlines_info.dat CAN disagree -- observed on Tursa, where an
-        # index-based gather silently returned neighbouring lines.  Consumers
-        # inside ceridwen match by wavelength (CSPBasis._neb_cube_rows_for)
-        # and are immune; this check warns ANY consumer at construction time
-        # and records the verdict in ``self.emline_index_consistent``.
         self.emline_index_consistent = None
         try:
             _info_path = str(Path(sps_home) / "data" / "emlines_info.dat")
@@ -424,15 +243,9 @@ class NebularModel:
         except OSError:
             pass                              # no emlines_info.dat: nothing to check
 
-    # ── file loaders ------------------------------------------------------
-    #
-    # ``ZAU_ND_*.cont`` and ``ZAU_ND_*.lines`` were tabulated on different
-    # CLOUDY grids since FSPS commit 0db2d3e (2023-09-21).  We therefore
-    # parse each file's per-block metadata separately and interpolate each
-    # cube against its own axes.
 
     def _load_continuum(self):
-        """Read ``ZAU_*.cont`` and store its cube and its OWN axes."""
+        """Read ``.cont``: cube interpolated onto ``csp_lambda`` as log10, axes sorted ascending."""
         with open(self.cont_file, 'r') as f:
             f.readline()                                # header
             readlamb = np.asarray(f.readline().split(), dtype=np.float64)
@@ -488,7 +301,7 @@ class NebularModel:
         self.nebem_cont_logu = jnp.asarray(logu)
 
     def _load_lines(self):
-        """Read ``ZAU_*.lines`` and store its cube and its OWN axes."""
+        """Read ``.lines``: log10 line cube, wavelengths, axes sorted ascending."""
         with open(self.line_file, 'r') as f:
             f.readline()                                # header
             line_pos = np.asarray(f.readline().split(), dtype=np.float64)
@@ -501,9 +314,6 @@ class NebularModel:
                 f"({self.nebnz}x{self.nebnage}x{self.nebnip} meta+flux "
                 f"blocks), found {len(payload)}. Grid dimensions and file "
                 "disagree.")
-        # Repair the upstream stale-wavelength-row bug in ZAU_WD_*.lines
-        # (128-entry header row on 166-column flux blocks); no-op for
-        # healthy files of any vintage.
         line_pos = _resolve_line_wavelengths(self.line_file, line_pos, payload)
 
         nem = line_pos.size
@@ -541,25 +351,12 @@ class NebularModel:
         self.nebem_line_age   = jnp.asarray(age)
         self.nebem_line_logu  = jnp.asarray(logu)
 
-        # Legacy aliases — for back-compat with code that uses the
-        # FSPS-canonical axis names.  Pointed at the line axes (matches
-        # FSPS); per-cube users should reach for the explicit
-        # ``nebem_{cont,line}_{logz,age,logu}`` attributes instead.
         self.nebem_logz = self.nebem_line_logz
         self.nebem_age  = self.nebem_line_age
         self.nebem_logu = self.nebem_line_logu
 
-    # ── ionising-photon rate ---------------------------------------------
     def compute_log_qq(self, ssp_flux):
-        """
-        ``log10(Q)`` for every (Z, age) SSP, matching FSPS's run-time
-        formula::
-
-            qq = ∫ L_nu / lambda  dλ          (0 < λ < 912 Å)
-            Q  = (L_sun_erg / h_erg_s) × qq   (photons / s)
-
-        Forced to float64 because the deep-UV fluxes are tiny.
-        """
+        """log10 Q [photons/s] for every SSP: (L_sun/h) * int_{lambda<912} L_nu / lambda dlambda (float64)."""
         mask = self.csp_lambda < LYMAN_LIMIT_AA
         wave_ion = self.csp_lambda[mask].astype(jnp.float64)
         flux_ion = ssp_flux[..., mask].astype(jnp.float64)
@@ -567,23 +364,32 @@ class NebularModel:
         scale = LSUN_ERG_S / HPLANK_ERG_S
         return jnp.log10(jnp.maximum(qq * scale, TINY))
 
-    # ── line broadening helpers -------------------------------------------
     def _compute_resolution_elements(self):
-        """
-        Per-line minimum wavelength resolution element  Δλ_pix.
-
-        Matches ``sps_setup.f90`` lines 960-965 of FSPS, using
-        ``searchsorted(side='right') - 1`` (the Python equivalent of
-        FSPS's ``locate``) and the upper-neighbour pixel spacing.
-        """
+        """Per-line local pixel width of ``csp_lambda`` [A]."""
         idx = jnp.clip(
             jnp.searchsorted(self.csp_lambda, self.nebem_line_pos, side='right') - 1,
             1, self.nspec - 2,
         )
         self.neb_res_min = self.csp_lambda[idx + 1] - self.csp_lambda[idx]
 
+    def line_profiles(self, sigma_kms=0.0):
+        """(nspec, nemline) NumPy profiles like ``gaussnebarr`` with width
+        sqrt(floor^2 + (lambda sigma_kms / c)^2): a line painted at the floor and then broadened.
+        """
+        pos = np.asarray(self.nebem_line_pos, dtype=np.float64)
+        lam = np.asarray(self.csp_lambda, dtype=np.float64)
+        floor = np.asarray(self.neb_res_min, dtype=np.float64) * self.res_floor_factor
+        if self.smooth_velocity:
+            base = pos * self.sigma_smooth / CLIGHT_AA_S * 1.0e13
+        else:
+            base = np.full_like(pos, self.sigma_smooth)
+        dl0 = np.maximum(base, floor)
+        dl = np.sqrt(dl0 ** 2 + (pos * float(sigma_kms) / CLIGHT_AA_S * 1.0e13) ** 2)
+        prof = np.exp(-0.5 * ((lam[:, None] - pos[None, :]) / dl[None, :]) ** 2)
+        return prof / (SQRT_2PI * dl[None, :]) * (pos[None, :] ** 2 / CLIGHT_AA_S)
+
     def _build_gaussians(self):
-        """Pre-compute ``gaussnebarr`` of shape ``(nspec, nemline)``."""
+        """``gaussnebarr`` (nspec, nemline): normalised Gaussians times lambda^2/c."""
         line_pos = self.nebem_line_pos
         if self.smooth_velocity:
             dlam = line_pos * self.sigma_smooth / CLIGHT_AA_S * 1.0e13
@@ -600,20 +406,9 @@ class NebularModel:
         self.gaussnebarr = norm * prof * scale
         self.dlam_lines  = dlam                                          # diagnostic
 
-    # ── public evaluation -------------------------------------------------
-    #
-    # PHYSICALLY STRICT: each cube is interpolated against its own
-    # (logZ, age, logU) axes.
 
     def evaluate(self, logZ, logU, logage, logQ):
-        """
-        Single-point evaluation — returns ``(cont, lines)`` in Lsun/Hz.
-
-        The continuum cube is interpolated against the **cont** axes,
-        the line cube against the **line** axes (each cube is therefore
-        evaluated at the physical point CLOUDY was actually run at).
-        """
-        # ── continuum cube on its own axes
+        """``(cont (nspec,), lines (nspec,))`` [L_sun/Hz] at one (logZ, logU, logage, logQ)."""
         zc  = _locate(logZ,   self.nebem_cont_logz)
         dzc = _frac(logZ,     self.nebem_cont_logz, zc)
         uc  = _locate(logU,   self.nebem_cont_logu)
@@ -622,7 +417,6 @@ class NebularModel:
         dac = _frac(logage,   self.nebem_cont_age,  ac)
         log_cont = _trilinear(self.nebem_cont, zc, dzc, ac, dac, uc, duc)
 
-        # ── line cube on its own axes
         zl  = _locate(logZ,   self.nebem_line_logz)
         dzl = _frac(logZ,     self.nebem_line_logz, zl)
         ul  = _locate(logU,   self.nebem_line_logu)
@@ -638,22 +432,9 @@ class NebularModel:
 
     def evaluate_batch(self, logZ_gas, logU, ssp_ages_young, logqq_young,
                         return_components=False):
-        """
-        Vectorised evaluation for all (Z_ssp, age_young) pairs at a
-        single ``(logZ_gas, logU)``.  Each cube is bilinearly collapsed
-        in (Z, U) on its OWN axes, then linearly interpolated in age
-        across the young-SSP set.
-
-        Parameters
-        ----------
-        return_components : bool
-            When ``False`` (default), return ``cont_flux + line_spec`` as a
-            single ``(n_z, n_wave, n_young)`` array -- the legacy behaviour
-            consumed by the four ``CSPBasis.get_spectrum_*_neb`` variants.
-            When ``True``, return the tuple ``(cont_flux, line_spec)`` in the
-            same layout, so the caller can decide whether to include the
-            broadened emission lines in the continuum spectrum (the
-            prospector ``nebemlineinspec`` switch).
+        """(n_z, n_young, nspec) nebular spectra at one (logZ_gas, logU) for the young SSP ages,
+        or ``(cont, lines)`` in that layout with ``return_components``.  The metallicity dependence
+        enters only through ``logqq_young``; the per-age reference ``ref`` keeps 10**(...) in float32 range.
         """
         logZ_gas = jnp.squeeze(logZ_gas)
         logU     = jnp.squeeze(logU)
@@ -691,30 +472,6 @@ class NebularModel:
                                 self.nebem_line_age,
                                 self.nebem_line_logu)                     # (nlines, n_young)
 
-        # ── PERF (2026-08-12): factorise the metallicity axis OUT of the
-        # line-painting contraction. ``log_cont`` / ``log_line`` come out of
-        # ``_interp_cube`` with NO z axis -- the only z dependence in the whole
-        # expression is ``logqq_young``. The old form broadcast logqq into the
-        # exponent first and then contracted
-        #     einsum('wl,zly->zwy', gaussnebarr, line_lum)
-        # once per metallicity, costing n_z * n_wave * n_young * n_lines
-        # multiply-adds for a result that is rank-1 in z. Using
-        #     10**(log_X[.,y] + logqq[z,y])
-        #       = 10**(log_X[.,y] + ref[y]) * 10**(logqq[z,y] - ref[y])
-        # the sum over lines commutes through the second factor, so the
-        # contraction is done ONCE at (n_wave, n_young) and then scaled. That
-        # is an ~n_z-fold reduction in both FLOPs and bytes moved on what is
-        # otherwise the single most expensive op in the forward model.
-        #
-        # ``ref`` is the per-young-age MAXIMUM over z, which is what makes the
-        # split safe in float32: the first factor never exceeds the largest
-        # term the old code already formed (so no new overflow can appear --
-        # naively splitting into 10**log_X * 10**logqq WOULD overflow, since
-        # logqq ~ 10**46 photons/s alone exceeds the float32 range), and the
-        # second factor lies in (0, 1]. The ``isfinite`` guard covers ages
-        # whose ionising-photon rate is identically zero (log_qq = -inf):
-        # ref -> 0, scale -> 0, product -> 0, matching the old behaviour
-        # instead of producing 0 * inf = nan.
         ref   = jnp.max(logqq_young, axis=0)                          # (n_young,)
         ref   = jnp.where(jnp.isfinite(ref), ref, 0.0)
         scale = jnp.power(10.0, logqq_young - ref[None, :])            # (n_z, n_young)
@@ -731,21 +488,8 @@ class NebularModel:
 
     def evaluate_batch_factored(self, logZ_gas, logU, ssp_ages_young,
                                 logqq_young, include_lines=True):
-        """Nebular emission in FACTORED (rank-1-in-z) form.
-
-        Returns ``(base, scale)`` with shapes ``(n_young, n_wave)`` and
-        ``(n_z, n_young)`` such that
-
-            neb[z, y, w] == scale[z, y] * base[y, w]
-
-        exactly (same arithmetic as :meth:`evaluate_batch`, just not
-        expanded). Consumers that immediately contract the metallicity axis
-        away -- which is every ``CSPBasis.get_spectrum_*_neb`` variant --
-        should use this instead of :meth:`evaluate_batch`, because the
-        ``(n_z, n_young, n_wave)`` product never has to be materialised:
-        the z sum can be folded into the SSP weights first.
-
-        See ``CSPBasis._neb_factored`` for the consuming side.
+        """``(base (n_young, n_wave), scale (n_z, n_young))`` with neb[z, y, w] == scale[z, y] * base[y, w]
+        (same arithmetic as ``evaluate_batch``, not expanded).
         """
         logZ_gas = jnp.squeeze(logZ_gas)
         logU     = jnp.squeeze(logU)
@@ -789,19 +533,7 @@ class NebularModel:
 
     def evaluate_batch_line_lum(self, logZ_gas, logU, ssp_ages_young,
                                 logqq_young):
-        """Per-line luminosities WITHOUT the spectral painting round-trip.
-
-        Same (Z_gas, U) bilinear collapse and young-age interpolation as
-        :meth:`evaluate_batch`, but returns the raw line luminosities
-        ``(n_z, n_young, n_lines)`` [Lsun] instead of painting them onto the
-        wavelength grid.  Used by ``CSPBasis.predict_line_fluxes`` (2026-07-21):
-        extracting line fluxes back out of the painted spectrum with Gaussian
-        apertures recovers only ~0.35-0.5 of the painted flux (the aperture's
-        narrow-line normalisation vs the resolution-floor + LOSVD-broadened
-        line width), so ``Lines`` observations are now predicted directly
-        from these grid values -- exact for any library, resolution or
-        smoothing configuration.
-        """
+        """Line luminosities (n_z, n_young, nlines) [L_sun] at one (logZ_gas, logU), no painting."""
         logZ_gas = jnp.squeeze(logZ_gas)
         logU     = jnp.squeeze(logU)
         cube      = self.nebem_line
@@ -832,21 +564,18 @@ class NebularModel:
         log_line = ((1.0 - da)[None, :] * zu[..., a1]
                     +       da[None, :] * zu[..., a1 + 1])   # (nlines, n_young)
 
-        # (n_z, nlines, n_young) -> (n_z, n_young, nlines)
         line_lum = jnp.power(10.0, log_line[None, :, :]
                              + logqq_young[:, None, :])
         return line_lum.transpose(0, 2, 1)
 
-    # ── parameter bookkeeping --------------------------------------------
     def get_default_params(self):
-        """Return the FSPS default nebular parameters."""
+        """Default nebular parameters (gas_logz = 0, gas_logu = -2)."""
         return {'gas_logz': jnp.asarray(0.0),
                 'gas_logu': jnp.asarray(-2.0)}
 
     def get_param_names(self):
         return ['gas_logz', 'gas_logu']
 
-    # ── repr --------------------------------------------------------------
     def __repr__(self):
         bits = [
             "<NebularModel (physically-strict per-cube axes)>",

@@ -80,20 +80,25 @@ directions:
 - **Building them yourself is hard** — it requires python-fsps compiled from
   source with `AFE_FLAG=1` against the FSPS v4.0 data tree (aMIST isochrones
   + C3K spectra), an easy source of silent misbuilds.
-- **Downloading them is all you need** — `CSPBasis_afe` carries **no nebular
-  model** (no α-enhanced CLOUDY tables exist), so nothing is read from
-  `$SPS_HOME` at fit time. With the downloaded grid, fitting [α/Fe] requires
-  **no FSPS install at all**: skip the whole FSPS section below.
+- **Downloading them is all you need** — `CSPBasis_afe` (a subclass of
+  `CSPBasis` that adds the [α/Fe] interpolation and drops the nebular
+  arguments) carries
+  **no nebular model** (no α-enhanced CLOUDY tables exist), so nothing is
+  read from `$SPS_HOME` at fit time unless you also switch on
+  `add_dust_emission=True` (the dust-emission templates come from the FSPS
+  data files). With the downloaded grid and no dust emission, fitting [α/Fe]
+  requires **no FSPS install at all**: skip the whole FSPS section below.
 
 ```python
 from ceridwen.ssps import fetch_grid, SSPDataAfe
 from ceridwen.csp import CSPBasis_afe
+from ceridwen import Cosmology
 import jax.numpy as jnp
 
 path = fetch_grid("amist_c3k_hr_krou_afe")     # cached + checksummed (~612 MB)
 ssp  = SSPDataAfe.load(path)                   # (n_afe, n_Z, n_age, n_wave)
 csp  = CSPBasis_afe(ssp, lookback_time=jnp.linspace(0.0, 12.0, 9),
-                    zh_const=True, verbose=False)
+                    cosmo=Cosmology.planck18(), zh_const=True, verbose=False)
 ```
 
 The current deposit ships one α grid: `amist_c3k_hr_krou_afe`

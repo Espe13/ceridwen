@@ -5,15 +5,15 @@ A clean, discoverable import path for the priors (implemented in
 
     from ceridwen.priors import Uniform, Normal, ClippedNormal, LogNormal, StudentT
 
-Each prior exposes ``log_prob``, ``sample``, ``unit_transform`` (inverse-CDF,
-used by nested sampling) and ``inverse_unit_transform`` (CDF), and is a JAX
-PyTree so it can flow through ``jit``/``grad``.
+Each prior exposes ``logpdf`` (also ``__call__``), ``sample``, ``unit_transform``
+(inverse CDF) and ``inverse_unit_transform`` (CDF); ``bounds`` gives the support.
 """
 from .sampler.priors import (
     Prior,
     Uniform,
     TopHat,
     Normal,
+    MultivariateNormalPrior,
     ClippedNormal,
     LogNormal,
     StudentT,
@@ -24,6 +24,7 @@ __all__ = [
     "Uniform",
     "TopHat",
     "Normal",
+    "MultivariateNormalPrior",
     "ClippedNormal",
     "LogNormal",
     "StudentT",

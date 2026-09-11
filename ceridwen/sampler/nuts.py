@@ -1,86 +1,5 @@
-"""
-ceridwen/sampler/nuts.py
-=========================
-BlackJAX NUTS (No-U-Turn Sampler) adapter for Ceridwen.
-
-Algorithm background
---------------------
-NUTS (Hoffman & Gelman 2014) is an adaptive variant of Hamiltonian Monte
-Carlo that automatically tunes the trajectory length.  Combined with
-dual-averaging step-size adaptation and an inverse mass matrix (diagonal
-or dense), NUTS is the default gradient-based sampler in probabilistic
-programming frameworks such as Stan, NumPyro, and PyMC.
-
-Because the Ceridwen forward model is fully JAX-traceable and
-differentiable, ``jax.grad`` of the log-posterior flows through the
-CSP prediction, observation projection, and likelihood evaluation
-end-to-end.  NUTS can therefore leverage exact gradients without
-finite differences, giving efficient exploration even in moderately
-high dimensions (n_dims ~ 10--50).
-
-Reparameterisation
-~~~~~~~~~~~~~~~~~~
-Parameters with *bounded* (uniform) priors are automatically mapped to
-an unconstrained space via sigmoid/logit transforms, exactly as Stan
-and NumPyro do.  This eliminates the hard boundary walls that cause
-divergent transitions with the leapfrog integrator.
-
-The mapping for a Uniform(a, b) parameter is::
-
-    constrained   = a + (b - a) * sigmoid(x)
-    unconstrained = logit((theta - a) / (b - a))
-    log-Jacobian  = log(b - a) - softplus(x) - softplus(-x)
-
-Parameters with Gaussian or other unbounded priors are passed through
-untransformed.
-
-Key parameters
-~~~~~~~~~~~~~~
-``num_warmup``
-    Number of adaptation (warmup) steps.  During warmup the step size
-    and mass matrix are tuned via ``blackjax.window_adaptation``.
-    Typical: 500--2000.
-
-``num_samples``
-    Number of post-warmup posterior draws.  Typical: 1000--5000.
-
-``num_chains``
-    Number of independent chains.  Multiple chains are used for
-    convergence diagnostics (R-hat).  Default: 4.
-
-``dense_mass``
-    If True (default), adapt a full (dense) inverse mass matrix rather
-    than a diagonal.  This is critical when the posterior has strong
-    parameter correlations (e.g. logsfr_ratios -- logmass degeneracy).
-
-``target_acceptance``
-    Target acceptance probability.  Default 0.9.  Higher values (0.9--
-    0.95) reduce divergent transitions in difficult geometries at the
-    cost of smaller step sizes.
-
-Installation
-------------
-::
-
-    pip install git+https://github.com/blackjax-devs/blackjax
-
-Usage
------
-::
-
-    from ceridwen.sampler       import run_sampler
-    from ceridwen.sampler.nuts  import BlackJAXNUTSAdapter
-
-    adapter = BlackJAXNUTSAdapter(
-        num_warmup  = 1500,
-        num_samples = 2000,
-        num_chains  = 4,
-    )
-    result = run_sampler(model, multi_likelihood, adapter,
-                         jax.random.PRNGKey(0))
-
-    print(result.summary())
-"""
+"""NUTS sampler adapter with sigmoid/logit reparameterisation of bounded
+parameters and optional variational preconditioning."""
 
 from __future__ import annotations
 
@@ -96,32 +15,9 @@ from .runner import SamplerAdapter, SamplingResult
 Array = jax.Array
 
 
-# ======================================================================
-# Bounded-parameter reparameterisation helpers
-# ======================================================================
-
 def _build_transforms(bounds: dict[str, tuple[float, float]],
                       theta_template: dict[str, Array]):
-    """
-    Build per-element sigmoid/logit transforms for the flattened vector.
-
-    Parameters
-    ----------
-    bounds : dict
-        Maps parameter names to (low, high) tuples.  Parameters not in
-        this dict are treated as unconstrained.
-    theta_template : dict
-        Reference theta dict for parameter names, shapes, and ordering.
-
-    Returns
-    -------
-    lo_safe, hi_safe : Array (n_dims,)
-        Lower and upper bounds for every scalar element.  Unbounded
-        elements get dummy bounds (0, 1) to avoid NaN in the unused
-        branch of ``jnp.where`` (JAX evaluates both branches).
-    is_bounded : Array (n_dims,) bool
-        True for elements that need sigmoid transform.
-    """
+    """Return (lo, hi, is_bounded) per flat element; unbounded elements get dummy finite bounds (0, 1)."""
     lo_list, hi_list, bounded_list = [], [], []
     for name, template in theta_template.items():
         size = int(jnp.size(template))
@@ -131,9 +27,6 @@ def _build_transforms(bounds: dict[str, tuple[float, float]],
             hi_list.append(jnp.full(size, b))
             bounded_list.append(jnp.ones(size, dtype=bool))
         else:
-            # Dummy finite bounds (0, 1) so the sigmoid branch never
-            # produces inf * 0 = nan.  The result is discarded by
-            # jnp.where, but JAX traces both branches for gradients.
             lo_list.append(jnp.full(size, 0.0))
             hi_list.append(jnp.full(size, 1.0))
             bounded_list.append(jnp.zeros(size, dtype=bool))
@@ -145,23 +38,14 @@ def _build_transforms(bounds: dict[str, tuple[float, float]],
 
 
 def _to_constrained(x: Array, lo: Array, hi: Array, is_bounded: Array) -> Array:
-    """Unconstrained x -> constrained theta (flat).
-
-    IMPORTANT: ``lo`` and ``hi`` must be finite for ALL elements (use
-    dummy bounds for unbounded params) because ``jnp.where`` evaluates
-    both branches and inf/nan poisons JAX's gradient tape.
-    """
+    """Unconstrained x -> constrained flat theta; lo/hi must be finite for all elements."""
     sig = jax.nn.sigmoid(x)
     constrained = lo + (hi - lo) * sig
     return jnp.where(is_bounded, constrained, x)
 
 
 def _to_unconstrained(theta_flat: Array, lo: Array, hi: Array, is_bounded: Array) -> Array:
-    """Constrained theta (flat) -> unconstrained x.
-
-    ``lo`` and ``hi`` must be finite for ALL elements (dummy bounds for
-    unbounded params).
-    """
+    """Constrained flat theta -> unconstrained x; lo/hi must be finite for all elements."""
     frac = (theta_flat - lo) / (hi - lo)
     frac = jnp.clip(frac, 1e-7, 1.0 - 1e-7)
     unconstrained = jnp.log(frac / (1.0 - frac))
@@ -169,14 +53,7 @@ def _to_unconstrained(theta_flat: Array, lo: Array, hi: Array, is_bounded: Array
 
 
 def _log_jacobian(x: Array, lo: Array, hi: Array, is_bounded: Array) -> Array:
-    """
-    Log |det J| for the sigmoid transform (unconstrained -> constrained).
-
-    For each bounded element:  log(hi - lo) + log sigma(x) + log(1 - sigma(x))
-                              = log(hi - lo) - softplus(x) - softplus(-x)
-
-    Unbounded elements contribute 0.
-    """
+    """Summed log |det J| of the sigmoid transform (unbounded elements contribute 0)."""
     log_jac_elem = jnp.where(
         is_bounded,
         jnp.log(hi - lo) - jax.nn.softplus(x) - jax.nn.softplus(-x),
@@ -185,80 +62,22 @@ def _log_jacobian(x: Array, lo: Array, hi: Array, is_bounded: Array) -> Array:
     return jnp.sum(log_jac_elem)
 
 
-# ======================================================================
-# NUTS adapter
-# ======================================================================
-
 class BlackJAXNUTSAdapter(SamplerAdapter):
-    """
-    Adapter wrapping ``blackjax.nuts`` with window adaptation for Ceridwen.
-
-    Bounded (uniform-prior) parameters are automatically reparameterised
-    onto an unconstrained space via sigmoid/logit, eliminating the hard
-    boundary walls that cause divergent transitions.
-
-    Optionally, a variational transport map (see :mod:`ceridwen.sampler.vi`)
-    may be supplied via ``vi``.  When set, the adapter trains the map
-    against the unconstrained posterior and then runs NUTS on the
-    *whitened* target :math:`\\log p(f(z)) + \\log|\\partial f/\\partial z|`
-    (Hoffman et al. 2019, arXiv:1903.03704).  In whitened space the
-    target is approximately :math:`\\mathcal{N}(0, I)` so identity mass
-    matrix and step size :math:`\\mathcal{O}(1)` are near-optimal,
-    giving dramatically shorter warmup.
+    """NUTS adapter with window adaptation; bounded (uniform-prior) parameters
+    are sampled in sigmoid/logit space, and an optional VI map (``vi``) whitens
+    the target before sampling.
 
     Parameters
     ----------
-    num_warmup : int, optional
-        Number of warmup (adaptation) steps per chain.  Default 1500
-        for native NUTS.  When ``vi`` is set, warmup defaults to 200;
-        very short warmup lets the dual-averaging adapter overshoot and
-        produce many divergences on a ~14-D SED posterior.
-    num_samples : int, optional
-        Number of post-warmup posterior draws per chain.  Default 2000.
-    num_chains : int, optional
-        Number of independent chains.  Default 4.
-    initial_step_size : float, optional
-        Starting step size for the leapfrog integrator before adaptation.
-        Default 0.01 for native NUTS.  When ``vi`` is set, default is
-        0.5 — z-space is pre-whitened so the optimal :math:`\\varepsilon`
-        is :math:`\\mathcal{O}(1)`, and dual averaging is slow to shrink
-        from 1.0.
-    target_acceptance : float, optional
-        Target acceptance probability for dual averaging.  Default 0.95;
-        higher values reduce divergences in VI-preconditioned NUTS.
-    max_num_doublings : int, optional
-        Maximum tree depth (2^max_num_doublings leapfrog steps).
-        Default 10.
-    dense_mass : bool, optional
-        Use a dense (full) inverse mass matrix.  Default True for
-        native NUTS.  When ``vi`` is set, default is False — the VI
-        map already orthogonalises the geometry, so an adapted diagonal
-        mass matrix in z-space is sufficient and faster to fit.
-    bounds : dict, optional
-        Maps parameter names to (low, high) tuples for bounded params.
-        If None (default), bounds are auto-detected from the model priors
-        passed through ``run_sampler``.  You can also pass them explicitly::
-
-            bounds={'Z': (-2.5, 0.2), 'logmass': (9.0, 12.0)}
-
-    vi : None, str, VariationalMap, or TrainedMap
-        Variational preconditioning mode.
-
-        - ``None`` (default): run native NUTS with window adaptation.
-        - ``'tril'``: train a full-rank Gaussian map, then whiten.
-        - ``'iaf'``: train a stacked-IAF neural-transport map, then whiten.
-        - :class:`VariationalMap` instance: train *this* map.
-        - :class:`TrainedMap` instance: skip training, use as-is.
-
-    vi_kwargs : dict, optional
-        Forwarded either to the VI map constructor (when ``vi`` is a
-        string) or to :func:`ceridwen.sampler.vi.train_vi` for training
-        hyperparameters.  Recognised keys: ``num_steps`` (default 1500),
-        ``batch_size`` (16), ``lr0`` (1e-2) plus map-specific kwargs
-        (e.g. ``init_scale`` for 'tril', ``n_flows`` for 'iaf').
-
-    verbose : bool, optional
-        Print progress information.  Default True.
+    num_warmup : int -- adaptation steps per chain; default 1500 (200 with ``vi``)
+    num_samples : int -- post-warmup draws per chain
+    initial_step_size : float -- leapfrog step before adaptation; default 0.01 (0.5 with ``vi``)
+    target_acceptance : float -- dual-averaging target, default 0.95
+    max_num_doublings : int -- max tree depth (2**n leapfrog steps)
+    dense_mass : bool -- full inverse mass matrix; default True (False with ``vi``)
+    bounds : dict -- name -> (low, high); None auto-detects from model priors
+    vi : None | 'tril' | 'iaf' | VariationalMap | TrainedMap -- variational preconditioning
+    vi_kwargs : dict -- map constructor kwargs plus ``num_steps``, ``batch_size``, ``lr0`` for training
     """
 
     def __init__(
@@ -275,9 +94,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         vi_kwargs: dict | None = None,
         verbose: bool = True,
     ):
-        # VI-aware defaults: in whitened space, target geometry is
-        # approximately isotropic Gaussian, so shorter warmup / larger
-        # initial step / diagonal mass matrix are all appropriate.
         _has_vi = vi is not None
         if num_warmup is None:
             num_warmup = 200 if _has_vi else 1500
@@ -297,24 +113,15 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         self.vi = vi
         self.vi_kwargs = dict(vi_kwargs) if vi_kwargs is not None else {}
         self.verbose = bool(verbose)
-        # Filled during .run() so the caller can inspect the trained map
-        # after sampling (e.g. for plotting the learnt covariance).
         self.trained_map = None
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _n_dims(self, theta_init: dict[str, Array]) -> int:
-        """Total scalar degrees of freedom."""
         return sum(int(jnp.size(v)) for v in theta_init.values())
 
     def _flatten(self, theta: dict[str, Array]) -> Array:
-        """Flatten a parameter dict into a 1-D vector."""
         return jnp.concatenate([jnp.ravel(v) for v in theta.values()])
 
     def _unflatten(self, x: Array, theta_template: dict[str, Array]) -> dict[str, Array]:
-        """Unflatten a 1-D vector back to the parameter dict structure."""
         out = {}
         idx = 0
         for name, template in theta_template.items():
@@ -323,10 +130,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             idx += size
         return out
 
-    # ------------------------------------------------------------------
-    # Main entry point
-    # ------------------------------------------------------------------
-
     def run(
         self,
         loglike_fn: Callable[[dict[str, Array]], Array],
@@ -334,30 +137,7 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         theta_init: dict[str, Array],
         rng_key: Array,
     ) -> SamplingResult:
-        """
-        Run BlackJAX NUTS with window adaptation.
-
-        Strategy (GPU-optimised):
-          1. Run ONE warmup to adapt step size + mass matrix.
-          2. Build a single NUTS kernel from the adapted parameters.
-          3. vmap the sampling across all chains in parallel.
-             This compiles ONE XLA program and runs all chains
-             simultaneously, fully utilising GPU parallelism.
-
-        Parameters
-        ----------
-        loglike_fn : callable
-            JIT-compiled log-likelihood (no prior).
-        logprior_fn : callable
-            JIT-compiled log-prior.
-        theta_init : dict[str, Array]
-            Initial parameter values with correct shapes.
-        rng_key : Array
-
-        Returns
-        -------
-        SamplingResult
-        """
+        """Run NUTS (one warmup, then all chains) and return a ``SamplingResult`` in constrained space."""
         try:
             import blackjax
         except ImportError as exc:
@@ -366,9 +146,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
                 "Install: pip install git+https://github.com/blackjax-devs/blackjax"
             ) from exc
 
-        # Dispatch: VI-preconditioned path is structurally different
-        # (whitened target, chains-from-q init, no mass-matrix adapt in
-        # z-space) so it lives in its own method.
         if self.vi is not None:
             return self._run_whitened(
                 loglike_fn, logprior_fn, theta_init, rng_key,
@@ -392,7 +169,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             else:
                 print("  No bounded parameters (consider passing bounds=...)")
 
-        # ── Build reparameterisation layer ─────────────────────────────
         lo, hi, is_bounded = _build_transforms(bounds, theta_template)
         n_bounded = int(jnp.sum(is_bounded))
 
@@ -400,7 +176,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             print(f"  Reparameterised {n_bounded}/{n_dims} "
                   f"bounded dimensions via sigmoid/logit")
 
-        # ── Unconstrained log-posterior ────────────────────────────────
         @jax.jit
         def logposterior_flat(x):
             theta_flat = _to_constrained(x, lo, hi, is_bounded)
@@ -411,31 +186,23 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             return lnl + lnp + lnj
 
         @jax.jit
-        def loglike_constrained(x):
-            """Log-likelihood in unconstrained coords (for diagnostics)."""
+        def _prior_and_jacobian(x):
             theta_flat = _to_constrained(x, lo, hi, is_bounded)
             theta = self._unflatten(theta_flat, theta_template)
-            return loglike_fn(theta)
+            return logprior_fn(theta) + _log_jacobian(x, lo, hi, is_bounded)
 
-        # ── Initial position in unconstrained space ────────────────────
+        def _loglike_of(states_):
+            return states_.logdensity - jax.vmap(_prior_and_jacobian)(states_.position)
+
         x_init_flat = self._flatten(theta_init)
         x_init = _to_unconstrained(x_init_flat, lo, hi, is_bounded)
 
         t_start = time.perf_counter()
 
-        # ==============================================================
-        #  Phase 1: Warmup (single chain, adapts step size + mass matrix)
-        # ==============================================================
         if self.verbose:
             print(f"\n  Warmup ({self.num_warmup} steps, "
                   f"adapting step size + {'dense' if self.dense_mass else 'diagonal'} mass matrix)...")
 
-        # ``max_num_doublings`` forwards through window_adaptation to the
-        # wrapped blackjax.nuts kernel used during warmup; it caps the
-        # per-step leapfrog count at 2**max_num_doublings.  Must be passed
-        # explicitly — BlackJAX otherwise falls back to its default of 10
-        # (→ 1024 leapfrog steps), and at small adapted step sizes one
-        # NUTS iteration can take seconds.
         warmup = blackjax.window_adaptation(
             blackjax.nuts,
             logposterior_flat,
@@ -467,25 +234,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             print(f"    Warmup wall time: {_t_warmup:.1f} s  "
                   f"(includes XLA compilation)")
 
-        # ==============================================================
-        #  Phase 2: Sampling
-        #
-        #  Strategy depends on the number of available devices:
-        #
-        #  Multi-GPU (n_devices >= n_chains):
-        #    Use jax.pmap to run one chain per GPU in true parallel.
-        #    Unlike vmap, pmap places each chain on a *separate device*,
-        #    so each NUTS while_loop (tree building) runs independently
-        #    with its own adaptive tree depth — no padding to max depth.
-        #    This gives near-linear speedup with number of GPUs.
-        #
-        #  Single-GPU fallback:
-        #    Run chains sequentially with a cached XLA kernel.
-        #    The lax.scan compiles once on Chain 1 and is reused.
-        # ==============================================================
-        # ``parameters`` from window_adaptation already carries
-        # ``max_num_doublings``, so it must not be passed a second time
-        # here (``TypeError: got multiple values for keyword argument``).
         nuts_kernel = blackjax.nuts(
             logposterior_flat,
             **parameters,
@@ -497,7 +245,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
 
         @jax.jit
         def _run_one_chain(init_state, chain_key):
-            """Run num_samples NUTS steps from init_state."""
             keys = jax.random.split(chain_key, self.num_samples)
             final_state, (states, infos) = jax.lax.scan(
                 _nuts_step, init_state, keys
@@ -514,7 +261,7 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
                   f"Chains: {self.num_chains}  |  "
                   f"Strategy: {'pmap (one chain per GPU)' if use_pmap else 'sequential'}")
 
-        all_chain_positions = []  # (num_samples, n_dims) per chain
+        all_chain_positions = []
         all_loglikelihoods = []
         all_divergences = []
         all_infos = []
@@ -522,24 +269,17 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         _t_postproc_chains = []
 
         if use_pmap:
-            # ── Multi-GPU parallel path ──────────────────────────────
-            # Replicate the warmup state across devices and pmap the scan.
             if self.verbose:
                 print(f"\n  Running {self.num_chains} chains in parallel "
                       f"across {self.num_chains} GPUs...", flush=True)
 
-            # pmap expects a leading device axis.  Replicate warmup_state
-            # across chains (each chain starts from the same adapted state).
             def _replicate_state(state, n):
-                """Replicate a NUTS state across n devices."""
                 return jax.tree.map(
                     lambda x: jnp.broadcast_to(x, (n,) + x.shape), state
                 )
 
             pmap_init = _replicate_state(warmup_state, self.num_chains)
 
-            # pmap the chain runner.  axis_name is used for potential
-            # cross-device reductions (not needed here, but good practice).
             @jax.pmap
             def _run_chains_pmap(init_state, chain_key):
                 keys = jax.random.split(chain_key, self.num_samples)
@@ -552,7 +292,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             pmap_states, pmap_infos = _run_chains_pmap(
                 pmap_init, chain_keys
             )
-            # Block until all GPUs finish
             jax.block_until_ready(pmap_states.position)
             _t_sample_total = time.perf_counter() - _t0_sample
 
@@ -560,24 +299,15 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
                 print(f"    All chains wall time: {_t_sample_total:.1f} s  "
                       f"(parallel across {self.num_chains} GPUs)")
 
-            # ── Post-processing: unpack pmap results ─────────────────
             _t0_pp = time.perf_counter()
             for ci in range(self.num_chains):
-                x_chain = pmap_states.position[ci]  # (num_samples, n_dims)
+                x_chain = pmap_states.position[ci]
                 theta_chain = jax.vmap(
                     lambda x: _to_constrained(x, lo, hi, is_bounded)
                 )(x_chain)
                 all_chain_positions.append(theta_chain)
-
-                _chunk = min(50, self.num_samples)
-                _lnl_parts = []
-                for _i in range(0, self.num_samples, _chunk):
-                    _lnl_parts.append(
-                        jax.vmap(loglike_constrained)(x_chain[_i:_i + _chunk])
-                    )
-                chain_lnl = jnp.concatenate(_lnl_parts, axis=0)
-                jax.block_until_ready(chain_lnl)
-                all_loglikelihoods.append(chain_lnl)
+                all_loglikelihoods.append(
+                    _loglike_of(jax.tree.map(lambda x: x[ci], pmap_states)))
 
                 chain_infos = jax.tree.map(lambda x: x[ci], pmap_infos)
                 all_infos.append(chain_infos)
@@ -597,7 +327,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
                 print(f"    Post-processing: {_t_pp:.1f} s")
 
         else:
-            # ── Single-GPU sequential path ───────────────────────────
             for chain_idx in range(self.num_chains):
                 if self.verbose:
                     print(f"\n  Chain {chain_idx + 1}/{self.num_chains}  "
@@ -619,16 +348,7 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
                     lambda x: _to_constrained(x, lo, hi, is_bounded)
                 )(x_chain)
                 all_chain_positions.append(theta_chain)
-
-                _chunk = min(50, self.num_samples)
-                _lnl_parts = []
-                for _i in range(0, self.num_samples, _chunk):
-                    _lnl_parts.append(
-                        jax.vmap(loglike_constrained)(x_chain[_i:_i + _chunk])
-                    )
-                chain_lnl = jnp.concatenate(_lnl_parts, axis=0)
-                jax.block_until_ready(chain_lnl)
-                all_loglikelihoods.append(chain_lnl)
+                all_loglikelihoods.append(_loglike_of(states))
 
                 all_infos.append(infos)
                 if hasattr(infos, 'is_divergent'):
@@ -648,7 +368,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         n_like_calls = self.num_chains * (self.num_warmup + self.num_samples)
         wall_time = time.perf_counter() - t_start
 
-        # ── Timing summary ────────────────────────────────────────────
         _t_merge_start = time.perf_counter()
 
         if self.verbose:
@@ -677,7 +396,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
                 print(f"  {'pmap speedup':<40s}  {seq_est / _t_sample_total:>9.1f}x")
             print("  " + "=" * 60)
 
-        # ── Merge chains (constrained space) ──────────────────────────
         merged_flat = jnp.concatenate(all_chain_positions, axis=0)
 
         merged_samples = {}
@@ -703,7 +421,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
                 f"{f', {total_divergences} divergences' if total_divergences else ''})"
             )
 
-        # ── Convergence diagnostics ───────────────────────────────────
         if self.verbose and self.num_chains >= 2:
             self._print_diagnostics(all_chain_positions, theta_template)
 
@@ -730,17 +447,8 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             },
         )
 
-    # ------------------------------------------------------------------
-    # VI-preconditioned path
-    # ------------------------------------------------------------------
-
     def _resolve_vi(self, logpost_flat, x_init, rng_key):
-        """Turn ``self.vi`` into a :class:`TrainedMap`.
-
-        Accepts a string name, a :class:`VariationalMap` instance, or an
-        already-:class:`TrainedMap`.  Strings / untrained maps are passed
-        through :func:`train_vi` using ``self.vi_kwargs``.
-        """
+        """Turn ``self.vi`` (name, untrained map, or TrainedMap) into a TrainedMap."""
         from .vi import (
             VariationalMap, TrainedMap, make_vi_map, train_vi,
         )
@@ -751,7 +459,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             return target
 
         if isinstance(target, str):
-            # Partition kwargs: map constructor vs. train_vi
             train_keys = {"num_steps", "batch_size", "lr0"}
             ctor_kwargs = {k: v for k, v in kwargs.items()
                            if k not in train_keys}
@@ -780,13 +487,7 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         theta_init: dict[str, Array],
         rng_key: Array,
     ) -> SamplingResult:
-        """Run NUTS on a whitened target built from a VI transport map.
-
-        The unconstrained target is
-            log p_x(x)  with  x = f(z),  z ~ N(0, I).
-        NUTS samples in z-space against
-            log p_z(z) = log p_x(f(z)) + log|det df/dz|.
-        """
+        """Run NUTS in z-space on log p_x(f(z)) + log|det df/dz|, z ~ N(0, I), using the VI map f."""
         import blackjax
 
         n_dims = self._n_dims(theta_init)
@@ -818,7 +519,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
 
         vi_key, warm_key, init_key, sample_key = jax.random.split(rng_key, 4)
 
-        # ── Train (or accept) the VI transport map ─────────────────────
         trained = self._resolve_vi(logpost_flat, x_init, vi_key)
         self.trained_map = trained
         vi_map = trained.vi_map
@@ -830,16 +530,9 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             x, logdet = vi_map.forward(z, params, aux)
             return logpost_flat(x) + logdet
 
-        # Sanity: log p_z(0) should be finite if the map was initialised
-        # reasonably.  Fails loudly here before we burn warmup time on it.
-        _lp0 = float(logpost_z(jnp.zeros(n_dims)))
         if self.verbose:
-            print(f"  log p_z(0) = {_lp0:.3f}")
+            print(f"  log p_z(0) = {float(logpost_z(jnp.zeros(n_dims))):.3f}")
 
-        # ── Warmup (step size + optional diagonal mass) ────────────────
-        # Cap per-step leapfrog count via max_num_doublings; without it
-        # blackjax defaults to 10 and a tiny adapted step size translates
-        # into seconds per NUTS iteration.
         warmup = blackjax.window_adaptation(
             blackjax.nuts, logpost_z,
             target_acceptance_rate=self.target_acceptance,
@@ -861,13 +554,7 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             print(f"    Adapted step size: {step_size:.4f}")
             print(f"    Warmup wall time:  {t_warmup:.1f} s")
 
-        # ── Per-chain initialisation from q(theta) ─────────────────────
-        # Start each chain from an independent sample of the variational
-        # distribution (paper Sec. 4.1.2): z_c ~ N(0, I) (which induces
-        # independent q(x) draws through the map).
         init_zs = jax.random.normal(init_key, (self.num_chains, n_dims))
-        # ``parameters`` already contains ``max_num_doublings`` — don't
-        # double-pass it (would raise TypeError).
         nuts_full = blackjax.nuts(
             logpost_z,
             **parameters,
@@ -915,38 +602,24 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             states = jax.tree.map(lambda *a: jnp.stack(a, axis=0), *all_st)
             infos = jax.tree.map(lambda *a: jnp.stack(a, axis=0), *all_inf)
 
-        # ── Push forward z -> x_unconstrained -> theta_constrained ─────
-        # Both operations vmapped over (chain, sample).
         @jax.jit
         def _z_to_flat_constrained(z):
             x_unc, _ = vi_map.forward(z, params, aux)
             return _to_constrained(x_unc, lo, hi, is_bounded)
 
-        z_all = states.position                             # (C, S, D)
+        z_all = states.position                             # (n_chains, n_samples, n_dims)
         theta_flat_all = jax.vmap(jax.vmap(_z_to_flat_constrained))(z_all)
 
-        # ── Per-draw log-likelihood in constrained space (for weights) ─
         @jax.jit
-        def _loglike_at_z(z):
-            x_unc, _ = vi_map.forward(z, params, aux)
+        def _nonlike_at_z(z):
+            x_unc, logdet = vi_map.forward(z, params, aux)
             theta_flat = _to_constrained(x_unc, lo, hi, is_bounded)
             theta = self._unflatten(theta_flat, theta_template)
-            return loglike_fn(theta)
+            return logprior_fn(theta) + _log_jacobian(x_unc, lo, hi, is_bounded) + logdet
 
-        # Compute in chunks per chain, then concat.
-        chain_lnls = []
-        chunk = min(50, self.num_samples)
-        for ci in range(self.num_chains):
-            parts = []
-            for k0 in range(0, self.num_samples, chunk):
-                zc = z_all[ci, k0:k0 + chunk]
-                parts.append(jax.vmap(_loglike_at_z)(zc))
-            lnl_ci = jnp.concatenate(parts, axis=0)
-            jax.block_until_ready(lnl_ci)
-            chain_lnls.append(lnl_ci)
-        merged_lnl = jnp.concatenate(chain_lnls, axis=0)
+        merged_lnl = (states.logdensity
+                      - jax.vmap(jax.vmap(_nonlike_at_z))(z_all)).reshape(-1)
 
-        # ── Merge chains; split into per-parameter arrays ──────────────
         merged_flat = theta_flat_all.reshape(
             self.num_chains * self.num_samples, n_dims,
         )
@@ -960,7 +633,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             merged_samples[name] = arr
             idx += size
 
-        # ── Divergence count (across all chains) ──────────────────────
         total_divergences = 0
         per_chain_constrained = []
         per_chain_infos = []
@@ -1019,27 +691,24 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             },
         )
 
-    # ------------------------------------------------------------------
-    # Diagnostics
-    # ------------------------------------------------------------------
-
     def _print_diagnostics(self, all_chain_samples, theta_template):
-        """Print basic convergence diagnostics (R-hat, ESS)."""
+        """Print split R-hat and ESS per scalar parameter."""
         print("\n  Convergence diagnostics:")
         print(f"  {'Parameter':<25s}  {'R-hat':>8s}  {'ESS':>8s}")
         print("  " + "-" * 45)
 
         idx = 0
+        all_chain_samples = [np.asarray(s) for s in all_chain_samples]
         for name, template in theta_template.items():
             size = int(jnp.size(template))
             if size == 1:
-                chains = [np.asarray(s[:, idx]).ravel() for s in all_chain_samples]
+                chains = [s[:, idx].ravel() for s in all_chain_samples]
                 rhat = self._rhat(chains)
                 ess = self._ess(chains)
                 print(f"  {name:<25s}  {rhat:>8.4f}  {ess:>8.0f}")
             else:
                 for k in range(size):
-                    chains = [np.asarray(s[:, idx + k]).ravel() for s in all_chain_samples]
+                    chains = [s[:, idx + k].ravel() for s in all_chain_samples]
                     rhat = self._rhat(chains)
                     ess = self._ess(chains)
                     label = f"{name}[{k}]"
@@ -1048,7 +717,7 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
 
     @staticmethod
     def _rhat(chains: list[np.ndarray]) -> float:
-        """Compute split R-hat (Gelman-Rubin diagnostic)."""
+        """Split R-hat."""
         split_chains = []
         for c in chains:
             mid = len(c) // 2
@@ -1075,7 +744,7 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
 
     @staticmethod
     def _ess(chains: list[np.ndarray]) -> float:
-        """Bulk effective sample size (simple autocorrelation estimate)."""
+        """Bulk effective sample size from a truncated autocorrelation sum."""
         combined = np.concatenate(chains)
         n = len(combined)
         if n < 4:
@@ -1091,7 +760,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         acf = np.correlate(centered, centered, mode='full')
         acf = acf[n - 1:n - 1 + max_lag + 1] / (n * var)
 
-        # Geyer's initial monotone sequence estimator (simplified)
         tau = 1.0
         for lag in range(1, max_lag):
             rho = acf[lag]

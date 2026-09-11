@@ -31,6 +31,7 @@ from ceridwen.ssps.ssp_data import (  # noqa: E402
     _validate_fsps_kwargs,
 )
 from ceridwen.csp.csp import CSPBasis, _resolve_isoc_type  # noqa: E402
+from ceridwen.cosmology import Cosmology
 
 
 # ----------------------------------------------------------------------
@@ -219,7 +220,7 @@ def _tiny_afe(**meta):
     lgage = jnp.array([-1.0, 0.0, 1.0])
     wave = jnp.linspace(1000.0, 10000.0, 5)
     flux = jnp.ones((1, 2, 3, 5))
-    return SSPDataAfe(lgmet, afe, lgage, wave, flux, **meta)
+    return SSPDataAfe(lgmet, lgage, wave, flux, ssp_afe=afe, **meta)
 
 
 def test_afe_save_without_resolution_raises(tmp_path):
@@ -271,14 +272,14 @@ def test_csp_reads_isoc_type_from_ssp_grid():
     base = SSPData.load(str(require_test_grid()))
     ssp = dataclasses.replace(base, isoc_type="mist", spec_library="miles")
     csp = CSPBasis(ssp, theta=_minimal_theta(), zh_const=True,
-                   add_neb=False, add_igm=False, verbose=False)
+                   add_neb=False, add_igm=False, verbose=False, cosmo=Cosmology.planck18())
     assert csp._ssp_isoc_type == "mist"
     assert csp._ssp_spec_library == "miles"
 
 
 def test_csp_legacy_grid_has_none_isoc_type():
     csp = CSPBasis(_legacy_ssp(), theta=_minimal_theta(), zh_const=True,
-                   add_neb=False, add_igm=False, verbose=False)
+                   add_neb=False, add_igm=False, verbose=False, cosmo=Cosmology.planck18())
     assert csp._ssp_isoc_type is None
 
 

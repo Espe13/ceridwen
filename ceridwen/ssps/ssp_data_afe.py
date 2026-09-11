@@ -1,47 +1,5 @@
-"""
-Alpha-enhanced SSP data container: :class:`SSPDataAfe`.
-
-This is the [alpha/Fe]-aware sibling of :mod:`ceridwen.ssps.ssp_data`.
-The grid gains one leading axis:
-
-    ssp_flux : (n_afe, n_met, n_ages, n_wave)      [Lsun / Hz / Msun]
-    ssp_afe  : (n_afe,)                            [alpha/Fe] values
-
-Everything else (units, conventions, provenance philosophy, the FSPS
-kwarg whitelist) is inherited unchanged from ``ssp_data.py``:
-``ssp_lgmet`` remains log10 of the *absolute total* metallicity Z — the
-alpha axis re-partitions that Z between the Fe-peak and alpha elements
-at fixed total Z (the aMIST/C3K convention), it does not change it.
-
-Library resolution (schema 2.1)
--------------------------------
-Exactly as in :mod:`ceridwen.ssps.ssp_data` (schema 2.0 there): every
-on-disk grid carries ``ssp_resolution`` = sigma_v(lambda) [km/s] on
-``ssp_wave``, built as the element-wise maximum of the grid's own
-2-pixel sampling floor (derived from ``ssp_wave`` itself) and any
-documented library LSF segments.  :meth:`save` refuses grids without the
-curve; :meth:`load` rejects files without the dataset and points to
-``scripts/convert_grids_schema2.py`` (which handles 4-D alpha files).
-
-Requirements
-------------
-Building (``from_fsps``) requires python-fsps compiled from main
-(post 2026-08-02, the alpha-MC merge targeting FSPS v4.0) with
-``AFE_FLAG=1``, MIST isochrones and a C3K spectral library, and an FSPS
-v4.0 ``$SPS_HOME`` data tree containing the aMIST/C3K alpha files.  The
-FSPS grid is nafe = 5 at [alpha/Fe] = {-0.2, 0.0, +0.2, +0.4, +0.6}.
-An ``AFE_FLAG=0`` build yields n_afe = 1 and produces a valid
-(single-plane) grid — the correct null model for isolating alpha
-effects from the C3K-vs-MILES library change.
-
-Loading (``load``) has no FSPS dependency, as usual.
-
-Nebular caveat
---------------
-FSPS v4.0 ships NO alpha-enhanced CLOUDY nebular tables (the ``ZAU_*``
-grids are solar-scaled, keyed only by isochrone type).  Grids built here
-are therefore consumed by :class:`ceridwen.csp.csp_afe.CSPBasis_afe`,
-which carries no nebular model.
+"""Alpha-enhanced SSP grid container :class:`SSPDataAfe`: an ``SSPData`` whose flux
+cube carries a leading [alpha/Fe] axis, ``ssp_flux`` (n_afe, n_met, n_ages, n_wave).
 """
 
 import json
@@ -52,97 +10,50 @@ import jax.numpy as jnp
 from dataclasses import dataclass, field
 from typing import Optional
 
-# Re-use the parent module's kwarg policy and constants so the two grid
-# builders can never drift apart.
 from ceridwen.ssps.ssp_data import (
+    SSPData,
     LIBRARY_IMF_KWARGS,
     _validate_fsps_kwargs,
     _read_fsps_provenance,
-    HAS_FSPS,
+    _import_fsps,
 )
 
-if HAS_FSPS:
-    import fsps
-
-# Bumped whenever the on-disk metadata schema changes.
-# 2.0 added the ssp_afe dataset and the 4-D ssp_flux layout.
-# 2.1 (2026-08): ssp_resolution (library sigma_v(lambda) [km/s]) is a
-# REQUIRED dataset, mirroring SSPData schema 2.0; loaders reject files
-# without it.
 SSP_AFE_SCHEMA_VERSION = "2.1"
 
-# The FSPS v4.0 aMIST/C3K [alpha/Fe] grid (sps_vars.f90 ``afe_val``;
-# ``afe_sol_indx = 2``, i.e. the second, 1-based, entry is solar-scaled).
-# python-fsps does not (yet) expose afe_val, so nafe == 5 is mapped onto
-# these documented values; any other nafe (except 1) must be supplied
-# explicitly via ``afe_values=``.
 FSPS_AFE_VALUES_NAFE5 = np.array([-0.2, 0.0, +0.2, +0.4, +0.6])
 
 
 @dataclass(frozen=True)
-class SSPDataAfe:
-    """
-    Immutable container for alpha-enhanced SSP interpolation grids.
+class SSPDataAfe(SSPData):
+    """Immutable alpha-enhanced SSP grid: an ``SSPData`` whose flux cube has a leading [alpha/Fe] axis.
 
-    Attributes
+    Parameters
     ----------
-    ssp_lgmet : jnp.ndarray, shape (n_met,)
-        ``log10`` of the absolute TOTAL metallicity grid (mass fraction of
-        all elements heavier than He) — same convention as
-        :class:`ceridwen.ssps.ssp_data.SSPData`, NOT [Fe/H].
-    ssp_afe : jnp.ndarray, shape (n_afe,)
-        [alpha/Fe] grid, strictly increasing.  aMIST/C3K: -0.2 .. +0.6
-        in steps of 0.2.
-    ssp_lg_age_gyr : jnp.ndarray, shape (n_ages,)
-        ``log10(age / Gyr)``.
-    ssp_wave : jnp.ndarray, shape (n_wave,)
-        Wavelength grid in Angstroms.  NB: for alpha grids this is the
-        C3K wavelength sampling, NOT the MILES sampling of older ceridwen
-        grids — the stored ``ssp_resolution`` curve (derived from THIS
-        wavelength array) is what the observation layer subtracts, so the
-        bookkeeping follows the grid automatically.
-    ssp_flux : jnp.ndarray, shape (n_afe, n_met, n_ages, n_wave)
-        SSP flux density in ``Lsun / Hz`` per Msun of initial stellar
-        mass, with the [alpha/Fe] axis LEADING.
-    ssp_resolution : np.ndarray or None, shape (n_wave,)
-        Library resolution sigma_v(lambda) [km/s] on ``ssp_wave`` (NaN =
-        unknown at that pixel).  Optional at the CONSTRUCTOR level only;
-        :meth:`save` / :meth:`load` REQUIRE it (schema 2.1).
-    resolution_source : str or None
-        Free-text provenance for the resolution curve.
-
-    Provenance fields are identical in meaning to ``SSPData``.
+    ssp_lgmet : jnp.ndarray (n_met,) -- log10 absolute TOTAL metallicity Z, NOT [Fe/H]
+    ssp_afe : jnp.ndarray (n_afe,), keyword-only -- [alpha/Fe] grid, strictly increasing
+    ssp_lg_age_gyr : jnp.ndarray (n_ages,) -- log10(age / Gyr)
+    ssp_wave : jnp.ndarray (n_wave,) -- Angstrom
+    ssp_flux : jnp.ndarray (n_afe, n_met, n_ages, n_wave) -- Lsun / Hz per Msun formed
+    ssp_resolution : np.ndarray (n_wave,) or None -- sigma_v(lambda) [km/s] on ``ssp_wave``; required by save/load
     """
 
-    ssp_lgmet: jnp.ndarray          # (n_met,) log10 absolute total Z
-    ssp_afe: jnp.ndarray            # (n_afe,) [alpha/Fe]
-    ssp_lg_age_gyr: jnp.ndarray     # (n_ages,) log10(age / Gyr)
-    ssp_wave: jnp.ndarray           # (n_wave,) Angstrom
-    ssp_flux: jnp.ndarray           # (n_afe, n_met, n_ages, n_wave)
+    ssp_afe: jnp.ndarray = field(kw_only=True)
 
-    # --- library resolution (schema 2.1; static numpy, not a JAX leaf) ----
-    ssp_resolution: Optional[np.ndarray] = field(default=None, compare=False)
-    resolution_source: Optional[str] = field(default=None, compare=False)
+    _display_title = "SSPDataAfe"
+    _schema_label = "SSPDataAfe schema 2.1"
+    _extra_datasets = ("ssp_afe",)
 
-    # --- provenance (static Python metadata; not array leaves) ------------
-    isoc_type: Optional[str] = field(default=None, compare=False)
-    spec_library: Optional[str] = field(default=None, compare=False)
-    imf_type: Optional[int] = field(default=None, compare=False)
-    fsps_version: Optional[str] = field(default=None, compare=False)
-    fsps_kwargs: dict = field(default_factory=dict, compare=False)
-    wave_min: Optional[float] = field(default=None, compare=False)
-    wave_max: Optional[float] = field(default=None, compare=False)
-    schema_version: Optional[str] = field(default=None, compare=False)
+    def _expected_flux_shape(self) -> tuple:
+        return (int(self.ssp_afe.size), int(self.ssp_lgmet.size),
+                int(self.ssp_lg_age_gyr.size), int(self.ssp_wave.size))
 
-    def __post_init__(self):
-        """Validate grid consistency (4-D layout, monotone afe axis)."""
-        expected = (self.ssp_afe.size, self.ssp_lgmet.size,
-                    self.ssp_lg_age_gyr.size, self.ssp_wave.size)
-        if self.ssp_flux.shape != expected:
+    def _check_flux_shape(self):
+        expected = self._expected_flux_shape()
+        if tuple(self.ssp_flux.shape) != expected:
             raise ValueError(
                 f"SSPDataAfe flux grid shape mismatch: expected {expected} "
                 f"(n_afe, n_met, n_ages, n_wave) but got "
-                f"{self.ssp_flux.shape}."
+                f"{tuple(self.ssp_flux.shape)}."
             )
         afe = np.asarray(self.ssp_afe, dtype=float)
         if afe.size > 1 and not np.all(np.diff(afe) > 0):
@@ -151,91 +62,19 @@ class SSPDataAfe:
                 f"searchsorted interpolation in CSPBasis_afe); got "
                 f"{afe.tolist()}."
             )
-        if self.ssp_resolution is not None:
-            res = np.asarray(self.ssp_resolution, dtype=np.float64)
-            if res.shape != (int(self.ssp_wave.size),):
-                raise ValueError(
-                    f"ssp_resolution shape {res.shape} must match ssp_wave "
-                    f"({int(self.ssp_wave.size)},): one sigma_v(lambda) "
-                    f"[km/s] per wavelength pixel (NaN where unknown)."
-                )
-            finite = res[np.isfinite(res)]
-            if finite.size and (finite <= 0.0).any():
-                raise ValueError(
-                    "ssp_resolution must be positive (km/s) where finite; "
-                    "use NaN to mark pixels of unknown library resolution."
-                )
-            # normalise storage to a plain float64 numpy array
-            object.__setattr__(self, "ssp_resolution", res)
 
     @property
     def n_afe(self) -> int:
         return int(self.ssp_afe.size)
 
-    # ------------------------------------------------------------------
-    # Library resolution attachment
-    # ------------------------------------------------------------------
-    def with_resolution(self, *, sigma_v=None, segments=None, source=None):
-        """Return a copy carrying the library resolution curve.
-
-        Exactly one of ``sigma_v`` (a per-pixel sigma_v(lambda) [km/s]
-        array on ``ssp_wave``, NaN where unknown) or ``segments`` (a
-        piecewise spec understood by
-        :func:`ceridwen.ssps.library_resolution.sigma_v_from_segments`)
-        must be given.  ``source`` is a short free-text provenance note
-        stored alongside.  Identical semantics to
-        :meth:`ceridwen.ssps.ssp_data.SSPData.with_resolution`.
-        """
-        import dataclasses as _dc
-        from .library_resolution import sigma_v_from_segments
-        if (sigma_v is None) == (segments is None):
-            raise ValueError(
-                "with_resolution: pass exactly one of sigma_v= or segments=")
-        if segments is not None:
-            sigma_v = sigma_v_from_segments(
-                np.asarray(self.ssp_wave), segments)
-        return _dc.replace(
-            self,
-            ssp_resolution=np.asarray(sigma_v, dtype=np.float64),
-            resolution_source=(str(source) if source is not None else None),
-        )
-
-    # ------------------------------------------------------------------
-    # Human-readable summary
-    # ------------------------------------------------------------------
-    def display(self, *, return_str: bool = False, file=None):
-        """Print a summary of the grid and its provenance."""
-        import sys as _sys
-
+    def _display_grid_lines(self, size_str: str) -> list:
         lgmet = np.asarray(self.ssp_lgmet)
         afe   = np.asarray(self.ssp_afe)
         lgage = np.asarray(self.ssp_lg_age_gyr)
         wave  = np.asarray(self.ssp_wave)
         n_afe, n_met, n_age, n_wave = self.ssp_flux.shape
         age_gyr = 10.0 ** lgage
-
-        def _fmt(v, na="—"):
-            return na if v is None else str(v)
-
-        size = float(np.asarray(self.ssp_flux).nbytes)
-        for unit in ("B", "KB", "MB", "GB", "TB"):
-            if size < 1024.0 or unit == "TB":
-                size_str = f"{size:.1f} {unit}"
-                break
-            size /= 1024.0
-
-        lines = [
-            "SSPDataAfe",
-            "-" * 66,
-            "provenance",
-            f"  isochrones (isoc_type)   : {_fmt(self.isoc_type)}",
-            f"  spectral library         : {_fmt(self.spec_library)}",
-            f"  IMF (imf_type)           : {_fmt(self.imf_type)}",
-            f"  FSPS version             : {_fmt(self.fsps_version)}",
-            f"  schema version           : {_fmt(self.schema_version)}",
-            f"  recorded wave_min/max    : {_fmt(self.wave_min)} / {_fmt(self.wave_max)}",
-            f"  build kwargs             : {self.fsps_kwargs or '{}'}",
-            "grids",
+        return [
             f"  [alpha/Fe]               : {n_afe:>4d} pts   "
             f"{np.array2string(afe, precision=2)}",
             f"  metallicity  log10 Z     : {n_met:>4d} pts   "
@@ -251,207 +90,49 @@ class SSPDataAfe:
             f"[L_sun Hz^-1 M_sun^-1]  {np.asarray(self.ssp_flux).dtype}  "
             f"{size_str}",
         ]
-        if self.ssp_resolution is None:
-            lines += ["  library resolution       : MISSING "
-                      "(cannot be saved; attach with with_resolution)"]
-        else:
-            res = np.asarray(self.ssp_resolution, dtype=np.float64)
-            fin = np.isfinite(res)
-            if fin.any():
-                cov_lo = wave[fin].min(); cov_hi = wave[fin].max()
-                lines += [
-                    f"  library resolution       : sigma_v "
-                    f"[{res[fin].min():.1f}, {res[fin].max():.1f}] km/s over "
-                    f"[{cov_lo:.0f}, {cov_hi:.0f}] AA "
-                    f"({100.0 * fin.mean():.0f}% of pixels; NaN elsewhere)",
-                ]
-            else:
-                lines += ["  library resolution       : all-NaN "
-                          "(unknown everywhere; no subtraction will occur)"]
-            if self.resolution_source:
-                lines += [f"  resolution source        : {self.resolution_source}"]
-        if n_afe == 1:
-            lines += [
+
+    def _display_note_lines(self) -> list:
+        if self.n_afe == 1:
+            return [
                 "note",
                 "  single [alpha/Fe] plane (AFE_FLAG=0 build or legacy "
                 "promotion):",
                 "  CSPBasis_afe compiles the alpha interpolation away "
                 "(static no-op).",
             ]
+        return []
 
-        txt = "\n".join(lines)
-        if return_str:
-            return txt
-        print(txt, file=file or _sys.stdout)
-        return None
-
-    # ------------------------------------------------------------------
-    # HDF5 I/O
-    # ------------------------------------------------------------------
-    def save(self, filename):
-        """Serialise the alpha-enhanced SSP grids to HDF5 (schema 2.1).
-
-        The library resolution curve is REQUIRED — a grid without
-        ``ssp_resolution`` cannot be written (attach one with
-        :meth:`with_resolution` first).
-        """
-        if self.ssp_resolution is None:
-            raise ValueError(
-                "SSPDataAfe.save(): this grid carries no library resolution "
-                "curve (ssp_resolution is None).  Schema 2.1 files require "
-                "one — attach it with with_resolution(sigma_v=...) or "
-                "with_resolution(segments=...) before saving."
-            )
-        with h5py.File(filename, 'w') as f:
-            f.create_dataset('ssp_lgmet',      data=np.array(self.ssp_lgmet))
-            f.create_dataset('ssp_afe',        data=np.array(self.ssp_afe))
-            f.create_dataset('ssp_lg_age_gyr', data=np.array(self.ssp_lg_age_gyr))
-            f.create_dataset('ssp_wave',       data=np.array(self.ssp_wave))
-            f.create_dataset('ssp_flux',       data=np.array(self.ssp_flux))
-            f.create_dataset('ssp_resolution',
-                             data=np.asarray(self.ssp_resolution,
-                                             dtype=np.float64))
-
-            f.attrs['description']        = ('FSPS alpha-enhanced SSP '
-                                             'interpolation grids')
-            f.attrs['units_lgmet']        = 'log10(absolute_total_metallicity)'
-            f.attrs['units_afe']          = '[alpha/Fe] (dex)'
-            f.attrs['units_lg_age_gyr']   = 'log10(age/Gyr)'
-            f.attrs['units_wave']         = 'Angstrom'
-            f.attrs['units_flux']         = 'L_sun Hz^-1 M_sun^-1'
-            f.attrs['units_resolution']   = 'sigma_v [km/s]; NaN = unknown'
-            f.attrs['flux_axis_order']    = '(afe, met, age, wave)'
-            if self.resolution_source is not None:
-                f.attrs['resolution_source'] = str(self.resolution_source)
-
-            for key in ('schema_version', 'isoc_type', 'spec_library',
-                        'fsps_version'):
-                val = getattr(self, key)
-                if val is not None:
-                    f.attrs[key] = str(val)
-            if self.imf_type is not None:
-                f.attrs['imf_type'] = int(self.imf_type)
-            if self.wave_min is not None:
-                f.attrs['wave_min'] = float(self.wave_min)
-            if self.wave_max is not None:
-                f.attrs['wave_max'] = float(self.wave_max)
-            f.attrs['fsps_kwargs_json'] = json.dumps(self.fsps_kwargs or {})
+    def _save_extra(self, f):
+        f.create_dataset('ssp_afe', data=np.array(self.ssp_afe))
+        f.attrs['description']     = ('FSPS alpha-enhanced SSP '
+                                      'interpolation grids')
+        f.attrs['units_lgmet']     = 'log10(absolute_total_metallicity)'
+        f.attrs['units_afe']       = '[alpha/Fe] (dex)'
+        f.attrs['flux_axis_order'] = '(afe, met, age, wave)'
 
     @classmethod
-    def load(cls, filename):
-        """Load an :class:`SSPDataAfe` from HDF5 (schema 2.1).
+    def load(cls, filename, flux_dtype=None):
+        """Load from HDF5; a 3-D grid without ``ssp_afe`` is promoted to n_afe = 1 at [alpha/Fe] = 0."""
+        arrays, extra, meta = cls._read_h5(filename, flux_dtype=flux_dtype)
+        ssp_afe = extra['ssp_afe']
+        if ssp_afe is None:
+            ssp_afe = jnp.zeros(1)
+            arrays['ssp_flux'] = arrays['ssp_flux'][None, ...]
+        return cls(**arrays, ssp_afe=ssp_afe, **meta)
 
-        The file MUST carry the ``ssp_resolution`` dataset; files written
-        under earlier schemas raise with a pointer to the converter
-        (``scripts/convert_grids_schema2.py``, which handles 4-D alpha
-        files).  Files without an ``ssp_afe`` dataset (3-D flux) are
-        promoted to ``n_afe = 1`` at [alpha/Fe] = 0 — a LAYOUT
-        convenience for solar-scaled grids, not a metadata escape hatch:
-        the resolution requirement applies to them all the same.
-        """
-        def _decode(v):
-            if isinstance(v, (bytes, bytearray)):
-                return v.decode()
-            return v
-
-        with h5py.File(filename, 'r') as f:
-            if 'ssp_resolution' not in f:
-                raise ValueError(
-                    f"{filename}: no 'ssp_resolution' dataset — this grid "
-                    f"predates SSPDataAfe schema 2.1.  Convert it (no FSPS "
-                    f"rebuild needed) with scripts/convert_grids_schema2.py, "
-                    f"which copies the existing arrays (including the "
-                    f"[alpha/Fe] axis) and attaches the library resolution "
-                    f"curve."
-                )
-            ssp_lgmet      = jnp.array(f['ssp_lgmet'][:])
-            ssp_lg_age_gyr = jnp.array(f['ssp_lg_age_gyr'][:])
-            ssp_wave       = jnp.array(f['ssp_wave'][:])
-            ssp_flux       = jnp.array(f['ssp_flux'][:])
-            ssp_resolution = np.asarray(f['ssp_resolution'][:],
-                                        dtype=np.float64)
-
-            if 'ssp_afe' in f:
-                ssp_afe = jnp.array(f['ssp_afe'][:])
-            else:
-                # Solar-scaled 3-D grid: promote to a single alpha plane.
-                ssp_afe  = jnp.zeros(1)
-                ssp_flux = ssp_flux[None, ...]
-
-            a = f.attrs
-            meta = {
-                'ssp_resolution':    ssp_resolution,
-                'resolution_source': _decode(a['resolution_source'])
-                                     if 'resolution_source' in a else None,
-                'schema_version': _decode(a['schema_version'])
-                                  if 'schema_version' in a else None,
-                'isoc_type':      _decode(a['isoc_type'])
-                                  if 'isoc_type' in a else None,
-                'spec_library':   _decode(a['spec_library'])
-                                  if 'spec_library' in a else None,
-                'fsps_version':   _decode(a['fsps_version'])
-                                  if 'fsps_version' in a else None,
-                'imf_type':       int(a['imf_type']) if 'imf_type' in a else None,
-                'wave_min':       float(a['wave_min']) if 'wave_min' in a else None,
-                'wave_max':       float(a['wave_max']) if 'wave_max' in a else None,
-            }
-            if 'fsps_kwargs_json' in a:
-                meta['fsps_kwargs'] = json.loads(_decode(a['fsps_kwargs_json']))
-            else:
-                meta['fsps_kwargs'] = {}
-
-        return cls(ssp_lgmet, ssp_afe, ssp_lg_age_gyr, ssp_wave, ssp_flux,
-                   **meta)
-
-    # ------------------------------------------------------------------
-    # Generation from FSPS
-    # ------------------------------------------------------------------
     @classmethod
     def from_fsps(cls, save_to: Optional[str] = None,
                   afe_values=None,
                   resolution_segments=None,
                   resolution_source: Optional[str] = None,
                   **fsps_kwargs) -> "SSPDataAfe":
-        """
-        Build an :class:`SSPDataAfe` directly from FSPS.
-
-        Loops the parent builder's ``get_spectrum(tage=0, zmet=i)`` pattern
-        over the [alpha/Fe] axis via the ``afeindx`` selector (honoured
-        because the grid is built with ``zcontinuous=0``; NB ``afeindx``
-        is 1-based and is silently IGNORED for ``zcontinuous > 0``).
-
-        Schema 2.1: the library resolution curve is built automatically as
-        the element-wise maximum of the grid's own 2-pixel sampling floor
-        (from the built ``ssp_wave``) and any ``resolution_segments``
-        describing the parent library's documented LSF — identical
-        semantics to :meth:`ceridwen.ssps.ssp_data.SSPData.from_fsps`.
-
-        Requires python-fsps main (>= alpha-MC merge, 2026-08-02) compiled
-        with ``AFE_FLAG=1`` against FSPS v4.0 + its v4.0 ``$SPS_HOME``
-        data tree.  With an ``AFE_FLAG=0`` build (``n_afe == 1``) the
-        result is a valid single-plane grid at [alpha/Fe] = 0 — the
-        C3K/aMIST null model.
+        """Build the grid by looping ``get_spectrum(tage=0, zmet=i)`` over the [alpha/Fe] planes.
 
         Parameters
         ----------
-        save_to : str or Path, optional
-            If given, the result is persisted via :meth:`save`.
-        afe_values : array-like, optional
-            Explicit [alpha/Fe] values of the compiled FSPS grid, in
-            ``afeindx`` order.  Defaults: n_afe == 5 -> the documented
-            aMIST/C3K grid (-0.2 .. +0.6); n_afe == 1 -> [0.0]; anything
-            else must be supplied explicitly.
-        resolution_segments : list of segments, optional
-            Documented library LSF (see
-            :func:`ceridwen.ssps.library_resolution.sigma_v_from_segments`);
-            max-combined with the sampling floor.  Omit when the stored
-            sampling is the binding resolution.
-        resolution_source : str, optional
-            Citation for ``resolution_segments``; raises if given alone.
-        **fsps_kwargs
-            Stellar-library / IMF kwargs, validated against the SAME
-            whitelist as ``SSPData.from_fsps`` (``afe`` / ``afeindx`` are
-            grid axes here and are rejected as build kwargs).
+        afe_values : array-like, optional -- [alpha/Fe] of each plane in ``afeindx`` order; defaults exist for n_afe 5 and 1 only
+        resolution_segments : list, optional -- documented library LSF segments, max-combined with the 2-pixel sampling floor
+        resolution_source : str, optional -- citation for ``resolution_segments``; each raises if given without the other
         """
         if resolution_source is not None and resolution_segments is None:
             raise ValueError(
@@ -478,17 +159,8 @@ class SSPDataAfe:
                 )
         kwargs = _validate_fsps_kwargs(fsps_kwargs)
 
-        if not HAS_FSPS:
-            raise ImportError(
-                "FSPS is required for SSP data generation but is not "
-                "available. Alpha-enhanced grids additionally need "
-                "python-fsps main (>= 2026-08-02) compiled with AFE_FLAG=1. "
-                "See https://dfm.io/python-fsps/current/installation/"
-            )
+        fsps = _import_fsps()
 
-        # Discrete grid: zcontinuous=0 (zlegend points; also the mode in
-        # which afeindx is honoured), sfh=0 (SSP mode).  Fixed here, never
-        # caller-supplied.
         ssp = fsps.StellarPopulation(zcontinuous=0, sfh=0, **kwargs)
 
         n_afe = int(getattr(ssp, "n_afe", 1))
@@ -511,19 +183,19 @@ class SSPDataAfe:
                 f"(the [alpha/Fe] of each afeindx plane, in order)."
             )
 
-        ssp_lgmet      = jnp.log10(ssp.zlegend)            # absolute log Z
+        ssp_lgmet      = jnp.log10(ssp.zlegend)
         nzmet          = int(ssp_lgmet.size)
-        ssp_lg_age_gyr = jnp.array(ssp.log_age - 9.0)      # log(yr)->log(Gyr)
+        ssp_lg_age_gyr = jnp.array(ssp.log_age - 9.0)
 
         planes = []
         _wave = None
-        for afe_indx in range(1, n_afe + 1):               # FSPS is 1-based
+        for afe_indx in range(1, n_afe + 1):               # afeindx is 1-based
             if n_afe > 1:
                 ssp.params["afeindx"] = afe_indx
                 print(f"[alpha/Fe] plane {afe_indx}/{n_afe} "
                       f"(afe = {ssp_afe[afe_indx - 1]:+.1f})")
             spectrum_collector = []
-            for zmet_indx in range(1, nzmet + 1):          # FSPS is 1-based
+            for zmet_indx in range(1, nzmet + 1):
                 print(f"...retrieving metallicity {zmet_indx}/{nzmet} "
                       f"[Z = {ssp.zlegend[zmet_indx - 1]:.4f}]")
                 _wave, _fluxes = ssp.get_spectrum(
@@ -531,11 +203,6 @@ class SSPDataAfe:
                 spectrum_collector.append(_fluxes)
             planes.append(np.array(spectrum_collector))
 
-            # The zlegend must be identical for every alpha plane (FSPS
-            # regularises the aMIST grids to a common nz); zlegend is a
-            # compile-time constant per library, but assert anyway so a
-            # future ragged-Z data release fails loudly here rather than
-            # silently interpolating a ragged grid.
             _z_now = np.log10(np.asarray(ssp.zlegend))
             if not np.allclose(_z_now, np.asarray(ssp_lgmet)):
                 raise RuntimeError(
@@ -546,7 +213,7 @@ class SSPDataAfe:
                 )
 
         ssp_wave = jnp.array(_wave)
-        ssp_flux = jnp.array(np.stack(planes, axis=0))     # (n_afe, n_z, n_age, n_wave)
+        ssp_flux = jnp.array(np.stack(planes, axis=0))
 
         meta = _read_fsps_provenance(ssp, kwargs, ssp_wave)
         meta['schema_version'] = SSP_AFE_SCHEMA_VERSION
@@ -555,8 +222,8 @@ class SSPDataAfe:
         sigma_v = combined_sigma_v(np.asarray(ssp_wave),
                                    segments=resolution_segments)
 
-        data = cls(ssp_lgmet, jnp.array(ssp_afe), ssp_lg_age_gyr,
-                   ssp_wave, ssp_flux,
+        data = cls(ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux,
+                   ssp_afe=jnp.array(ssp_afe),
                    ssp_resolution=sigma_v,
                    resolution_source=combined_source(resolution_source),
                    **meta)

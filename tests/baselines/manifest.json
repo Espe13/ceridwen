@@ -153,5 +153,6 @@
         ]
       }
     }
-  ]
+  ],
+  "spectra_recaptured": "2026-09-10 broadening merge (W_*.npy untouched)"
 }

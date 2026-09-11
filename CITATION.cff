@@ -14,8 +14,8 @@ authors:
     given-names: Amanda
     email: aas208@cam.ac.uk
     affiliation: "Kavli Institute for Cosmology, University of Cambridge"
-version: "0.2.3"
-date-released: "2026-08-04"
+version: "3.0.0"
+date-released: "2026-09-11"
 license: MIT
 repository-code: "https://github.com/Espe13/ceridwen"
 url: "https://www.amanda-stoffers.de/ceridwen/"

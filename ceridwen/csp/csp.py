@@ -1,31 +1,9 @@
-"""
-Dict-based CSPBasis.
+"""Composite stellar population basis with a dict-valued theta.
 
-The parameter vector theta is a plain Python/JAX dict at all times:
-
-    theta = {
-        "sfh":               jnp.zeros(100),   # shape (n_time,), linear SFR
-        "Z":                 jnp.array([-1.85]),# log10 ABSOLUTE metallicity
-                                                # (ssp_lgmet grid units), scalar
-                                                # — NOT log10 Z/Zsun. Use "zh"
-                                                # (same units, shape (n_time,))
-                                                # for a metallicity history.
-        "gas_logz":          jnp.array([0.0]),
-        "gas_logu":          jnp.array([-2.0]),
-        "tau_pow":           jnp.array([1.0]),
-        "diffuse_tau_kc":    jnp.array([0.3]),
-        "diffuse_dust_index": jnp.array([0.0]),
-        # … any other dust / emission parameters
-    }
-
-Python dicts are natively registered JAX PyTrees.  String keys are static
-(part of the PyTree structure, not traced values), so passing a dict to a
-``@jax.jit`` function has no overhead, and retracing occurs only if the set of
-keys, or the shapes/dtypes of the values, change.
-
-``DiagonalNoiseModel.compute(sigma, mu, mask, theta)`` looks up nuisance
-parameters by name (``theta["log_jitter"]``), which works transparently with
-the dict theta.
+theta keys: "sfh" (linear SFR, per node (n_time,) or per bin (n_time-1,)),
+"Z" or "zh" (log10 absolute metallicity on the SSP grid, NOT log10 Z/Zsun),
+dust / nebular parameters, and the runtime scalars logmass, zred, lumdist_mpc,
+igm_factor, eline_scaling, frac_obrun, spectrum_scaling, spectrum_calib.
 """
 
 import math
@@ -34,41 +12,24 @@ import warnings
 
 import numpy as np
 import jax.numpy as jnp
-from jax import jit, vmap
 import pprint
-
-import astropy.constants as const
-
-from sedpy_jax.smoothing import make_vel_smoother
 
 from ceridwen.dust.DustModel import Dust, DiffuseDust
 from ceridwen.dust.DustEmission import DustEmission
 from ceridwen.neb.NebularGridModel            import NebularModel
-# Observation-type dispatch is handled by the polymorphic
-# obs.predict(spectrum, wave) method on each Observation subclass, so
-# CSPBasis.predict has zero isinstance/if branches and needs no imports here.
 
 tiny_number = 1e-70
-# Plain Python constant — avoid a module-level JIT call that can fail on
-# backends (e.g. Apple Metal) which do not support the configured float
-# precision at package import.
-LOG10E = math.log10(math.e)  # ≈ 0.4342944819032518
+LOG10E = math.log10(math.e)
 
 
 def fnu2flam(lam, fnu):
-    """Convert f_nu [erg/s/cm^2/Hz] to f_lambda [erg/s/cm^2/Å]."""
+    """f_nu [erg/s/cm^2/Hz] -> f_lambda [erg/s/cm^2/A]."""
     c = 2.998e18  # Å/s
     return c * (fnu / (lam ** 2))
 
 
-
 def intsfwght(t_hi, t_lo, a, slope, logage):
-    """Integrated SFH weight between log-time limits.
-
-    Pure JAX helper. Deliberately not ``@jit``-decorated: it is only ever
-    called from within the outer ``@jax.jit`` lnprobfn, which inlines it, so a
-    separate JIT boundary here would be redundant.
-    """
+    """Integral of a linearly interpolated SFH between log-time limits (piecewise-linear weights)."""
 
     def F(t):
         x = 10.0**t
@@ -81,36 +42,12 @@ def intsfwght(t_hi, t_lo, a, slope, logage):
     return F(t_hi) - F(t_lo)
 
 
-# Legacy default used when an SSP grid records no isochrone library (i.e. it
-# predates provenance tracking) and the caller did not specify one.  Matches
-# the historical hard-coded CSPBasis default so old grids reproduce exactly.
 _LEGACY_ISOC_TYPE = "mist"
 
 
 def _resolve_isoc_type(recorded, user, *, default=_LEGACY_ISOC_TYPE):
-    """
-    Pick the nebular isochrone type, preferring the SSP grid's provenance.
-
-    A nebular CLOUDY grid whose isochrone set does not match the SSP grid is
-    wrong physics with no visible symptom, so a conflict is a hard error.
-
-    Parameters
-    ----------
-    recorded : str or None
-        ``isoc_type`` recorded in the SSPData (``None`` for legacy grids).
-    user : str or None
-        ``isoc_type`` the caller passed via ``init_neb_params`` (or ``None``).
-
-    Returns
-    -------
-    str
-        The isochrone type to use for the nebular grid.
-
-    Raises
-    ------
-    ValueError
-        If the caller specified an ``isoc_type`` that conflicts with the
-        value recorded in the SSP grid.
+    """Nebular isochrone type: the SSP grid's recorded one, else the caller's, else ``default`` (with a warning).
+    A caller value that conflicts with the recorded one raises ValueError.
     """
     if user is None:
         if recorded is None:
@@ -137,120 +74,36 @@ def _resolve_isoc_type(recorded, user, *, default=_LEGACY_ISOC_TYPE):
     return user
 
 
-# ===========================================================================
-# CSPBasis
-# ===========================================================================
-
 class CSPBasis:
-    """
-    Composite Stellar Population basis using a dict-valued theta.
-
-    The public interface is identical to ``csp.CSPBasis`` except that
-    ``predict(theta)`` now expects (and ``theta_init`` now is) a
-    ``dict[str, Array]`` rather than a flat 1-D ``jnp.ndarray``.
+    """Composite stellar population basis.  ``predict(theta, observations)`` projects the model onto observations.
 
     Parameters
     ----------
-    SSPData : SSPData
-        Frozen dataclass with SSP grids (wave, flux, ages, zmet).  The
-        nebular model computes its own ionising-photon rate from
-        ``SSPData.ssp_flux`` at construction time, so ``log_qq`` is no
-        longer carried in the SSP grid container.
-    theta : dict, optional
-        Initial parameter values.  Must contain ``"sfh"`` and
-        ``"lookback_time"`` (>= 2 nodes; n_time nodes define n_time-1 SFH
-        bins).  All other keys are optional.  Instead of ``theta`` you can
-        pass the ``lookback_time=`` shortcut (below), which fills the initial
-        values with neutral defaults — use ``theta`` only when you want
-        control over the initial values themselves (e.g. a specific initial
-        SFH for ``display_sfh`` or a chosen starting point).
-
-        ``"lookback_time"`` is required even when the redshift is sampled:
-        with ``track_zred_age=True`` the forward pass rescales this grid to
-        track ``age_gyr(zred)``, preserving its length and relative node
-        spacing — the construction-time grid is the *template* that fixes
-        ``n_time`` and the bin structure.
-
-        The construction-time grid is a *default*, not a straitjacket: an
-        explicit ``theta["lookback_time"]`` passed to ``predict`` /
-        ``get_spectrum`` takes precedence and is used verbatim in the weight
-        kernel (see ``_ssp_weights``), e.g. for transform-derived grids
-        computed from a sampled ``zred``.  Per-call grids are traced values
-        and therefore CANNOT be validated (monotonicity, range) inside the
-        compiled path — that fail-fast validation happens only on the
-        concrete construction-time grid, which is why one is required here.
-
-        Lookback-time convention
-            ``theta["lookback_time"]`` is **monotonically increasing**
-            in Gyr, with index 0 the present-day node (≈ 0 Gyr) and
-            the last index the oldest sampled node (≤ ``tuniv``).
-            ``theta["sfh"]`` is indexed to match: ``sfh[0]`` is the
-            SFR at today (per-node input) or the SFR of the
-            youngest bin (per-bin / FastStepBasis input).  Likewise
-            ``theta["zh"]`` (per-node) has ``zh[0]`` = today's
-            metallicity.
-
-            Example::
-
-                T_univ = 13.8
-                lookback = jnp.linspace(0.0, T_univ, 10)        # today → oldest
-                sfh      = jnp.exp(-lookback / 1.0)             # late-assembly burst
-                theta    = {"lookback_time": lookback,
-                            "sfh":           sfh,
-                            "Z":             jnp.array([-0.5])}
-
-            A decreasing grid (``lookback = T_univ - t_grid``) raises a
-            ``ValueError`` at construction — see the assertion in
-            ``initialize_model_structure``.
-    tuniv : float
-        Age of the Universe in Gyr.  Default 13.8.
-    zh_const : bool
-        If True, use constant metallicity (requires key ``"Z"``).
-        If False, use time-varying metallicity (requires key ``"zh"``).
-    add_neb, add_dust, add_diffuse_dust, add_dust_emission : bool
-        Physics switches.
-    sps_home : str, optional
-        Path to the FSPS data directory (needed for nebular and dust-emission
-        grid loading). Defaults to the ``$SPS_HOME`` environment variable that
-        FSPS users set on install; pass explicitly to override. Required only
-        when ``add_neb`` or ``add_dust_emission`` is True.
-    init_neb_params, init_dust_params : dict
-        Keyword arguments forwarded to ``NebularModel`` / ``Dust``.
-        ``isoc_type`` no longer needs to be set here: it is taken
-        automatically from the SSP grid's recorded provenance
-        (``SSPData.isoc_type``), so the nebular CLOUDY grid always matches
-        the SSP isochrone set. Passing an ``isoc_type`` that conflicts with
-        the grid raises ``ValueError``; passing one for a legacy grid with no
-        recorded library is honoured. A legacy grid with no recorded library
-        and no explicit ``isoc_type`` warns and falls back to ``'mist'``.
-    diffuse_law : str
-        Attenuation law name for the diffuse dust component.
-    verbose : bool
-        Print parameter summary after initialization.
-    lookback_time : array-like, optional
-        Shortcut alternative to ``theta``: the static SFH node grid (Gyr,
-        monotonically increasing, index 0 = today, >= 2 nodes).  Initial
-        values are filled with neutral defaults (``sfh`` = 1 in every
-        node/bin; metallicity = the median of the SSP grid, guaranteed
-        in-grid).  Mutually exclusive with ``theta``.
-
-        Example::
-
-            csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6),
-                           zh_const=True, add_neb=False)
-    sfh_per_bin : bool
-        Only used with the ``lookback_time=`` shortcut: if True, the SFH is
-        one SFR per bin (shape ``(n_time-1,)``, FastStepBasis / prospector
-        convention) instead of one per node (shape ``(n_time,)``).  Default
-        False.  (With ``theta=`` the convention is inferred from the shape
-        of ``theta['sfh']``.)
+    SSPData : SSPData -- SSP grids (wave, flux, ages, metallicities, optional resolution curve).
+    theta : dict -- initial values; must contain "lookback_time" (Gyr, increasing, index 0 = today,
+        >= 2 nodes) and "sfh", plus "Z" (zh_const=True) or "zh" (zh_const=False).  Mutually
+        exclusive with ``lookback_time=``.
+    lookback_time : array -- shortcut for ``theta``: the node grid only, neutral initial values
+        (sfh = 1, metallicity = grid median).
+    sfh_per_bin : bool -- with ``lookback_time=``, one SFR per bin (n_time-1,) instead of per node.
+    zh_const : bool -- constant metallicity ("Z") or a metallicity history ("zh", one per node).
+    add_neb, add_dust, add_diffuse_dust, add_dust_emission, add_igm : bool -- physics switches.
+    sps_home : str -- data directory for the nebular and dust-emission grids; defaults to $SPS_HOME.
+    init_neb_params, init_dust_params : dict -- forwarded to NebularModel / Dust.  ``isoc_type`` is
+        taken from the SSP grid's provenance when recorded.
+    sfh_interp : {'step', 'linear'} -- piecewise-constant (non-negative weights) or
+        piecewise-linear (analytic log-age integral, small negative weights clipped) SFH.
+    track_zred_age : bool -- with a sampled ``zred``, rescale the lookback grid so its oldest node
+        is the age of the Universe at that redshift.
+    fesc_geometry : {'runaway_bc', 'picket'} -- how the ``frac_obrun`` escape channel bypasses dust.
+    cosmo : Cosmology -- required; used for the flux factor and for the age of the Universe.
+    nebemlineinspec : bool -- default of ``include_lines`` in ``get_spectrum`` only.
     """
 
     def __init__(
         self,
         SSPData,
         theta=None,
-        tuniv=13.8,
         tiny_logt=-70,
         zh_const=False,
         add_neb=True,
@@ -267,7 +120,6 @@ class CSPBasis:
         diffuse_law='kriek_conroy',
         verbose=True,
         sfh_interp='step',
-        sigma_losvd_kms=300.0,
         track_zred_age=False,
         lookback_time=None,
         sfh_per_bin=False,
@@ -275,37 +127,18 @@ class CSPBasis:
         cosmo=None,
         **kwargs,
     ):
-        """
-        sfh_interp : {'step', 'linear'}
-            Controls the SFH integration scheme used when computing SSP weights.
-
-            ``'step'`` (default) — piecewise-constant (FastStepBasis-style).
-                The SFR is held at the mean of the two endpoint values within
-                each SFH time bin.  The weight of each SSP age bin is the
-                product of that constant SFR and the linear-time overlap between
-                the SFH bin and the SSP age bin.  Weights are non-negative by
-                construction — no clipping is ever needed.
-
-            ``'linear'`` — piecewise-linear.
-                Analytically integrates a linearly-interpolated SFH against the
-                SSP age bins in log-age space (``intsfwght``).  Higher-order
-                accurate, but can produce small negative weights for steep SFH
-                gradients, which are then clipped.
-
-        To switch at runtime::
-
-            csp.calculate_ssp_weights = csp.calculate_ssp_weights_const_zh_step
-            # or
-            csp.calculate_ssp_weights = csp.calculate_ssp_weights_const_zh
-        """
-        # --- Shortcut construction: lookback_time= instead of theta= --------
-        # The init theta exists to fix STATIC structure (n_time + node spacing,
-        # the per-node/per-bin sfh convention, the Z-vs-zh metallicity mode) —
-        # things the JIT-compiled kernels bake in at trace time.  The initial
-        # VALUES only seed theta_init and the early range check, so the
-        # shortcut fills them with neutral defaults: sfh = 1 everywhere and
-        # the median metallicity of the SSP grid (always in-grid).  Every
-        # predict/get_spectrum call still takes its own theta as usual.
+        self.verbose = bool(verbose)
+        if kwargs:
+            hint = ""
+            if "sigma_losvd_kms" in kwargs:
+                hint = (" ('sigma_losvd_kms' was removed: the galaxy velocity "
+                        "dispersion is set once on the model, "
+                        "SedModel(kinematics=Kinematics(sigma_gal=...)))")
+            elif "tuniv" in kwargs:
+                hint = (" ('tuniv' was removed: the age of the Universe comes from "
+                        "the cosmology, csp.age_at(z) / cosmo.age(z))")
+            raise TypeError(
+                f"CSPBasis got unexpected keyword argument(s) {sorted(kwargs)}{hint}")
         if lookback_time is not None:
             if theta is not None:
                 raise ValueError(
@@ -335,54 +168,29 @@ class CSPBasis:
                 "today, >= 2 nodes."
             )
         if init_neb_params is None:
-            # isoc_type is intentionally NOT set here: it is taken from the
-            # SSP grid's recorded provenance (see initialize_neb). Pass
-            # init_neb_params={'isoc_type': ...} only to override.
             init_neb_params = {"cloudy_dust": True}
         if init_dust_params is None:
             init_dust_params = {'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']}
 
-        # --- SSP grids (static, never part of theta) -----------------------
         self.flux      = jnp.array(SSPData.ssp_flux, dtype=jnp.float32)  # (n_z, n_age, n_wave)
         self.wave      = jnp.array(SSPData.ssp_wave)       # (n_wave,)
         self.ages      = jnp.array(SSPData.ssp_lg_age_gyr) # (n_age,)  log10(Gyr)
         self.zmet      = jnp.array(SSPData.ssp_lgmet)      # (n_z,) log10 absolute Z
-        # Library resolution curve (schema 2.0): (wave_rest, sigma_v[km/s]),
-        # plain numpy, Python-level only — SedModel threads it into the
-        # Spectrum projection for the automatic in-quadrature subtraction.
         self.lib_resolution = (
             (np.asarray(SSPData.ssp_wave, dtype=np.float64),
              np.asarray(SSPData.ssp_resolution, dtype=np.float64))
             if getattr(SSPData, "ssp_resolution", None) is not None else None)
-        # The nebular model computes the ionising-photon rate from ``self.flux``
-        # internally (see ``initialize_neb`` / ``NebularModel.compute_log_qq``).
         self.zlegend   = 10 ** self.zmet                   # linear metallicity
         self.ssp_ages_lgyr = self.ages + 9                 # log10(yr)
 
-        # Static provenance carried by the SSP grid (Python-level only, never a
-        # JAX leaf). ``isoc_type`` is auto-propagated to the nebular model so
-        # users never have to set it by hand; ``None`` for legacy grids.
         self._ssp_isoc_type    = getattr(SSPData, "isoc_type", None)
         self._ssp_spec_library = getattr(SSPData, "spec_library", None)
 
-        # --- fesc escape-channel geometry (static; baked at trace time) -----
-        #   "runaway_bc" (default): FSPS OB-runaway behaviour -- the
-        #       frac_obrun channel bypasses birth-cloud dust but still crosses
-        #       the diffuse screen; nebular emission shares the bypass mix.
-        #       This is the geometry of every pre-2026-08 campaign.
-        #   "picket": picket-fence / partial covering (Giovinazzo+26fog
-        #       geometry) -- a fraction frac_obrun of the YOUNG stellar light
-        #       (LyC included) escapes through dust-free channels (no birth-
-        #       cloud, no diffuse dust); the covered (1 - frac_obrun) fraction
-        #       powers the nebular emission and is fully attenuated.  Imprints
-        #       on the >912 A continuum (bluer UV slope at high frac_obrun),
-        #       so Delta lnZ != 0 between escape values.
         if fesc_geometry not in ("runaway_bc", "picket"):
             raise ValueError(
                 f"fesc_geometry must be 'runaway_bc' or 'picket', got {fesc_geometry!r}")
         self.fesc_geometry = str(fesc_geometry)
 
-        # Precomputed constants for calculate_ssp_weights (all static)
         self._logage_lo  = self.ssp_ages_lgyr[1:]
         self._logage_hi  = self.ssp_ages_lgyr[:-1]
         self._dlogage    = jnp.diff(self.ssp_ages_lgyr)
@@ -392,37 +200,20 @@ class CSPBasis:
         self._n_z   = len(self.zmet)
         self._n_age = len(self.ages)
 
-        # SSP bin edges in linear years. _ssp_lo_yr is the younger (smaller)
-        # edge; _ssp_hi_yr is the older (larger) edge of each SSP age bin.
         self._ssp_lo_yr = 10.0 ** self._logage_hi   # (n_age-1,)
         self._ssp_hi_yr = 10.0 ** self._logage_lo   # (n_age-1,)
 
-        # Voronoi cell boundaries for the step-function weight scheme.
-        # Each SSP age POINT j owns the linear-time interval
-        #   [_ssp_voronoi_lo[j], _ssp_voronoi_hi[j]]
-        # where the boundaries are the midpoints to the neighbouring age points.
-        # For a piecewise-constant SFH the weight at SSP j equals the
-        # SFR * (width of its Voronoi cell in yr); this matches FSPS
-        # FastStepBasis's internal ±ε offset scheme.
-        #
-        # Boundary handling:
-        #   - youngest SSP (j=0): lower bound set to 0.
-        #   - oldest  SSP (j=-1): upper bound set to 2× the last inter-point
-        #     spacing, which safely exceeds any realistic SFH extent.
         _ssp_age_yr  = 10.0 ** self.ssp_ages_lgyr           # (n_age,) linear yr
         _voro_mid    = 0.5 * (_ssp_age_yr[:-1] + _ssp_age_yr[1:])  # (n_age-1,)
         _voro_hi_ext = _ssp_age_yr[-1] + (_ssp_age_yr[-1] - _ssp_age_yr[-2])
         self._ssp_voronoi_lo = jnp.concatenate(
             [jnp.zeros(1), _voro_mid]
-        )   # (n_age,)  — lower boundary of each Voronoi cell
+        )
         self._ssp_voronoi_hi = jnp.concatenate(
             [_voro_mid, jnp.array([_voro_hi_ext])]
-        )   # (n_age,)  — upper boundary of each Voronoi cell
+        )
 
-        self.tuniv      = tuniv
         self.tiny_logt  = tiny_logt
-        # Resolve the FSPS data directory: explicit arg wins, else $SPS_HOME
-        # (the variable FSPS users already set on install).
         if sps_home is None:
             sps_home = os.environ.get("SPS_HOME")
         if (add_neb or add_dust_emission) and not sps_home:
@@ -432,50 +223,21 @@ class CSPBasis:
                 "(your FSPS data directory) or pass sps_home=... explicitly."
             )
         self.sps_home   = sps_home
-        # --- Cosmology -----------------------------------------------------
-        # Cosmology enters the forward model in TWO places, and both read
-        # this one object so they can never disagree:
-        #   1. ``flux_factor_maggies`` -- the (1+z)(10pc/D_L)^2 rescaling
-        #      applied to the spectrum, photometry and line predictions;
-        #   2. ``age_gyr`` -- the age of the universe used by
-        #      :meth:`_lookback_from_zred` to rescale the SFH time grid
-        #      when ``track_zred_age=True`` and ``zred`` is sampled.
-        # ``None`` selects ``ceridwen.cosmology.DEFAULT_COSMO`` (Planck 2018).
-        # The object is a frozen dataclass of Python scalars, so it
-        # constant-folds into the XLA graph: a non-default cosmology costs
-        # nothing at run time.  Any astropy cosmology can be converted with
-        # ``Cosmology.from_astropy``.
-        from ..cosmology import resolve_cosmology as _resolve_cosmology
-        self.cosmo = _resolve_cosmology(cosmo)
-        # Free-redshift age-grid tracking.  When True AND theta carries a
-        # sampled ``zred`` (and NO explicit ``lookback_time``), the SFH
-        # lookback grid is rescaled inside the forward pass so its oldest node
-        # tracks the age of the universe at the sampled redshift, via the
-        # differentiable :func:`ceridwen.cosmology.age_gyr` (see
-        # :meth:`_lookback_from_zred` and :meth:`_ssp_weights`).  Default
-        # False keeps the fixed-z path bit-for-bit unchanged.
+        from ..cosmology import Cosmology as _Cosmology
+        if cosmo is None:
+            raise TypeError(
+                f"{type(self).__name__} needs an explicit cosmology: pass "
+                "cosmo=Cosmology.planck18(), Cosmology.wmap9(), "
+                "Cosmology.flat(H0, Om0), Cosmology.from_name(...) or "
+                "Cosmology.from_astropy(...)  (from ceridwen import Cosmology)")
+        if not isinstance(cosmo, _Cosmology):
+            raise TypeError(
+                f"cosmo must be a ceridwen Cosmology, got {type(cosmo).__name__}; "
+                "for an astropy cosmology use Cosmology.from_astropy(...)")
+        self._cosmo = cosmo
         self.track_zred_age = bool(track_zred_age)
-        # Prospector-style ``nebemlineinspec`` switch.  It governs ONE
-        # thing only: the default of the single-array public
-        # ``get_spectrum(theta)``.  When False (default), that call
-        # returns the line-free continuum (stellar + nebular continuum);
-        # when True it returns continuum + emission lines.  It does NOT
-        # affect ``predict`` or ``get_spectrum_components``, which always
-        # compute the full ``(continuum, lines)`` decomposition so the
-        # observations always see the lines (Photometry at true strength,
-        # Spectrum / Lines scaled by ``eline_scaling``).  To force lines
-        # on/off explicitly, pass ``include_lines=`` to ``get_spectrum`` or
-        # use ``get_spectrum_components``.
         self.nebemlineinspec = bool(nebemlineinspec)
 
-        # --- IGM attenuation model (optional) ------------------------------
-        # ``add_igm=False`` leaves ``self.igm`` as None; ``CSPBasis.predict``
-        # then skips the multiplicative step entirely (zero Python
-        # branches in the traced hot path — the ``is None`` is a
-        # compile-time decision).  When ``add_igm=True`` the model (by
-        # default Madau 1995, identical to FSPS's ``igm_absorb.f90``)
-        # is applied whenever ``theta['zred']`` is present, with
-        # optional runtime strength override via ``theta['igm_factor']``.
         if add_igm:
             from ..igm import make_igm_model
             self.igm = make_igm_model(igm_model)
@@ -483,32 +245,19 @@ class CSPBasis:
             self.igm = None
         self.igm_factor = float(igm_factor)
 
-        # --- Dust attenuation function (set before dust init) --------------
         if add_diffuse_dust or add_dust:
             self.set_attenuation_function(add_diffuse_dust, add_dust)
 
-        # --- Sub-model init (populates defaults into theta) -----------
         theta = self.initialize_dust_components(
             add_dust, add_diffuse_dust, add_dust_emission,
             theta, init_dust_params, diffuse_law, sps_home,
         )
         theta = self.initialize_neb(add_neb, theta, init_neb_params, sps_home)
 
-        # Pre-compute the FSPS-default LOSVD smoothing kernel (sigma_smooth
-        # default 300 km/s, velocity-space Gaussian on rest-frame
-        # 912 < lambda < 25000 AA; matches prospect/models/sedmodel.py
-        # losvd_smoothing).  Must run BEFORE configure_spectrum_model so the
-        # wrap can see whether to install the smoother.
-        self.sigma_losvd_kms = float(sigma_losvd_kms)
-        self._setup_losvd_kernel()
-
         self.configure_spectrum_model(
             add_dust, add_diffuse_dust, add_dust_emission, add_neb, sps_home
         )
 
-        # --- SFH integration scheme selection ---------------------------------
-        # 'step'   → piecewise-constant, guaranteed non-negative (default)
-        # 'linear' → piecewise-linear log-age integration (original scheme)
         if sfh_interp not in ('step', 'linear'):
             raise ValueError(
                 f"sfh_interp must be 'step' or 'linear', got {sfh_interp!r}"
@@ -534,28 +283,11 @@ class CSPBasis:
             print("\nCSPBasis (dict theta) — registered parameters:")
             pprint.pprint({k: v.shape for k, v in self.theta_init.items()})
 
-        # Early (construction-time) warning if the initial parameters already
-        # sit outside the interpolation grids (silent edge-clamping).  Cheap,
-        # non-jitted; users can re-run check_param_ranges() on sampled theta.
         self.check_param_ranges(self.theta_init)
 
 
-
     def initialize_model_structure(self, theta):
-        """
-        Validate the incoming theta and store ``self.theta_init``.
-        The dict is validated, converted to JAX arrays, and stored directly.
-
-        Required keys
-        -------------
-        ``"sfh"``          : shape ``(n_time,)``
-        ``"lookback_time"`` : shape ``(n_time,)``
-
-        Either ``"Z"`` (scalar, constant metallicity) or ``"zh"`` (shape
-        ``(n_time,)``, time-varying metallicity) must be present, depending on
-        the ``zh_const`` flag set during ``__init__``.
-        """
-        # --- Required keys: nice errors instead of raw KeyErrors -----------
+        """Validate ``theta`` (grid, sfh shape, metallicity key) and build ``theta_init`` / ``param_names``."""
         if 'lookback_time' not in theta:
             raise ValueError(
                 "theta must contain 'lookback_time' — the static SFH node grid "
@@ -574,18 +306,11 @@ class CSPBasis:
                 "len(theta['lookback_time'])."
             )
 
-        # --- sfh_times: static (not part of theta) -------------------------
         self.sfh_times = jnp.atleast_1d(
             jnp.asarray(theta['lookback_time'], dtype=float)
         ) * 1e9   # Gyr → yr
         self.n_time = self.sfh_times.size
 
-        # --- Minimum grid size ---------------------------------------------
-        # n_time nodes define n_time-1 SFH bins; with fewer than 2 nodes there
-        # is no bin to integrate over. (This must precede the monotonicity
-        # check: np.diff of a single node is empty and np.all([]) is True, so
-        # a 1-node grid would otherwise slip through and fail later inside a
-        # jitted weight kernel with a cryptic shape error.)
         if self.n_time < 2:
             raise ValueError(
                 f"theta['lookback_time'] has {self.n_time} node(s); at least "
@@ -594,9 +319,6 @@ class CSPBasis:
                 "jnp.linspace(0.0, T_UNIV, 6)."
             )
 
-        # Convention check: lookback_time must be monotonically *increasing*,
-        # starting at 0 (today).  A decreasing grid trips here loudly rather
-        # than silently producing wrong-physics weights.
         _lb = np.asarray(self.sfh_times, dtype=np.float64)
         _diffs = np.diff(_lb)
         if not (np.all(_diffs > 0.0) and _lb[0] >= 0.0 and _lb[0] < 1e8):
@@ -614,19 +336,6 @@ class CSPBasis:
             )
 
         sfh = jnp.atleast_1d(jnp.asarray(theta['sfh'], dtype=float))
-        # ``sfh`` may carry either of two conventions:
-        #
-        # 1. FastStepBasis (prospector-compatible) — one SFR value per
-        #    bin, length ``n_time - 1``.  ``calculate_ssp_weights_*_step``
-        #    uses each entry directly, with no inter-edge averaging.
-        # 2. Node-based legacy — one SFR value per lookback grid point,
-        #    length ``n_time``.  ``calculate_ssp_weights_*_step``
-        #    averages consecutive entries to recover per-bin SFR.
-        #
-        # Both shapes are accepted; the convention is stored as a flag the
-        # weight calculators consult.  With the FastStepBasis convention,
-        # the same parameter numbers mean the same physical SFH in ceridwen
-        # and prospector.
         if sfh.shape == (self.n_time,):
             self.sfh_per_bin = False
         elif sfh.shape == (self.n_time - 1,):
@@ -638,10 +347,6 @@ class CSPBasis:
                 f"({self.n_time - 1},)  (per-bin, FastStepBasis)."
             )
 
-        # --- Static SFH sanity (construction-time; non-jitted) -------------
-        # A NaN/Inf SFH silently propagates to a NaN spectrum, and an all- or
-        # partly-negative SFH is silently clipped to >=0 (≈zero flux), so flag
-        # both here rather than letting them pass into the hot path unnoticed.
         sfh_np = np.asarray(sfh)
         if not np.all(np.isfinite(sfh_np)):
             raise ValueError(
@@ -656,10 +361,6 @@ class CSPBasis:
                 stacklevel=3,
             )
 
-        # --- Metallicity mode detection + validation -----------------------
-        # The metallicity key MUST match the zh_const mode chosen at __init__.
-        # A mismatch otherwise constructs silently and only fails later with a
-        # cryptic KeyError deep inside a jitted get_spectrum/predict trace.
         if self.zh_const:
             if 'Z' not in theta:
                 raise ValueError(
@@ -702,7 +403,6 @@ class CSPBasis:
             self.zh_is_scalar = True
 
 
-        # --- Build theta_init: all params except lookback_time -------------
         self.theta_init = {}
         for k, v in theta.items():
             if k == 'lookback_time':
@@ -710,46 +410,23 @@ class CSPBasis:
             arr = jnp.atleast_1d(jnp.asarray(v, dtype=float))
             self.theta_init[k] = arr
 
-        # Ensure sfh has the correct shape stored in theta_init
         self.theta_init['sfh'] = sfh
 
-        # Ordered list of parameter names (for printing / sampling setup)
         self.param_names = list(self.theta_init.keys())
 
-        # Recognized theta keys (for the trace-time typo guard).  Everything
-        # the physics consumes is already in param_names (dust/neb defaults were
-        # merged into theta before this point); the rest are optional
-        # runtime-only scalars read by predict / get_line_spec.
         self._known_theta_keys = set(self.param_names) | {
             'lookback_time', 'Z', 'zh',
-            'logmass', 'zred', 'igm_factor', 'eline_scaling',
-            'sigma_smooth', 'frac_obrun', 'spectrum_scaling',
+            'logmass', 'zred', 'lumdist_mpc', 'igm_factor', 'eline_scaling',
+            'frac_obrun', 'spectrum_scaling', 'spectrum_calib',
         }
 
-    # -----------------------------------------------------------------------
-    # Defensive helpers (all NON-jitted or trace-time-only; zero hot-path cost)
-    # -----------------------------------------------------------------------
 
     def register_known_theta_keys(self, keys):
-        """Register additional recognized theta keys so they are not mis-flagged
-        as typos by :meth:`_warn_unknown_theta_keys`.
-
-        ``SedModel`` calls this with its model-level free parameters (e.g.
-        ``logsfr_ratios``, which the ``sfh`` transform consumes): those keys are
-        forwarded through to ``predict`` in the full theta dict but are not CSP
-        parameters, so without this they would trigger a spurious typo warning.
-        """
+        """Add keys that ``_warn_unknown_theta_keys`` must accept (model-level parameters consumed by transforms)."""
         self._known_theta_keys |= set(keys)
 
     def _warn_unknown_theta_keys(self, theta):
-        """Warn about theta keys the model does not consume (usually typos).
-
-        This inspects only the dict *keys* — static Python strings that are part
-        of the PyTree structure — so when called inside a ``jax.jit`` trace it
-        executes exactly once at compile time and adds **nothing** to the
-        compiled hot path.  Unknown keys are otherwise silently ignored, so a
-        typo like ``logmas`` for ``logmass`` would quietly drop the parameter.
-        """
+        """Warn on theta keys nothing consumes (static dict keys; runs once at trace time)."""
         unknown = [k for k in theta if k not in self._known_theta_keys]
         if unknown:
             warnings.warn(
@@ -760,14 +437,7 @@ class CSPBasis:
             )
 
     def check_param_ranges(self, theta=None, warn=True):
-        """Diagnostic (NON-jitted): list parameters that fall outside the
-        interpolation grids, where the model silently clamps to the nearest
-        grid edge and thus hides extrapolation.
-
-        Intended to be called once on your theta (or theta bounds) before a
-        fit; it is never invoked from the hot path.  Returns the list of
-        human-readable messages (and emits them as warnings when ``warn``).
-        """
+        """Messages (and warnings) for metallicity / nebular parameters outside the interpolation grids, where the model clamps silently."""
         if theta is None:
             theta = self.theta_init
         msgs = []
@@ -786,8 +456,6 @@ class CSPBasis:
                         f"range; use a value within the printed bounds."
                     )
 
-        # Nebular gas parameters vs the CLOUDY grid, if the neb model exposes
-        # its axis arrays (defensive: skipped if the attribute names differ).
         neb = getattr(self, 'neb', None)
         if neb is not None:
             for key, attrs in (
@@ -812,31 +480,25 @@ class CSPBasis:
                 warnings.warn(m, stacklevel=2)
         return msgs
 
-    # -----------------------------------------------------------------------
-    # Dust / nebular initialisation helpers
-    # -----------------------------------------------------------------------
 
     def set_attenuation_function(self, add_diffuse_dust, add_dust):
-        """
-        Build and assign ``self.attenuate_dust(wave, theta) → (attn, attn_diffuse)``.
-
-        With the dict theta, each dust model simply reads the keys it knows
-        about from the shared theta dict.  No NamedTuple construction needed.
-        """
+        """Assign ``self.attenuate_dust(wave, theta) -> (attn_birthcloud (n_bins, n_wave), attn_diffuse (n_wave,))`` as optical depths."""
         if add_diffuse_dust and add_dust:
             def attenuate(wave, theta):
                 attn         = self.dust_attn.compute_attenuation(wave, theta)
                 attn_diffuse = self.diff_dust.compute_attenuation(wave, theta)
                 return attn, attn_diffuse
-            print("Using combined (binwise + diffuse) dust attenuation.")
+            if self.verbose:
+                print("Using combined (binwise + diffuse) dust attenuation.")
             self.attenuate_dust = attenuate
 
         elif add_dust and not add_diffuse_dust:
             def attenuate_without_diffuse(wave, theta):
                 attn         = self.dust_attn.compute_attenuation(wave, theta)
-                attn_diffuse = jnp.zeros((1, wave.shape[0]))
+                attn_diffuse = jnp.zeros((wave.shape[0],))
                 return attn, attn_diffuse
-            print("Using only binwise dust attenuation.")
+            if self.verbose:
+                print("Using only binwise dust attenuation.")
             self.attenuate_dust = attenuate_without_diffuse
 
         elif add_diffuse_dust and not add_dust:
@@ -846,21 +508,12 @@ class CSPBasis:
                 attn_diffuse = self.diff_dust.compute_attenuation(wave, theta)
                 attn         = jnp.zeros((1, wave.shape[0]))
                 return attn, attn_diffuse
-            print("Using only diffuse dust attenuation.")
+            if self.verbose:
+                print("Using only diffuse dust attenuation.")
             self.attenuate_dust = attenuate_diffuse_only
 
     def initialize_neb(self, add_neb, theta, init_neb_params, sps_home):
         if add_neb:
-            # Hand the SSP fluxes and ages to the nebular model so it can
-            # compute an internally self-consistent ionising-photon rate
-            # matching the FSPS run-time formula; the nebular model is the
-            # single source of truth for ``log_qq``.
-            #
-            # ``match_fsps`` is obsolete: the historical FSPS-bug-replicating
-            # nebular variant (NebularModelFSPSMatch) is gone now that FSPS
-            # itself was fixed and the physically strict NebularModel matches
-            # it.  The key is still popped (so old callers that pass it do not
-            # crash), but it no longer selects a class; a True value just warns.
             match_fsps = init_neb_params.pop('match_fsps', False)
             if match_fsps:
                 warnings.warn(
@@ -870,10 +523,6 @@ class CSPBasis:
                     stacklevel=2,
                 )
 
-            # Auto-propagate the isochrone type from the SSP grid's recorded
-            # provenance so the CLOUDY nebular grid always matches the SSP
-            # isochrone set. A caller-supplied isoc_type that conflicts with
-            # the grid is a hard error; a legacy grid with no provenance warns.
             init_neb_params['isoc_type'] = _resolve_isoc_type(
                 self._ssp_isoc_type, init_neb_params.get('isoc_type'),
             )
@@ -884,10 +533,10 @@ class CSPBasis:
                 'ssp_flux':       self.flux,
                 'ssp_ages_lgyr':  self.ssp_ages_lgyr,
             })
-            NebClass = NebularModel
-            print(f"Initializing Nebular Emission model ({NebClass.__name__}, "
-                  f"isoc_type={init_neb_params['isoc_type']!r})...")
-            self.neb = NebClass(**init_neb_params)
+            if self.verbose:
+                print(f"Initializing Nebular Emission model (NebularModel, "
+                      f"isoc_type={init_neb_params['isoc_type']!r})...")
+            self.neb = NebularModel(**init_neb_params)
 
             neb_defaults = self.neb.get_default_params()
             for k, v in neb_defaults.items():
@@ -895,9 +544,6 @@ class CSPBasis:
                     theta[k] = v
             self.neb_param_names = list(neb_defaults.keys())
 
-            # Restrict nebular emission to SSPs whose age lies inside the
-            # CLOUDY grid (FSPS does:  DO t=1,nti  where  nti is the index
-            # of nebem_age(nebnage)).
             self.young_mask  = jnp.asarray(self.neb.young_mask)
             self.ion_mask    = self.wave < 912.0
             self.kill_ion    = self.young_mask[:, None] & self.ion_mask[None, :]
@@ -915,7 +561,8 @@ class CSPBasis:
         theta, init_dust_params, diffuse_law, sps_home
     ):
         if add_dust:
-            print("Initializing Dust attenuation model...")
+            if self.verbose:
+                print("Initializing Dust attenuation model...")
             self.dust_attn = Dust(**init_dust_params)
 
             self.bin_low  = jnp.array([edge[0] for edge in self.dust_attn.bin_edges])
@@ -928,7 +575,8 @@ class CSPBasis:
             self.dust_param_names = list(dust_defaults.keys())
 
         if add_diffuse_dust:
-            print("Initializing DiffuseDust model...")
+            if self.verbose:
+                print("Initializing DiffuseDust model...")
             self.diff_dust = DiffuseDust(diffuse_law)
 
             diff_defaults = self.diff_dust.get_default_params()
@@ -941,7 +589,8 @@ class CSPBasis:
             self._init_age_bin_operator()
 
         if add_dust_emission:
-            print("Initializing DustEmission model...")
+            if self.verbose:
+                print("Initializing DustEmission model...")
             self.dust_emi = DustEmission(spec_lambda=self.wave, dust_file=sps_home)
 
             emi_defaults = self.dust_emi.get_default_params()
@@ -950,7 +599,6 @@ class CSPBasis:
                     theta[k] = v
             self.emi_param_names = list(emi_defaults.keys())
 
-        print("Dust initialization complete.")
         return theta
 
     def _init_age_bin_operator(self):
@@ -961,101 +609,7 @@ class CSPBasis:
         in_bin  = (ages[:, None] >= lo[None, :]) & (ages[:, None] < hi[None, :])
         M       = in_bin.astype(jnp.float32)
         row_sum = jnp.sum(M, axis=1, keepdims=True)
-        # Normalise rows that fall in a bin.
         self._age_bin_mix = jnp.where(row_sum > 0, M / row_sum, M)
-
-    # ------------------------------------------------------------------ #
-    # LOSVD smoothing (FSPS / prospector default)
-    # ------------------------------------------------------------------ #
-    def _setup_losvd_kernel(self):
-        """Pre-compute the LOSVD smoothing infrastructure.
-
-        Mirrors the FSPS / Prospector source-side ``losvd_smoothing``: a
-        velocity-space Gaussian of standard deviation ``sigma_losvd_kms``
-        applied to the rest-frame ``912 < lambda < 25000 AA`` window of the
-        stellar SED, BEFORE any observation projection (filter convolution,
-        line aperture integration, spectrum LSF convolution).  As in
-        ``prospect.models.sedmodel.SedModel.predict``, all observation arms
-        share one already-smoothed source spectrum, so the convolution cost is
-        paid once per likelihood call.
-
-        Delegates to ``sedpy_jax.smoothing.make_vel_smoother`` -- the same
-        factory the observation layer uses for the Spectrum-side LOSVD + LSF
-        chain -- guaranteeing numerical parity between the CSP-side and
-        observation-side smoothings.  ``sigma_v`` is a runtime argument of the
-        returned closure, so promoting it to a ``theta`` tracer for free
-        sigma_v fitting is a one-line change.
-
-        Stores:
-            ``self._losvd_kernel_fft``  -- sentinel: ``None`` (disabled) or any
-                non-``None`` value (enabled).  ``configure_spectrum_model`` keys
-                on it to decide whether to install the ``__losvd_smoothed``
-                wrap on ``get_spectrum``.
-            ``self._losvd_smoother`` -- the JIT-friendly closure from
-                ``make_vel_smoother``, operating on the in-window rest-frame
-                subset of ``self.wave`` only.
-            ``self._losvd_idx`` -- static int32 index array used to gather the
-                in-window pixels and scatter the smoothed result back into the
-                full ``self.wave`` grid.
-        """
-        if self.sigma_losvd_kms <= 0.0:
-            self._losvd_kernel_fft = None
-            return
-
-        wave_np = np.asarray(self.wave, dtype=np.float64)
-        in_band_np = (wave_np > 912.0) & (wave_np < 25000.0)
-        if not in_band_np.any():
-            self._losvd_kernel_fft = None
-            return
-
-        idx_native_np = np.flatnonzero(in_band_np)
-        wave_window = wave_np[idx_native_np]
-        # ``inres=0`` because the library native resolution is already baked
-        # into ``self.wave``; there is no separate library-resolution kernel to
-        # subtract in quadrature on the source side (instrument LSF / library-res
-        # deconvolution belongs to the Spectrum projection, not here).
-        self._losvd_smoother = make_vel_smoother(
-            wave_window, wave_window, inres=0.0,
-        )
-        self._losvd_idx = jnp.asarray(idx_native_np)
-        # Sentinel for configure_spectrum_model: any non-None value enables it.
-        self._losvd_kernel_fft = True
-
-    def _apply_losvd(self, spectrum):
-        """Apply the LOSVD smoother to ``spectrum``.
-
-        JIT-safe: the gating is on ``self._losvd_kernel_fft is None``,
-        which is a Python-static property of the CSPBasis object set
-        at construction time, so the compiled XLA graph is fixed once
-        per CSPBasis instance.  Inside the branch, all ops act on
-        tracers.
-
-        Pixels outside the rest-frame 912-25000 AA window pass through
-        unchanged (Prospector parity: see
-        ``sedmodel.losvd_smoothing``'s ``sel`` / ``outspec[sel] = sm``
-        pattern).
-        """
-        if self._losvd_kernel_fft is None:
-            return spectrum
-        # Gather in-window pixels, smooth via the sedpy_jax closure, scatter
-        # back into the full native grid.  ``sigma_losvd_kms`` is a Python float
-        # here; threading it from theta would enable free-sigma fitting.
-        spec_window = spectrum[self._losvd_idx]
-        smoothed = self._losvd_smoother(spec_window, self.sigma_losvd_kms)
-        # Edge repair: sedpy_jax's ``jax_interp`` zero-fills OUTSIDE its
-        # internal log-uniform grid (left=0, right=0), and that grid's
-        # endpoints are built as exp(log(lambda)), which can land 1 ulp
-        # inside the true window endpoints.  The window's first/last pixel
-        # then tests as out-of-range and comes back EXACTLY 0 -- seen as a
-        # spurious notch at the red edge of the smoothing window (rest
-        # 24950 A on the FSPS grid; blue-edge sibling of the Lyman-spike
-        # bug covered by tests/test_losvd_no_lyman_spike.py).  Keep the raw
-        # endpoint pixels instead: a 1-pixel unsmoothed edge is invisible,
-        # a zeroed pixel is a hole in every SED.
-        smoothed = smoothed.at[0].set(spec_window[0]) \
-                           .at[-1].set(spec_window[-1])
-        return spectrum.at[self._losvd_idx].set(
-            smoothed.astype(spectrum.dtype))
 
     def configure_spectrum_model(
         self, add_dust, add_diffuse_dust, add_dust_emission, add_neb, sps_home
@@ -1088,204 +642,86 @@ class CSPBasis:
             'nodust_neb_nodustemi':    'nebular emission only',
             'nodust_noneb_nodustemi':  'stellar continuum only',
         }
-        print(f"Spectrum model: {label[key]}")
-        raw_get_spectrum = mapping[key]
-        if self._losvd_kernel_fft is None:
-            # Smoothing disabled (sigma=0 or non-log-uniform wave grid).
-            self.get_spectrum = raw_get_spectrum
-        else:
-            def get_spectrum_smoothed(theta, *, include_lines=None,
-                                       _raw=raw_get_spectrum):
-                spec = _raw(theta, include_lines=include_lines)
-                return self._apply_losvd(spec)
-            get_spectrum_smoothed.__name__ = (
-                f"{raw_get_spectrum.__name__}__losvd_smoothed"
-            )
-            self.get_spectrum = get_spectrum_smoothed
+        if self.verbose:
+            print(f"Spectrum model: {label[key]}")
+        self.get_spectrum = mapping[key]
 
-    # -----------------------------------------------------------------------
-    # Public interface
-    # -----------------------------------------------------------------------
 
     def get_spectrum_components(self, theta: dict) -> tuple:
-        """Return the canonical ``(continuum, lines)`` line decomposition.
-
-        Both arrays are on the rest-frame model grid ``self.wave`` and are
-        *unscaled* -- mass / redshift / IGM factors are applied downstream
-        by ``predict`` and ``get_line_spec``, exactly as for ``get_spectrum``.
-
-        - ``continuum`` -- the line-free spectrum (stellar continuum +
-          nebular *continuum*), dust-attenuated.  Identical to
-          ``get_spectrum(theta, include_lines=False)``.
-        - ``lines`` -- the broadened nebular emission-line component alone,
-          carried through the same dust attenuation, so the full SED is
-          recovered as ``continuum + lines``.
-
-        This is the single source of truth for "spectrum with vs. without
-        emission lines": ``predict`` builds the photometry and slit spectra
-        from it and ``get_line_spec`` returns its ``lines`` term.
-        ``nebemlineinspec`` does not affect this method -- it only sets the
-        default of the single-array public ``get_spectrum``.  With
-        ``add_neb=False`` there is no nebular module and ``lines`` is
-        identically zero.
+        """``(continuum, lines)`` on the rest-frame grid, unscaled (no mass, distance or IGM):
+        ``continuum`` is ``get_spectrum(include_lines=False)`` and ``lines`` the difference to the
+        full spectrum (the painted lines; with dust emission also their re-emitted energy).
         """
-        # Trace-time-only typo guard (operates on static dict keys; costs
-        # nothing in the compiled hot path).  Also covers predict().
         self._warn_unknown_theta_keys(theta)
         continuum = self.get_spectrum(theta=theta, include_lines=False)
         full      = self.get_spectrum(theta=theta, include_lines=True)
         return continuum, full - continuum
 
-    def predict(self, theta: dict, observations: list) -> dict:
+    def predict(self, theta: dict, observations: list, *, kinematics=None,
+                broaden_photometry=False) -> dict:
+        """``{obs.name: prediction}``: Photometry -> maggies (n_filters,), Spectrum -> F_nu [erg/s/cm^2/Hz]
+        on the observed pixels, Lines -> integrated fluxes (n_lines,).  Observed-frame only when
+        ``theta`` carries ``zred``.
+
+        ``kinematics`` (``Kinematics`` or None) supplies sigma_gal / sigma_gas; ``broaden_photometry``
+        applies them to the spectrum entering each Photometry's ``_broadener``.  Lines are painted on
+        the model grid only when a consumer needs them there (free-z Photometry, Photometry with a
+        sampled sigma_gas and ``broaden_photometry``, or ``_force_paint_lines``); otherwise fixed-z
+        Photometry adds them through the static basis ``G = obs._T @ (IGM * profiles)``, Spectrum
+        paints them on the observed pixels and Lines reads them from the grid.
         """
-        Compute the CSP spectrum and project it onto every observation.
-
-        This method is the primary hot-path entry point for the sampler.
-        It is designed to be fully JAX JIT-compatible with zero Python
-        ``if`` / ``isinstance`` branches in the traced code path:
-
-        - ``get_spectrum(theta)`` is pure JAX.
-        - The Python ``for`` loop over ``observations`` is unrolled at
-          trace time because ``observations`` is a static Python list
-          (part of the closure, not a traced argument).
-        - ``obs.predict(spectrum, self.wave)`` dispatches through Python's
-          method resolution order (static at trace time) to the appropriate
-          subclass implementation — either a dense matrix–vector multiply
-          (``Spectrum``, ``Lines``) or a filter-set convolution
-          (``Photometry``).  The XLA kernel contains no conditional branches.
-
-        **Pre-condition:** every ``Observation`` in ``observations`` must have
-        had ``obs.setup_for_model(self.wave)`` called before the first JIT
-        trace.  ``SedModel.__init__`` does this automatically.
-
-        For a raw model spectrum without projection, use ``get_spectrum(theta)``
-        directly; for the separate line-free continuum and emission-line
-        component, use ``get_spectrum_components(theta)``.
-
-        Parameters
-        ----------
-        theta : dict[str, Array]
-            Free-parameter dict.  Must contain at minimum ``"sfh"`` and the
-            metallicity key (``"Z"`` or ``"zh"``), plus any dust / nebular
-            parameters required by the active physics model.
-        observations : list of Observation
-            Observations to project onto.  Must be the same Python objects
-            (same list structure, same types) on every call — changing the
-            list forces a retrace.
-
-        Returns
-        -------
-        predictions : dict[str, Array]
-            Keyed by ``obs.name`` for each observation.  Values:
-
-            - ``Photometry`` → shape (n_filters,), synthetic AB maggies
-            - ``Spectrum``   → shape (n_pix,), model F_nu interpolated onto
-              the observed pixel grid
-            - ``Lines``      → shape (n_lines,), Gaussian-aperture fluxes
-
-        .. warning::
-            The outputs are observed-frame AB maggies **only if** ``theta``
-            contains ``"zred"``: that key gates the cosmological flux factor
-            ``(1+z) (10pc/D_L)^2`` (and the L_sun/Hz → cgs conversion)
-            inside :func:`ceridwen.cosmology.flux_factor_maggies`.  Without
-            it the values are raw 10 pc-frame numbers, ~6e21 too bright at
-            z = 0.1.  ``SedModel.predict`` injects its fixed ``zred``
-            automatically; only direct callers of this method (and of
-            ``get_line_spec``) need to supply it themselves.
-        """
-        spectrum_phot, spectrum_slit, line_slit = \
-            self._assemble_observer_spectra(theta)
-        spectrum_phot, spectrum_slit, line_slit = self._apply_mass_redshift_igm(
-            spectrum_phot, spectrum_slit, line_slit, theta
+        from ..observation.observation import (
+            Spectrum as _Spectrum, Photometry as _Photometry,
         )
+        if kinematics is not None:
+            self._known_theta_keys |= set(kinematics.free_keys)
+        has_neb = getattr(self, "neb", None) is not None
+        gas_free = (kinematics is not None
+                    and isinstance(kinematics.effective_sigma_gas, str))
+        paint_lines = has_neb and (
+            getattr(self, "_force_paint_lines", False)
+            or any(
+                isinstance(o, _Photometry)
+                and ((getattr(o, "free_z", False) and "zred" in theta)
+                     or (gas_free and broaden_photometry))
+                for o in observations
+            )
+        )
+        cont, lines = self._assemble_components(theta, paint_lines)
+        cont, lines_s = self._apply_mass_redshift_igm(
+            cont, cont if lines is None else lines, theta)
         return self._project_observations(
-            spectrum_phot, spectrum_slit, line_slit, observations, theta
+            cont if lines is None else cont + lines_s, cont,
+            observations, theta, paint_lines=paint_lines,
+            line_component=None if lines is None else lines_s,
+            kinematics=kinematics, broaden_photometry=broaden_photometry,
         )
 
-    def _assemble_observer_spectra(self, theta):
-        """Build the photometry- and slit-facing spectra from the single
-        ``(continuum, lines)`` decomposition.
-        """
-        # Decompose the model SED once (see get_spectrum_components), then
-        # build the three observer-facing spectra from it.  The Spectrum and
-        # the Lines observations carry SEPARATE, independent calibration
-        # nuisances (2026-08 change):
-        #
-        #   spectrum_phot -- continuum + emission lines at TRUE strength.
-        #                    Photometry captures the full field of view, so
-        #                    it always sees the intrinsic flux.  Never scaled.
-        #   spectrum_slit -- continuum + emission lines at TRUE strength, the
-        #                    intrinsic fibre/slit spectrum.  Its overall flux
-        #                    calibration relative to the photometry is handled
-        #                    SEPARATELY by ``spectrum_scaling`` at projection time
-        #                    (see _project_observations) -- a single
-        #                    multiplicative recalibration of the whole
-        #                    spectrum (continuum AND its lines together, since
-        #                    both share the fibre aperture).  ``eline_scaling``
-        #                    deliberately does NOT touch the spectrum.
-        #   line_slit     -- eline_scaling * lines: the emission-line-ONLY
-        #                    component with the LINE-CATALOGUE aperture
-        #                    correction.  This drives the Lines observation
-        #                    only (a FRACTION; 1.0 = no loss, 0.65 = 65%).
-        #
-        # Rationale for the split: ``spectrum_scaling`` is the spectrophotometric
-        # calibration of the spectrograph trace (continuum-dominated), whereas
-        # ``eline_scaling`` is the aperture loss of the separately-measured
-        # emission-line catalogue.  They are distinct instruments/measurements
-        # and must be free independently; entangling them (the pre-2026-08
-        # behaviour, where the spectrum's lines carried eline_scaling) biases
-        # whichever one is better constrained into the other.
-        #
-        # nebemlineinspec is intentionally NOT consulted here (it governs only
-        # the default of the public get_spectrum); the observations must always
-        # see the lines.  All key checks are Python-static so the branches fold
-        # out at trace time.
-        spectrum_cont, line_component = self.get_spectrum_components(theta)
+    def _assemble_components(self, theta, paint_lines):
+        """``(continuum, lines or None)`` on the rest-frame grid, unscaled; ``lines`` is the painted
+        line component (``get_spectrum_components``) or None when not painted."""
+        if not paint_lines:
+            self._warn_unknown_theta_keys(theta)
+            return self.get_spectrum(theta=theta, include_lines=False), None
+        return self.get_spectrum_components(theta)
 
-        # Photometry and the (intrinsic) slit spectrum both carry the lines at
-        # true strength; the spectrum's separate flux calibration is applied
-        # via spectrum_scaling in _project_observations, NOT here.
-        spectrum_phot = spectrum_cont + line_component
-        spectrum_slit = spectrum_cont + line_component
+    def _assemble_observer_spectra(self, theta, *, paint_lines=True):
+        """``(continuum + lines, continuum)``; the lines term is absent when ``paint_lines=False``."""
+        cont, lines = self._assemble_components(theta, paint_lines)
+        return (cont if lines is None else cont + lines), cont
 
-        # ``line_slit`` is the emission-line-ONLY component with the line
-        # aperture correction eline_scaling.  Lines observations are projected
-        # from this term (2026-07-21 fix): previously the full slit spectrum
-        # was used, so the Gaussian line apertures integrated the stellar +
-        # nebular CONTINUUM under every line as well.  Catalogue line fluxes
-        # are continuum-subtracted, so that continuum term entered the
-        # likelihood as a spurious "line" flux scaling with the evolved
-        # stellar mass -- the dominant faint-line bias in the JADES fits.
-        if "eline_scaling" in theta:
-            eline_factor = jnp.ravel(theta["eline_scaling"])[0]   # fraction; 1.0 = no loss
-            line_slit = (eline_factor.astype(spectrum_cont.dtype)
-                         * line_component)
-        else:
-            line_slit = line_component
-
-        return spectrum_phot, spectrum_slit, line_slit
-
-    def _apply_mass_redshift_igm(self, spectrum_phot, spectrum_slit,
-                                 line_slit, theta):
-        """Apply mass, redshift (flux factor) and IGM multiplicative scaling
-        to the observer spectra (photometry-facing, slit-facing, and the
-        emission-line-only slit component).
-        """
-        # Identical multiplicative factors for all three; each is computed
-        # once and applied to all.
+    def _apply_mass_redshift_igm(self, spectrum_phot, spectrum_slit, theta):
+        """Multiply both spectra by 10**logmass, the cgs flux factor and the IGM transmission, each only when its key is present."""
         if "logmass" in theta:
             mass_scale = jnp.float32(10.0 ** theta["logmass"][0])
             spectrum_phot = spectrum_phot * mass_scale
             spectrum_slit = spectrum_slit * mass_scale
-            line_slit     = line_slit     * mass_scale
 
         if "zred" in theta:
-            from ..cosmology import flux_factor_maggies
             z_scalar = jnp.ravel(theta["zred"])[0]
-            ff = jnp.float32(flux_factor_maggies(z_scalar, self.cosmo))
+            ff = jnp.float32(self._flux_factor(theta))
             spectrum_phot = spectrum_phot * ff
             spectrum_slit = spectrum_slit * ff
-            line_slit     = line_slit     * ff
             if self.igm is not None:
                 if "igm_factor" in theta:
                     ig_factor = jnp.ravel(theta["igm_factor"])[0]
@@ -1296,139 +732,98 @@ class CSPBasis:
                 ).astype(spectrum_phot.dtype)
                 spectrum_phot = spectrum_phot * transmission
                 spectrum_slit = spectrum_slit * transmission
-                line_slit     = line_slit     * transmission
 
-        return spectrum_phot, spectrum_slit, line_slit
+        return spectrum_phot, spectrum_slit
 
-    def _project_observations(self, spectrum_phot, spectrum_slit, line_slit,
-                              observations, theta):
-        """Project the scaled spectra onto each Observation, returning the
-        ``{obs.name: prediction}`` dict.
+    def _project_observations(self, spectrum_phot, spectrum_slit,
+                              observations, theta, *, paint_lines=True,
+                              line_component=None, kinematics=None,
+                              broaden_photometry=False):
+        """``{obs.name: prediction}`` from the scaled observer-frame spectra: ``spectrum_phot`` is the
+        continuum (+ painted lines), ``spectrum_slit`` the continuum alone (Spectrum projector input),
+        ``line_component`` the painted lines alone (or None).
         """
-        # Project: Photometry sees the full-field-of-view spectrum;
-        # Spectrum (slit-measured) sees the eline_scaling-corrected FULL
-        # spectrum (a real spectrograph records the continuum); Lines sees
-        # the emission-line-ONLY slit component, because catalogue line
-        # fluxes are continuum-subtracted -- projecting the full spectrum
-        # through the positive Gaussian apertures added the continuum under
-        # each line to the prediction (2026-07-21 fix).
-        # ``isinstance`` is resolved statically at trace time.
-        #
-        # Free-redshift dispatch:
-        #   When ``obs.free_z`` is True AND ``"zred"`` was sampled (so a
-        #   traced JAX scalar exists in theta), we route Photometry obs
-        #   through ``predict_at_redshift`` instead of the GEMV fast path.
-        #   The fast path's projection matrix ``_T`` was baked at a single
-        #   Python-scalar setup zred and cannot be reused per-sample; the
-        #   free-z path recomputes the observed-frame wavelength grid
-        #   ``wave_obs = (1+z)*wave_rest`` per sample, interpolates the
-        #   spectrum onto the filter grid via ``sedpy_jax.interp_source``
-        #   (JAX-native, JIT-safe, differentiable in z), and dots with the
-        #   precomputed filter transmission matrix.
-        #
-        #   Both ``obs.free_z`` (Python attribute, static at trace time)
-        #   and the ``"zred" in theta`` check are Python-level, so the
-        #   branch resolves at trace time and the compiled XLA graph
-        #   contains exactly one of the two paths -- no runtime cond.
         from ..observation.observation import (
             Photometry as _Photometry,
             Spectrum   as _Spectrum,
         )
         from ..observation.lines import Lines as _Lines
-        # Direct grid-based line fluxes (2026-07-21): predicting Lines by
-        # Gaussian-aperture extraction from the painted spectrum recovers
-        # only ~0.35-0.5 of the painted flux (narrow-line aperture
-        # normalisation vs resolution-floor + LOSVD line widths, with a
-        # wavelength-dependent trend).  When a nebular module exists, Lines
-        # observations are therefore predicted straight from the CLOUDY
-        # grid line luminosities (exact; library/resolution/smoothing
-        # independent).  The static any()/getattr checks fold at trace time.
+        from ..broadening import TIED
         _has_lines_obs = any(isinstance(o, _Lines) for o in observations)
+        _has_spec_obs = any(isinstance(o, _Spectrum) for o in observations)
+        _has_phot_obs = any(isinstance(o, _Photometry) for o in observations)
+        _has_neb = getattr(self, "neb", None) is not None
+        if _has_lines_obs and not _has_neb:
+            raise ValueError(
+                "this CSP has no nebular model (add_neb=False), so a Lines "
+                "observation would receive identically zero line fluxes; build "
+                "the basis with add_neb=True or remove the Lines observation")
         _line_fluxes = (self.predict_line_fluxes(theta)
-                        if _has_lines_obs
-                        and getattr(self, "neb", None) is not None
-                        else None)
+                        if _has_lines_obs and _has_neb else None)
+        _line_fluxes_spec = (self.predict_line_fluxes(theta, for_spectrum=True)
+                             if _has_spec_obs and _has_neb else None)
+        _line_fluxes_phot = (
+            self.predict_line_fluxes(theta, for_photometry=True)
+            if (not paint_lines) and _has_neb and _has_phot_obs
+            else None)
+        s_gal = s_gas = None
+        gas_untied = False
+        if kinematics is not None and broaden_photometry and _has_phot_obs:
+            s_gal, s_gas = kinematics.resolve(theta)
+            gas_untied = kinematics.sigma_gas is not TIED
         out = {}
-        free_z_in_theta = "zred" in theta
-        # Spectrophotometric normalisation (Prospector ``spec_norm``
-        # convention): an OPTIONAL scalar multiplicative recalibration applied
-        # to ``Spectrum`` predictions ONLY.  Photometry (and Lines) are left
-        # untouched, so they anchor the absolute flux scale while
-        # ``spectrum_scaling`` absorbs the uncertain slit/fibre flux calibration of
-        # the spectrum -- i.e. it rescales the model spectrum onto the
-        # photometric scale (equivalently, the observed spectrum onto the
-        # photometry).  Absent from theta -> factor 1.0, so every existing
-        # fit is bit-for-bit unchanged.  The ``"spectrum_scaling" in theta`` check
-        # is a Python-static dict-key test that folds out at trace time.
-        spectrum_scaling = (jnp.ravel(theta["spectrum_scaling"])[0]
-                     if "spectrum_scaling" in theta else None)
-        # Velocity-broadening dispatch.
-        #
-        # ``Spectrum.fit_sigma_smooth`` is a static Python flag set at
-        # construction.  When True, the runtime stellar LOSVD
-        # (Prospector convention: ``sigma_smooth`` [km/s]) is pulled
-        # from ``theta`` and threaded into the closure that
-        # ``Spectrum.setup_for_model`` built.  When False, the
-        # obs.predict signature is unchanged and the static fast path
-        # is preserved bit-for-bit.  The ``isinstance`` + ``getattr``
-        # checks resolve at trace time, so the compiled XLA graph
-        # contains only the chosen path.
+        z_in_theta = "zred" in theta
+        from .spectrum_calibration import spectrum_calibration_factor as _spec_calib
         for obs in observations:
             if isinstance(obs, _Lines):
-                if _line_fluxes is not None:
-                    _B = self._neb_blend_matrix_for(obs)
-                    if _B is not None:
-                        # Unresolved doublets / blends: each observed line is
-                        # the SUM of its component grid lines (static 0/1
-                        # matrix, constant-folded under jit).
-                        out[obs.name] = _B @ _line_fluxes
-                    else:
-                        out[obs.name] = _line_fluxes[self._neb_cube_rows_for(obs)]
+                _B = self._neb_blend_matrix_for(obs)
+                if _B is not None:
+                    out[obs.name] = _B @ _line_fluxes
                 else:
-                    # no nebular module: line component is identically zero
-                    out[obs.name] = obs.predict(line_slit, self.wave)
+                    out[obs.name] = _line_fluxes[self._neb_cube_rows_for(obs)]
                 continue
-            spec_for_obs = (spectrum_phot if isinstance(obs, _Photometry)
-                            else spectrum_slit)
-            if (isinstance(obs, _Photometry)
-                    and getattr(obs, "free_z", False)
-                    and free_z_in_theta):
+            if isinstance(obs, _Spectrum):
+                pred = obs.predict(spectrum_slit, self.wave, _line_fluxes_spec, theta)
+                calib = _spec_calib(obs, theta, dtype=pred.dtype)
+                if calib is not None:
+                    pred = pred * calib
+                out[obs.name] = pred
+                continue
+            spec_for_obs = spectrum_phot
+            pb = getattr(obs, "_broadener", None)
+            if pb is not None and s_gal is not None:
+                if line_component is not None and gas_untied:
+                    spec_for_obs = pb(spectrum_slit, s_gal) + pb(line_component, s_gas)
+                else:
+                    spec_for_obs = pb(spectrum_phot, s_gal)
+            if getattr(obs, "free_z", False) and z_in_theta:
                 out[obs.name] = obs.predict_at_redshift(
                     spec_for_obs, self.wave, jnp.ravel(theta["zred"])[0]
                 )
-            elif (isinstance(obs, _Spectrum)
-                  and getattr(obs, "fit_sigma_smooth", False)
-                  and "sigma_smooth" in theta):
-                pred = obs.predict(
-                    spec_for_obs, self.wave,
-                    sigma_smooth=jnp.ravel(theta["sigma_smooth"])[0],
-                )
-                out[obs.name] = (pred * spectrum_scaling.astype(pred.dtype)
-                                 if spectrum_scaling is not None else pred)
-            else:
-                pred = obs.predict(spec_for_obs, self.wave)
-                # spectrum_scaling scales the Spectrum only (static isinstance check).
-                if spectrum_scaling is not None and isinstance(obs, _Spectrum):
-                    pred = pred * spectrum_scaling.astype(pred.dtype)
-                out[obs.name] = pred
+                continue
+            pred = obs.predict(spec_for_obs, self.wave)
+            if _line_fluxes_phot is not None:
+                basis = getattr(obs, "_line_basis", None)
+                gnb = (jnp.asarray(basis) if basis is not None
+                       else self.neb.gaussnebarr).astype(obs._T.dtype)
+                if self.igm is not None and z_in_theta:
+                    z_scalar = jnp.ravel(theta["zred"])[0]
+                    ig_factor = (jnp.ravel(theta["igm_factor"])[0]
+                                 if "igm_factor" in theta
+                                 else jnp.float32(self.igm_factor))
+                    trans = self.igm.attenuation(
+                        self.wave, z_scalar, factor=ig_factor,
+                    ).astype(obs._T.dtype)
+                    G = (obs._T * trans[None, :]) @ gnb
+                else:
+                    G = obs._T @ gnb
+                pred = pred + G @ _line_fluxes_phot.astype(pred.dtype)
+            out[obs.name] = pred
         return out
 
     def _neb_cube_rows_for(self, obs):
-        """Map an observation's lines onto the nebular cube rows BY REST
-        WAVELENGTH (cached on the observation; static at trace time).
-
-        ``obs.line_ind`` indexes ``$SPS_HOME/data/emlines_info.dat``, but the
-        line-luminosity cube rows follow the ZAU ``.lines`` file's own
-        ordering.  On installations where the two files come from different
-        FSPS vintages (e.g. hand-installed BPASS cubes next to a stock
-        emlines_info.dat) the orderings DISAGREE, and an index-based gather
-        silently returns neighbouring lines -- observed 2026-07-21 on Tursa,
-        where the direct line predictions were wrong per-line (Hb off by
-        1000x) while the painted spectrum, which places lines by the cube's
-        own wavelengths, was correct.  Wavelength matching is immune to the
-        vintage mismatch; a >1 A discrepancy raises immediately instead of
-        corrupting the likelihood.  See also the construction-time
-        cross-check in ``NebularModel.__init__`` (emline_index_consistent).
+        """Nebular-cube row of every line of a Lines observation, matched by rest wavelength (1 A
+        tolerance) and cached on the observation as a NumPy int array.
         """
         rows = getattr(obs, "_neb_cube_rows", None)
         if rows is not None:
@@ -1453,23 +848,12 @@ class CSPBasis:
                 f"{obs.name!r}; using wavelength-matched cube rows. Your "
                 "$SPS_HOME mixes file vintages -- consider aligning them.",
                 stacklevel=2)
-        obs._neb_cube_rows = jnp.asarray(idx)
+        obs._neb_cube_rows = np.asarray(idx, dtype=np.int32)
         return obs._neb_cube_rows
 
     def _neb_blend_matrix_for(self, obs):
-        """(n_obs, n_grid) 0/1 summation matrix for observations whose lines
-        are unresolved doublets / blends (``Lines.components``), or ``None``
-        when every observed line is a single grid line (the default; the
-        gather path in ``_neb_cube_rows_for`` is then used unchanged).
-
-        Each component wavelength is matched to the nebular cube BY REST
-        WAVELENGTH with the same 1 A tolerance as ``_neb_cube_rows_for``, so
-        the blend path is immune to the emlines_info.dat / ZAU vintage
-        mismatch too.  Cached on the observation (static at trace time).
-        Motivation: JADES DR4/DR5 R1000 tables report C IV 1548,1551,
-        C III] 1907,1909, O III] 1660,1666 and [O II] 3726,3729 as single
-        unresolved sums; comparing a summed measurement with ONE grid
-        component under-predicts the line by the missing component's share.
+        """(n_obs, n_grid) 0/1 summation matrix for blended lines (``Lines.components``), or None when
+        every observed line is a single grid line; cached on the observation as NumPy.
         """
         if hasattr(obs, "_neb_blend_matrix"):
             return obs._neb_blend_matrix
@@ -1490,23 +874,18 @@ class CSPBasis:
                         f"no nebular-cube line within 1 A (nearest "
                         f"{pos[j]:.2f} A).")
                 B[k, j] += 1.0
-        obs._neb_blend_matrix = jnp.asarray(B)
+        obs._neb_blend_matrix = np.asarray(B, dtype=np.float32)
         return obs._neb_blend_matrix
 
-    def predict_line_fluxes(self, theta):
-        """Observed-frame integrated emission-line fluxes for EVERY line in
-        the nebular grid, computed directly from the CLOUDY line
-        luminosities (no spectral painting / aperture round-trip).
+    def predict_line_fluxes(self, theta, *, for_photometry=False, for_spectrum=False):
+        """Observed-frame fluxes of every nebular grid line (n_lines,), through the same weights,
+        dust, escape, mass and distance factors as the spectrum.
 
-        Pipeline mirrors the spectrum path exactly: SFH/metallicity weights,
-        (1 - frac_obrun) nebular scaling, birth-cloud (per-age) + diffuse
-        dust evaluated AT the line wavelengths, OB-runaway bypass, mass,
-        cosmological flux factor, IGM at the line wavelengths, and
-        eline_scaling.  Returns shape ``(n_lines_grid,)`` in the same
-        integrated-flux units as ``Lines.flux`` (erg s^-1 cm^-2 when theta
-        carries ``zred``); index with ``Lines.line_ind`` to compare with an
-        observation.  Normalisation matches the total flux painted into the
-        spectrum, so photometry and line predictions stay consistent.
+        Default: integrated fluxes [erg/s/cm^2] with the 1/(1+z) Jacobian, IGM at the line
+        wavelength and ``eline_scaling`` (the Lines observation).  ``for_spectrum``: the same
+        without ``eline_scaling`` (painted by the Spectrum projector).  ``for_photometry``: per-Hz
+        amplitudes with the full f_nu flux factor and no IGM (applied inside the photometric line
+        basis) and no ``eline_scaling``.
         """
         W = self.calculate_ssp_weights(theta=theta)          # (n_z, n_age)
         logZ_gas = theta["gas_logz"]
@@ -1518,19 +897,12 @@ class CSPBasis:
             f_esc = jnp.ravel(theta["frac_obrun"])[0]
             line_lum = line_lum * (1.0 - f_esc)
 
-        # Static linear-interp weights of the line wavelengths on the model
-        # grid (both static arrays -> constant-folded under jit).
         lam = self.neb.nebem_line_pos                        # (n_lines,)
         li = jnp.clip(jnp.searchsorted(self.wave, lam) - 1,
                       0, self.wave.shape[0] - 2)
         lf = jnp.clip((lam - self.wave[li])
                       / (self.wave[li + 1] - self.wave[li]), 0.0, 1.0)
 
-        # Birth-cloud (per SSP age) + diffuse attenuation at line positions.
-        # ``attenuate_dust`` / ``_age_bin_mix`` only exist when the CSP was
-        # built with the corresponding dust components -- mirror the
-        # get_spectrum_* dispatch and fall back to no attenuation (factor 1)
-        # when they are absent (e.g. add_dust=False test/intrinsic models).
         n_young = self._neb_young_idx.shape[0]
         attn_age_lines = jnp.ones((n_young, lam.shape[0]))
         diff_lines = jnp.ones(lam.shape[0])
@@ -1543,11 +915,6 @@ class CSPBasis:
                              +        lf[None, :] * tau_age[:, li + 1])
                 aal = jnp.exp(-tau_lines)                    # (n_age, n_lines)
                 if "frac_obrun" in theta and self.fesc_geometry != "picket":
-                    # FSPS PARITY (add_dust.f90 L110-111): the line
-                    # luminosities receive the same runaway bypass mix as the
-                    # young continuum.  In the 'picket' geometry the lines
-                    # arise entirely in the covered channel and are fully
-                    # attenuated -- no bypass.
                     fo = jnp.ravel(theta["frac_obrun"])[0]
                     aal = (1.0 - fo) * aal + fo
                 attn_age_lines = aal[self._neb_young_idx, :]
@@ -1561,19 +928,10 @@ class CSPBasis:
         if "logmass" in theta:
             F = F * 10.0 ** jnp.ravel(theta["logmass"])[0]
         if "zred" in theta:
-            from ..cosmology import flux_factor_maggies
             z_scalar = jnp.ravel(theta["zred"])[0]
-            # flux_factor_maggies carries the (1+z) bandwidth-compression
-            # Jacobian appropriate for PER-Hz flux densities (f_nu).  An
-            # INTEGRATED line flux F = L / (4 pi d_L^2) must not include it:
-            # integrating f_nu,obs over d nu_obs cancels the (1+z) against
-            # the compressed bandwidth.  Dividing here keeps the direct
-            # predictions equal to the observed-frame integral of the
-            # painted line spectrum (photometry/lines consistency) -- found
-            # 2026-07-21 on the 1025955 rerun, where predictions were
-            # exactly (1+z) = 2.87x above the painted-spectrum line fluxes.
-            F = F * flux_factor_maggies(z_scalar, self.cosmo) / (1.0 + z_scalar)
-            if self.igm is not None:
+            ff = self._flux_factor(theta)
+            F = F * (ff if for_photometry else ff / (1.0 + z_scalar))
+            if self.igm is not None and not for_photometry:
                 if "igm_factor" in theta:
                     ig_factor = jnp.ravel(theta["igm_factor"])[0]
                 else:
@@ -1581,38 +939,25 @@ class CSPBasis:
                 trans = self.igm.attenuation(self.wave, z_scalar,
                                              factor=ig_factor)
                 F = F * ((1.0 - lf) * trans[li] + lf * trans[li + 1])
-        if "eline_scaling" in theta:
+        if not for_photometry and not for_spectrum and "eline_scaling" in theta:
             F = F * jnp.ravel(theta["eline_scaling"])[0]
         return F
 
-    # -----------------------------------------------------------------------
-    # Line-only spectrum (prospector-style)
-    # -----------------------------------------------------------------------
 
     def get_line_spec(self, theta):
-        """Return the broadened-emission-line component of the model spectrum.
-
-        Computed as ``get_spectrum(include_lines=True) - get_spectrum(include_lines=False)``,
-        which gives the contribution of the nebular lines alone -- the
-        prospector-style "line-only" spectrum.  Mass + redshift + IGM
-        scaling are applied identically to ``CSPBasis.predict`` so the
-        output is at the same physical scale as the observation arrays.
-
-        ``add_neb=False`` makes this return zero (no nebular module).
-        """
+        """Painted line component alone on the rest-frame grid, scaled by mass, flux factor and IGM as in
+        ``predict``, times ``eline_scaling`` (the Lines-observation aperture factor)."""
         if not hasattr(self, "neb") or self.neb is None:
             return jnp.zeros_like(self.wave)
 
         _continuum, line_only = self.get_spectrum_components(theta)
 
-        # Mirror the mass + zred + IGM scaling block of CSPBasis.predict.
         if "logmass" in theta:
             mass_scale = jnp.float32(10.0 ** theta["logmass"][0])
             line_only = line_only * mass_scale
         if "zred" in theta:
-            from ..cosmology import flux_factor_maggies
             z_scalar = jnp.ravel(theta["zred"])[0]
-            line_only = line_only * jnp.float32(flux_factor_maggies(z_scalar, self.cosmo))
+            line_only = line_only * jnp.float32(self._flux_factor(theta))
             if self.igm is not None:
                 if "igm_factor" in theta:
                     ig_factor = jnp.ravel(theta["igm_factor"])[0]
@@ -1622,8 +967,6 @@ class CSPBasis:
                     self.wave, z_scalar, factor=ig_factor,
                 )
                 line_only = line_only * transmission.astype(line_only.dtype)
-        # Apply the eline_scaling fraction (1.0 = no loss) so the line-only
-        # spectrum is consistent with the Lines.predict fluxes from predict().
         if "eline_scaling" in theta:
             line_only = line_only * jnp.ravel(theta["eline_scaling"])[0]
         return line_only
@@ -1633,11 +976,39 @@ class CSPBasis:
         """Return the initial theta dict (one entry per free parameter)."""
         return dict(self.theta_init)
 
+    @property
+    def cosmo(self):
+        """The cosmology; fixed at construction (assignment raises)."""
+        return self._cosmo
+
+    @cosmo.setter
+    def cosmo(self, value):
+        raise AttributeError(
+            "the cosmology is fixed at construction (compiled predictions would "
+            "silently keep the old one); build a new basis with cosmo=...")
+
+    def _flux_factor(self, theta):
+        """(1+z) (10 pc / D)^2 x L_sun/Hz -> cgs; D from ``theta['lumdist_mpc']`` when
+        present, else D_L(``theta['zred']``)."""
+        from ..cosmology import flux_factor_cgs
+        z_scalar = jnp.ravel(theta["zred"])[0]
+        lumdist = (jnp.ravel(theta["lumdist_mpc"])[0]
+                   if "lumdist_mpc" in theta else None)
+        return flux_factor_cgs(z_scalar, self.cosmo, lumdist_mpc=lumdist)
+
+    def age_at(self, z):
+        """Age of the Universe [Gyr] at redshift ``z`` under ``self.cosmo``
+        (a float for a scalar, a JAX array otherwise)."""
+        from ceridwen.cosmology import age_gyr
+        out = age_gyr(jnp.asarray(z, dtype=float), self.cosmo)
+        return float(out) if jnp.ndim(out) == 0 else out
+
     def __repr__(self):
         lines = [
             "<CSPBasis (dict theta)>",
             "-" * 38,
-            f"Universe age (tuniv) : {self.tuniv} Gyr",
+            f"Universe age at z=0  : {self.age_at(0.0):.3f} Gyr",
+            f"Cosmology            : {self.cosmo.describe()}",
             f"n_time               : {self.n_time}",
             f"n_SSP_ages           : {len(self.ages)}",
             f"n_metallicities      : {len(self.zmet)}",
@@ -1649,76 +1020,18 @@ class CSPBasis:
             lines.append(f"  {k:<28s}: shape {v.shape}")
         return "\n".join(lines)
 
-    # -----------------------------------------------------------------------
-    # SFH visualisation
-    # -----------------------------------------------------------------------
 
     def display_sfh(self, theta=None, ax=None, *,
                     overlay_nodes=True, show_bin_edges=False,
                     units="Gyr", **plot_kwargs):
-        """Plot the SFH against lookback time, rendered identically to the
-        interpretation used by :meth:`_ssp_weights`.
-
-        For ``sfh_interp == "step"`` this draws a piecewise-constant function
-        with one horizontal segment per bin ``[T_{i+1}, T_i]`` at height
-        :math:`\\bar\\psi_i` (the per-bin SFR consumed by
-        ``calculate_ssp_weights_*_step``).  For ``sfh_interp == "linear"`` it
-        draws the piecewise-linear interpolant between per-node SFR values --
-        the same function whose analytic integral against the SSP age grid
-        is computed by ``intsfwght``.
-
-        Lookback time is read from ``theta["lookback_time"]`` if supplied
-        (units: Gyr) and otherwise falls back to ``self.sfh_times`` (which
-        is stored in years and converted back to Gyr here).  ``theta_init``
-        intentionally does NOT carry ``lookback_time`` -- it is a static
-        grid, not a free parameter -- so the default fallback path is the
-        common case.
-
-        The x-axis runs left-to-right in increasing lookback time: present
-        day (T = 0) sits at the origin on the left, and the oldest sampled
-        node sits on the right.  This matches the natural index order of
-        ``theta["lookback_time"]``.
-
-        Parameters
-        ----------
-        theta : dict, optional
-            Parameter dict to display.  Defaults to ``self.theta_init``.
-            If it carries a ``"lookback_time"`` entry, that takes
-            precedence over ``self.sfh_times`` for the x-axis grid.
-        ax : matplotlib.axes.Axes, optional
-            Axes to draw into.  If None, a new figure is created.
-        overlay_nodes : bool
-            If True, mark per-bin SFR values at bin midpoints (step mode)
-            or per-node SFR values at lookback nodes (linear mode).
-        show_bin_edges : bool
-            If True, draw vertical dotted lines at every node ``T_i``.
-        units : {"Gyr", "yr", "Myr"}
-            X-axis units for the lookback-time axis.  The SFR axis is
-            always [M_sun / yr].
-        **plot_kwargs
-            Forwarded to the per-segment ``ax.plot`` calls (e.g.
-            ``color``, ``lw``, ``linestyle``, ``label``).
-
-        Returns
-        -------
-        ax : matplotlib.axes.Axes
-            The axes containing the plot.
-
-        Raises
-        ------
-        AssertionError
-            If the per-bin integral of the displayed SFR disagrees with the
-            per-bin mass ``m_target`` used by :meth:`_ssp_weights` by more
-            than 1e-6 relative.  This pins the visual to the weight code so
-            future refactors of either side cannot silently diverge.
+        """Plot the SFH exactly as ``_ssp_weights`` interprets it (step: constant per bin; linear:
+        chords between nodes); ``theta`` defaults to ``theta_init``, ``units`` in {"Gyr", "Myr", "yr"}.
+        Returns the axes.
         """
         import matplotlib.pyplot as plt
 
         theta = self.theta_init if theta is None else theta
 
-        # Lookback-time grid (Gyr).  theta_init does not carry it (stripped
-        # in initialize_model_structure), so the default path falls back to
-        # self.sfh_times (yr) converted to Gyr.
         if "lookback_time" in theta:
             T_gyr = np.asarray(theta["lookback_time"], dtype=float)
         else:
@@ -1734,8 +1047,6 @@ class CSPBasis:
             )
         per_bin = (psi.size == n_time - 1)
 
-        # Bin widths in years (physical units for the mass-conservation check).
-        # Lookback strictly INCREASING, so dt > 0 via T_yr[1:]-T_yr[:-1].
         T_yr = T_gyr * 1e9
         dt_yr = T_yr[1:] - T_yr[:-1]
         if not np.all(dt_yr > 0):
@@ -1744,18 +1055,11 @@ class CSPBasis:
                 f"index 0, oldest last); got dt_yr = {dt_yr}"
             )
 
-        # Per-bin SFR -- same branch as _ssp_weights in step mode.  sfh[:-1] is
-        # the younger-side node, sfh[1:] the older-side node.
         if per_bin:
             bar_psi = psi
         else:
             bar_psi = 0.5 * (psi[:-1] + psi[1:])
 
-        # Per-node SFR for the linear interpolant.  For per-bin input
-        # (non-canonical in linear mode -- _ssp_weights expects per-node),
-        # invert the step-mode collapse: interior nodes are the mean of
-        # the two adjacent per-bin values; endpoint nodes take the
-        # neighbouring bin's value.
         if per_bin:
             psi_nodes = np.empty(n_time, dtype=float)
             psi_nodes[0]    = psi[0]
@@ -1786,9 +1090,6 @@ class CSPBasis:
         n_bin = n_time - 1
 
         if self.sfh_interp == "step":
-            # One horizontal segment per bin -- exactly the piecewise-constant
-            # function the step-mode weight calculator integrates against the
-            # SSP Voronoi cells.
             for i in range(n_bin):
                 ax.plot([T_plot[i + 1], T_plot[i]],
                         [bar_psi[i],   bar_psi[i]],
@@ -1813,8 +1114,6 @@ class CSPBasis:
         ax.set_xlabel(xlabel)
         ax.set_ylabel(r"$\dot{M}_\star\;[\mathrm{M_\odot\,yr^{-1}}]$")
 
-        # T = 0 (today) sits at the origin on the left; lookback time
-        # increases to the right.  No axis inversion.
 
         total_mass = float(np.sum(bar_psi * dt_yr))
         ax.set_title(
@@ -1822,60 +1121,12 @@ class CSPBasis:
             f"M_total = {total_mass:.3e} M_sun"
         )
 
-        # ------------------------------------------------------------------
-        # Mass-conservation contract.
-        #
-        # m_target  : per-bin mass m2 that _ssp_weights distributes onto
-        #             the SSP grid (linear m2 reduces analytically to the
-        #             trapezoid between psi nodes; step m2 is bar_psi * dt).
-        # m_display : trapezoidal integral of the polyline this method just
-        #             drew, segment by segment.  For step we drew a constant
-        #             over each bin; for linear we drew the chord between
-        #             adjacent nodes.  The integrals must agree by the same
-        #             formulas -- a future refactor that changes either side
-        #             alone will trip this assertion.
-        # ------------------------------------------------------------------
-        if self.sfh_interp == "step":
-            m_target  = bar_psi * dt_yr
-            m_display = bar_psi * dt_yr
-        else:
-            m_target  = 0.5 * (psi_nodes[:-1] + psi_nodes[1:]) * dt_yr
-            m_display = 0.5 * (psi_nodes[:-1] + psi_nodes[1:]) * dt_yr
-
-        rel = np.abs(m_display - m_target) / np.maximum(np.abs(m_target), 1e-30)
-        if not np.all(rel < 1e-6):
-            raise AssertionError(
-                "display_sfh: integrated displayed SFR disagrees with the "
-                f"per-bin mass used by _ssp_weights ({self.sfh_interp!r} "
-                f"mode); max rel diff = {float(rel.max()):.3e}.  This means "
-                "the plot and the weight calculation have drifted out of "
-                "sync -- one of them was refactored without the other."
-            )
-
         return ax
 
-    # -----------------------------------------------------------------------
-    # SSP weight calculation (core; identical maths to csp.py)
-    # -----------------------------------------------------------------------
 
     def _lookback_from_zred(self, zred):
-        """SFH lookback grid (years) rescaled so its oldest node tracks the
-        age of the universe at the sampled redshift.
-
-        Used in the free-redshift forward pass (``track_zred_age=True``).  The
-        construction grid ``self.sfh_times`` (oldest node ``self.sfh_times[-1]``
-        ~ age at the build redshift) is scaled by
-        ``age_gyr(zred) / age_gyr(z_build)`` so that the oldest node equals
-        ``age_gyr(zred)`` while the relative node spacing (and therefore
-        ``n_time``) is preserved; the result is clipped to the SSP age ceiling.
-
-        Fully differentiable in ``zred`` through
-        :func:`ceridwen.cosmology.age_gyr` (a JAX Simpson integral), so a
-        gradient of the likelihood w.r.t. ``zred`` flows through the age-grid
-        construction, not only the flux factor.  No Python-scalar ``zred`` is
-        baked at trace time and there is no host-side branching on the traced
-        value -- the only branch (in :meth:`_ssp_weights`) is on the static
-        presence of dict keys.
+        """Construction lookback grid [yr] rescaled so its oldest node equals the age of the Universe
+        at ``zred`` (differentiable), clipped to the SSP age ceiling.
         """
         from ceridwen.cosmology import age_gyr
         z = jnp.ravel(jnp.asarray(zred, dtype=float))[0]
@@ -1885,68 +1136,15 @@ class CSPBasis:
         return jnp.clip(scaled, 0.0, self._age_clip_hi)
 
     def _ssp_weights(self, theta, *, zh_mode, sfh_mode):
-        """Unified SSP-weight kernel consolidating the four
-        ``calculate_ssp_weights_{const,var}_zh{,_step}`` methods.
-
-        Parameters
-        ----------
-        zh_mode : {"const", "var"}
-            ``"const"`` — single constant metallicity from ``theta["Z"]``
-            (shape ``(1,)``); ``"var"`` — time-varying metallicity from
-            ``theta["zh"]`` (shape ``(n_time,)``).
-        sfh_mode : {"linear", "step"}
-            ``"linear"`` — analytic log-age integration of a piecewise-linear
-            SFH via :func:`intsfwght`; ``"step"`` — piecewise-constant SFH via
-            SSP-Voronoi-cell overlap (FastStepBasis-style).
-
-        Units (identical across all four combinations)
-        -----------------------------------------------
-        * Metallicity — ``theta["Z"]`` (const) and ``theta["zh"]`` (var) are
-          BOTH ``log10`` of the *absolute* metallicity, on the SSP grid
-          ``self.zmet`` (== ``SSPData.ssp_lgmet``).  ``Z`` is a single scalar;
-          ``zh`` is one value per lookback-time node — same unit, different
-          shape.
-        * SFR — ``theta["sfh"]`` is a *linear* star-formation rate, floored
-          identically at ``1e-30`` in every mode.
-
-        The summed-weight ``maximum(0, .)`` clamp is applied in ``const`` mode.
-        Both modes share the ``1e-30`` SFR floor, keeping the SFR units
-        consistent and avoiding a divide-by-zero NaN in the var-zh linear slope
-        for (near-)zero SFR nodes.
+        """(n_z, n_age) SSP weights.  ``zh_mode`` "const" reads theta["Z"], "var" theta["zh"] (both
+        log10 absolute metallicity); ``sfh_mode`` "linear" integrates a piecewise-linear SFH in
+        log age (a per-bin SFH is first mapped to nodes as in ``display_sfh``), "step" a
+        piecewise-constant SFH over the SSP Voronoi cells.  Grid precedence:
+        theta["lookback_time"] (Gyr), then the zred-tracked grid, then ``self.sfh_times``.
         """
-        # Single SFR floor, identical for EVERY (zh_mode, sfh_mode) combination,
-        # so all four weight calculations consume the star-formation-rate
-        # history in the same units (linear SFR) with the same regularisation.
-        # ``1e-30`` is a tiny positive floor that keeps the var-zh linear slope
-        # (which divides by the per-node SFR) finite.
         floor = 1e-30
         sfh = jnp.clip(theta["sfh"], floor, None)
 
-        # ── Lookback convention ─────────────────────────────────────────────
-        # self.sfh_times is monotonically INCREASING in lookback (yr):
-        #   sfh_times[0]   = 0           (today, present-day node)
-        #   sfh_times[-1]  ≈ T_universe  (oldest sampled node)
-        # Bin i (i = 0 .. n_time-2) lies between consecutive nodes:
-        #   younger end  t_young[i] = sfh_times[i]
-        #   older  end   t_old[i]   = sfh_times[i+1]
-        #   width        dt[i]      = t_old[i] - t_young[i]   (> 0)
-        # Bin 0 is therefore the YOUNGEST bin (touching today) and bin
-        # n_time-2 is the oldest.  ``theta["sfh"]`` is indexed to match:
-        # sfh[0] is the SFR at the present-day node (per-node) or the
-        # SFR of the youngest bin (per-bin).
-        #
-        # Per-sample lookback grid (free-redshift).  Precedence (branch on the
-        # STATIC presence of dict keys only -- never on a traced value):
-        #   1. explicit theta["lookback_time"] (Gyr) -- a transform recomputed
-        #      the SFH age-bins (e.g. the model-specific extra_young grid) from
-        #      the sampled zred; use it verbatim.
-        #   2. track_zred_age and theta["zred"] -- derive the grid HERE from
-        #      age_gyr(zred) by rescaling the construction grid so the oldest
-        #      node tracks the age of the universe (the first-class ceridwen
-        #      free-z path; see _lookback_from_zred).
-        #   3. otherwise the cached self.sfh_times (the fixed-z path,
-        #      bit-for-bit unchanged).
-        # n_time is unchanged in every case, so the traced shapes are static.
         if "lookback_time" in theta:
             _times = jnp.atleast_1d(
                 jnp.asarray(theta["lookback_time"], dtype=float)) * 1e9  # Gyr->yr
@@ -1959,17 +1157,11 @@ class CSPBasis:
         dt      = t_old - t_young
 
         if sfh_mode == "linear":
-            # SFR(t) is linearly interpolated between adjacent nodes:
-            #   SFR(t_young) = sfh[:-1]   (younger-end node SFR)
-            #   SFR(t_old)   = sfh[1:]    (older-end node SFR)
-            # Parametrised as SFR(t) = sfh[:-1] * (1 + slope * (t - t_young)),
-            # so that SFR(t_old) = sfh[:-1] * (1 + slope * dt) = sfh[1:].
-            # Solving for slope:
+            if self.sfh_per_bin:   # per-bin values to nodes: interior means, end bins at the end nodes
+                sfh = jnp.concatenate([sfh[:1], 0.5 * (sfh[:-1] + sfh[1:]), sfh[-1:]])
             slope = jnp.diff(sfh) / (sfh[:-1] * dt)
             m2    = sfh[:-1] * (1.0 + 0.5 * slope * dt) * dt   # = 0.5*(sfh[:-1]+sfh[1:])*dt
 
-            # intsfwght expects the affine form  SFR(t) = sfh_ref * (a + slope*t):
-            #   a = 1 - slope * t_young.
             tprime = jnp.maximum(0.0, t_young)
             a      = 1.0 - slope * tprime
 
@@ -2004,17 +1196,12 @@ class CSPBasis:
             w1 = jnp.pad(w_lo, ((0, 0), (0, 1))) + jnp.pad(w_hi, ((0, 0), (1, 0)))
             w1 = jnp.maximum(0.0, w1)
         else:  # sfh_mode == "step"
-            # Per-bin SFR.  Per-node input averages adjacent nodes:
-            # sfh[:-1] (younger-side) and sfh[1:] (older-side).
             if self.sfh_per_bin:
                 sfh_mid = sfh
             else:
                 sfh_mid = 0.5 * (sfh[:-1] + sfh[1:])
             m2 = sfh_mid * dt
 
-            # Overlap between bin i's [t_young, t_old] window and SSP age
-            # cell j's Voronoi interval [voronoi_lo, voronoi_hi] (which is
-            # in years on the SSP axis, untouched by the lookback flip).
             overlap = jnp.maximum(
                 0.0,
                 jnp.minimum(t_old[:, None],   self._ssp_voronoi_hi[None, :])
@@ -2042,7 +1229,6 @@ class CSPBasis:
             total_weights = total_weights.at[z_idx    ].add(      w  * total_sfh_weights)
             return total_weights
 
-        # zh_mode == "var"
         zh   = theta["zh"]
         zbin = 0.5 * (zh[:-1] + zh[1:])
         k    = jnp.clip(jnp.searchsorted(self.zmet, zbin) - 1, 0, self._n_z - 2)
@@ -2059,51 +1245,24 @@ class CSPBasis:
         return M.T @ sfh_weights
 
     def calculate_ssp_weights_const_zh(self, theta):
-        """Constant-metallicity, piecewise-linear SFH weights.
-
-        Thin wrapper over :meth:`_ssp_weights`; reads ``theta["sfh"]``
-        (shape ``(n_time,)``, linear SFR) and ``theta["Z"]`` (shape ``(1,)``,
-        log10 absolute metallicity on the ``self.zmet`` / ``ssp_lgmet`` grid —
-        NOT log10 Z/Zsun).  Same units as the var-zh variants' ``theta["zh"]``.
-        """
+        """Weights for constant metallicity, piecewise-linear SFH."""
         return self._ssp_weights(theta, zh_mode="const", sfh_mode="linear")
 
     def calculate_ssp_weights_const_zh_step(self, theta):
-        """Constant-metallicity, piecewise-constant (FastStepBasis-style) SFH
-        weights.  Thin wrapper over :meth:`_ssp_weights`.  Reads
-        ``theta["sfh"]`` and ``theta["Z"]``.
-        """
+        """Weights for constant metallicity, piecewise-constant SFH."""
         return self._ssp_weights(theta, zh_mode="const", sfh_mode="step")
 
     def calculate_ssp_weights_var_zh(self, theta):
-        """Time-varying-metallicity, piecewise-linear SFH weights.
-
-        Thin wrapper over :meth:`_ssp_weights`; reads ``theta["sfh"]``
-        (shape ``(n_time,)``, linear SFR) and ``theta["zh"]`` (shape
-        ``(n_time,)``, log10 absolute metallicity at each lookback time, on the
-        ``self.zmet`` / ``ssp_lgmet`` grid — NOT log10 Z/Zsun).  Identical units
-        to the const-zh variants' ``theta["Z"]``.
-        """
+        """Weights for a metallicity history, piecewise-linear SFH."""
         return self._ssp_weights(theta, zh_mode="var", sfh_mode="linear")
 
     def calculate_ssp_weights_var_zh_step(self, theta):
-        """Time-varying-metallicity, piecewise-constant (FastStepBasis-style)
-        SFH weights.  Thin wrapper over :meth:`_ssp_weights`.  Reads
-        ``theta["sfh"]`` and ``theta["zh"]``.
-        """
+        """Weights for a metallicity history, piecewise-constant SFH."""
         return self._ssp_weights(theta, zh_mode="var", sfh_mode="step")
 
-    # -----------------------------------------------------------------------
-    # Spectrum methods (all read theta["key"] directly)
-    # -----------------------------------------------------------------------
 
-    # Nebular helper: build the (n_z, n_age, n_wave) nebular array, with or
-    # without broadened emission lines.  ``include_lines`` defaults to
-    # ``self.nebemlineinspec`` for external callers, but ``csp.predict`` forces
-    # ``include_lines=True`` so ``Lines.predict``'s Gaussian-aperture
-    # integration still sees the lines in the spectrum.
     def _build_neb_array(self, theta, *, include_lines):
-        """Return ``(n_z, n_age, n_wave)`` nebular array with or without lines."""
+        """Dense (n_z, n_age, n_wave) nebular array (young rows only non-zero); picket geometry only."""
         logZ_gas = theta["gas_logz"]
         logU     = theta["gas_logu"]
         cont_young, line_young = self.neb.evaluate_batch(
@@ -2117,38 +1276,9 @@ class CSPBasis:
             neb_young.astype(jnp.float32))
         return neb_all
 
-    # ── PERF (2026-08-12): factored nebular path ─────────────────────────
-    # ``_build_neb_array`` above allocates a full (n_z, n_age, n_wave) fp32
-    # cube to carry information that lives on only ``n_young`` age rows, and
-    # every consumer then contracted the metallicity axis straight back out
-    # again.  Combined with the ``jnp.where(kill_ion, ...)`` copy of
-    # ``self.flux`` and the ``stellar + neb`` sum, that was THREE full-size
-    # temporaries per forward call -- roughly doubled under ``jax.grad``
-    # (XLA keeps the einsum operands alive as backward residuals) and again
-    # by the chain width under ``vmap``.  It was the dominant term in peak
-    # device memory and the direct cause of OOM on multi-chain GPU runs.
-    #
-    # The two helpers below never form an (n_z, n_age, n_wave) array.  They
-    # exploit the fact that the nebular emission is RANK-1 in metallicity:
-    # the CLOUDY grid interpolation returns log-luminosities with no z axis,
-    # and the only z dependence is the ionising-photon rate ``log_qq``.  So
-    # the z sum folds into the SSP weights BEFORE the wavelength axis is
-    # touched.  ``_build_neb_array`` is kept for the picket-fence geometry
-    # and for external callers.
     def _neb_weights_and_base(self, W_f32, theta, *, include_lines, amplitude):
-        """Return ``(v, base)`` for the young age rows.
-
-        ``v`` has shape ``(n_young,)`` and ``base`` shape
-        ``(n_young, n_wave)``, such that for any per-(age, wavelength)
-        multiplier ``A``
-
-            sum_z sum_{a in young} W[z,a] * neb[z,a,w] * A[a,w]
-              == sum_y v[y] * base[y,w] * A[young_idx[y], w]
-
-        exactly.  ``amplitude`` is the scalar ``(1 - f_esc)`` nebular scaling.
-        Computing ``v`` first collapses the metallicity axis at cost
-        ``n_z * n_young`` instead of dragging it through the wavelength
-        contraction at cost ``n_z * n_young * n_wave``.
+        """``(v (n_young,), base (n_young, n_wave))`` with sum_z W[z,a] neb[z,a,w] == v[y] base[y,w] for
+        the young rows: the metallicity axis is contracted before the wavelength axis.
         """
         base, scale = self.neb.evaluate_batch_factored(
             theta["gas_logz"], theta["gas_logu"],
@@ -2162,11 +1292,7 @@ class CSPBasis:
 
     def _neb_spectrum_term(self, W_f32, theta, *, include_lines,
                            attn_age=None, amplitude=jnp.float32(1.0)):
-        """Nebular contribution contracted straight down to ``(n_wave,)``.
-
-        ``attn_age`` is the full ``(n_age, n_wave)`` attenuation array; only
-        the young rows are read.  Pass ``None`` for the dust-free variant.
-        """
+        """Nebular contribution (n_wave,), optionally attenuated by the young rows of ``attn_age``."""
         v, base = self._neb_weights_and_base(
             W_f32, theta, include_lines=include_lines, amplitude=amplitude)
         if attn_age is None:
@@ -2175,19 +1301,7 @@ class CSPBasis:
                           attn_age[self._neb_young_idx, :])
 
     def _ion_multiplier(self, theta):
-        """Return ``(ion_mult, neb_amp)`` replacing the dense ``kill_ion`` copy.
-
-        ``self.kill_ion`` has shape ``(n_age, n_wave)`` -- it carries no
-        metallicity axis -- so
-
-            jnp.where(kill_ion[None, :, :], f_esc * flux, flux)
-              == flux * jnp.where(kill_ion, f_esc, 1.0)
-
-        and the mask can be folded into the (tiny) attenuation array instead
-        of copying the (n_z, n_age, n_wave) flux cube.  Bit-identical: IEEE
-        multiplication is commutative and the mask entries are exactly 1.0
-        and exactly ``f_esc`` (or exactly 0.0 when ``frac_obrun`` is absent).
-        """
+        """``(ion_mult (n_age, n_wave), neb_amp)``: ionising flux of young ages scaled by frac_obrun (0 without it), nebular amplitude 1 - frac_obrun."""
         if "frac_obrun" in theta:
             f_esc = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
             return (jnp.where(self.kill_ion, f_esc, jnp.float32(1.0)),
@@ -2196,21 +1310,10 @@ class CSPBasis:
                 jnp.float32(1.0))
 
     def _spectrum_picket_nodem(self, theta, neb_all):
-        """Picket-fence / partial-covering escape geometry (``fesc_geometry=
-        'picket'``), no dust emission.
-
-        A fraction ``fo = frac_obrun`` of the YOUNG stellar light (LyC
-        included) escapes through dust-free channels: no birth-cloud, no
-        diffuse attenuation.  The covered ``1 - fo`` fraction has its LyC
-        absorbed (it powers the nebular emission, itself scaled by ``1 - fo``
-        in ``_build_neb_array`` units) and is attenuated by birth-cloud +
-        diffuse dust.  Old ages are fully covered (their birth-cloud
-        attenuation is 1 anyway; they see the diffuse screen only, exactly as
-        in the default geometry).  Unlike ``runaway_bc``, the escaped channel
-        bypasses the DIFFUSE screen too, and the nebular emission receives NO
-        bypass mix -- the geometry therefore imprints on the observed
-        >912 A continuum, giving the likelihood a direct lever on the escape
-        fraction."""
+        """Picket-fence geometry, no dust emission: a fraction ``frac_obrun`` of the young light (LyC
+        included) escapes free of all dust; the covered fraction powers the nebular emission and is
+        attenuated by birth-cloud and diffuse dust.
+        """
         W  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
         fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
 
@@ -2220,37 +1323,17 @@ class CSPBasis:
         attn_age = jnp.exp(-tau_age)                 # full birth-cloud, no bypass
 
         young = self.young_mask.astype(jnp.float32)  # (n_age,)
-        # covered channel: LyC absorbed; young stellar weight (1 - fo), old 1;
-        # nebular (lines + continuum) scaled (1 - fo), fully attenuated.
         F_cov = jnp.where(self.kill_ion[None, :, :], jnp.float32(0.0), self.flux)
         cov_w = (jnp.float32(1.0) - fo) * young + (jnp.float32(1.0) - young)
         stellar_cov = jnp.einsum("za,zaw,aw,a->w", W, F_cov, attn_age, cov_w)
         neb_cov = (jnp.float32(1.0) - fo) * jnp.einsum(
             "za,zaw,aw->w", W, neb_all.astype(jnp.float32), attn_age)
         covered = (stellar_cov + neb_cov) * jnp.exp(-attn_diffuse.astype(jnp.float32))
-        # clear channel: fraction fo of the young flux, LyC intact, dust-free.
         clear = fo * jnp.einsum("za,zaw,a->w", W, self.flux, young)
         return (covered + clear).reshape((-1,))
 
     def _spectrum_picket_dem(self, theta, neb_all):
-        """Picket-fence escape geometry WITH energy-balance dust emission
-        (``fesc_geometry='picket'``, ``add_dust_emission=True``).
-
-        Identical channel decomposition to ``_spectrum_picket_nodem``:
-        a fraction ``fo`` of the young stellar light (LyC included) escapes
-        through channels free of ALL dust; the covered ``1 - fo`` fraction
-        (young LyC absorbed by the gas, nebular scaled by ``1 - fo``) crosses
-        birth-cloud + diffuse dust.  The energy balance is built so that the
-        clear channel appears identically in the dust-free and attenuated
-        spectra and therefore cancels in ``L_abs`` -- by construction it
-        deposits no energy in the dust.  The gas-absorbed LyC of the covered
-        channel is excluded from BOTH spectra (it is reprocessed into the
-        nebular emission, which is present and whose dust-absorbed part
-        heats the grains), mirroring the FSPS ``lboln = csp1 + csp2``
-        convention in ``add_dust.f90``.  The DL07 re-emission and its
-        self-absorption iterate against the diffuse screen exactly as in the
-        default geometry; we do not grant the IR emission a picket bypass,
-        since the diffuse optical depth is negligible at those wavelengths."""
+        """Picket-fence geometry with energy-balance dust emission; the clear channel cancels in L_abs."""
         W  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
         fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
 
@@ -2261,8 +1344,6 @@ class CSPBasis:
         diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
 
         young = self.young_mask.astype(jnp.float32)  # (n_age,)
-        # covered channel: LyC absorbed; young stellar weight (1 - fo), old 1;
-        # nebular (lines + continuum) scaled (1 - fo), fully attenuated.
         F_cov = jnp.where(self.kill_ion[None, :, :], jnp.float32(0.0), self.flux)
         cov_w = (jnp.float32(1.0) - fo) * young + (jnp.float32(1.0) - young)
         neb32 = neb_all.astype(jnp.float32)
@@ -2270,12 +1351,8 @@ class CSPBasis:
         neb_cov = (jnp.float32(1.0) - fo) * jnp.einsum(
             "za,zaw,aw->w", W, neb32, attn_age)
         covered = (stellar_cov + neb_cov) * diffuse_curve
-        # clear channel: fraction fo of the young flux, LyC intact, dust-free.
         clear = fo * jnp.einsum("za,zaw,a->w", W, self.flux, young)
 
-        # dust-free reference for the energy balance: the same covered-channel
-        # content WITHOUT any dust (LyC still gas-absorbed), plus the clear
-        # channel unchanged (cancels in L_abs = int dustfree - int attenuated).
         stellar_cov_free = jnp.einsum("za,zaw,a->w", W, F_cov, cov_w)
         neb_cov_free = (jnp.float32(1.0) - fo) * jnp.einsum(
             "za,zaw->w", W, neb32)
@@ -2294,82 +1371,28 @@ class CSPBasis:
         return dust_emi_spectrum
 
     def get_spectrum_dattn_nodem_neb(self, theta, *, include_lines=None):
-        """Dust attenuation + nebular emission, no dust emission.
-
-        ``include_lines``:
-          None (default) -> use ``self.nebemlineinspec``.
-          True / False  -> override (csp.predict always passes True).
-        """
+        """Dust attenuation + nebular emission.  ``include_lines`` None -> ``self.nebemlineinspec``."""
         if include_lines is None:
             include_lines = self.nebemlineinspec
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
 
-        # Picket-fence / partial-covering geometry: dedicated path (the
-        # escaped channel bypasses ALL dust and the nebular emission gets no
-        # bypass mix).  Static attribute -> resolved at trace time.
-        # PERF (2026-08-12): the dense nebular cube is now built ONLY on this
-        # branch, so the mainline path below never materialises it.
         if self.fesc_geometry == "picket" and "frac_obrun" in theta:
             return self._spectrum_picket_nodem(
                 theta,
                 self._build_neb_array(theta, include_lines=include_lines))
 
-        # Lyman / ionising-photon escape fraction (prospector-equivalent
-        # ``frac_obrun``).  When present in theta:
-        #   * fraction (1 - f_esc) of ionising photons is absorbed in the
-        #     HII region and reprocessed → nebular continuum + lines,
-        #     so the nebular grid amplitude scales by (1 - f_esc).
-        #   * fraction f_esc of the stellar ionising flux escapes and is
-        #     restored to the spectrum (the kill_ion mask zeroed it
-        #     out by default, assuming f_esc = 0).
-        # Absent → defaults to f_esc = 0 (no kill-ion restoration, no nebular
-        # scaling).  The check is a Python-static dict-key lookup, free at
-        # trace time.
-        # PERF (2026-08-12): ``ion_mult`` is an (n_age, n_wave) multiplier
-        # replacing the dense kill_ion copy of the flux cube; ``neb_amp`` is
-        # the (1 - f_esc) nebular scaling.  See ``_ion_multiplier``.
         ion_mult, neb_amp = self._ion_multiplier(theta)
 
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
-        # Cast dust curves to float32 — keeps the forward model in single
-        # precision until the likelihood.
         M        = self._age_bin_mix
         tau_age  = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age = jnp.exp(-tau_age)
 
-        # FSPS-style OB-runaway dust escape (``add_dust.f90`` L93-94).
-        # A fraction ``frac_obrun`` of the young-star flux bypasses the
-        # birth-cloud (``attn_age``) attenuation while still passing through
-        # the diffuse component below (the second physical effect of FSPS's
-        # ``frac_obrun`` knob; the first -- LyC escape + ``Q`` scaling -- is
-        # applied above).  Old SSP ages already have ``attn_age = 1``, so the
-        # mix is a no-op for them.  When ``frac_obrun`` is absent or 0, this is
-        # identically ``attn_age``.
         if "frac_obrun" in theta:
             fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
-            attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
-            # FIX (fesc double-count): the escaped LyC restored above
-            # (kill_ion: young ages, lambda<912, amplitude f_esc*flux = fo*F)
-            # already left through the density-bounded channel, so it bypasses
-            # the birth-cloud dust COMPLETELY -- attn_age = 1, not the runaway
-            # mix (1-fo)*a_bc + fo.  Without this line the emergent LyC is
-            #     fo*F * [(1-fo)*a_bc + fo] * d     with a_bc = exp(-tau_bc(912)),
-            #                                       d = diffuse transmission,
-            # i.e. the intended fo*F*d times a SPURIOUS factor a_bc+fo*(1-a_bc)
-            # that lies in [a_bc, 1].  At 912 A the birth cloud is ~opaque
-            # (a_bc<<1), so the factor -> fo and the escaping LyC -> fo**2*F*d
-            # (the frac_obrun**2 regime); only if a_bc -> 1 (no BC dust) does the
-            # double-count vanish on its own.  attn_age = 1 removes the factor
-            # identically for ANY a_bc, giving fo*F*d.  Diffuse dust still
-            # applies below, matching FSPS: runaways bypass birth-cloud (dust1)
-            # but see the diffuse ISM (dust2).  No effect when frac_obrun absent/0.
-            attn_age = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)
+            attn_age = (jnp.float32(1.0) - fo) * attn_age + fo   # runaway fraction skips the birth cloud
+            attn_age = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)   # escaped LyC: no birth-cloud dust at all
 
-        # PERF (2026-08-12): split the contraction rather than forming the
-        # stellar + nebular sum as a dense cube.  Algebraically identical:
-        #   sum_za W (S + N) A  ==  sum_za W S A  +  sum_z sum_{a young} W N A
-        # with S = flux * ion_mult (a scalar mask, folded into the attenuation
-        # array) and the nebular half rank-1 in z (see _neb_spectrum_term).
         W_f32 = W.astype(jnp.float32)
         spectrum = jnp.einsum("za,zaw,aw->w", W_f32, self.flux,
                               ion_mult * attn_age)
@@ -2386,18 +1409,10 @@ class CSPBasis:
             include_lines = self.nebemlineinspec
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
 
-        # Picket-fence / partial-covering geometry: dedicated path with its
-        # own energy balance (the clear channel cancels in L_abs).  Static
-        # attribute -> resolved at trace time.  The dense nebular cube is
-        # built only on this branch (see _build_neb_array note above).
         if self.fesc_geometry == "picket" and "frac_obrun" in theta:
             return self._spectrum_picket_dem(
                 theta, self._build_neb_array(theta, include_lines=include_lines))
 
-        # Lyman / ionising-photon escape fraction.  See the long
-        # comment on this block in get_spectrum_dattn_nodem_neb above.
-        # PERF (2026-08-12): dense kill_ion copy replaced by an
-        # (n_age, n_wave) multiplier; nebular term contracted separately.
         ion_mult, neb_amp = self._ion_multiplier(theta)
 
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
@@ -2406,31 +1421,11 @@ class CSPBasis:
         attn_age      = jnp.exp(-tau_age)
         diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
 
-        # FSPS-style OB-runaway dust escape (``add_dust.f90`` L93-94).
-        # See the long comment in ``get_spectrum_dattn_nodem_neb``.
         if "frac_obrun" in theta:
             fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
-            attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
-            # FIX (fesc double-count): the escaped LyC restored above
-            # (kill_ion: young ages, lambda<912, amplitude f_esc*flux = fo*F)
-            # already left through the density-bounded channel, so it bypasses
-            # the birth-cloud dust COMPLETELY -- attn_age = 1, not the runaway
-            # mix (1-fo)*a_bc + fo.  Without this line the emergent LyC is
-            #     fo*F * [(1-fo)*a_bc + fo] * d     with a_bc = exp(-tau_bc(912)),
-            #                                       d = diffuse transmission,
-            # i.e. the intended fo*F*d times a SPURIOUS factor a_bc+fo*(1-a_bc)
-            # that lies in [a_bc, 1].  At 912 A the birth cloud is ~opaque
-            # (a_bc<<1), so the factor -> fo and the escaping LyC -> fo**2*F*d
-            # (the frac_obrun**2 regime); only if a_bc -> 1 (no BC dust) does the
-            # double-count vanish on its own.  attn_age = 1 removes the factor
-            # identically for ANY a_bc, giving fo*F*d.  Diffuse dust still
-            # applies below, matching FSPS: runaways bypass birth-cloud (dust1)
-            # but see the diffuse ISM (dust2).  No effect when frac_obrun absent/0.
-            attn_age = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)
+            attn_age = (jnp.float32(1.0) - fo) * attn_age + fo   # runaway fraction skips the birth cloud
+            attn_age = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)   # escaped LyC: no birth-cloud dust at all
 
-        # PERF (2026-08-12): split contraction; the nebular grid is
-        # interpolated ONCE and reused for both the dust-free and the
-        # attenuated sum.  See get_spectrum_dattn_nodem_neb.
         W_f32 = W.astype(jnp.float32)
         neb_v, neb_base = self._neb_weights_and_base(
             W_f32, theta, include_lines=include_lines, amplitude=neb_amp)
@@ -2456,11 +1451,7 @@ class CSPBasis:
         return dust_emi_spectrum
 
     def get_spectrum_dattn_nodem_noneb(self, theta, *, include_lines=None):
-        """Dust attenuation, no nebular, no dust emission.
-
-        ``include_lines`` is accepted but ignored: there is no nebular
-        emission to include / exclude when ``add_neb=False``.
-        """
+        """Dust attenuation only (``include_lines`` ignored)."""
         _ = include_lines
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
 
@@ -2468,8 +1459,6 @@ class CSPBasis:
         tau_age = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age= jnp.exp(-tau_age)
 
-        # FSPS-style OB-runaway dust escape (``add_dust.f90`` L93-94).
-        # See the long comment in ``get_spectrum_dattn_nodem_neb``.
         if "frac_obrun" in theta:
             fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
             attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
@@ -2481,7 +1470,7 @@ class CSPBasis:
         return spectrum.reshape((-1,))
 
     def get_spectrum_dattn_dem_noneb(self, theta, *, include_lines=None):
-        """Dust attenuation + dust emission, no nebular.  ``include_lines`` accepted but ignored."""
+        """Dust attenuation + dust emission, no nebular (``include_lines`` ignored)."""
         _ = include_lines
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
 
@@ -2490,8 +1479,6 @@ class CSPBasis:
         attn_age      = jnp.exp(-tau_age)
         diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
 
-        # FSPS-style OB-runaway dust escape (``add_dust.f90`` L93-94).
-        # See the long comment in ``get_spectrum_dattn_nodem_neb``.
         if "frac_obrun" in theta:
             fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
             attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
@@ -2513,22 +1500,17 @@ class CSPBasis:
         return dust_emi_spectrum
 
     def get_spectrum_nodattn_nodem_noneb(self, theta, *, include_lines=None):
-        """Stellar continuum only — no dust, no nebular.  ``include_lines`` ignored."""
+        """Stellar continuum only."""
         _ = include_lines
         weights  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
         return jnp.einsum("za,zaw->w", weights, self.flux)
 
     def get_spectrum_nodattn_nodem_neb(self, theta, *, include_lines=None):
-        """Nebular emission only, no dust."""
+        """Nebular emission, no dust."""
         if include_lines is None:
             include_lines = self.nebemlineinspec
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
 
-        # Suppress stellar ionizing part — with the optional
-        # frac_obrun escape fraction (see get_spectrum_dattn_nodem_neb).
-        # PERF (2026-08-12): dense kill_ion copy replaced by an
-        # (n_age, n_wave) multiplier; nebular term contracted separately over
-        # the young age rows.  No (n_z, n_age, n_wave) temporary is formed.
         ion_mult, neb_amp = self._ion_multiplier(theta)
 
         W_f32 = W.astype(jnp.float32)

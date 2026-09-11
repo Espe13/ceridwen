@@ -1,28 +1,25 @@
 from __future__ import annotations
 
 import abc
-from dataclasses import dataclass, field, replace
-from typing import Any, Dict, Mapping, Sequence, Tuple
-import time
+from dataclasses import dataclass, field
+from typing import Any, Dict, Sequence, Tuple
 import jax
+import numpy as np
 import jax.numpy as jnp
-from jax import random
 
 import tensorflow_probability.substrates.jax as tfp
 tfd = tfp.distributions
 
 Array = jax.Array
 
-__all__ = ["Prior", "Uniform", "TopHat", "Normal", "MultiVariateNormal", "ClippedNormal",
+__all__ = ["Prior", "Uniform", "TopHat", "Normal", "MultivariateNormalPrior", "ClippedNormal",
            "LogNormal", "StudentT"]
 
 
 @dataclass(frozen=True)
 class Prior(abc.ABC):
-    """
-    JAX-friendly prior base class that delegates all probability operations to
-    a TFP-JAX distribution. Subclasses must implement `tfp_dist()`.
-    """
+    """Prior base class delegating to a TFP-JAX distribution; subclasses define
+    ``prior_params`` and implement ``tfp_dist()``."""
 
     alias: Dict[str, str] = field(init=False)
     params: Dict[str, Array] = field(init=False)
@@ -30,7 +27,6 @@ class Prior(abc.ABC):
 
     def __init__(self,
                  parnames: Sequence[str] = (),
-                 
                  name: str = "",
                  **kwargs: Any):
 
@@ -55,42 +51,44 @@ class Prior(abc.ABC):
         params: Dict[str, Array] = {}
         for intrinsic, external in alias.items():
             if external in kwargs:
-                params[intrinsic] = jnp.asarray(kwargs[external])
+                params[intrinsic] = jnp.asarray(kwargs.pop(external))
+        if kwargs:
+            raise TypeError(
+                f"{type(self).__name__} got unknown argument(s) {sorted(kwargs)}; "
+                f"it takes {list(alias.values())}")
+        missing = [external for intrinsic, external in alias.items() if intrinsic not in params]
+        if missing:
+            raise TypeError(f"{type(self).__name__} is missing argument(s) {missing}")
 
         object.__setattr__(self, "alias", alias)
         object.__setattr__(self, "params", params)
         object.__setattr__(self, "name", name)
 
-    # ------------------------------------------------------------------
-    # Representation
-    # ------------------------------------------------------------------
     def __repr__(self) -> str:
         argstring = [f"{k}={v}" for k, v in self.params.items()]
         return f"{type(self).__name__}({', '.join(argstring)})"
-    
+
+    def serialize(self) -> dict:
+        """JSON-ready description: type, parameters (lists for arrays), name."""
+        out = {"type": type(self).__name__, "name": self.name}
+        for k, v in self.params.items():
+            a = np.asarray(v)
+            out[k] = a.tolist() if a.ndim else float(a)
+        return out
+
     def __len__(self) -> int:
         prior_params = getattr(type(self), "prior_params", ())
         if not prior_params:
             return 1
         return int(max(jnp.size(self.params.get(k, jnp.array(1.0)))
                        for k in prior_params))
-    
 
-    # ------------------------------------------------------------------
-    # Subclasses *must* provide a TFP distribution
-    # ------------------------------------------------------------------
+
     @abc.abstractmethod
     def tfp_dist(self) -> tfd.Distribution:
-        """
-        Return a TFP-JAX distribution object built from `self.params`.
-
-        Must be implemented by subclasses.
-        """
+        """Return the TFP-JAX distribution built from ``self.params``."""
         raise NotImplementedError
-    
-    # ------------------------------------------------------------------
-    # Probability interface (delegates to TFP)
-    # ------------------------------------------------------------------
+
     def logpdf(self, x: Array) -> Array:
         return self.tfp_dist().log_prob(x)
 
@@ -98,17 +96,12 @@ class Prior(abc.ABC):
         return self.logpdf(x)
 
 
-
-    # ------------------------------------------------------------------
-    # Sampling and transforms via TFP
-    # ------------------------------------------------------------------
     def sample(self,
-               key: jax.random.KeyArray,
+               key: Array,
                shape: Tuple[int, ...] | None = None) -> Array:
         return self._sample_impl(key, shape)
 
-    def _sample_impl(self, key: jax.random.KeyArray, shape: Tuple[int, ...]) -> Array:
-        # TFP wants a concrete sample_shape; None triggers a deprecation warning.
+    def _sample_impl(self, key: Array, shape: Tuple[int, ...]) -> Array:
         if shape is None:
             shape = ()
         return self.tfp_dist().sample(seed=key, sample_shape=shape)
@@ -124,45 +117,30 @@ class Prior(abc.ABC):
 
     def _cdf(self, x: Array) -> Array:
         return self.tfp_dist().cdf(x)
-    
-    # ------------------------------------------------------------------
-    # Auto-diff gradient
-    # ------------------------------------------------------------------
+
     def gradient(self, theta: Array) -> Array:
         def logp(t: Array) -> Array:
             return self(t).sum()
         return jax.grad(logp)(theta)
-    
-
-
-
-
-
-
 
 
 class Uniform(Prior):
-    """
-    Uniform distribution on [low, high].
-    """
-    # Intrinsic parameter names:
+    """Uniform distribution on [low, high]."""
     prior_params = ("low", "high")
 
     def tfp_dist(self) -> tfd.Distribution:
         low = self.params.get("low")
         high = self.params.get("high")
         return tfd.Uniform(low=low, high=high)
-    
+
     @property
     def range(self):
-        # Plotting range is the interval itself
         return self.params["low"], self.params["high"]
-    
+
     @property
     def bounds(self):
-        # Hard support boundaries
         return self.params["low"], self.params["high"]
-    
+
     def serialize(self):
         return {
             "type": "Uniform",
@@ -170,31 +148,17 @@ class Uniform(Prior):
             "high": float(self.params["high"]),
             "name": self.name,
         }
-    
+
 
 class TopHat(Uniform):
-    """Uniform distribution between two bounds, renamed for backwards compatibility
-    :param low:
-        Minimum of the distribution
-
-    :param high:
-        Maximum of the distribution
-    """
+    """Alias of Uniform kept for backwards compatibility."""
 
 
 class Normal(Prior):
-    """A simple gaussian prior.
-
-
-    :param mean:
-        Mean of the distribution
-
-    :param sigma:
-        Standard deviation of the distribution
-    """
+    """Gaussian prior with parameters mean, sigma."""
     prior_params = ['mean', 'sigma']
-    
-    
+
+
     def tfp_dist(self) -> tfd.Distribution:
         mean = self.params.get("mean")
         sigma = self.params.get("sigma")
@@ -218,19 +182,16 @@ class Normal(Prior):
         return (-jnp.inf, jnp.inf)
 
 
-
 class MultivariateNormalPrior(Prior):
-    """
-    Multivariate Gaussian prior using TFP-JAX.
-    Intrinsic parameters:
-      - mean   : vector (d,)
-      - Sigma  : covariance matrix (d,d)
+    """Multivariate Gaussian prior.
+
+    Parameters
+    ----------
+    mean : (d,)
+    Sigma : (d, d) -- covariance matrix
     """
     prior_params = ("mean", "Sigma")
 
-    # ---------------------------------------------------------
-    # Build TFP distribution
-    # ---------------------------------------------------------
     def tfp_dist(self) -> tfd.Distribution:
         mean = self.params["mean"]
         Sigma = self.params["Sigma"]
@@ -239,15 +200,9 @@ class MultivariateNormalPrior(Prior):
             covariance_matrix=Sigma
         )
 
-    # ---------------------------------------------------------
-    # Plotting helpers
-    # ---------------------------------------------------------
     @property
     def range(self):
-        """
-        Return mean ± 4σ along diagonal directions.
-        Good for plotting marginal bands.
-        """
+        """Mean -/+ 4 sigma per dimension (plotting range)."""
         mu = self.params["mean"]
         Sigma = self.params["Sigma"]
         sigma_diag = jnp.sqrt(jnp.diag(Sigma))
@@ -256,63 +211,35 @@ class MultivariateNormalPrior(Prior):
 
     @property
     def bounds(self):
-        """
-        MVN has infinite support.
-        """
         dim = self.params["mean"].shape[0]
         return (
             -jnp.inf * jnp.ones(dim),
             +jnp.inf * jnp.ones(dim)
         )
 
-    # ---------------------------------------------------------
-    # Sampling (TFP handles batching)
-    # ---------------------------------------------------------
     def sample(self, key, shape=None):
         if shape is None:
-            shape = ()  # draw 1 vector
+            shape = ()
         return self.tfp_dist().sample(seed=key, sample_shape=shape)
 
-    # ---------------------------------------------------------
-    # Unit transform: u in (0,1)^d → θ in R^d
-    #
-    # θ = μ + L @ z     where z = N^{-1}(u)
-    # L = chol(Sigma)
-    # ---------------------------------------------------------
     def unit_transform(self, u):
-        # inverse CDF of standard normal
         z = tfd.Normal(0.0, 1.0).quantile(u)
 
-        # Cholesky factor L where Sigma = L Lᵀ
         L = jnp.linalg.cholesky(self.params["Sigma"])
 
-        # θ = μ + L @ z
         return self.params["mean"] + L @ z
 
-    # ---------------------------------------------------------
-    # Inverse unit transform: θ → u in (0,1)^d
-    #
-    # u_i = Phi( (L^{-1} (θ - μ))_i )
-    #
-    # MVN CDF itself is expensive; this gives dimension-wise transform.
-    # ---------------------------------------------------------
     def inverse_unit_transform(self, theta):
         mu = self.params["mean"]
         Sigma = self.params["Sigma"]
 
-        # L (Cholesky)
         L = jnp.linalg.cholesky(Sigma)
 
-        # Solve L z = theta - mu
         z = jax.scipy.linalg.solve_triangular(L, theta - mu, lower=True)
 
-        # Convert z to uniform using Φ(z)
         standard_normal = tfd.Normal(0.0, 1.0)
         return standard_normal.cdf(z)
 
-    # ---------------------------------------------------------
-    # Serialization
-    # ---------------------------------------------------------
     def serialize(self):
         return {
             "type": "MultivariateNormalPrior",
@@ -320,24 +247,10 @@ class MultivariateNormalPrior(Prior):
             "Sigma": jnp.asarray(self.params["Sigma"]).tolist(),
             "name": self.name,
         }
-    
 
 
 class ClippedNormal(Prior):
-    """A Gaussian prior clipped to some range.
-
-    :param mean:
-        Mean of the normal distribution
-
-    :param sigma:
-        Standard deviation of the normal distribution
-
-    :param low:
-        Minimum of the distribution
-
-    :param high:
-        Maximum of the distribution
-    """
+    """Gaussian prior truncated to [low, high]; parameters mean, sigma, low, high."""
     prior_params = ['mean', 'sigma', 'low', 'high']
     def tfp_dist(self) -> tfd.Distribution:
         mean = self.params.get("mean")
@@ -345,7 +258,7 @@ class ClippedNormal(Prior):
         low = self.params.get("low")
         high = self.params.get("high")
         return tfd.TruncatedNormal(loc=mean, scale=sigma, low=low, high=high)
- 
+
     @property
     def scale(self):
         return self.params['sigma']
@@ -366,27 +279,11 @@ class ClippedNormal(Prior):
 
     @property
     def bounds(self):
-        # Hard support boundaries
         return self.params["low"], self.params["high"]
-    
-
 
 
 class LogNormal(Prior):
-    """A log-normal prior, where the natural log of the variable is distributed
-    normally.  Useful for parameters that cannot be less than zero.
-
-    Note that ``LogNormal(np.exp(mode) / f) == LogNormal(np.exp(mode) * f)``
-    and ``f = np.exp(sigma)`` corresponds to "one sigma" from the peak.
-
-    :param mode:
-        Natural log of the variable value at which the probability density is
-        highest.
-
-    :param sigma:
-        Standard deviation of the distribution of the natural log of the
-        variable.
-    """
+    """Log-normal prior; ``mode`` and ``sigma`` are the mean and std of ln(x)."""
     prior_params = ['mode', 'sigma']
     def tfp_dist(self) -> tfd.Distribution:
         mode = self.params.get("mode")
@@ -408,32 +305,22 @@ class LogNormal(Prior):
     @property
     def range(self):
         nsig = 4
-        return (jnp.exp(self.params['mode'] + (nsig * self.params['sigma'])),
-                jnp.exp(self.params['mode'] - (nsig * self.params['sigma'])))
+        return (jnp.exp(self.params['mode'] - (nsig * self.params['sigma'])),
+                jnp.exp(self.params['mode'] + (nsig * self.params['sigma'])))
 
     def bounds(self, **kwargs):
         return (0, jnp.inf)
-    
+
 
 class StudentT(Prior):
-    """A Student's T distribution
-
-    :param mean:
-        Mean of the distribution
-
-    :param scale:
-        Size of the distribution, analogous to the standard deviation
-
-    :param df:
-        Number of degrees of freedom
-    """
+    """Student's t prior with parameters mean, scale, df (degrees of freedom)."""
     prior_params = ['mean', 'scale', 'df']
     def tfp_dist(self) -> tfd.Distribution:
         mean = self.params.get("mean")
         scale = self.params.get("scale")
         df = self.params.get("df")
         return tfd.StudentT(df=df, loc=mean, scale=scale)
-    
+
     @property
     def args(self):
         return [self.params['df']]

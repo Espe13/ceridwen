@@ -1,27 +1,10 @@
-"""
-Environment self-check for CERIDWEN.
-
-Run it before your first fit to confirm every dependency and data file is in
-place, with actionable messages for anything missing::
-
-    python -m ceridwen.check
-
-or from Python::
-
-    import ceridwen
-    ceridwen.check_environment()
-
-The check is deliberately import-light and never raises: each probe is wrapped
-so a broken component is reported, not crashed on. Exit code is 0 if all
-*required* checks pass, 1 otherwise (handy for CI / setup scripts).
-"""
+"""Environment self-check (``python -m ceridwen.check``)."""
 from __future__ import annotations
 
 import importlib
 import os
 import sys
 
-# ANSI colours (no-op if output is not a TTY).
 _TTY = sys.stdout.isatty()
 _OK = "\033[32mok  \033[0m" if _TTY else "ok  "
 _WARN = "\033[33mwarn\033[0m" if _TTY else "warn"
@@ -36,18 +19,13 @@ def _try_import(modname):
 
 
 def check_environment(verbose: bool = True) -> bool:
-    """Probe the CERIDWEN runtime environment.
-
-    Returns True if all *required* components are present, else False.
-    Optional components (FSPS, anesthetic, optax) only emit warnings.
-    """
+    """Return True if all required components are present; optional ones only warn."""
     required_ok = True
     lines = []
 
     def record(status, name, detail=""):
         lines.append(f"  [{status}] {name}" + (f"  -- {detail}" if detail else ""))
 
-    # ---- Python version --------------------------------------------------
     py = sys.version_info
     if py >= (3, 11):
         record(_OK, f"Python {py.major}.{py.minor}")
@@ -60,7 +38,6 @@ def check_environment(verbose: bool = True) -> bool:
         )
         required_ok = False
 
-    # ---- Core required deps (incl. optax + anesthetic, now core) --------
     for mod in ("jax", "jaxlib", "numpy", "scipy", "matplotlib", "h5py",
                 "astropy", "tqdm", "optax", "anesthetic"):
         m, err = _try_import(mod)
@@ -70,7 +47,6 @@ def check_environment(verbose: bool = True) -> bool:
         else:
             record(_OK, mod, getattr(m, "__version__", ""))
 
-    # ---- float64 enabled (CERIDWEN sets this on import) -----------------
     jax, _ = _try_import("jax")
     if jax is not None:
         x64 = bool(jax.config.read("jax_enable_x64"))
@@ -81,29 +57,14 @@ def check_environment(verbose: bool = True) -> bool:
                    "disabled; `import ceridwen` enables it. Evidence/gradients "
                    "need it.")
 
-    # ---- sedpy-jax (+ the inres fix) ------------------------------------
     sj, err = _try_import("sedpy_jax")
     if sj is None:
         required_ok = False
         record(_FAIL, "sedpy_jax",
                f"not importable ({err}); `pip install sedpy-jax>=0.1.1`")
     else:
-        try:
-            import inspect
-            from sedpy_jax import smoothing
-            has_inres = "inres" in inspect.signature(
-                smoothing.make_lsf_smoother).parameters
-            if has_inres:
-                record(_OK, "sedpy_jax", "make_lsf_smoother has inres")
-            else:
-                required_ok = False
-                record(_FAIL, "sedpy_jax",
-                       "too old (no `inres` in make_lsf_smoother); "
-                       "`pip install -U 'sedpy-jax>=0.1.1'`")
-        except Exception as exc:  # pragma: no cover
-            record(_WARN, "sedpy_jax", f"version probe failed: {exc}")
+        record(_OK, "sedpy_jax", "filters and attenuation curves")
 
-    # ---- tensorflow-probability (priors) --------------------------------
     tfp, err = _try_import("tensorflow_probability.substrates.jax")
     if tfp is None:
         required_ok = False
@@ -112,7 +73,6 @@ def check_environment(verbose: bool = True) -> bool:
     else:
         record(_OK, "tensorflow-probability", "jax substrate")
 
-    # ---- blackjax (+ nested sampling) -----------------------------------
     bj, err = _try_import("blackjax")
     if bj is None:
         required_ok = False
@@ -128,7 +88,6 @@ def check_environment(verbose: bool = True) -> bool:
                    "with NSS: pip install "
                    "'git+https://github.com/blackjax-devs/blackjax@f73e12956'")
 
-    # ---- FSPS + $SPS_HOME (grid building + nebular/dust-emission) -------
     fsps, _ = _try_import("fsps")
     if fsps is None:
         record(_WARN, "python-fsps",

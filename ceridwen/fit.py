@@ -1,54 +1,14 @@
 """
-ceridwen/fit.py
-===============
-High-level convenience function for SED fitting.
-
-``fitSED`` is the single entry-point for users who want to go from a
-configured model and observations to a posterior stored on disk, without
-manually wiring likelihoods, sampler adapters, or HDF5 I/O.
-
-Example
--------
-::
-
-    import jax
-    from ceridwen.fit import fitSED
-
-    result = fitSED(
-        model,
-        observations,
-        output_dir = "./my_fit",
-        sampler    = "nested",          # or "nuts"
-        rng_key    = jax.random.PRNGKey(42),
-    )
-
-This writes ``my_fit/ceridwen_result.h5`` with subgroups::
-
-    /obs/<obs_name>/flux
-    /obs/<obs_name>/uncertainty
-    /obs/<obs_name>/wavelength
-    /obs/<obs_name>/mask
-    /model/param_names
-    /model/priors/<param_name>   (JSON string)
-    /model/theta_init/<param>
-    /model/wave
-    /samples/<param_name>        (n_samples, *shape)
-    /samples/log_likelihoods
-    /samples/log_weights
-    /samples/log_evidence
-    /samples/log_evidence_err
-    /samples/sampler_name
-    /samples/wall_time_s
-    /samples/n_likelihood_calls
+``fitSED``: fit a configured ``SedModel`` to observations and store the posterior in HDF5,
+plus readers for the result file.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import time
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Sequence
 
 import jax
 import jax.numpy as jnp
@@ -59,10 +19,6 @@ logger = logging.getLogger("ceridwen")
 
 Array = jax.Array
 
-
-# ======================================================================
-# Public API
-# ======================================================================
 
 def fitSED(
     model,
@@ -78,80 +34,19 @@ def fitSED(
     overwrite: bool = True,
     verbose: bool = True,
 ):
-    """
-    Fit an SED model to observations and write results to HDF5.
-
-    This is the main user-facing function.  It constructs the likelihood,
-    configures and runs the requested sampler, and writes the posterior
-    samples, model metadata, and observation data to disk.
+    """Fit ``model`` to ``observations`` with ``sampler`` ("nested" or "nuts") and return the
+    ``SamplingResult``; writes ``output_dir/filename`` (HDF5) and a ``.log`` with the same stem.
 
     Parameters
     ----------
-    model : SedModel
-        A fully configured ``SedModel`` instance.  If ``observations``
-        is not None, ``model.observations`` is replaced before fitting.
-    observations : list[Observation], optional
-        Observations to fit.  If None, uses ``model.observations``.
-        Passing observations here triggers ``obs.setup_for_model()``
-        automatically.
-    output_dir : str or Path
-        Directory for the output HDF5 file.  Created if it does not
-        exist.
-    sampler : str
-        ``"nested"`` (default) for BlackJAX nested sampling, or
-        ``"nuts"`` for BlackJAX NUTS HMC.
-    rng_key : Array, optional
-        JAX PRNG key.  Defaults to ``jax.random.PRNGKey(0)``.
-    sampler_kwargs : dict, optional
-        Extra keyword arguments forwarded to the sampler adapter
-        constructor (e.g. ``num_warmup``, ``num_samples``,
-        ``num_chains``, ``dense_mass``, etc.).  Any argument accepted
-        by ``BlackJAXNestedSamplerAdapter`` or ``BlackJAXNUTSAdapter``
-        can be passed here.
-    vi : None, str, VariationalMap, or TrainedMap, optional
-        Variational-inference preconditioning (only used when
-        ``sampler='nuts'``).  See :class:`BlackJAXNUTSAdapter` for
-        accepted values.  In short:
-
-        - ``None`` (default): plain window-adaptation NUTS.
-        - ``'tril'``: train a full-rank Gaussian transport map
-          (paper's TriL baseline).
-        - ``'iaf'``: train a stacked inverse-autoregressive-flow map
-          (paper's NeuTra neural transport).
-
-        When a map is supplied, NUTS samples in the whitened
-        z-space, giving dramatically shorter warmup.  See
-        Hoffman et al. 2019, arXiv:1903.03704.
-
-    vi_kwargs : dict, optional
-        Forwarded to :func:`train_vi` (e.g. ``num_steps=1500``,
-        ``batch_size=16``, ``lr0=1e-2``) and/or the VI map
-        constructor (e.g. ``init_scale=0.1`` for TriL, ``n_flows=3``
-        for IAF).
-    filename : str
-        Name of the output HDF5 file.  Default ``ceridwen_result.h5``.
-        A plain-text log with the same stem (``ceridwen_result.log``) is
-        written alongside it: timestamped device/backend info, sampler
-        configuration, timings, and the result summary.  It is written
-        regardless of ``verbose`` (which only controls console echo).
-    overwrite : bool
-        If True (default), overwrite an existing file.
-    verbose : bool
-        Print progress to the console.  Default True.
-
-    Returns
-    -------
-    SamplingResult
-        The sampling result object (same as returned by ``run_sampler``).
-        The HDF5 file and the ``.log`` file are written as side effects.
+    observations : list[Observation] -- replaces ``model.observations`` and re-runs ``setup_for_model`` at ``model.zred``
+    sampler_kwargs : dict -- forwarded to the sampler adapter constructor
+    vi : None, 'tril', 'iaf', or a VI map -- NUTS-only variational preconditioning
+    vi_kwargs : dict -- forwarded to VI training / map constructor
     """
-    from .likelihood.likelihood import (
-        DiagonalGaussianLikelihood,
-        MultiObservationLikelihood,
-    )
+    from .likelihood.likelihood import MultiObservationLikelihood
     from .sampler.runner import run_sampler
 
-    # ── Validate inputs ───────────────────────────────────────────────
     if rng_key is None:
         rng_key = jax.random.PRNGKey(0)
 
@@ -167,45 +62,23 @@ def fitSED(
             f"{output_path} already exists.  Pass overwrite=True to replace."
         )
 
-    # ── Attach observations if provided ───────────────────────────────
     if observations is not None:
         model.observations = list(observations)
-        # Forward model.zred so the per-observation projection matrices
-        # (Photometry._T, Spectrum._H, Lines._W) are baked at the
-        # *observed-frame* wavelength grid (1+z) * wave_rest.  Calling
-        # setup_for_model(...) with the default zred=0 here would clobber
-        # the correctly-redshifted projection that SedModel.__init__
-        # built (model.py L200), so any non-zero fixed redshift would
-        # silently degrade to a rest-frame filter integral while
-        # CSPBasis.predict still applied flux_factor_maggies(z).  At
-        # z ~ 2.7 that produces 10-20 sigma photometric residuals
-        # because the filters sample the wrong intrinsic wavelengths.
-        for obs in model.observations:
-            obs.setup_for_model(model.csp.wave, zred=model.zred)
+        model.setup_observations()
 
     if not model.observations:
         raise ValueError("No observations attached to model.")
 
-    # ── Build likelihood ──────────────────────────────────────────────
     _t0_likelihood = time.perf_counter()
     obs_dict = model.obs_dict
     keys = tuple(obs_dict.keys())
-    likelihoods = tuple(DiagonalGaussianLikelihood() for _ in keys)
+    likelihoods = tuple(_likelihood_for(obs_dict[k], model.param_names) for k in keys)
     multi_likelihood = MultiObservationLikelihood(
         keys=keys,
         likelihoods=likelihoods,
     )
     _t_likelihood = time.perf_counter() - _t0_likelihood
 
-    # Route diagnostics through the package logger, with two sinks:
-    #   * console (StreamHandler)  -- only when verbose=True (unchanged);
-    #   * a per-fit log file next to the HDF5 result -- ALWAYS, so every
-    #     fit leaves a text record (device, sampler config, timings,
-    #     result summary) even when run non-verbose inside a batch job.
-    # NOTE: sampler-internal progress (the "[vi] iter ..." lines, NUTS
-    # warmup bars) is written with bare print() inside ceridwen.sampler
-    # and is NOT captured here; use `python fit_script.py |& tee run.log`
-    # for a full console transcript.
     logger.setLevel(logging.INFO)
     logger.propagate = False
     if verbose and not any(
@@ -224,11 +97,8 @@ def fitSED(
     logger.addHandler(_file_handler)
 
     try:
-        # Report the XLA backend up front: a fit silently falling back to CPU
-        # (missing CUDA jaxlib, JAX_PLATFORMS=cpu leaking from a mock script,
-        # driver mismatch) looks identical except for a ~10-100x slowdown.
         _devices = jax.devices()
-        _backend = jax.default_backend().upper()   # 'CPU', 'GPU', or 'TPU'
+        _backend = jax.default_backend().upper()
         _device_str = ", ".join(str(d) for d in _devices)
 
         logger.info(f"ceridwen.fitSED")
@@ -239,13 +109,17 @@ def fitSED(
                 "CUDA-enabled jaxlib is installed and JAX_PLATFORMS is unset"
             )
         logger.info(f"  Sampler     : {sampler}")
+        logger.info(f"  Cosmology   : {model.cosmo.describe()}")
+        logger.info(f"  Redshift    : {model._redshift_line()}")
+        logger.info(f"  Kinematics  : {model._kinematics_line()}")
         logger.info(f"  Parameters  : {model.param_names}  ({sum(int(jnp.size(v)) for v in model.theta_init.values())} dims)")
         logger.info(f"  Observations: {list(keys)}")
+        for k, lh in zip(keys, likelihoods):
+            logger.info(f"    {k}: {_describe_likelihood(obs_dict[k], lh)}")
         logger.info(f"  Output      : {output_path}")
         logger.info(f"  Log         : {log_path}")
         logger.info(f"  Likelihood build: {_t_likelihood:.3f} s")
 
-        # ── Configure sampler ─────────────────────────────────────────
         _t0_adapter = time.perf_counter()
         adapter = _build_adapter(
             sampler, model, sampler_kwargs, verbose,
@@ -253,15 +127,14 @@ def fitSED(
         )
         _t_adapter = time.perf_counter() - _t0_adapter
         logger.info(f"  Adapter build:    {_t_adapter:.3f} s")
+        logger.info(f"  Sampler settings: {_describe_adapter(adapter, model)}")
 
-        # ── Run ────────────────────────────────────────────────────────
         _t0_sampler = time.perf_counter()
         result = run_sampler(model, multi_likelihood, adapter, rng_key)
         _t_sampler = time.perf_counter() - _t0_sampler
 
         logger.info(f"\n{result.summary()}")
 
-        # ── Write HDF5 ────────────────────────────────────────────────
         _t0_h5 = time.perf_counter()
         write_result_h5(output_path, model, result, verbose=verbose)
         _t_h5 = time.perf_counter() - _t0_h5
@@ -276,19 +149,12 @@ def fitSED(
 
         return result
     finally:
-        # Detach the per-fit file handler so repeated fitSED calls in the
-        # same session do not multiply handlers or write to stale files.
         logger.removeHandler(_file_handler)
         _file_handler.close()
 
 
-# ======================================================================
-# Sampler factory
-# ======================================================================
-
 def _build_adapter(sampler: str, model, sampler_kwargs: dict, verbose: bool,
                    vi=None, vi_kwargs=None):
-    """Construct the appropriate SamplerAdapter."""
     sampler = sampler.lower().strip()
 
     if sampler in ("nested", "ns", "nss"):
@@ -300,11 +166,8 @@ def _build_adapter(sampler: str, model, sampler_kwargs: dict, verbose: bool,
         defaults = dict(
             priors=model.priors,
             num_live=500,
-            # num_delete and logZ_tol are left to the adapter defaults
-            # (max(1, num_live // 5) = 100 here, and -5.0), adopted from
-            # the 2026-08 JADES campaign tuning — see the
-            # sampler/nested.py module docstring for the rationale.
             num_inner_steps=30,
+            verbose=verbose,
         )
         defaults.update(sampler_kwargs)
         return BlackJAXNestedSamplerAdapter(**defaults)
@@ -312,17 +175,12 @@ def _build_adapter(sampler: str, model, sampler_kwargs: dict, verbose: bool,
     elif sampler in ("nuts", "hmc"):
         from .sampler.nuts import BlackJAXNUTSAdapter
 
-        # Auto-detect bounded priors for sigmoid reparameterisation
         bounds = sampler_kwargs.pop("bounds", None)
         if bounds is None:
             bounds = _detect_bounds(model)
             if verbose and bounds:
                 logger.info(f"  Auto-detected bounded priors: {bounds}")
 
-        # The adapter's own __init__ already applies VI-aware defaults
-        # (shorter warmup, larger initial step size, diagonal mass
-        # matrix) when ``vi`` is not None.  We only set the common
-        # defaults here and let the user override via ``sampler_kwargs``.
         defaults = dict(
             num_samples=2000,
             num_chains=4,
@@ -341,11 +199,64 @@ def _build_adapter(sampler: str, model, sampler_kwargs: dict, verbose: bool,
         )
 
 
+def _likelihood_for(obs, param_names=()):
+    """Diagonal Gaussian likelihood for ``obs`` (one-sided kernel when it flags upper limits);
+    the noise nuisance terms ``log_jitter`` / ``log_f_calib`` / ``log_f_data`` are switched on
+    when the model samples them (one value shared by every observation)."""
+    from .likelihood.likelihood import (
+        DiagonalGaussianLikelihood, DiagonalGaussianLikelihoodWithUpperLimits)
+    from .likelihood.noise_model import DiagonalNoiseModel
+    if getattr(obs, "logify_spectrum", False):
+        raise NotImplementedError(
+            f"Spectrum {obs.name!r}: logify_spectrum=True is not available in the "
+            "sampled likelihood")
+    if getattr(obs, "noise", None) is not None:
+        raise NotImplementedError(
+            f"Spectrum {obs.name!r}: a GaussianProcess noise model is not available "
+            "in the sampled likelihood (host-side Cholesky); use noise_floor= for a "
+            "diagonal floor")
+    nm = DiagonalNoiseModel(noise_floor=float(getattr(obs, "noise_floor", 0.0) or 0.0),
+                            use_jitter="log_jitter" in param_names,
+                            use_fractional="log_f_calib" in param_names,
+                            use_data_fractional="log_f_data" in param_names)
+    ul = getattr(obs, "upper_limit", None)
+    if ul is not None and bool(jnp.any(ul)):
+        return DiagonalGaussianLikelihoodWithUpperLimits(noise_model=nm)
+    return DiagonalGaussianLikelihood(noise_model=nm)
+
+
+def _describe_likelihood(obs, lh) -> str:
+    bits = [type(lh).__name__]
+    nf = getattr(lh.noise_model, "noise_floor", 0.0)
+    if nf:
+        bits.append(f"noise_floor={nf:g} x model")
+    names = getattr(lh.noise_model, "nuisance_param_names", ())
+    if names:
+        bits.append("sampled noise terms " + ", ".join(names))
+    if getattr(obs, "sky", None) is not None:
+        bits.append("sky subtracted")
+    if getattr(obs, "calibration", None) is not None:
+        bits.append("fixed calibration vector on the model")
+    ul = getattr(obs, "upper_limit", None)
+    if ul is not None and bool(jnp.any(ul)):
+        bits.append(f"{int(jnp.sum(ul))} upper limits")
+    return ", ".join(bits)
+
+
+def _describe_adapter(adapter, model) -> str:
+    cls = type(adapter).__name__
+    if cls == "BlackJAXNestedSamplerAdapter":
+        n_dims = sum(int(jnp.size(v)) for v in model.theta_init.values())
+        inner = adapter._num_inner_steps if adapter._num_inner_steps is not None else n_dims * 5
+        ndel = adapter._num_delete if adapter._num_delete is not None else max(1, adapter.num_live // 5)
+        return (f"nested: num_live={adapter.num_live}, num_inner_steps={inner}, "
+                f"num_delete={ndel}, logZ_tol={adapter.logZ_tol:g}")
+    keys = ("num_warmup", "num_samples", "num_chains", "target_acceptance")
+    return cls + ": " + ", ".join(f"{k}={getattr(adapter, k)}" for k in keys if hasattr(adapter, k))
+
+
 def _detect_bounds(model) -> dict[str, tuple[float, float]]:
-    """
-    Inspect model.priors to find parameters with Uniform/TopHat priors
-    and extract their (low, high) bounds for sigmoid reparameterisation.
-    """
+    """(low, high) bounds of Uniform/TopHat/ClippedNormal priors, keyed by parameter name."""
     bounds = {}
     for name, prior in model.priors.items():
         cls_name = type(prior).__name__
@@ -354,7 +265,6 @@ def _detect_bounds(model) -> dict[str, tuple[float, float]]:
             hi = float(prior.params["high"])
             bounds[name] = (lo, hi)
         elif cls_name == "ClippedNormal":
-            # ClippedNormal also has hard bounds
             if "low" in prior.params and "high" in prior.params:
                 lo = float(prior.params["low"])
                 hi = float(prior.params["high"])
@@ -362,47 +272,27 @@ def _detect_bounds(model) -> dict[str, tuple[float, float]]:
     return bounds
 
 
-# ======================================================================
-# HDF5 I/O
-# ======================================================================
-
 def write_result_h5(
     path: str | Path,
     model,
     result,
     verbose: bool = True,
 ):
-    """
-    Write fit results to an HDF5 file with subgroups obs, model, samples.
-
-    Parameters
-    ----------
-    path : str or Path
-        Output file path.
-    model : SedModel
-        The model used for fitting.
-    result : SamplingResult
-        The sampling result.
-    verbose : bool
-        Print confirmation.
-
-    HDF5 structure
-    --------------
-    ::
+    """Write ``result`` and the model/observation metadata to HDF5 ``path``::
 
         /obs/<obs_name>/
             flux           (n_data,)
             uncertainty    (n_data,)
             wavelength     (n_data,)
             mask           (n_data,)  bool
-            attrs: type, name, [resolution, smoothtype, filternames, ...]
+            attrs: type, name, [instrument_kind, subtract_library, filternames, ...]
 
         /model/
             param_names    (n_params,)  variable-length string
             wave           (n_wave,)
             theta_init/<param_name>    (shape,)
-            priors/<param_name>        scalar string (JSON)
-            transforms     list of (derived, free_param) pairs
+            priors/  attrs: <param_name> -> JSON string
+            attrs: zred, kinematics_*, broaden_photometry, cosmo_*, transforms (JSON list of "derived <- fn")
 
         /samples/
             <param_name>       (n_samples, *shape)
@@ -416,7 +306,6 @@ def write_result_h5(
     path = Path(path)
 
     with h5py.File(path, "w") as f:
-        # ── /obs ──────────────────────────────────────────────────────
         obs_grp = f.create_group("obs")
         for obs in model.observations:
             og = obs_grp.create_group(obs.name)
@@ -427,32 +316,26 @@ def write_result_h5(
             og.attrs["type"] = type(obs).__name__
             og.attrs["name"] = obs.name
 
-            # Observation-specific metadata
-            if hasattr(obs, "resolution") and obs.resolution is not None:
-                og.attrs["resolution"] = float(obs.resolution)
-            if hasattr(obs, "smoothtype") and obs.smoothtype is not None:
-                og.attrs["smoothtype"] = str(obs.smoothtype)
+            ins = getattr(obs, "instrument", None)
+            if ins is not None:
+                og.attrs["instrument_kind"] = str(ins.kind)
+                og.create_dataset("instrument_value", data=np.asarray(ins.value))
+                if ins.wave is not None:
+                    og.create_dataset("instrument_wave", data=np.asarray(ins.wave))
+                og.attrs["subtract_library"] = bool(obs.subtract_library)
+                proj = getattr(obs, "_proj", None)
+                if proj is not None and proj.free_z:
+                    og.attrs["zred_range"] = np.asarray(proj.zred_range, dtype=float)
+                    og.attrs["zred_ref"] = float(proj.opz_ref - 1.0)
             if hasattr(obs, "filternames"):
                 og.attrs["filternames"] = json.dumps(obs.filternames)
-            # Persist FSPS line names for Lines observations so PPC / plotting
-            # code can label rows without needing an FSPS install (HDF5 would
-            # otherwise carry only wavelengths).
             if hasattr(obs, "line_names") and obs.line_names is not None:
                 og.attrs["line_names"] = json.dumps(list(obs.line_names))
             if hasattr(obs, "line_ind") and obs.line_ind is not None:
                 og.create_dataset("line_ind", data=np.asarray(obs.line_ind))
 
-        # ── /model ────────────────────────────────────────────────────
         mod_grp = f.create_group("model")
 
-        # Parameter names as variable-length strings.  Write the
-        # canonical list from result.param_names (which the sampler
-        # built from theta_init.keys() — matching the per-parameter
-        # sample datasets we create below) rather than model.param_names
-        # (which can silently drift if a caller appends to theta_init
-        # after SedModel.__init__ without also touching param_names —
-        # the symptom is parameters that get sampled and converge but
-        # never appear in corner / trace plots).
         dt = h5py.string_dtype()
         canonical_names = (
             list(result.param_names)
@@ -465,15 +348,12 @@ def write_result_h5(
             dtype=dt,
         )
 
-        # Model wavelength grid
         mod_grp.create_dataset("wave", data=np.asarray(model.csp.wave))
 
-        # Initial parameter values
         init_grp = mod_grp.create_group("theta_init")
         for name, val in model.theta_init.items():
             init_grp.create_dataset(name, data=np.asarray(val))
 
-        # Priors (serialised as JSON strings)
         prior_grp = mod_grp.create_group("priors")
         for name, prior in model.priors.items():
             if hasattr(prior, "serialize"):
@@ -481,7 +361,6 @@ def write_result_h5(
             else:
                 prior_grp.attrs[name] = repr(prior)
 
-        # Transforms (record which derived params map to which free params)
         if model.transforms:
             tx_names = []
             for derived, fn in model.transforms.items():
@@ -489,15 +368,22 @@ def write_result_h5(
                 tx_names.append(f"{derived} <- {fn_name}")
             mod_grp.attrs["transforms"] = json.dumps(tx_names)
 
-        # CSP configuration
-        # Fixed redshift of the fit: without this the file is not
-        # self-describing and any post-hoc forward-model rebuild risks
-        # the wrong flux normalisation.
         mod_grp.attrs["zred"] = float(getattr(model, "zred", 0.0))
-        mod_grp.attrs["n_time"] = int(model.csp.ages.shape[0]) if hasattr(model.csp, "ages") else -1
+        mod_grp.attrs["zred_free"] = bool(getattr(model, "zred_is_free", False))
+        kin = getattr(model, "kinematics", None)
+        if kin is not None:
+            mod_grp.attrs["kinematics_sigma_gal"] = str(kin.sigma_gal)
+            mod_grp.attrs["kinematics_sigma_gas"] = str(kin.effective_sigma_gas)
+            mod_grp.attrs["kinematics_sigma_max"] = float(kin.sigma_max)
+            mod_grp.attrs["broaden_photometry"] = bool(model.broaden_photometry)
+        if getattr(model, "lumdist_mpc", None) is not None:
+            mod_grp.attrs["lumdist_mpc"] = float(model.lumdist_mpc)
+        for k, v in model.cosmo.to_dict().items():
+            mod_grp.attrs[f"cosmo_{k}"] = v
+        mod_grp.attrs["n_time"] = int(model.csp.n_time) if hasattr(model.csp, "n_time") else -1
+        mod_grp.attrs["n_ssp_ages"] = int(model.csp.ages.shape[0]) if hasattr(model.csp, "ages") else -1
         mod_grp.attrs["n_metallicities"] = int(model.csp.zmet.shape[0]) if hasattr(model.csp, "zmet") else -1
 
-        # ── /samples ─────────────────────────────────────────────────
         samp_grp = f.create_group("samples")
 
         for name in result.param_names:
@@ -522,18 +408,12 @@ def write_result_h5(
                 compression="gzip",
             )
 
-        # Scalar metadata as attributes
         samp_grp.attrs["log_evidence"] = float(result.log_evidence)
         samp_grp.attrs["log_evidence_err"] = float(result.log_evidence_err)
         samp_grp.attrs["sampler_name"] = result.sampler_name
         samp_grp.attrs["wall_time_s"] = result.wall_time_s
         samp_grp.attrs["n_likelihood_calls"] = result.n_likelihood_calls
         samp_grp.attrs["n_samples"] = int(result.log_likelihoods.shape[0])
-        # Persist chain layout so post-hoc trace plots can reshape the
-        # flat (n_chains * n_per_chain, ...) sample arrays back into
-        # (n_chains, n_per_chain, ...).  Pulled from result.raw which
-        # the BlackJAX-NUTS adapter populates with the actual run-time
-        # values.  Absent for nested sampling (single-chain by design).
         if isinstance(result.raw, dict):
             if "num_chains" in result.raw:
                 samp_grp.attrs["num_chains"] = int(result.raw["num_chains"])
@@ -550,36 +430,7 @@ def write_result_h5(
 
 
 def load_result_h5(path: str | Path):
-    """
-    Load an HDF5 result file back into a :class:`SamplingResult`.
-
-    Unlike :func:`read_result_h5` (which returns plain dicts), this
-    reconstructs the actual result object, so everything downstream of a
-    fresh ``fitSED`` call works identically on a reloaded file:
-    ``result.to_anesthetic()``, ``result.summary()``, ``result.samples``,
-    ``result.log_weights``, the README "Inspecting the results" block, etc.
-
-    Not restored: ``result.raw`` sampler internals that are not persisted
-    (e.g. the VI loss trace), and the forward model itself -- rebuild the
-    ``SedModel`` (SSP grid + CSP + priors, with the SAME fixed zred, stored
-    in the file's ``/model`` attrs) if you need ``model.predict_vmap`` for
-    posterior-predictive bands.
-
-    Parameters
-    ----------
-    path : str or Path
-        Path to the HDF5 file written by ``write_result_h5``.
-
-    Returns
-    -------
-    SamplingResult
-
-    Examples
-    --------
-    >>> from ceridwen.fit import load_result_h5
-    >>> result = load_result_h5("my_fit/ceridwen_result.h5")
-    >>> axes = result.to_anesthetic().plot_2d(["logmass", "Z"])
-    """
+    """Rebuild a ``SamplingResult`` from a result HDF5 file (the forward model itself is not restored)."""
     import h5py
     from .sampler.runner import SamplingResult
 
@@ -594,8 +445,6 @@ def load_result_h5(path: str | Path):
         llb = (jnp.asarray(np.array(samp["log_likelihoods_birth"]))
                if "log_likelihoods_birth" in samp else None)
 
-        # Chain layout (NUTS) round-trips through raw so post-hoc trace
-        # plots can reshape; absent for nested sampling.
         raw = {}
         if "num_chains" in samp.attrs:
             raw["num_chains"] = int(samp.attrs["num_chains"])
@@ -619,42 +468,33 @@ def load_result_h5(path: str | Path):
         )
 
 
+def result_cosmology(path: str | Path):
+    """The ``Cosmology`` a result file was fitted with (``/model`` attrs ``cosmo_*``); KeyError if absent."""
+    import h5py
+    from .cosmology import Cosmology
+
+    with h5py.File(Path(path), "r") as f:
+        attrs = dict(f["model"].attrs)
+    if "cosmo_H0" not in attrs:
+        raise KeyError(f"{path} carries no cosmology attributes (written before "
+                       "they were recorded); rebuild with the cosmology you used")
+    return Cosmology.from_dict(attrs)
+
+
 def read_result_h5(path: str | Path) -> dict:
-    """
-    Read an HDF5 result file into a plain dictionary.
-
-    Returns a dict with keys ``'obs'``, ``'model'``, ``'samples'``,
-    each containing sub-dicts of arrays and metadata.
-
-    Parameters
-    ----------
-    path : str or Path
-        Path to the HDF5 file written by ``write_result_h5``.
-
-    Returns
-    -------
-    dict
-        Nested dictionary mirroring the HDF5 group structure.
-    """
+    """Read a result HDF5 file into a nested dict with keys ``'obs'``, ``'model'``, ``'samples'``."""
     import h5py
 
     out = {"obs": {}, "model": {}, "samples": {}}
 
     with h5py.File(path, "r") as f:
-        # ── obs ───────────────────────────────────────────────────────
         for obs_name in f["obs"]:
             og = f["obs"][obs_name]
-            obs_data = {
-                "flux": np.array(og["flux"]),
-                "uncertainty": np.array(og["uncertainty"]),
-                "wavelength": np.array(og["wavelength"]),
-                "mask": np.array(og["mask"]),
-            }
+            obs_data = {k: np.array(og[k]) for k in og}
             for attr_name in og.attrs:
                 obs_data[attr_name] = og.attrs[attr_name]
             out["obs"][obs_name] = obs_data
 
-        # ── model ─────────────────────────────────────────────────────
         mod = f["model"]
         out["model"]["param_names"] = list(mod["param_names"].asstr()[()])
         out["model"]["wave"] = np.array(mod["wave"])
@@ -674,8 +514,10 @@ def read_result_h5(path: str | Path) -> dict:
 
         for attr_name in mod.attrs:
             out["model"][attr_name] = mod.attrs[attr_name]
+        if "cosmo_H0" in mod.attrs:
+            from .cosmology import Cosmology
+            out["model"]["cosmo"] = Cosmology.from_dict(dict(mod.attrs))
 
-        # ── samples ───────────────────────────────────────────────────
         samp = f["samples"]
         for dset_name in samp:
             out["samples"][dset_name] = np.array(samp[dset_name])

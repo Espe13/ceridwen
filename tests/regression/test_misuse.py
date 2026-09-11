@@ -13,6 +13,7 @@ import warnings
 import numpy as np
 import jax
 import jax.numpy as jnp
+from ceridwen.cosmology import Cosmology
 
 from misuse_report import run_scenarios, make_misuse_figure, _good_csp
 from _gridfixture import require_test_grid
@@ -61,7 +62,7 @@ def _weight_csp(zh_const, sfh, sfh_interp):
     theta = {"lookback_time": lb, "sfh": sfh}
     theta["Z" if zh_const else "zh"] = (jnp.array([Zc]) if zh_const
                                         else jnp.full(10, Zc))
-    csp = CSPBasis(ssp, theta=theta, tuniv=T, zh_const=zh_const,
+    csp = CSPBasis(ssp, theta=theta, cosmo=Cosmology.planck18(), zh_const=zh_const,
                    add_dust=False, add_diffuse_dust=False, add_dust_emission=False,
                    add_neb=False, add_igm=False, verbose=False, sfh_interp=sfh_interp)
     return csp
@@ -122,7 +123,7 @@ def test_eline_scaling_is_a_fraction():
     lb = jnp.linspace(0.0, T, 10)   # NEW lookback convention
     sfh = jnp.exp(-0.5 * ((lb - 0.05) / 0.03) ** 2) + 0.7 * jnp.exp(-0.5 * ((lb - 11.) / 0.8) ** 2)
     csp = CSPBasis(ssp, theta={"lookback_time": lb, "sfh": sfh, "Z": jnp.array([-1.85])},
-                   tuniv=T, zh_const=True, add_dust=False, add_diffuse_dust=False,
+                   cosmo=Cosmology.planck18(), zh_const=True, add_dust=False, add_diffuse_dust=False,
                    add_dust_emission=False, add_neb=True, add_igm=False,
                    init_neb_params={"cloudy_dust": False},  # isoc_type auto from grid
                    sps_home=os.environ["SPS_HOME"], verbose=False, sfh_interp="linear")

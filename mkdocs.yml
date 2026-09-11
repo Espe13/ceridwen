@@ -58,4 +58,5 @@ nav:
   - Quick start: quickstart.md
   - 'Tutorial: joint fit': tutorial.md
   - Conventions & gotchas: conventions.md
+  - Post-processing: postprocessing.md
   - API reference: api.md

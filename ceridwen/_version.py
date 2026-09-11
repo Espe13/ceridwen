@@ -1,6 +1,3 @@
-# Single source of truth for the version is pyproject.toml ([project].version).
-# This module is kept only because ceridwen/__init__.py imports __version__ from
-# it as a fallback; keep the two in sync, or switch to
-# importlib.metadata.version("ceridwen") to derive it automatically.
-__version__ = version = "0.2.3"
-__version_tuple__ = version_tuple = (0, 2, 3)
+# Keep in sync with pyproject.toml [project].version.
+__version__ = version = "3.0.0"
+__version_tuple__ = version_tuple = (3, 0, 0)

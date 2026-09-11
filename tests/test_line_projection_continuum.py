@@ -32,6 +32,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from ceridwen.cosmology import Cosmology
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -77,6 +78,11 @@ def _load_emline_info(sps_home):
     return info
 
 
+def jnp_asarray(v):
+    import jax.numpy as jnp
+    return jnp.asarray(v)
+
+
 def _build(csp_kwargs=None):
     import jax.numpy as jnp
     from ceridwen.ssps.ssp_data import SSPData
@@ -90,7 +96,7 @@ def _build(csp_kwargs=None):
     if "bpass" in Path(ssp_file).name.lower():
         neb_init["isoc_type"] = "bpss"
     kw = dict(
-        tuniv=13.8, tiny_logt=-70, zh_const=True, sfh_interp="step",
+        tiny_logt=-70, zh_const=True, sfh_interp="step",
         add_dust=False, add_diffuse_dust=False, add_dust_emission=False,
         add_neb=True, init_neb_params=neb_init,
         add_igm=False, sps_home=_sps_home(), verbose=False,
@@ -101,6 +107,7 @@ def _build(csp_kwargs=None):
         theta={"lookback_time": jnp.array([0.0, 0.01]),
                "sfh": jnp.ones(1), "Z": jnp.array([-2.0])},
         **kw,
+        cosmo=Cosmology.planck18(),
     )
 
 
@@ -158,22 +165,20 @@ def test_T1_old_population_emits_no_lines(setup):
         "continuum (or old-SSP emission) is leaking into Lines.predict")
 
 
-def test_T2_no_neb_model_predicts_zero_lines():
-    """With add_neb=False the line component is identically zero, so Lines
-    predictions must vanish -- pre-fix they returned the continuum."""
+def test_T2_no_neb_model_refuses_lines_observations():
+    """With add_neb=False the line component is identically zero.  Pre-fix
+    Lines.predict returned the continuum; from 2026-09-03 the basis refuses
+    a Lines observation outright instead of returning zeros that would
+    silently poison the likelihood (the alpha basis always did)."""
     csp = _build({"add_neb": False})
     obs = _lines_obs(_sps_home())
     if hasattr(obs, "setup_for_model"):
         obs.setup_for_model(csp.wave)
-    f = _predict(csp, obs, 0.0, 0.010)
-    # compare against a neb-on young model for scale
-    csp2 = _build()
-    obs2 = _lines_obs(_sps_home())
-    if hasattr(obs2, "setup_for_model"):
-        obs2.setup_for_model(csp2.wave)
-    f_ref = _predict(csp2, obs2, 0.0, 0.010)
-    assert np.nanmax(np.abs(f) / np.maximum(np.abs(f_ref), 1e-300)) < 1e-6, (
-        "a continuum-only model predicts nonzero emission-line fluxes")
+    with pytest.raises(ValueError, match="no nebular model"):
+        _predict(csp, obs, 0.0, 0.010)
+    # the line-only spectrum of such a model is still exactly zero
+    csp_theta = {k: jnp_asarray(v) for k, v in csp.theta_init.items()}
+    assert float(np.max(np.abs(np.asarray(csp.get_line_spec(csp_theta))))) == 0.0
 
 
 def test_T3_young_burst_ladder_is_caseB(setup):

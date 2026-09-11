@@ -106,8 +106,8 @@ Step 0 build/load the SSP cache → build `CSPBasis` → wrap observations
 (`Photometry`/`Spectrum`/`Lines`) → `SedModel(csp, observations, priors=...)` →
 `fitSED(...)` or `run_sampler(...)`. The end-to-end, runnable reference is
 [`examples/quickstart.py`](examples/quickstart.py); the joint photometry +
-spectroscopy + lines workflow is in
-[`examples/tutorial_joint_fit.ipynb`](examples/tutorial_joint_fit.ipynb).
+spectroscopy + lines workflow is in [`docs/tutorial.md`](docs/tutorial.md) and
+`examples/demo_2_photometry_lines.py` / `examples/demo_3_spectrum_advanced.py`.
 
 ## Package architecture / module map
 
@@ -121,20 +121,27 @@ projection → likelihood → sampler.
 - `csp/` — `csp.py`: `CSPBasis`, the core forward model. Holds the `get_spectrum_*`
   variants (stellar ± dust attenuation ± dust emission ± nebular), step/linear
   SFH interpolation, constant or time-varying metallicity, dict-based `theta`,
-  fully JAX-traceable. `csp_svd.py`: SVD-accelerated variant.
+  fully JAX-traceable; `predict` projects onto the observations (static
+  line-to-band basis for fixed-z photometry, painted lines otherwise).
+  `csp_afe.py`: `CSPBasis_afe`, the [alpha/Fe] variant without a nebular model.
+  `spectrum_calibration.py`: `spectrum_scaling` / `spectrum_calib` factor.
+- `broadening.py` — `Kinematics` (sigma_gal / sigma_gas, fixed or theta keys),
+  `Instrument` (LSF), `SpectralProjector` (continuum FFT kernel + banded
+  instrument response + analytic line painting on the observed pixels),
+  `PhotometricBroadener`. The only place spectral widths are set.
 - `dust/` — `DustModel.py`: `Dust`/`DiffuseDust`, age-binned attenuation with
   multiple switchable laws per bin via `lax.switch` (params are plain dicts).
   `DustEmission.py`: DL07 + THEMIS grids, bilinear interp in (qPAH, Umin), dust
   mass. `AGBDustShell.py`: optional AGB circumstellar dust.
-- `neb/` — `NebularGridModel.py`: `NebularModel` (physically strict; CLOUDY grids,
-  trilinear interp in gas_logz/gas_logu/age, precomputed line profiles, velocity
-  broadening). `NebularGridModelSVD.py`: SVD-accelerated subclass.
-  `NebularGridModel_fsps_match.py`: internal FSPS-reproducing variant (via
-  `match_fsps=True` only).
+- `neb/` — `NebularGridModel.py`: `NebularModel` (CLOUDY grids, each cube
+  interpolated against its own gas_logz/gas_logu/age axes, line profiles at
+  the pixel floor, `line_profiles(sigma)` for the photometric line basis).
 - `observation/` — `base.py` (ABC), `photometry.py` (filter convolution via
-  `sedpy_jax.FilterSet` → matrix-vector projection), `spectrum.py` (interpolation
-  matrix `H`, resolution smoothing, single GEMV), `lines.py` (Gaussian weight
-  matrix `W`), `gp.py` (GP residuals). `observation.py` is a re-export shim so
+  `sedpy_jax.FilterSet` → matrix-vector projection `_T`, optional
+  `PhotometricBroadener` and static line basis), `spectrum.py` (`Instrument`
+  + `SpectralProjector` built by `setup_for_model`), `lines.py` (line fluxes
+  read from the nebular grid by `CSPBasis`; Gaussian aperture matrix `W` for
+  `Lines.predict` alone), `gp.py` (GP residuals). `observation.py` is a re-export shim so
   `from ceridwen.observation.observation import Photometry, Spectrum, Lines`
   still works.
 - `model/` — `model.py`: `SedModel` (`predict`, `apply_transforms`, `ln_prior`,
@@ -144,17 +151,20 @@ projection → likelihood → sampler.
 - `likelihood/` — `likelihood.py`: `DiagonalGaussianLikelihood`,
   `MultiObservationLikelihood`, pure-JAX `lnlike_diag_gaussian`, masking,
   `make_lnprobfn()` (the jitted log-posterior factory). `noise_model.py`:
-  `DiagonalNoiseModel` (optional jitter + calibration error). `theta.py`:
-  `ThetaVector`, a registered JAX PyTree giving both flat-array and named access.
+  `DiagonalNoiseModel` (noise floor, optional jitter + calibration error).
 - `sampler/` — `priors.py` (TFP-JAX priors with logpdf/sample/unit_transform),
   `nested.py` (BlackJAX nested sampling), `nuts.py` (NUTS, VI-preconditioned),
   `vi.py` (VI transport maps: TriL, IAF/NeuTra), `runner.py` (`SamplerAdapter`
   protocol, `SamplingResult`, `run_sampler`, `to_anesthetic`).
 - `cosmology.py` — JAX-native flat ΛCDM (Planck 18) with an astropy fallback.
 - `igm.py` — IGM attenuation (`Madau1995`), extensible via the `IGMModel` ABC.
-- `fit.py` — `fitSED` (top-level convenience wrapper) + `read_result_h5`; writes
-  `<output_dir>/ceridwen_result.h5` (obs, model/priors as JSON, samples,
-  log-weights, log-evidence).
+- `fit.py` — `fitSED` (top-level convenience wrapper) + `read_result_h5` /
+  `load_result_h5` / `result_cosmology`; writes `<output_dir>/ceridwen_result.h5`
+  (obs, model/priors as JSON, kinematics, cosmology, samples, log-weights,
+  log-evidence).
+- `postprocess.py` — `PostProcess` (equal-weight draws, SFH averages, UV and
+  ionising properties, posterior predictions); `plotting.py` — summary, corner
+  and diagnostic figures.
 
 Design patterns to follow when extending: frozen dataclasses for immutable data
 (`SSPData`); HDF5 for large spectral grids; modular dust laws (multiple per age

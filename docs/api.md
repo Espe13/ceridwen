@@ -9,11 +9,27 @@ treat everything else as internal.
 
 ::: ceridwen.ssps.SSPDataAfe
 
+::: ceridwen.ssps.fetch_grid
+
+::: ceridwen.ssps.available_grids
+
 ## Composite stellar population (forward model)
 
 ::: ceridwen.csp.CSPBasis
 
 ::: ceridwen.csp.CSPBasis_afe
+
+## Broadening
+
+::: ceridwen.broadening.Kinematics
+
+::: ceridwen.broadening.Instrument
+
+::: ceridwen.broadening.DEFAULT_KINEMATICS
+
+::: ceridwen.broadening.SpectralProjector
+
+::: ceridwen.broadening.PhotometricBroadener
 
 ## Observations
 
@@ -37,11 +53,19 @@ treat everything else as internal.
 
 ::: ceridwen.likelihood.DiagonalGaussianLikelihood
 
+::: ceridwen.likelihood.DiagonalGaussianLikelihoodWithUpperLimits
+
 ::: ceridwen.likelihood.MultiObservationLikelihood
 
 ## Fitting
 
 ::: ceridwen.fit.fitSED
+
+::: ceridwen.fit.load_result_h5
+
+::: ceridwen.fit.read_result_h5
+
+::: ceridwen.fit.result_cosmology
 
 ::: ceridwen.sampler.run_sampler
 
@@ -49,9 +73,29 @@ treat everything else as internal.
 
 ::: ceridwen.sampler.nuts.BlackJAXNUTSAdapter
 
+## Post-processing
+
+::: ceridwen.postprocess.PostProcess
+
+::: ceridwen.postprocess.SpectrumSample
+
+::: ceridwen.postprocess.load_postprocess
+
+## Figures
+
+::: ceridwen.plotting.summary_figure
+
+::: ceridwen.plotting.corner_figure
+
+::: ceridwen.plotting.diagnostic_figure
+
+::: ceridwen.plotting.make_figures
+
 ## Dust, nebular, IGM, cosmology
 
-::: ceridwen.dust.DustModel
+::: ceridwen.dust.Dust
+
+::: ceridwen.dust.DiffuseDust
 
 ::: ceridwen.dust.DustEmission
 
@@ -60,3 +104,9 @@ treat everything else as internal.
 ::: ceridwen.igm
 
 ::: ceridwen.cosmology
+
+## Spectrophotometric calibration
+
+::: ceridwen.csp.spectrum_calibration.spectrum_calibration_factor
+
+::: ceridwen.csp.spectrum_calibration.legendre_design_matrix

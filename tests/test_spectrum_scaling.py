@@ -24,7 +24,9 @@ import numpy as np
 import pytest
 
 from ceridwen import SSPData, CSPBasis
+from ceridwen.broadening import Instrument, Kinematics
 from ceridwen.observation import Photometry, Spectrum
+from ceridwen.cosmology import Cosmology
 
 FILTERS = ["sdss_g0", "sdss_r0", "sdss_i0", "sdss_z0"]
 SPEC_WAVE = np.linspace(4000.0, 8000.0, 120)     # observed-frame vacuum A
@@ -46,7 +48,8 @@ def _build_csp(ssp_grid_path):
         lookback_time=jnp.linspace(0.0, 12.0, 5),
         zh_const=True, sfh_interp="step",
         add_dust=False, add_diffuse_dust=True, add_neb=False,
-        sigma_losvd_kms=0.0, verbose=False,
+        verbose=False,
+        cosmo=Cosmology.planck18(),
     )
 
 
@@ -62,9 +65,9 @@ def _setup(obs_list, csp):
         if hasattr(o, "setup_for_model"):
             if isinstance(o, Spectrum):
                 # schema-2 grids: thread the library resolution curve,
-                # as SedModel would (inres='auto' raises without it).
+                # as SedModel would.
                 o.setup_for_model(
-                    csp.wave, zred=ZRED,
+                    csp.wave, zred=ZRED, kinematics=Kinematics.none(),
                     lib_resolution=getattr(csp, "lib_resolution", None))
             else:
                 o.setup_for_model(csp.wave, zred=ZRED)
@@ -74,8 +77,7 @@ def _setup(obs_list, csp):
 def test_spectrum_scaling_scales_spectrum_not_photometry(ssp_grid_path):
     csp = _build_csp(ssp_grid_path)
     phot = Photometry(filters=FILTERS, name="phot")
-    spec = Spectrum(wavelength=SPEC_WAVE, resolution=100.0,
-                    smoothtype="vel", name="spec")
+    spec = Spectrum(wavelength=SPEC_WAVE, instrument=Instrument.sigma_kms(100.0), name="spec")
     obs = _setup([phot, spec], csp)
 
     theta = _base_theta(csp)
@@ -95,8 +97,7 @@ def test_spectrum_scaling_scales_spectrum_not_photometry(ssp_grid_path):
 
 def test_spectrum_scaling_absent_is_identity(ssp_grid_path):
     csp = _build_csp(ssp_grid_path)
-    spec = Spectrum(wavelength=SPEC_WAVE, resolution=100.0,
-                    smoothtype="vel", name="spec")
+    spec = Spectrum(wavelength=SPEC_WAVE, instrument=Instrument.sigma_kms(100.0), name="spec")
     _setup([spec], csp)
     theta = _base_theta(csp)
     pred_no = csp.predict(theta, [spec])
@@ -112,8 +113,7 @@ def test_eline_scaling_does_not_touch_the_spectrum(ssp_grid_path):
     the continuum spectrum must be bit-for-bit independent of eline_scaling.
     """
     csp = _build_csp(ssp_grid_path)
-    spec = Spectrum(wavelength=SPEC_WAVE, resolution=100.0,
-                    smoothtype="vel", name="spec")
+    spec = Spectrum(wavelength=SPEC_WAVE, instrument=Instrument.sigma_kms(100.0), name="spec")
     _setup([spec], csp)
     theta = _base_theta(csp)
     pred0 = csp.predict(theta, [spec])
@@ -152,11 +152,11 @@ def test_spectrum_scaling_in_csp_afe():
         lookback_time=jnp.linspace(0.0, 12.0, 5),
         zh_const=True, sfh_interp="step",
         add_dust=False, add_diffuse_dust=True,
-        sigma_losvd_kms=0.0, verbose=False,
+        verbose=False,
+        cosmo=Cosmology.planck18(),
     )
     phot = Photometry(filters=FILTERS, name="phot")
-    spec = Spectrum(wavelength=SPEC_WAVE, resolution=100.0,
-                    smoothtype="vel", name="spec")
+    spec = Spectrum(wavelength=SPEC_WAVE, instrument=Instrument.sigma_kms(100.0), name="spec")
     obs = _setup([phot, spec], csp)
 
     theta = dict(csp.all_params)
