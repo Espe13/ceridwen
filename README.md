@@ -506,9 +506,9 @@ two). The high-res grid is rebuilt from the provider's FITS with
 
 ## Troubleshooting
 
-- **Run `python -m ceridwen.check` first.** It reports missing dependencies
-  (including `sedpy-jax`), an unset or wrong `$SPS_HOME`, whether float64 is
-  enabled, and whether nested sampling is available, each with the fix.
+- **Run `python -m ceridwen.check` first.** It reports missing dependencies,
+  whether the bundled filter curves and attenuation laws are present, an unset
+  or wrong `$SPS_HOME`, whether float64 is enabled, and whether nested sampling is available, each with the fix.
 - **Install needs Python 3.11+** (see Installation); the pinned `blackjax`
   requires it.
 - **Common scientific pitfalls** (the metallicity-units trap, silently-ignored
@@ -552,7 +552,7 @@ two). The high-res grid is rebuilt from the provider's FITS with
 
 ## Related projects
 
-- [sedpy_jax](https://github.com/Espe13/sedpy_jax): a JAX-compatible rewrite of [sedpy](https://github.com/bd-j/sedpy) by Benjamin D. Johnson; used by ceridwen for filter convolutions and attenuation curves. Spectral broadening is done inside ceridwen (`ceridwen.broadening`) and reproduces sedpy's direct convolutions to better than 1e-3.
+- [sedpy](https://github.com/bd-j/sedpy) by Benjamin D. Johnson: the origin of the filter-convolution and attenuation-curve code that ceridwen now carries internally (via [sedpy_jax](https://github.com/Espe13/sedpy_jax), the JAX rewrite), and of the AB photon-counting conventions it follows. Ceridwen no longer depends on either attenuation curves. Spectral broadening is done inside ceridwen (`ceridwen.broadening`) and reproduces sedpy's direct convolutions to better than 1e-3.
 
 ---
 

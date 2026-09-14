@@ -31,9 +31,6 @@ classifiers = [
 # Lower bounds are taken from the known-good environment.yml; loosen only
 # after testing.  Notably:
 #   * jax>=0.4.30  -- jnp.trapezoid, modern jax.tree_util, 2024 PRNG conventions.
-#   * sedpy-jax    -- DISTRIBUTION name is "sedpy-jax"; IMPORT name is "sedpy_jax".
-#                     Imported at module scope (dust/DustModel.py) so it is
-#                     mandatory just to import the package.
 #   * tensorflow-probability -- every prior uses tfp.substrates.jax.
 #   * blackjax     -- nested sampling (blackjax.nss / blackjax.ns) is now MERGED
 #                     into the official blackjax (blackjax-devs), but not yet in a
@@ -45,9 +42,6 @@ classifiers = [
 #                     bit-identical to the tested one.
 #                     TODO(switch ASAP): when a blackjax release ships NSS, replace
 #                     this with `blackjax>=X.Y` to restore PyPI-installability.
-#   * sedpy-jax    -- >=0.1.1 carries the `inres` arg of make_lsf_smoother + the
-#                     LOSVD FFT wrap-around fix (published to PyPI). The older
-#                     0.1.0 lacks them, so the floor must exclude it.
 dependencies = [
     # GPU by default where CUDA exists: on Linux the CUDA 12 jaxlib wheels are
     # installed (CUDA libraries bundled -- an NVIDIA driver >= 525 is the only
@@ -66,7 +60,6 @@ dependencies = [
     "matplotlib>=3.7",
     "h5py>=3.8",
     "astropy>=5.3",
-    "sedpy-jax>=0.1.1",
     "tensorflow-probability>=0.23",
     "blackjax @ git+https://github.com/blackjax-devs/blackjax@f73e12956",
     "tqdm>=4.65",
@@ -105,8 +98,15 @@ exclude = ["tests*", "scripts*", "notebooks*", "animation*", "presentations*", "
 
 [tool.setuptools.package-data]
 # Do NOT bundle the 178 MB ceridwen/data/test_data/*.h5 grids into the wheel.
-# List small, genuinely-required data files here explicitly if any exist.
-ceridwen = []
+# The filter curves and the two reference spectra ARE required: since v1.0.0
+# the filter and attenuation machinery is part of ceridwen (vendored from
+# sedpy-jax, which is no longer a dependency), and FilterSet cannot resolve a
+# filter name without them.  ~14 MB over 293 .par files.
+ceridwen = [
+    "data/filters/*.par",
+    "data/alpha_lyr_stis_005.fits",
+    "data/sun_kurucz93.fits",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

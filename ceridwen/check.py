@@ -57,13 +57,23 @@ def check_environment(verbose: bool = True) -> bool:
                    "disabled; `import ceridwen` enables it. Evidence/gradients "
                    "need it.")
 
-    sj, err = _try_import("sedpy_jax")
-    if sj is None:
+    # Filters and attenuation curves are part of ceridwen itself since v1.0.0
+    # (vendored from sedpy-jax, which is no longer a dependency), so what is
+    # worth checking is that the data files came along with the install.
+    try:
+        from ceridwen.observation.filters import list_available_filters
+        from ceridwen.dust.attenuation_laws import ATTENUATION_LAWS
+        n_filt, n_law = len(list_available_filters()), len(ATTENUATION_LAWS)
+        if n_filt and n_law:
+            record(_OK, "filters + attenuation",
+                   f"{n_filt} filters, {n_law} attenuation laws")
+        else:
+            required_ok = False
+            record(_FAIL, "filters + attenuation",
+                   "package data missing; reinstall ceridwen")
+    except Exception as e:                                    # noqa: BLE001
         required_ok = False
-        record(_FAIL, "sedpy_jax",
-               f"not importable ({err}); `pip install sedpy-jax>=0.1.1`")
-    else:
-        record(_OK, "sedpy_jax", "filters and attenuation curves")
+        record(_FAIL, "filters + attenuation", f"not importable ({e})")
 
     tfp, err = _try_import("tensorflow_probability.substrates.jax")
     if tfp is None:

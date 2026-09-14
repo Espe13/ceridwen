@@ -51,8 +51,11 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
   The CLOUDY nebular grids and Draine & Li dust-emission templates are read from
   `$SPS_HOME` whenever `add_neb=True` or `add_dust_emission=True`. Building the
   SSP cache (`SSPData.from_fsps`) also needs FSPS.
-- **`sedpy_jax`** (PyPI: `sedpy-jax`) provides filter convolutions and smoothing;
-  it is imported at package import time.
+- **Filters and attenuation curves are internal** since v1.0.0:
+  `ceridwen/observation/filters.py` and `ceridwen/dust/attenuation_laws.py`,
+  vendored from `sedpy-jax` (MIT), with the 293 filter `.par` files and the two
+  reference spectra under `ceridwen/data/`. There is no `sedpy` dependency; do
+  not reintroduce one.
 - **Nested sampling needs `blackjax.nss`/`blackjax.ns`**, now merged into the
   official blackjax (blackjax-devs) but not yet in a tagged PyPI release.
   `pyproject.toml` pins blackjax's `main` branch via direct git reference, so
@@ -137,7 +140,7 @@ projection → likelihood → sampler.
   interpolated against its own gas_logz/gas_logu/age axes, line profiles at
   the pixel floor, `line_profiles(sigma)` for the photometric line basis).
 - `observation/` — `base.py` (ABC), `photometry.py` (filter convolution via
-  `sedpy_jax.FilterSet` → matrix-vector projection `_T`, optional
+  `filters.FilterSet` → matrix-vector projection `_T`, optional
   `PhotometricBroadener` and static line basis), `spectrum.py` (`Instrument`
   + `SpectralProjector` built by `setup_for_model`), `lines.py` (line fluxes
   read from the nebular grid by `CSPBasis`; Gaussian aperture matrix `W` for

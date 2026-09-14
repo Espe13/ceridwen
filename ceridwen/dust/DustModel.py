@@ -2,7 +2,7 @@ import jax.numpy as jnp
 from jax import vmap, lax
 from functools import partial
 from collections import defaultdict
-from sedpy_jax.attenuation_dust import ATTENUATION_LAWS
+from ceridwen.dust.attenuation_laws import ATTENUATION_LAWS
 
 import inspect
 from typing import Callable, Sequence
@@ -189,7 +189,7 @@ class Dust:
     @staticmethod
     def describe_attenuation_laws():
         print("=" * 70)
-        print("Available Dust Attenuation Laws in sedpy_jax:\n")
+        print("Available Dust Attenuation Laws in ceridwen:\n")
         for name, info in ATTENUATION_LAWS.items():
             print(f"• {name}")
             print(f"  Description: {info.get('doc', 'No description.')}")

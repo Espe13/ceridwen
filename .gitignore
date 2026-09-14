@@ -20,6 +20,17 @@ venv/
 animation/
 presentations/
 data/
+# ...but ceridwen/data/ is PACKAGE data and must ship: since v1.0.0 the filter
+# curves and attenuation laws are part of ceridwen itself (vendored from
+# sedpy-jax), and FilterSet cannot resolve a filter name without them.  The
+# blanket `data/` above would otherwise keep all 293 .par files out of the
+# repository, so a fresh clone would install a package that cannot load a
+# filter.  The big SSP grids under ceridwen/data/test_data/ stay ignored.
+!ceridwen/data/
+!ceridwen/data/filters/
+!ceridwen/data/filters/*.par
+!ceridwen/data/*.fits
+ceridwen/data/test_data/
 ceridwen.egg-info/
 figs/benchmarking
 figs/presentation

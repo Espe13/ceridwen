@@ -17,7 +17,7 @@ pip install .
 
 This pulls everything needed to import CERIDWEN, build the forward model, and run
 NUTS / VI / nested sampling **including posterior plotting**: `jax`, `jaxlib`,
-`numpy`, `scipy`, `matplotlib`, `h5py`, `astropy`, `sedpy-jax`,
+`numpy`, `scipy`, `matplotlib`, `h5py`, `astropy`,
 `tensorflow-probability`, `blackjax`, `tqdm`, `fastprogress`, `optax`,
 `anesthetic`, and `pytest`. The only
 thing not installed automatically is FSPS (see below).

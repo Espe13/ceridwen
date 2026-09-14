@@ -86,7 +86,9 @@ redshift always uses the painted path. See [Conventions](conventions.md).
 ## 2. (a) Photometry
 
 Broadband fluxes in **AB maggies**, with filter names resolved from the
-`sedpy_jax` library. Photometry captures the full aperture, so it sees the
+filter library bundled with CERIDWEN (`python -c "from
+ceridwen.observation.filters import list_available_filters as f; print(f())"`
+lists all 293). Photometry captures the full aperture, so it sees the
 intrinsic (unscaled) line + continuum flux.
 
 ```python

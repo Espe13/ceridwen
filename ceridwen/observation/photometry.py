@@ -4,7 +4,7 @@ Broadband photometric observation container (AB maggies).
 
 import jax.numpy as jnp
 import numpy as np
-from sedpy_jax.observate import FilterSet
+from ceridwen.observation.filters import FilterSet
 from .base import Observation
 
 _FILTERSET_CACHE = {}
