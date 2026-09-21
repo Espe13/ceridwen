@@ -46,7 +46,7 @@ and the nebular grid always matches the SSP isochrones.
     [α/Fe] fitting with `CSPBasis_afe` the download is the *recommended*
     route — the α grids need a custom FSPS v4.0 build to generate, but
     none at all to fit, since the α variant has no nebular model. See
-    [Installation: α-enhanced grids](installation.md#α-enhanced-grids-download-dont-build).
+    [Installation: α-enhanced grids](installation.md#alpha-enhanced-grids).
 
 ## Step 1: build a model and fit
 

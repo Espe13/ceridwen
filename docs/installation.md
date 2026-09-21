@@ -72,7 +72,7 @@ in the repository).
         "https://zenodo.org/records/21977508/files/ssp_data_mist_miles.h5?download=1"
     ```
 
-## α-enhanced grids: download, don't build
+## α-enhanced grids: download, don't build {#alpha-enhanced-grids}
 
 The [α/Fe]-aware grids for `CSPBasis_afe` are a special case, in both
 directions:
