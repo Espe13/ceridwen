@@ -262,6 +262,16 @@ prefer `predict`/`get_spectrum_components`.
 - `fitSED` honours `noise_floor`, `sky`, `calibration` and `upper_limit` and logs
   them; `logify_spectrum` and a `GaussianProcess` noise model are refused
   (`NotImplementedError`) instead of ignored.
+- Sampled noise terms are switched on by NAME: when the model samples
+  `log_err_scale` (sigma^2 x exp(2 log_err_scale), a common rescaling of the
+  quoted errors), `log_jitter` (+ exp(log_jitter)^2, data units), `log_f_calib`
+  (+ (exp(log_f_calib) |model|)^2) or `log_f_data` (+ (exp(log_f_data) |data|)^2),
+  `fitSED` builds every observation's `DiagonalNoiseModel` with that term, one
+  value shared by all observations, and logs it. Give them a prior and a
+  `free_param_init`. This is a `fitSED` feature: with `run_sampler` you build the
+  `DiagonalNoiseModel(use_error_scale=True, ...)` yourself, otherwise the
+  parameter is sampled from its prior and never enters the likelihood, with no
+  warning.
 - `SedModel` raises for a prior on a name that is not sampled and warns for
   sampled parameters without a prior; `free_param_init` is applied without
   transforms too; prior constructors reject unknown/missing arguments.

@@ -39,6 +39,11 @@ def _default_filter_dir():
     d = os.path.join(os.path.dirname(__file__), "filters")
     if os.path.isdir(d):
         return d
+    # the filter curves ship with ceridwen (located by path: no ceridwen import here)
+    pkg = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir,
+                       "ceridwen", "data", "filters")
+    if os.path.isdir(pkg):
+        return os.path.normpath(pkg)
     try:
         import sedpy_jax
         return os.path.join(os.path.dirname(sedpy_jax.__file__), "data", "filters")

@@ -343,3 +343,11 @@ examples/quickstart_sed.png
 # Stale, machine-specific conda export (Python 3.10 / old deps). The install
 # story is `pip install .`; this file is misleading to a fresh cloner.
 environment.yml
+
+# Local diagnostics from the nebular refactor (need the private jades_full tree;
+# verify_library_resolution.py uses the removed Spectrum(inres=...) API).
+# Untracked 2026-09-21; kept on disk only.
+/diagnose_lookback_grad.py
+/profile_ceridwen.py
+/verify_library_resolution.py
+/verify_neb_refactor.py

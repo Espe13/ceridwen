@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ceridwen"
-version = "3.0.0"
-description = "JAX-native, GPU-capable SED fitting with VI-preconditioned HMC"
+version = "1.0.0"
+description = "JAX-native, GPU-capable Bayesian SED fitting with nested sampling and VI-preconditioned HMC"
 readme = "README.md"
 # Python 3.11+ required: nested sampling pins official blackjax (main), which
 # itself requires >=3.11. When blackjax ships NSS in a PyPI release this stays
@@ -13,7 +13,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "Amanda Stoffers", email = "aas208@cam.ac.uk" }]
-keywords = ["astronomy", "astrophysics", "SED fitting", "JAX", "HMC", "stellar populations"]
+keywords = ["astronomy", "astrophysics", "SED fitting", "Bayesian inference",
+            "nested sampling", "HMC", "JAX", "GPU", "stellar populations"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
@@ -87,6 +88,7 @@ docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.24", "black>=24.0"]
 
 [project.urls]
 Homepage = "https://github.com/Espe13/ceridwen"
+Documentation = "https://www.amanda-stoffers.de/ceridwen/"
 Source = "https://github.com/Espe13/ceridwen"
 Issues = "https://github.com/Espe13/ceridwen/issues"
 

@@ -14,8 +14,9 @@ authors:
     given-names: Amanda
     email: aas208@cam.ac.uk
     affiliation: "Kavli Institute for Cosmology, University of Cambridge"
-version: "3.0.0"
-date-released: "2026-09-11"
+    orcid: "https://orcid.org/0009-0009-5464-3558"
+version: "1.0.0"
+date-released: "2026-09-14"
 license: MIT
 repository-code: "https://github.com/Espe13/ceridwen"
 url: "https://www.amanda-stoffers.de/ceridwen/"
@@ -56,6 +57,7 @@ preferred-citation:
       given-names: Amanda
       email: aas208@cam.ac.uk
       affiliation: "Kavli Institute for Cosmology, University of Cambridge"
+      orcid: "https://orcid.org/0009-0009-5464-3558"
   journal: "Monthly Notices of the Royal Astronomical Society"
   year: 2026
   notes: "Methods paper (in preparation). Update title, volume, pages and DOI on publication."

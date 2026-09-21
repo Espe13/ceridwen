@@ -23,6 +23,7 @@ from ceridwen import SSPData, CSPBasis, SedModel
 from ceridwen.observation import Photometry
 from ceridwen.model import logsfr_ratios_to_sfh
 from ceridwen.cosmology import flux_factor_maggies, luminosity_distance_mpc
+from ceridwen.cosmology import Cosmology
 
 HERE = pathlib.Path(__file__).resolve().parent
 SSP_FILE = HERE.parent / "examples" / "ssp_data.h5"
@@ -56,7 +57,7 @@ ssp = SSPData.load(str(SSP_FILE))
 csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6),
                zh_const=True, sfh_interp="step",
                add_dust=False, add_diffuse_dust=True, add_neb=False,
-               verbose=False)
+               verbose=False, cosmo=Cosmology.planck18())
 sfh_times_yr = np.array(csp.sfh_times)
 model = SedModel(
     csp, observations=[Photometry(filters=FILTERS, name="phot")],

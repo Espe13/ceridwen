@@ -2,9 +2,28 @@
 
 # Ceridwen
 
-**C**omprehensive **S**ED **E**stimation **R**outine **I**nvolving **D**ata-driven **WE**ight calculatio**N**s: a JAX-native, GPU-capable spectral energy distribution (SED) fitting package with variational-inference preconditioned Hamiltonian Monte Carlo and native redshift support.
+[![CI](https://github.com/Espe13/ceridwen/actions/workflows/ci.yml/badge.svg)](https://github.com/Espe13/ceridwen/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.11 | 3.12](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
+[![Docs](https://img.shields.io/badge/docs-amanda--stoffers.de%2Fceridwen-blue.svg)](https://www.amanda-stoffers.de/ceridwen/)
+
+**C**omprehensive **S**ED **E**stimation **R**outine **I**nvolving **D**ata-driven **WE**ight calculatio**N**s: a JAX-native, GPU-capable Bayesian spectral energy distribution (SED) fitting package with nested sampling, variational-inference preconditioned Hamiltonian Monte Carlo and native redshift support.
 
 Documentation: [www.amanda-stoffers.de/ceridwen](https://www.amanda-stoffers.de/ceridwen/)
+
+**In three commands** (from a clone, Python 3.11+, no FSPS needed for this path):
+
+```bash
+pip install .                    # GPU wheels on Linux, CPU elsewhere
+python -m ceridwen.check         # environment self-check, each problem with its fix
+SSP_FILE=$(python -c "from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_miles_chab'))") \
+    python examples/quickstart.py   # mock fit; prints a recovered-vs-true table
+```
+
+The third line downloads the published MIST + MILES grid once (67 MB,
+SHA-256 verified, cached in `~/.ceridwen/grids`) and fits mock photometry with
+it. [Installation](#installation), the [quick start](#quick-start) and
+[how the code is verified](#verification) follow.
 
 ---
 
@@ -160,6 +179,27 @@ The grid records that **provenance** (isochrone/spectral library, `imf_type`,
 FSPS version, build kwargs) in the HDF5 file, and `CSPBasis` reads the
 isochrone library back automatically: **you never set `isoc_type` by hand**,
 and the nebular CLOUDY grid always matches the SSP isochrones.
+
+**No FSPS? Fetch a published grid instead.** The grids ceridwen is tested and
+released with are on Zenodo
+([doi:10.5281/zenodo.21977508](https://doi.org/10.5281/zenodo.21977508)) and
+registered by name, so Step 0 can be one line. The file is downloaded once into
+`~/.ceridwen/grids` (or `$CERIDWEN_GRID_DIR`) and its SHA-256 is checked on
+every call:
+
+```python
+from ceridwen import SSPData
+from ceridwen.ssps import fetch_grid, available_grids
+
+print(available_grids(published_only=True))          # names and what each grid is
+ssp = SSPData.load(fetch_grid("mist_miles_chab"))    # MIST + MILES, Chabrier, 67 MB
+ssp.display()
+```
+
+With a fetched grid and `add_neb=False`, `add_dust_emission=False` (as in
+Step 1 below), nothing is read from `$SPS_HOME` and FSPS does not need to be
+installed at all. Nebular emission and dust emission still need the FSPS data
+files (see [Installing FSPS](#installing-fsps-and-setting-sps_home)).
 
 ### Step 1: fit a galaxy end-to-end
 
@@ -437,6 +477,68 @@ formed mass, rest-frame luminosities) and `examples/demo_postprocess.py`.
 
 ---
 
+## Verification
+
+The checks are layered, and each layer answers a different question. What a
+layer asserts, the command that runs it, and whether it runs on GitHub:
+
+| layer | command | what it asserts | on CI |
+|---|---|---|---|
+| Environment | `python -m ceridwen.check` | Python version, dependencies, bundled filter curves and attenuation laws, float64, nested sampling, `$SPS_HOME`; each problem with its fix | no |
+| Tests, FSPS-free | `pytest -m "not fsps and not gpu" -q -ra` | units, conventions, broadening, likelihood, samplers, post-processing, the misuse guards (25 test files) | every push and pull request |
+| Regression baselines | `pytest tests/regression/test_regression.py -q` | 9 blocks (SSP spectrum, IGM, cosmology, CSP components, dust attenuation, dust emission, nebular, CSP spectrum, likelihood) against stored arrays at `atol=1e-10, rtol=1e-7`, and a maximum relative residual of 1e-6; writes comparison figures to `tests/regression/figures/` | no, needs `$SPS_HOME` |
+| Golden spectra | `pytest tests/csp/test_lookback_flip_invariant.py -q` | 6 SFH / metallicity configurations against committed arrays: SSP weights at `rtol=1e-12`; spectra, line fluxes and photometry at `rtol=1e-6` (they pass through float32 contractions) | no, needs `$SPS_HOME` |
+| Misuse report | `python tests/regression/misuse_report.py` | each known user error ends in an exception or a warning; a `SILENT` row is a bug | its assertions run in the tests above |
+| Static API check | `python scripts/check_api_usage.py` | every call in `tests/`, `examples/` and the Python blocks of this README, `GOTCHAS.md` and `docs/` passes only keyword arguments that exist, and uses no removed name | no |
+| Byte identity | `python scripts/bit_identity_check.py --save old.npz` on one commit, `--compare old.npz` on the next | a refactor changes nothing: every output array equal under `tobytes()` (dtype, shape, every bit); `--ns` adds a nested-sampling run at the same RNG key | no |
+| End-to-end recovery | `python examples/quickstart.py` | mock photometry from known parameters, fitted back, recovered-vs-true table and figures | no |
+
+**Skips are not passes.** The suite's main SSP grid is too large for the
+repository, and a grid-dependent test *skips* when it cannot find one, so read
+the `-ra` summary at the end of a run. The grid is the published BPASS grid;
+fetch it once and point the tests at it:
+
+```bash
+export CERIDWEN_TEST_SSP=$(python -c "from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_bpass_v2'))")
+export SSP_FILE=$CERIDWEN_TEST_SSP
+pytest -m "not fsps and not gpu" -q -ra
+```
+
+CI does the same, so its green tick covers the grid-dependent tests. What CI
+cannot cover is everything that reads the CLOUDY and dust-emission tables: the
+runners have no FSPS data, so the nebular tests, the regression baselines and
+the golden spectra run only on a machine with `$SPS_HOME` set. Byte identity is
+a CPU statement; on GPU the scatter-add that paints emission lines can differ
+in the last bit from run to run.
+
+## How this code was built
+
+ceridwen is written and maintained by one person, with AI coding assistants
+used for drafting, refactoring and review. The safeguard is not trust in the
+tool but the checks above, and a few rules that apply to every change,
+whoever or whatever proposes it:
+
+- **Conventions are written down where a tool reads them first.**
+  [`AGENTS.md`](AGENTS.md) holds the conventions that are easy to get wrong
+  (absolute-`log10 Z` metallicity, lookback-time ordering, units and frames),
+  the hard requirements and the module map; [`GOTCHAS.md`](GOTCHAS.md) is the
+  misuse guide. Both are checked against the code by the static API check.
+- **A change has to say what it is.** A refactor or optimisation must be
+  byte-identical on CPU. An intended change to the physics must come with its
+  predicted size, and a new feature must add a golden configuration of its
+  own. Existing baselines are not re-captured to make a test pass: the
+  re-capture script for the golden spectra first asserts that the SSP weights
+  still match the stored ones at `rtol=1e-12`.
+- **Wrong input fails loudly.** The historical hazard was a plausible number
+  from a mistyped `theta` key or a metallicity in the wrong units. Every guard
+  sits in construction or setup code, or runs once at trace time, so the
+  compiled sampling path is unchanged.
+- **Independent references where they exist.** The spectral broadening is
+  tested against direct quadrature and, when `sedpy` is installed, against
+  its smoothing routines (`tests/test_broadening.py`).
+
+---
+
 ## Fitting [α/Fe] — no FSPS required
 
 The α-enhanced grids (FSPS v4.0, aMIST isochrones + C3K spectra,
@@ -552,7 +654,7 @@ two). The high-res grid is rebuilt from the provider's FITS with
 
 ## Related projects
 
-- [sedpy](https://github.com/bd-j/sedpy) by Benjamin D. Johnson: the origin of the filter-convolution and attenuation-curve code that ceridwen now carries internally (via [sedpy_jax](https://github.com/Espe13/sedpy_jax), the JAX rewrite), and of the AB photon-counting conventions it follows. Ceridwen no longer depends on either attenuation curves. Spectral broadening is done inside ceridwen (`ceridwen.broadening`) and reproduces sedpy's direct convolutions to better than 1e-3.
+- [sedpy](https://github.com/bd-j/sedpy) by Benjamin D. Johnson: the origin of the filter-convolution and attenuation-curve code that ceridwen now carries internally (via [sedpy_jax](https://github.com/Espe13/sedpy_jax), the JAX rewrite), and of the AB photon-counting conventions it follows. Ceridwen no longer depends on either package. Spectral broadening is done inside ceridwen (`ceridwen.broadening`) and reproduces sedpy's direct convolutions to better than 1e-3.
 
 ---
 

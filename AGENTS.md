@@ -96,9 +96,11 @@ from ceridwen.likelihood import DiagonalGaussianLikelihood, MultiObservationLike
 Equivalent namespaced paths also work: `ceridwen.ssps.SSPData`,
 `ceridwen.csp.CSPBasis`, `ceridwen.model.SedModel`.
 
-- The canonical nebular class is `NebularModel`. `NebularModelFSPSMatch`
-  (bug-for-bug FSPS reproduction) is intentionally internal — only use it via
-  `CSPBasis(..., match_fsps=True)` if you specifically need FSPS reproducibility.
+- The only nebular class is `NebularModel`. The old `NebularModelFSPSMatch`
+  (bug-for-bug FSPS reproduction) has been removed: upstream FSPS was fixed and
+  now matches the strict `NebularModel`. `init_neb_params={"match_fsps": True}`
+  is obsolete and ignored with a warning, and `CSPBasis(..., match_fsps=True)`
+  raises a `TypeError` like any unknown keyword. Do not reintroduce either.
 - `ssps/ssp_data.py` no longer stores `log_qq`; the nebular model derives the
   ionising-photon rate internally. Old HDF5 caches with a `log_qq` dataset still
   load (the field is ignored).
@@ -195,9 +197,13 @@ bin, automatic parameter renaming when a law is reused); `@jit`/`vmap` throughou
   `theta` typos, …). Read it before constructing models; it expands on the
   conventions above.
 - `examples/quickstart.py` — minimal runnable fit (mock photometry).
-- Tests live in `tests/`; they resolve a committed SSP grid via
-  `tests/_gridfixture.py` (under `tests/fixtures/`) and skip cleanly if it (or
-  FSPS) is absent. Run `pytest -m "not fsps and not gpu"` for the FSPS-free subset.
+- Tests live in `tests/`; they resolve an SSP grid via `tests/_gridfixture.py`
+  (`$CERIDWEN_TEST_SSP` → `tests/fixtures/<name>` → `ceridwen/data/test_data/`).
+  The main test grid is NOT committed: it is the published BPASS grid, fetched
+  with `fetch_grid("mist_bpass_v2")` (CI does this). Without a grid, or without
+  `$SPS_HOME` for the nebular tests, tests *skip*, and a run with skips is not a
+  pass: run `pytest -m "not fsps and not gpu" -ra` for the FSPS-free subset and
+  read the skip summary. See "Verification" in `README.md`.
 
 ## Don't
 

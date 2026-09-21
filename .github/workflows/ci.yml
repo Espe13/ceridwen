@@ -13,8 +13,8 @@ concurrency:
 jobs:
   # ----------------------------------------------------------------------
   # Smoke test: does the package install from a clean environment and import?
-  # Importing ceridwen.sampler also exercises the sedpy-jax / tfp / blackjax
-  # dependency pins, so a bad pin fails here rather than at a user's first fit.
+  # Importing ceridwen.sampler also exercises the tfp / blackjax dependency
+  # pins, so a bad pin fails here rather than at a user's first fit.
   #
   # Python 3.11+ : nested sampling pins official blackjax (main), which requires
   # >=3.11. (The git dependency means installs build blackjax from source.)
@@ -49,8 +49,8 @@ jobs:
           from ceridwen import DustModel, DustEmission, NebularModel, fitSED, read_result_h5
 
           # Submodule imports that pull the heavier deps, so a broken pin
-          # (sedpy-jax / astropy / tfp / blackjax) is caught at CI time.
-          import ceridwen.csp.csp            # astropy, sedpy_jax
+          # (astropy / tfp / blackjax) is caught at CI time.
+          import ceridwen.csp.csp            # forward model + vendored filters / attenuation laws
           import ceridwen.observation.observation
           import ceridwen.sampler            # tensorflow-probability, blackjax
           from ceridwen.sampler import Uniform, ClippedNormal, StudentT
@@ -61,6 +61,15 @@ jobs:
   # Test suite (FSPS-free subset). Fixtures live in tests/fixtures/*.h5 via
   # git-lfs, so checkout must pull LFS. FSPS- and GPU-only tests are skipped
   # by marker. Python 3.11 (matches the blackjax NSS requirement).
+  #
+  # The suite's main test grid is NOT in the repository (tests/_gridfixture.py):
+  # without it 56 grid-dependent tests skipped (run 34826046295, 2026-09-14:
+  # 130 passed, 65 skipped) and a green run proves little. It
+  # is the published BPASS grid (Zenodo doi:10.5281/zenodo.21977508), so it is
+  # fetched by name with ceridwen's own fetch_grid (SHA-256 verified on every
+  # call) and handed to the tests through $CERIDWEN_TEST_SSP / $SSP_FILE.
+  # Tests that need the CLOUDY data under $SPS_HOME still skip here; the -ra
+  # summary lists every skip with its reason. Read it: skips are not passes.
   # ----------------------------------------------------------------------
   tests:
     name: pytest (FSPS-free)
@@ -79,6 +88,21 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
+
+      # Cache key = grid name + the first 8 hex digits of its SHA-256 in
+      # ceridwen/ssps/grid_fetch.py (REGISTRY); bump it if the registry entry changes.
+      - name: Cache the published test grid
+        uses: actions/cache@v4
+        with:
+          path: ~/.ceridwen/grids
+          key: ceridwen-grid-mist_bpass_v2-64c93ea7
+
+      - name: Fetch the test SSP grid (Zenodo, checksummed)
+        run: |
+          GRID=$(python -c "from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_bpass_v2'))" | tail -n 1)
+          test -f "$GRID"
+          echo "CERIDWEN_TEST_SSP=$GRID" >> "$GITHUB_ENV"
+          echo "SSP_FILE=$GRID" >> "$GITHUB_ENV"
 
       - name: Run tests (skip FSPS- and GPU-only tests)
         run: |

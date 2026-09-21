@@ -65,11 +65,15 @@ class NoiseModelBase(abc.ABC):
 
 @dataclass(frozen=True)
 class DiagonalNoiseModel(NoiseModelBase):
-    """Independent Gaussian noise: sigma_obs^2 plus optional (f_calib*|mu|)^2,
-    (f_data*|y|)^2 and jitter^2 terms, nuisance parameters sampled in log space.
+    """Independent Gaussian noise: sigma_obs^2 (optionally rescaled by a common
+    factor) plus optional (f_calib*|mu|)^2, (f_data*|y|)^2 and jitter^2 terms,
+    nuisance parameters sampled in log space.
 
     Parameters
     ----------
+    use_error_scale : bool -- multiply sigma_obs^2 by exp(params["log_err_scale"])^2, a
+        common rescaling of the quoted uncertainties (the log-normalisation term keeps it
+        from running away)
     use_jitter : bool -- add exp(params["log_jitter"])^2 (data units)
     use_fractional : bool -- add (exp(params["log_f_calib"]) * |mu|)^2, model-anchored
     use_data_fractional : bool -- add (exp(params["log_f_data"]) * |y|)^2, data-anchored, needs ``data``
@@ -80,6 +84,7 @@ class DiagonalNoiseModel(NoiseModelBase):
     use_fractional      : bool = False
     use_data_fractional : bool = False
     noise_floor         : float = 0.0
+    use_error_scale     : bool = False
 
     def compute(
         self,
@@ -89,12 +94,15 @@ class DiagonalNoiseModel(NoiseModelBase):
         params    : Optional[dict[str, Array]] = None,
         data      : Optional[Array] = None,
     ) -> NoiseModelOutput:
-        """Return ``NoiseModelOutput``; ``params`` keys ``log_jitter``/``log_f_calib``/``log_f_data``
-        as configured, ``data`` (observed y) required when ``use_data_fractional``."""
+        """Return ``NoiseModelOutput``; ``params`` keys ``log_err_scale``/``log_jitter``/
+        ``log_f_calib``/``log_f_data`` as configured, ``data`` (observed y) required when
+        ``use_data_fractional``."""
         if params is None:
             params = {}
 
         var: Array = sigma_obs ** 2
+        if self.use_error_scale:
+            var = var * jnp.exp(2.0 * params["log_err_scale"])
         if self.noise_floor > 0.0:
             var = var + (self.noise_floor * jnp.abs(mu)) ** 2
 
@@ -128,6 +136,8 @@ class DiagonalNoiseModel(NoiseModelBase):
     def nuisance_param_names(self) -> tuple[str, ...]:
         """Names of nuisance parameters expected in ``params`` at compute time."""
         names: list[str] = []
+        if self.use_error_scale:
+            names.append("log_err_scale")
         if self.use_fractional:
             names.append("log_f_calib")
         if self.use_data_fractional:
@@ -142,7 +152,8 @@ class DiagonalNoiseModel(NoiseModelBase):
             f"use_jitter={self.use_jitter}, "
             f"use_fractional={self.use_fractional}, "
             f"use_data_fractional={self.use_data_fractional}, "
-            f"noise_floor={self.noise_floor})"
+            f"noise_floor={self.noise_floor}, "
+            f"use_error_scale={self.use_error_scale})"
         )
 
 
@@ -150,10 +161,11 @@ jax.tree_util.register_pytree_node(
     DiagonalNoiseModel,
     flatten_func=lambda nm: (
         [],
-        (nm.use_jitter, nm.use_fractional, nm.use_data_fractional, nm.noise_floor),
+        (nm.use_jitter, nm.use_fractional, nm.use_data_fractional, nm.noise_floor,
+         nm.use_error_scale),
     ),
     unflatten_func=lambda aux, _: DiagonalNoiseModel(
         use_jitter=aux[0], use_fractional=aux[1], use_data_fractional=aux[2],
-        noise_floor=aux[3],
+        noise_floor=aux[3], use_error_scale=aux[4],
     ),
 )

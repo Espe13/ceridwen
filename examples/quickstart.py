@@ -78,7 +78,8 @@ SPS_HOME = os.environ.get("SPS_HOME")
 RNG = jax.random.PRNGKey(42)
 
 # A broad UV->IR set (GALEX + SDSS + 2MASS + WISE) so the mock is well
-# constrained and the corner plot is informative. All ship with sedpy_jax.
+# constrained and the corner plot is informative. All ship with ceridwen
+# (ceridwen/data/filters).
 FILTERS = [
     "galex_FUV", "galex_NUV",
     "sdss_u0", "sdss_g0", "sdss_r0", "sdss_i0", "sdss_z0",
@@ -99,10 +100,11 @@ def step0_load_or_build_grid() -> SSPData:
     except ImportError as exc:
         raise SystemExit(
             "No SSP grid found and FSPS (python-fsps) is not importable.\n"
-            "Easiest fixes (no FSPS needed):\n"
-            "  * run `git lfs install && git lfs pull` in the repository "
-            "(fetches the bundled test grid), or\n"
-            "  * download the grid from Zenodo to examples/ssp_data.h5 — see "
+            "Easiest fix (no FSPS needed): fetch the published grid and point "
+            "$SSP_FILE at it,\n"
+            "  SSP_FILE=$(python -c \"from ceridwen.ssps import fetch_grid; "
+            "print(fetch_grid('mist_miles_chab'))\") python examples/quickstart.py\n"
+            "or download it from Zenodo to examples/ssp_data.h5 — see "
             "docs/installation.md ('Getting the SSP grid').\n"
             "Alternatively install FSPS with `pip install 'fsps>=0.4.4'` and "
             "set $SPS_HOME to build the grid locally. See the README."

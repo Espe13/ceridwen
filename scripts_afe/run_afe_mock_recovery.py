@@ -25,6 +25,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+from ceridwen.cosmology import Cosmology
 
 
 SFH_LIBRARY = {
@@ -95,6 +96,7 @@ def main():
         add_igm=False,
         sigma_losvd_kms=200.0,
         verbose=True,
+        cosmo=Cosmology.planck18(),
     )
 
     theta_true = dict(csp.theta_init)

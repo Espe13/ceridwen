@@ -201,8 +201,8 @@ def _build_adapter(sampler: str, model, sampler_kwargs: dict, verbose: bool,
 
 def _likelihood_for(obs, param_names=()):
     """Diagonal Gaussian likelihood for ``obs`` (one-sided kernel when it flags upper limits);
-    the noise nuisance terms ``log_jitter`` / ``log_f_calib`` / ``log_f_data`` are switched on
-    when the model samples them (one value shared by every observation)."""
+    the noise nuisance terms ``log_jitter`` / ``log_f_calib`` / ``log_f_data`` / ``log_err_scale``
+    are switched on when the model samples them (one value shared by every observation)."""
     from .likelihood.likelihood import (
         DiagonalGaussianLikelihood, DiagonalGaussianLikelihoodWithUpperLimits)
     from .likelihood.noise_model import DiagonalNoiseModel
@@ -218,7 +218,8 @@ def _likelihood_for(obs, param_names=()):
     nm = DiagonalNoiseModel(noise_floor=float(getattr(obs, "noise_floor", 0.0) or 0.0),
                             use_jitter="log_jitter" in param_names,
                             use_fractional="log_f_calib" in param_names,
-                            use_data_fractional="log_f_data" in param_names)
+                            use_data_fractional="log_f_data" in param_names,
+                            use_error_scale="log_err_scale" in param_names)
     ul = getattr(obs, "upper_limit", None)
     if ul is not None and bool(jnp.any(ul)):
         return DiagonalGaussianLikelihoodWithUpperLimits(noise_model=nm)

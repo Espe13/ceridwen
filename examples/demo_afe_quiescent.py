@@ -78,7 +78,7 @@ SPEC_RES_KMS = 70.0                 # instrument LSF sigma [km/s]
 SNR_PHOT, SNR_SPEC = 30.0, 30.0
 
 # Legacy Surveys bands: DECam grz + WISE W1/W2 (decam_* / wise_* are valid
-# sedpy_jax filter names). Swap in your own broadband set as needed.
+# ceridwen filter names). Swap in your own broadband set as needed.
 FILTERS = ["decam_g", "decam_r", "decam_z", "wise_w1", "wise_w2"]
 
 # Legacy-Surveys-style optical spectrum: observed-frame vacuum Angstrom.
