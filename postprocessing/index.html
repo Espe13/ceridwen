@@ -1,0 +1,871 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="JAX-native, GPU-capable spectral energy distribution (SED) fitting">
+      
+      
+      
+        <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/postprocessing/">
+      
+      
+        <link rel="prev" href="../conventions/">
+      
+      
+        <link rel="next" href="../api/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Post-processing - CERIDWEN</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#post-processing-a-fit" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="CERIDWEN" class="md-header__button md-logo" aria-label="CERIDWEN" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CERIDWEN
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Post-processing
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Espe13/ceridwen" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Espe13/ceridwen
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="CERIDWEN" class="md-nav__button md-logo" aria-label="CERIDWEN" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CERIDWEN
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Espe13/ceridwen" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Espe13/ceridwen
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: joint fit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conventions & gotchas
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-processing
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-you-get" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What you get
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#conventions-you-should-know" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conventions you should know
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#your-own-quantities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Your own quantities
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#figures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Figures
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#saving" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Saving
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="post-processing-a-fit">Post-processing a fit<a class="headerlink" href="#post-processing-a-fit" title="Permanent link">&para;</a></h1>
+<p><code>ceridwen.PostProcess</code> turns a sampling result into posterior distributions
+of everything you report: the sampled parameters, the star-formation history
+and its time averages, UV and ionising-photon properties, the
+posterior-predictive photometry, spectra and line fluxes, three model-grid
+spectra (full, stellar-intrinsic, dust-free), the best-fit point, and any
+quantity you define yourself from those spectra. Every number comes from the
+same forward model that was fitted, so it is consistent with the fit by
+construction.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">PostProcess</span><span class="p">,</span> <span class="n">load_postprocess</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">pp</span>  <span class="o">=</span> <span class="n">PostProcess</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>      <span class="c1"># the SedModel of the fit; SamplingResult or the .h5 path</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">out</span> <span class="o">=</span> <span class="n">pp</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>                        <span class="c1"># nested dict of numpy arrays</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">pp</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;post.npz&quot;</span><span class="p">)</span>                   <span class="c1"># flat .npz; load_postprocess(&quot;post.npz&quot;) rebuilds the dict</span>
+</code></pre></div>
+<p>The model must be the one the fit used (same CSP, observations, transforms,
+<code>zred</code>): the parameter names and shapes of the result are checked against
+it and a mismatch is refused with the two lists printed. When <code>result</code> is
+the <code>.h5</code> path, the fixed redshift, luminosity distance, cosmology and
+kinematics (<code>Kinematics</code> widths, <code>broaden_photometry</code>) recorded in the file
+are also checked against the model. <code>run()</code> pushes every draw through
+<code>model.predict_vmap</code>, so the model's observations must be set up (they are,
+unless you reassigned <code>model.observations</code> without calling
+<code>model.setup_observations()</code>).</p>
+<h2 id="what-you-get">What you get<a class="headerlink" href="#what-you-get" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Shape</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>out['theta'][name]</code></td>
+<td><code>(N,)</code> or <code>(N, k)</code></td>
+<td>equal-weight posterior draws of every sampled parameter</td>
+</tr>
+<tr>
+<td><code>out['log_likelihood']</code>, <code>out['draw_index']</code></td>
+<td><code>(N,)</code></td>
+<td>log-likelihood of each draw and its index in the raw samples</td>
+</tr>
+<tr>
+<td><code>out['extras']['sfh']['lookback_gyr']</code></td>
+<td><code>(N, n_time)</code></td>
+<td>lookback grid of each draw (follows a sampled <code>zred</code> when <code>track_zred_age</code>)</td>
+</tr>
+<tr>
+<td><code>out['extras']['sfh']['sfr']</code></td>
+<td><code>(N, n_time)</code> or <code>(N, n_time-1)</code></td>
+<td>SFR in M⊙/yr in the CSP's convention (per node, or per bin for <code>sfh_per_bin</code>)</td>
+</tr>
+<tr>
+<td><code>out['extras']['sfh']['sfr_per_bin']</code></td>
+<td><code>(N, n_time-1)</code></td>
+<td>the per-bin SFR the step kernel integrates</td>
+</tr>
+<tr>
+<td><code>out['extras']['sfh']['mass_formed']</code></td>
+<td><code>(N,)</code></td>
+<td>∫ SFR dt, M⊙</td>
+</tr>
+<tr>
+<td><code>out['extras']['sfh']['sfr10']</code>, <code>sfr100</code>, ...</td>
+<td><code>(N,)</code></td>
+<td>mean SFR over the last 10, 100, ... Myr (<code>windows_myr</code>, default 3, 5, 10, 20, 50, 100, 500)</td>
+</tr>
+<tr>
+<td><code>out['extras']['sfh']['ssfr10']</code>, ...</td>
+<td><code>(N,)</code></td>
+<td><code>sfrW / mass_formed</code>, 1/yr</td>
+</tr>
+<tr>
+<td><code>out['extras']['uv']['MUV']</code>, <code>LUV</code></td>
+<td><code>(N,)</code></td>
+<td>absolute AB magnitude at 1500 Å and mean L_ν over 1450–1550 Å (erg/s/Hz) of the full (dust-attenuated) model</td>
+</tr>
+<tr>
+<td><code>out['extras']['uv']['MUV_intrinsic']</code>, <code>LUV_intrinsic</code></td>
+<td><code>(N,)</code></td>
+<td>the same from the stellar-intrinsic spectrum</td>
+</tr>
+<tr>
+<td><code>out['extras']['ionizing']['nion']</code></td>
+<td><code>(N,)</code></td>
+<td>Q(H) in s⁻¹ from the intrinsic spectrum, with the nebular model's constants</td>
+</tr>
+<tr>
+<td><code>out['extras']['ionizing']['xion']</code></td>
+<td><code>(N,)</code></td>
+<td><code>nion / LUV_intrinsic</code>, Hz/erg</td>
+</tr>
+<tr>
+<td><code>out['extras']['ionizing']['fesc']</code></td>
+<td><code>(N,)</code></td>
+<td><code>frac_obrun</code>, present only when the model has it</td>
+</tr>
+<tr>
+<td><code>out['prediction']['photometry'][obs]</code></td>
+<td><code>(N, n_bands)</code></td>
+<td>maggies, one entry per <code>Photometry</code> observation</td>
+</tr>
+<tr>
+<td><code>out['prediction']['spectra'][obs]</code></td>
+<td><code>(N, n_pix)</code></td>
+<td>as the <code>Spectrum</code> observation is fitted</td>
+</tr>
+<tr>
+<td><code>out['prediction']['lines'][obs]</code></td>
+<td><code>(N, n_lines)</code></td>
+<td>integrated line fluxes</td>
+</tr>
+<tr>
+<td><code>out['prediction']['wave_rest']</code></td>
+<td><code>(n_wave,)</code></td>
+<td>the model grid, Å</td>
+</tr>
+<tr>
+<td><code>out['prediction']['spectra_observed']</code>, <code>zred</code></td>
+<td><code>(N, n_wave)</code>, <code>(N,)</code></td>
+<td>observed-frame f_ν in erg s⁻¹ cm⁻² Hz⁻¹ (cgs; × 1e32 for nJy) at <code>(1+z) wave_rest</code> (flux factor and IGM applied; not broadened), and the redshift of each draw; present only when the model has a fixed or sampled <code>zred</code> or a <code>lumdist_mpc</code> (absent for a <code>zred = 0</code> fit, which has no flux factor)</td>
+</tr>
+<tr>
+<td><code>out['prediction']['spectra_model']</code></td>
+<td><code>(N, n_wave)</code></td>
+<td>rest-frame L_ν [L⊙/Hz] of the fitted model (dust, nebular, dust emission; at model resolution, no kinematic broadening), × 10^logmass</td>
+</tr>
+<tr>
+<td><code>out['prediction']['spectra_intrinsic']</code></td>
+<td><code>(N, n_wave)</code></td>
+<td>stellar continuum only: no dust, no nebular, ionising continuum included</td>
+</tr>
+<tr>
+<td><code>out['prediction']['spectra_dustfree']</code></td>
+<td><code>(N, n_wave)</code></td>
+<td>stars + nebular continuum + lines, no dust</td>
+</tr>
+<tr>
+<td><code>out['derived'][name]</code></td>
+<td><code>(N,)</code> or <code>(N, k)</code></td>
+<td>your functions (below)</td>
+</tr>
+<tr>
+<td><code>out['bestfit']</code></td>
+<td>same tree, one draw</td>
+<td>the highest-likelihood raw sample, with all of the above</td>
+</tr>
+<tr>
+<td><code>out['meta']</code></td>
+<td></td>
+<td><code>n_samples</code>, <code>n_raw</code>, <code>seed</code>, <code>resampled</code>, <code>windows_myr</code>, <code>param_names</code>, <code>zred_fixed</code>, <code>cosmology</code>, <code>sampler</code>, <code>weights</code> (source), <code>log_evidence</code>, <code>log_evidence_err</code>, <code>observations</code>, <code>sfh_interp</code>, <code>sfh_per_bin</code></td>
+</tr>
+</tbody>
+</table>
+<p>Blocks can be switched off: <code>PostProcess(..., sfr=False, ssfr=False,
+uv=False, ionizing=False, predictions=False)</code>.</p>
+<h2 id="conventions-you-should-know">Conventions you should know<a class="headerlink" href="#conventions-you-should-know" title="Permanent link">&para;</a></h2>
+<p><strong>Draws.</strong> A nested-sampling result carries importance weights. They are
+recomputed from the dead points' log-likelihoods and birth contours
+(<code>ceridwen.sampler.ns_weights.nested_log_weights</code>, exact n_live counting,
+in the order of the samples) rather than read from the file: the
+<code>log_weights</code> stored by fits before 2026-09-03 were sorted by likelihood
+and misaligned with the sample arrays for the final live points (a warning
+tells you when the stored weights differ). The draws are then resampled to
+equal weight (<code>n_samples</code>, default 2000, <code>seed</code> fixed), so a histogram or
+a median of any array is the posterior. A NUTS result has uniform weights
+and is used as it is (<code>n_samples</code> subsamples it). <code>bestfit</code> is the raw
+sample with the highest log-likelihood, not a draw.</p>
+<p><strong>Star formation.</strong> After the transforms <code>theta['sfh']</code> is the SFH shape in
+the CSP's convention. The physical SFR is that shape × 10^logmass when
+<code>logmass</code> is a parameter: the CSP scales the spectrum, not the SFH, so
+<code>logmass</code> is the formed mass and the shape integrates to one solar mass
+under <code>logsfr_ratios_to_sfh</code>. <code>sfrW</code> is the mean SFR over the last W Myr of
+the same piecewise function the weight kernel integrates: constant per bin
+for <code>sfh_interp="step"</code>, linear between nodes for <code>"linear"</code>; beyond the
+oldest node the SFR is zero. <code>ssfrW</code> divides by the formed mass; no stellar
+return fraction is applied, because the SSP grid carries none.</p>
+<p><strong>Model-grid spectra</strong> are rest-frame luminosity densities: no distance, no
+(1+z), no IGM. To compare with an observation use the per-observation
+predictions, which are what the likelihood saw.</p>
+<p><strong>UV and ionising photons.</strong> <code>LUV</code> is the trapezoid mean of L_ν over
+1450–1550 Å rest; <code>MUV = −2.5 log10(LUV / (4π (10 pc)²) / 3631 Jy)</code>. <code>nion</code>
+is <code>(L⊙/h) ∫_{λ&lt;912 Å} L_ν/λ dλ</code> of the intrinsic spectrum with the constants
+of <code>NebularGridModel.compute_log_qq</code>, so it is the Q the fit itself used;
+<code>xion = nion / LUV_intrinsic</code>. <code>fesc</code> is <code>frac_obrun</code> as sampled (or fixed).</p>
+<h2 id="your-own-quantities">Your own quantities<a class="headerlink" href="#your-own-quantities" title="Permanent link">&para;</a></h2>
+<p>A <code>derived</code> function receives one <code>SpectrumSample</code> and returns a float or a
+1-D array; it is evaluated per draw (a Python loop, so keep it cheap) and
+for the best fit:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">A_V</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>                                   <span class="c1"># V-band attenuation from the two spectra</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">i</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">index_of</span><span class="p">(</span><span class="mf">5500.0</span><span class="p">)</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="k">return</span> <span class="mf">2.5</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">dustfree</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">/</span> <span class="n">s</span><span class="o">.</span><span class="n">full</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="k">def</span><span class="w"> </span><span class="nf">L_optical</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>                             <span class="c1"># erg/s in 4000-7000 A rest, dust-attenuated</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">luminosity</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">full</span><span class="p">,</span> <span class="mf">4000.0</span><span class="p">,</span> <span class="mf">7000.0</span><span class="p">)</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="k">def</span><span class="w"> </span><span class="nf">beta_UV</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>                               <span class="c1"># UV slope of the full model</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">m</span> <span class="o">=</span> <span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span> <span class="o">&gt;</span> <span class="mi">1300</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span> <span class="o">&lt;</span> <span class="mi">2600</span><span class="p">)</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">flam</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">full</span><span class="p">[</span><span class="n">m</span><span class="p">]</span> <span class="o">/</span> <span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span><span class="p">[</span><span class="n">m</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">polyfit</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span><span class="p">[</span><span class="n">m</span><span class="p">]),</span> <span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">flam</span><span class="p">),</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="n">pp</span> <span class="o">=</span> <span class="n">PostProcess</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">derived</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;A_V&quot;</span><span class="p">:</span> <span class="n">A_V</span><span class="p">,</span> <span class="s2">&quot;L_opt&quot;</span><span class="p">:</span> <span class="n">L_optical</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">:</span> <span class="n">beta_UV</span><span class="p">})</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="n">out</span> <span class="o">=</span> <span class="n">pp</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="n">out</span><span class="p">[</span><span class="s2">&quot;derived&quot;</span><span class="p">][</span><span class="s2">&quot;A_V&quot;</span><span class="p">]</span>                         <span class="c1"># (N,)</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="n">out</span><span class="p">[</span><span class="s2">&quot;bestfit&quot;</span><span class="p">][</span><span class="s2">&quot;derived&quot;</span><span class="p">][</span><span class="s2">&quot;A_V&quot;</span><span class="p">]</span>              <span class="c1"># float</span>
+</code></pre></div>
+<p><code>SpectrumSample</code> carries <code>wave_rest</code>, <code>full</code>, <code>intrinsic</code>, <code>dustfree</code> (all
+L⊙/Hz × 10^logmass), <code>theta</code> (this draw after the transforms, numpy), <code>zred</code>,
+<code>logmass</code>, <code>sfr</code>, <code>lookback_gyr</code>, <code>cosmo</code>, and the helpers <code>index_of(λ)</code>,
+<code>mean_lnu(spec, lo, hi)</code> and <code>luminosity(spec, lo, hi)</code>.</p>
+<h2 id="figures">Figures<a class="headerlink" href="#figures" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">pp</span><span class="o">.</span><span class="n">figures</span><span class="p">(</span><span class="s2">&quot;post_figs/&quot;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">&quot;ID 1009077&quot;</span><span class="p">)</span>      <span class="c1"># summary.pdf, corner.pdf, diagnostics.pdf</span>
+</code></pre></div>
+<p><code>ceridwen.plotting</code> makes three per-galaxy figures from the output (plain
+matplotlib; <code>plotting.COLORS</code> holds the blue default palette and is the only
+styling): a <strong>summary</strong> page (observed-frame SED with the 16–84 % model band,
+data, posterior photometry and χ residuals; emission-line residuals with S/N;
+the SFH with prior and posterior bands and the best fit; 1-D marginals with
+median, 16–84 % and best fit; header with z, log M, log SFR10, χ²/ν of the best
+fit and ln Z), a <strong>corner</strong> plot of all fitted parameters (median dashed,
+maximum-likelihood sample in red), and a <strong>diagnostics</strong> page (nested sampling:
+dead points in deletion order coloured by posterior weight, the log-likelihood
+run and the cumulative posterior weight with ln Z and the effective sample size;
+MCMC: per-chain traces with split-R̂ and ESS). The functions
+<code>summary_figure(out, model)</code>, <code>corner_figure(out)</code> and
+<code>diagnostic_figure(result, out)</code> return the matplotlib figures for further
+editing.</p>
+<h2 id="saving">Saving<a class="headerlink" href="#saving" title="Permanent link">&para;</a></h2>
+<p><code>pp.save("post.npz")</code> writes a flat <code>.npz</code> with <code>/</code>-joined keys
+(<code>extras/sfh/sfr10</code>, <code>bestfit/theta/logmass</code>, ...); strings and lists in
+<code>meta</code> are stored as JSON. <code>load_postprocess(path)</code> returns the nested dict
+again.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

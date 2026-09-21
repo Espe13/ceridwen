@@ -364,6 +364,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#alpha-enhanced-grids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        α-enhanced grids: download, don't build
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#installing-fsps-and-setting-sps_home" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -481,6 +492,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../api/" class="md-nav__link">
         
   
@@ -523,9 +561,9 @@
 
 <h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
 <div class="admonition warning">
-<p class="admonition-title">Requires Python 3.11</p>
+<p class="admonition-title">Requires Python 3.11+</p>
 <p>Nested sampling depends on the official <code>blackjax</code> (its merged NSS), which
-requires Python 3.11. Create the environment with exactly that version.</p>
+requires Python 3.11 or newer. The examples below use 3.11.</p>
 </div>
 <p>A fresh conda environment is the easy route:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>ceridwen<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.11<span class="w"> </span>-y
@@ -537,8 +575,9 @@ requires Python 3.11. Create the environment with exactly that version.</p>
 </code></pre></div>
 <p>This pulls everything needed to import CERIDWEN, build the forward model, and run
 NUTS / VI / nested sampling <strong>including posterior plotting</strong>: <code>jax</code>, <code>jaxlib</code>,
-<code>numpy</code>, <code>scipy</code>, <code>matplotlib</code>, <code>h5py</code>, <code>astropy</code>, <code>sedpy-jax</code>,
-<code>tensorflow-probability</code>, <code>blackjax</code>, <code>tqdm</code>, <code>optax</code>, and <code>anesthetic</code>. The only
+<code>numpy</code>, <code>scipy</code>, <code>matplotlib</code>, <code>h5py</code>, <code>astropy</code>,
+<code>tensorflow-probability</code>, <code>blackjax</code>, <code>tqdm</code>, <code>fastprogress</code>, <code>optax</code>,
+<code>anesthetic</code>, and <code>pytest</code>. The only
 thing not installed automatically is FSPS (see below).</p>
 <p>There are no extras to choose. <code>pip install .</code> includes VI, nested-sampling
 plotting, and the test runner. FSPS is installed separately (see below), because
@@ -547,32 +586,85 @@ documentation site needs <code>pip install ".[docs]"</code> (maintainers only).<
 <div class="admonition note">
 <p class="admonition-title">blackjax</p>
 <p>Nested sampling uses <code>blackjax.nss</code>, which is merged into the official
-blackjax but not yet in a tagged PyPI release, so CERIDWEN pins a fixed
-blackjax commit (<code>f73e12956</code>), so everyone installs the same validated state.
-This is why CERIDWEN installs from source/GitHub rather than PyPI for now;
-once a blackjax release ships NSS it becomes a normal version pin.</p>
+blackjax but not yet in a tagged PyPI release. CERIDWEN therefore pins a
+fixed blackjax commit (<code>f73e12956</code>) and installs it from GitHub, so every
+install gets the same validated state. The pin is also why CERIDWEN itself
+is installed from a clone rather than PyPI (PyPI refuses packages with
+direct-URL dependencies). Both revert to normal version pins once a
+blackjax release ships NSS.</p>
 </div>
 <h2 id="getting-the-ssp-grid">Getting the SSP grid<a class="headerlink" href="#getting-the-ssp-grid" title="Permanent link">&para;</a></h2>
 <p>Fitting needs a pre-computed SSP grid (an HDF5 file). The quickstart resolves
-it in the order <code>$SSP_FILE</code>, then <code>examples/ssp_data.h5</code>.</p>
+it in the order <code>$SSP_FILE</code>, then <code>examples/ssp_data.h5</code>, then a local
+developer grid at <code>ceridwen/data/test_data/ssp_data_bpass.h5</code> (not shipped
+in the repository).</p>
 <ol>
-<li><strong>Build your own with FSPS (recommended).</strong> Install FSPS (below) and let
-   the quickstart build the grid on first run, or call
+<li><strong>Build your own with FSPS (recommended for custom choices).</strong> Install
+   FSPS (below) and let the quickstart build the grid on first run, or call
    <code>SSPData.from_fsps(save_to="examples/ssp_data.h5", imf_type=1)</code> directly.
    You control the isochrones, spectral library, and IMF. FSPS is needed
    anyway for nebular and dust emission, which read the CLOUDY and Draine &amp; Li
    data from <code>$SPS_HOME</code>.</li>
 <li>
 <p><strong>Download from Zenodo (no FSPS needed):</strong>
-   <a href="https://doi.org/10.5281/zenodo.21221634">doi:10.5281/zenodo.21221634</a>.
-   Two grids are provided: <code>ssp_data.h5</code> (MIST isochrones, MILES spectra,
-   Chabrier IMF) and <code>ssp_data_bpass.h5</code> (BPASS v2 binary SSPs). For the
-   quickstart:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-L<span class="w"> </span>-o<span class="w"> </span>examples/ssp_data.h5<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="s2">&quot;https://zenodo.org/records/21221634/files/ssp_data.h5?download=1&quot;</span>
+   <a href="https://doi.org/10.5281/zenodo.21977508">doi:10.5281/zenodo.21977508</a>.
+   The canonical grids are registered in <code>ceridwen.ssps.grid_fetch</code>
+   (<code>mist_miles_chab</code> for MIST+MILES with a Chabrier IMF, <code>mist_bpass_v2</code>
+   for BPASS binary populations, plus the α-enhanced grids below), so the
+   easiest route is by name — downloaded once into <code>~/.ceridwen/grids</code>
+   (override with <code>$CERIDWEN_GRID_DIR</code>) and verified against a pinned
+   SHA-256 on every fetch:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.ssps</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_grid</span><span class="p">,</span> <span class="n">available_grids</span><span class="p">,</span> <span class="n">SSPData</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">available_grids</span><span class="p">())</span>                       <span class="c1"># name -&gt; description</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">fetch_grid</span><span class="p">(</span><span class="s2">&quot;mist_miles_chab&quot;</span><span class="p">))</span>
+</code></pre></div>
+<p>or by hand, e.g. for the quickstart location:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-L<span class="w"> </span>-o<span class="w"> </span>examples/ssp_data.h5<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="s2">&quot;https://zenodo.org/records/21977508/files/ssp_data_mist_miles.h5?download=1&quot;</span>
 </code></pre></div>
 </li>
 </ol>
+<h2 id="alpha-enhanced-grids">α-enhanced grids: download, don't build<a class="headerlink" href="#alpha-enhanced-grids" title="Permanent link">&para;</a></h2>
+<p>The [α/Fe]-aware grids for <code>CSPBasis_afe</code> are a special case, in both
+directions:</p>
+<ul>
+<li><strong>Building them yourself is hard</strong> — it requires python-fsps compiled from
+  source with <code>AFE_FLAG=1</code> against the FSPS v4.0 data tree (aMIST isochrones</li>
+<li>C3K spectra), an easy source of silent misbuilds.</li>
+<li><strong>Downloading them is all you need</strong> — <code>CSPBasis_afe</code> (a subclass of
+  <code>CSPBasis</code> that adds the [α/Fe] interpolation and drops the nebular
+  arguments) carries
+  <strong>no nebular model</strong> (no α-enhanced CLOUDY tables exist), so nothing is
+  read from <code>$SPS_HOME</code> at fit time unless you also switch on
+  <code>add_dust_emission=True</code> (the dust-emission templates come from the FSPS
+  data files). With the downloaded grid and no dust emission, fitting [α/Fe]
+  requires <strong>no FSPS install at all</strong>: skip the whole FSPS section below.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.ssps</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_grid</span><span class="p">,</span> <span class="n">SSPDataAfe</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.csp</span><span class="w"> </span><span class="kn">import</span> <span class="n">CSPBasis_afe</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">Cosmology</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">path</span> <span class="o">=</span> <span class="n">fetch_grid</span><span class="p">(</span><span class="s2">&quot;amist_c3k_hr_krou_afe&quot;</span><span class="p">)</span>     <span class="c1"># cached + checksummed (~612 MB)</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">ssp</span>  <span class="o">=</span> <span class="n">SSPDataAfe</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>                   <span class="c1"># (n_afe, n_Z, n_age, n_wave)</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">csp</span>  <span class="o">=</span> <span class="n">CSPBasis_afe</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="n">lookback_time</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">12.0</span><span class="p">,</span> <span class="mi">9</span><span class="p">),</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>                    <span class="n">cosmo</span><span class="o">=</span><span class="n">Cosmology</span><span class="o">.</span><span class="n">planck18</span><span class="p">(),</span> <span class="n">zh_const</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</code></pre></div>
+<p>The current deposit ships one α grid: <code>amist_c3k_hr_krou_afe</code>
+(high-resolution C3K, Kroupa IMF, 612 MB, schema 2.1 — loads as downloaded,
+shown above). The low-resolution Chabrier grid behind the methods-paper mock
+suite, <code>amist_c3k_lr_chab_afe</code>, lives only in an older version of the deposit
+and predates schema 2; if you need it to reproduce the paper,
+<code>fetch_grid("amist_c3k_lr_chab_afe")</code> still downloads it, then upgrade it once
+with</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>python<span class="w"> </span>scripts/convert_grids_schema2.py<span class="w"> </span>~/.ceridwen/grids/amist_c3k_lr_chab_afe.h5
+</code></pre></div>
+<p>and load the <code>amist_c3k_lr_chab_afe_schema2.h5</code> it writes alongside.</p>
+<p><code>CSPBasis_afe</code> accepts only α-aware (4-D) grids; passing a solar-scaled 3-D
+grid raises a <code>TypeError</code> pointing you back to <code>CSPBasis</code>. Conversely the
+nebular and dust-emission switches of <code>CSPBasis</code> still need <code>$SPS_HOME</code>, so
+solar-scaled fits with emission keep using the FSPS data files as before.</p>
 <h2 id="installing-fsps-and-setting-sps_home">Installing FSPS and setting <code>$SPS_HOME</code><a class="headerlink" href="#installing-fsps-and-setting-sps_home" title="Permanent link">&para;</a></h2>
 <p>CERIDWEN uses <a href="https://github.com/cconroy20/fsps">FSPS</a> (via the
 <a href="https://dfm.io/python-fsps"><code>python-fsps</code></a> wrapper) to build the SSP cache. The
@@ -582,33 +674,33 @@ CERIDWEN reads those files directly from <code>$SPS_HOME</code> (FSPS itself is 
 fit time; it just provides the data).</p>
 <p>FSPS is not a pure-Python wheel: it needs a Fortran compiler and a clone of the
 FSPS data files.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># 1. A Fortran compiler (pick one for your system):</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>brew<span class="w"> </span>install<span class="w"> </span>gcc<span class="w">                       </span><span class="c1"># macOS (Homebrew)</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>gfortran<span class="w">          </span><span class="c1"># Debian/Ubuntu</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>conda<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>conda-forge<span class="w"> </span>gfortran<span class="w">  </span><span class="c1"># any OS, inside your conda env</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># 2. Pick where the FSPS data should live (ANY path: $HOME, a data disk, cluster</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1">#    scratch, ...). git clone writes to the absolute $SPS_HOME path, so it does</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="c1">#    not matter which directory you run it from.</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SPS_HOME</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/fsps&quot;</span><span class="w">           </span><span class="c1"># &lt;- edit to your chosen location</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cconroy20/fsps.git<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SPS_HOME</span><span class="s2">&quot;</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1"># 3. Install the Python wrapper (it compiles against $SPS_HOME):</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;fsps&gt;=0.4.4&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># 1. A Fortran compiler (pick one for your system):</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>brew<span class="w"> </span>install<span class="w"> </span>gcc<span class="w">                       </span><span class="c1"># macOS (Homebrew)</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>gfortran<span class="w">          </span><span class="c1"># Debian/Ubuntu</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>conda<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>conda-forge<span class="w"> </span>gfortran<span class="w">  </span><span class="c1"># any OS, inside your conda env</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># 2. Pick where the FSPS data should live (ANY path: $HOME, a data disk, cluster</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1">#    scratch, ...). git clone writes to the absolute $SPS_HOME path, so it does</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="c1">#    not matter which directory you run it from.</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SPS_HOME</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/fsps&quot;</span><span class="w">           </span><span class="c1"># &lt;- edit to your chosen location</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/cconroy20/fsps.git<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SPS_HOME</span><span class="s2">&quot;</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="c1"># 3. Install the Python wrapper (it compiles against $SPS_HOME):</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;fsps&gt;=0.4.4&quot;</span>
 </code></pre></div>
 <div class="admonition tip">
 <p class="admonition-title">Make <code>$SPS_HOME</code> permanent</p>
 <p><code>python-fsps</code> needs <code>$SPS_HOME</code> in every shell session and fails to import
 without it. Add it to your shell startup file (use the same path as above):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export SPS_HOME=&quot;$HOME/fsps&quot;&#39;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.zshrc<span class="w">   </span><span class="c1"># zsh (macOS default)</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export SPS_HOME=&quot;$HOME/fsps&quot;&#39;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.bashrc<span class="w">  </span><span class="c1"># bash (most Linux)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export SPS_HOME=&quot;$HOME/fsps&quot;&#39;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.zshrc<span class="w">   </span><span class="c1"># zsh (macOS default)</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export SPS_HOME=&quot;$HOME/fsps&quot;&#39;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.bashrc<span class="w">  </span><span class="c1"># bash (most Linux)</span>
 </code></pre></div>
 <p>Open a new terminal and check <code>echo $SPS_HOME</code> prints the path.</p>
 </div>
 <h2 id="verify-your-setup">Verify your setup<a class="headerlink" href="#verify-your-setup" title="Permanent link">&para;</a></h2>
 <p>With FSPS installed and <code>$SPS_HOME</code> set, run the environment doctor before your
 first fit:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>python<span class="w"> </span>-m<span class="w"> </span>ceridwen.check
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>python<span class="w"> </span>-m<span class="w"> </span>ceridwen.check
 </code></pre></div>
 <p>It prints an <code>ok</code> / <code>warn</code> / <code>FAIL</code> line per component (dependencies, FSPS,
 <code>$SPS_HOME</code>, nested-sampling support) with the fix for anything missing. Run it

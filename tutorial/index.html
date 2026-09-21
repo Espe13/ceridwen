@@ -536,6 +536,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../api/" class="md-nav__link">
         
   
@@ -585,9 +612,11 @@ them, or all three together, with no change to the model or sampler.</p>
 <p>This tutorial builds one of each and fits them jointly. Replace the mock arrays
 with your own data.</p>
 <div class="admonition tip">
-<p class="admonition-title">Runnable notebook</p>
-<p>A notebook version of this tutorial is in the repository at
-<a href="https://github.com/Espe13/ceridwen/blob/main/examples/tutorial_joint_fit.ipynb"><code>examples/tutorial_joint_fit.ipynb</code></a>.</p>
+<p class="admonition-title">Runnable scripts</p>
+<p>The runnable counterparts of this tutorial are
+<code>examples/demo_2_photometry_lines.py</code> (photometry + lines) and
+<code>examples/demo_3_spectrum_advanced.py</code> (photometry + spectrum with an
+<code>Instrument</code>, a fitted <code>sigma_gal</code>, line masking and a noise floor).</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Before you start</p>
@@ -602,7 +631,7 @@ birth-cloud dust here.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">jax</span><span class="o">,</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span><span class="p">,</span> <span class="n">CSPBasis</span><span class="p">,</span> <span class="n">SedModel</span><span class="p">,</span> <span class="n">fitSED</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span><span class="p">,</span> <span class="n">CSPBasis</span><span class="p">,</span> <span class="n">SedModel</span><span class="p">,</span> <span class="n">fitSED</span><span class="p">,</span> <span class="n">Kinematics</span><span class="p">,</span> <span class="n">Instrument</span><span class="p">,</span> <span class="n">Cosmology</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.observation</span><span class="w"> </span><span class="kn">import</span> <span class="n">Photometry</span><span class="p">,</span> <span class="n">Spectrum</span><span class="p">,</span> <span class="n">Lines</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.priors</span><span class="w"> </span><span class="kn">import</span> <span class="n">Uniform</span><span class="p">,</span> <span class="n">ClippedNormal</span><span class="p">,</span> <span class="n">StudentT</span>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.model</span><span class="w"> </span><span class="kn">import</span> <span class="n">logsfr_ratios_to_sfh</span>
@@ -613,30 +642,61 @@ birth-cloud dust here.</p>
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="n">ZRED</span> <span class="o">=</span> <span class="mf">0.5</span>                                  <span class="c1"># spectroscopic redshift of the galaxy</span>
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="n">ssp</span><span class="p">,</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">add_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_diffuse_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>   <span class="c1"># birth-cloud + diffuse attenuation</span>
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="n">add_neb</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                           <span class="c1"># nebular continuum + lines (needs $SPS_HOME)</span>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="n">add_igm</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                           <span class="c1"># Madau (1995), auto-scales with zred</span>
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>    <span class="c1"># sps_home defaults to $SPS_HOME</span>
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="p">)</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="c1"># The cosmology is a property of the analysis: choose it once, here, and every</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="c1"># distance and age in the fit comes from it.  Presets: Cosmology.planck18(),</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="c1"># planck15(), wmap9() (prospector&#39;s); Cosmology.flat(H0, Om0) for the two</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="c1"># numbers a paper quotes; Cosmology.from_astropy(...) for any flat astropy</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="c1"># cosmology.  CSPBasis requires it; SedModel reads it from the CSP.</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">planck18</span><span class="p">()</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="c1"># lookback_time is the static SFH node grid (Gyr, increasing, index 0 = today,</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="c1"># &gt;= 2 nodes). Its oldest node must not exceed the age of the universe at ZRED,</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="c1"># cosmo.age(0.5) = 8.6 Gyr under Planck18; SedModel refuses a grid that does.</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="c1"># CSPBasis refuses to build without a grid (or an explicit theta).</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="n">lookback</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">8.0</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>        <span class="c1"># 5 nodes -&gt; 4 free logsfr_ratios</span>
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>    <span class="n">ssp</span><span class="p">,</span>
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>    <span class="n">lookback_time</span><span class="o">=</span><span class="n">lookback</span><span class="p">,</span>
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>    <span class="n">cosmo</span><span class="o">=</span><span class="n">cosmo</span><span class="p">,</span>
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>    <span class="n">zh_const</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sfh_interp</span><span class="o">=</span><span class="s2">&quot;step&quot;</span><span class="p">,</span>       <span class="c1"># one metallicity &quot;Z&quot;; zh_const=False samples a history &quot;zh&quot;</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>    <span class="n">add_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_diffuse_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>   <span class="c1"># birth-cloud + diffuse attenuation</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>    <span class="n">add_neb</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                           <span class="c1"># nebular continuum + lines (needs $SPS_HOME)</span>
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>    <span class="n">add_igm</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                           <span class="c1"># Madau (1995), auto-scales with zred</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>    <span class="c1"># sps_home defaults to $SPS_HOME</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="p">)</span>
 </code></pre></div>
+<p>The galaxy's velocity dispersions are a property of the galaxy, not of any one
+observation, so they are set once, on the model (section 5), through a
+<code>Kinematics</code> object. Here we fit the stellar dispersion and tie the gas
+dispersion of the emission lines to it:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">kin</span> <span class="o">=</span> <span class="n">Kinematics</span><span class="p">(</span><span class="n">sigma_gal</span><span class="o">=</span><span class="s2">&quot;sigma_gal&quot;</span><span class="p">)</span>     <span class="c1"># free (theta key); sigma_gas tied to sigma_gal</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># Kinematics(sigma_gal=250.0, sigma_gas=&quot;sigma_gas&quot;)   stars fixed, gas free</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1"># Kinematics(sigma_gal=300.0)                          both fixed (the SedModel default)</span>
+</code></pre></div>
+<p>For photometry this choice has a cost: with a <em>sampled</em> <code>sigma_gas</code> (here tied
+to the sampled <code>sigma_gal</code>) the emission lines are painted onto the model grid
+and broadened at run time for every likelihood call; with a <em>fixed</em> <code>sigma_gas</code>
+(<code>Kinematics(sigma_gal="sigma_gal", sigma_gas=150.0)</code>, or both fixed) they enter
+the photometry through a static line-to-band basis, which is cheaper. Free
+redshift always uses the painted path. See <a href="../conventions/">Conventions</a>.</p>
 <h2 id="2-a-photometry">2. (a) Photometry<a class="headerlink" href="#2-a-photometry" title="Permanent link">&para;</a></h2>
 <p>Broadband fluxes in <strong>AB maggies</strong>, with filter names resolved from the
-<code>sedpy_jax</code> library. Photometry captures the full aperture, so it sees the
+filter library bundled with CERIDWEN (<code>python -c "from
+ceridwen.observation.filters import list_available_filters as f; print(f())"</code>
+lists all 293). Photometry captures the full aperture, so it sees the
 intrinsic (unscaled) line + continuum flux.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># If your catalogue is in nJy (common for JWST), convert to maggies and apply a</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># small error floor (here 5%), as the JADES pipeline does:</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">flux_nJy</span><span class="p">,</span> <span class="n">unc_nJy</span> <span class="o">=</span> <span class="n">my_phot_nJy</span><span class="p">,</span> <span class="n">my_phot_unc_nJy</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">unc_nJy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">unc_nJy</span> <span class="o">/</span> <span class="n">flux_nJy</span> <span class="o">&gt;</span> <span class="mf">0.05</span><span class="p">,</span> <span class="n">unc_nJy</span><span class="p">,</span> <span class="mf">0.05</span> <span class="o">*</span> <span class="n">flux_nJy</span><span class="p">)</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">phot</span> <span class="o">=</span> <span class="n">Photometry</span><span class="p">(</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">filters</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;jwst_f090w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f115w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f150w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f200w&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>             <span class="s2">&quot;jwst_f277w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f356w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f444w&quot;</span><span class="p">],</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">flux</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">flux_nJy</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1e-9</span> <span class="o">/</span> <span class="mf">3631.0</span><span class="p">,</span>        <span class="c1"># nJy -&gt; AB maggies</span>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">uncertainty</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">unc_nJy</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1e-9</span> <span class="o">/</span> <span class="mf">3631.0</span><span class="p">,</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;phot&quot;</span><span class="p">,</span>                    <span class="c1"># the key this observation is reported under</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># If your catalogue is in nJy (common for JWST), convert to maggies and apply a</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># small error floor (here 5%), as the JADES pipeline does:</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">flux_nJy</span><span class="p">,</span> <span class="n">unc_nJy</span> <span class="o">=</span> <span class="n">my_phot_nJy</span><span class="p">,</span> <span class="n">my_phot_unc_nJy</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">unc_nJy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">unc_nJy</span> <span class="o">/</span> <span class="n">flux_nJy</span> <span class="o">&gt;</span> <span class="mf">0.05</span><span class="p">,</span> <span class="n">unc_nJy</span><span class="p">,</span> <span class="mf">0.05</span> <span class="o">*</span> <span class="n">flux_nJy</span><span class="p">)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">phot</span> <span class="o">=</span> <span class="n">Photometry</span><span class="p">(</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">filters</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;jwst_f090w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f115w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f150w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f200w&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>             <span class="s2">&quot;jwst_f277w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f356w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f444w&quot;</span><span class="p">],</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">flux</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">flux_nJy</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1e-9</span> <span class="o">/</span> <span class="mf">3631.0</span><span class="p">,</span>        <span class="c1"># nJy -&gt; AB maggies</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">uncertainty</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">unc_nJy</span><span class="p">)</span> <span class="o">*</span> <span class="mf">1e-9</span> <span class="o">/</span> <span class="mf">3631.0</span><span class="p">,</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;phot&quot;</span><span class="p">,</span>                    <span class="c1"># the key this observation is reported under</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="p">)</span>
 </code></pre></div>
 <p>Optional: <code>mask=</code> (bool per band, True = used) and <code>upper_limit=</code> (bool per band;
 non-detections enter as one-sided χ²).</p>
@@ -644,141 +704,251 @@ non-detections enter as one-sided χ²).</p>
 <p>A densely-sampled spectrum. Pass the <strong>observed-frame, vacuum</strong> wavelength grid
 in Å (the pixel wavelengths as delivered by the instrument, since the forward
 model redshifts the model spectrum by <code>(1 + zred)</code> onto these pixels; at
-<code>zred = 0</code> observed and rest frame coincide) and flux in <code>F_ν</code> (same system as
-the model).
-Set <code>resolution</code> + <code>smoothtype</code> to have the forward model apply instrumental
-broadening.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">spec</span> <span class="o">=</span> <span class="n">Spectrum</span><span class="p">(</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">wavelength</span><span class="o">=</span><span class="n">my_obs_wave_aa</span><span class="p">,</span>      <span class="c1"># Å, vacuum, OBSERVED frame, shape (n_pix,)</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">flux</span><span class="o">=</span><span class="n">my_spec_fnu</span><span class="p">,</span>               <span class="c1"># F_nu per pixel</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">uncertainty</span><span class="o">=</span><span class="n">my_spec_unc</span><span class="p">,</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">resolution</span><span class="o">=</span><span class="mf">120.0</span><span class="p">,</span>               <span class="c1"># see smoothtype for the unit</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">smoothtype</span><span class="o">=</span><span class="s2">&quot;vel&quot;</span><span class="p">,</span>               <span class="c1"># &quot;vel&quot; (km/s), &quot;R&quot;, &quot;lambda&quot; (Å), or &quot;lsf&quot;</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">inres</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>                      <span class="c1"># model library intrinsic resolution to deconvolve</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">noise_floor</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>               <span class="c1"># 1% multiplicative calibration floor (optional)</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;spec&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="p">)</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="c1"># Optional: mask known emission lines from the *continuum* spectrum fit so they</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="c1"># do not double-count against the Lines object, redshifting line centres first.</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="n">spec</span><span class="o">.</span><span class="n">mask_lines</span><span class="p">([</span><span class="mf">4861.3</span><span class="p">,</span> <span class="mf">5006.8</span><span class="p">,</span> <span class="mf">6562.8</span><span class="p">],</span> <span class="n">dv</span><span class="o">=</span><span class="mf">500.0</span><span class="p">,</span> <span class="n">zred</span><span class="o">=</span><span class="n">ZRED</span><span class="p">)</span>
+<code>zred = 0</code> observed and rest frame coincide) and flux in observed-frame <code>F_ν</code>
+in erg s⁻¹ cm⁻² Hz⁻¹ (cgs, the model's unit; 1 nJy = 1e-32).
+The instrument's line-spread function is attached to the spectrum as an
+<code>Instrument</code>. Its unit <strong>and</strong> its convention are the name of the constructor,
+because published resolutions come in several units and in two resolving-power
+conventions that differ by 2.35x (datasheets quote <code>R = λ/FWHM</code>, the
+sedpy/Prospector tradition <code>R = λ/σ</code>); there is deliberately no plain <code>R</code>.
+The SSP library's own resolution (stored in every schema-2 grid) is subtracted
+in quadrature from the instrumental width automatically, pixel by pixel; you do
+not need to set anything for that. The galaxy's own dispersion is <strong>not</strong> set
+here: it comes from the model-level <code>Kinematics</code> (section 1) and is combined
+with the instrument in quadrature at projection time, so nothing is broadened
+twice.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">spec</span> <span class="o">=</span> <span class="n">Spectrum</span><span class="p">(</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">wavelength</span><span class="o">=</span><span class="n">my_obs_wave_aa</span><span class="p">,</span>      <span class="c1"># Å, vacuum, OBSERVED frame, shape (n_pix,)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">flux</span><span class="o">=</span><span class="n">my_spec_fnu</span><span class="p">,</span>               <span class="c1"># F_nu per pixel, erg s^-1 cm^-2 Hz^-1 (cgs)</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">uncertainty</span><span class="o">=</span><span class="n">my_spec_unc</span><span class="p">,</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">instrument</span><span class="o">=</span><span class="n">Instrument</span><span class="o">.</span><span class="n">sigma_kms</span><span class="p">(</span><span class="mf">120.0</span><span class="p">),</span>   <span class="c1"># LSF: sigma in km/s</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="c1"># Instrument.R_fwhm(2700)                 # datasheet R = lambda/FWHM</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="c1"># Instrument.R_sigma(6358)                # sedpy / Prospector R = lambda/sigma (= R_fwhm(2700))</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="c1"># Instrument.fwhm_aa(2.5)                 # FWHM in Angstrom, observed frame</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="c1"># Instrument.R_fwhm(R_arr, wave=my_obs_wave_aa)   # per-pixel curve (prism)</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="c1"># subtract_library=True (default): the SSP library resolution is removed</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    <span class="c1"># in quadrature; False only for a grid whose stored curve you distrust.</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="n">noise_floor</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>               <span class="c1"># 1% multiplicative calibration floor (optional)</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;spec&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="p">)</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="c1"># Optional: mask known emission lines from the *continuum* spectrum fit so they</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="c1"># do not double-count against the Lines object, redshifting line centres first.</span>
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="n">spec</span><span class="o">.</span><span class="n">mask_lines</span><span class="p">([</span><span class="mf">4861.3</span><span class="p">,</span> <span class="mf">5006.8</span><span class="p">,</span> <span class="mf">6562.8</span><span class="p">],</span> <span class="n">dv</span><span class="o">=</span><span class="mf">500.0</span><span class="p">,</span> <span class="n">zred</span><span class="o">=</span><span class="n">ZRED</span><span class="p">)</span>
 </code></pre></div>
 <p>Other optional knobs: <code>calibration=</code> (per-pixel multiplicative flux-calibration
-vector), <code>sigma_losvd=</code> (galaxy velocity dispersion applied before instrumental
-smoothing), and <code>mask=</code>.</p>
+vector) and <code>mask=</code>. If the instrument is <em>finer</em> than the library at some
+pixels the continuum stays at library resolution there (the right model for a
+coarse grid) and you are warned with the pixel count and range; a warning over
+the whole spectrum with a high-resolution grid means a wrong unit on the
+<code>Instrument</code>.</p>
 <h2 id="4-c-emission-lines">4. (c) Emission lines<a class="headerlink" href="#4-c-emission-lines" title="Permanent link">&para;</a></h2>
-<p>Integrated line fluxes. <code>line_ind</code> are <strong>1-based</strong> indices into FSPS's
-<code>emlines_info.dat</code>; <code>wavelength</code> are the vacuum rest wavelengths in Å.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Catalogue line fluxes are often quoted in 1e-20 erg s^-1 cm^-2; scale to</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="c1"># absolute CGS to match the model (adjust the factor to your catalogue).</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">LINE_UNIT</span> <span class="o">=</span> <span class="mf">1.0e-20</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">lines</span> <span class="o">=</span> <span class="n">Lines</span><span class="p">(</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">line_ind</span><span class="o">=</span><span class="p">[</span><span class="mi">59</span><span class="p">,</span> <span class="mi">62</span><span class="p">,</span> <span class="mi">63</span><span class="p">,</span> <span class="mi">71</span><span class="p">,</span> <span class="mi">72</span><span class="p">],</span>                         <span class="c1"># Hβ, [OIII]4959/5007, Hα, [NII]6583</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">line_names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Hbeta&quot;</span><span class="p">,</span> <span class="s2">&quot;[OIII]4959&quot;</span><span class="p">,</span> <span class="s2">&quot;[OIII]5007&quot;</span><span class="p">,</span> <span class="s2">&quot;Halpha&quot;</span><span class="p">,</span> <span class="s2">&quot;[NII]6583&quot;</span><span class="p">],</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">wavelength</span><span class="o">=</span><span class="p">[</span><span class="mf">4861.3</span><span class="p">,</span> <span class="mf">4958.9</span><span class="p">,</span> <span class="mf">5006.8</span><span class="p">,</span> <span class="mf">6562.8</span><span class="p">,</span> <span class="mf">6583.4</span><span class="p">],</span>   <span class="c1"># Å, vacuum rest</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">flux</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">my_line_flux</span><span class="p">)</span> <span class="o">*</span> <span class="n">LINE_UNIT</span><span class="p">,</span>             <span class="c1"># erg s^-1 cm^-2</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="n">uncertainty</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">my_line_unc</span><span class="p">)</span> <span class="o">*</span> <span class="n">LINE_UNIT</span><span class="p">,</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;lines&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="p">)</span>
+<p>Integrated line fluxes. <code>line_ind</code> are indices into FSPS's
+<code>emlines_info.dat</code>; <code>wavelength</code> are the vacuum rest wavelengths in Å. The
+forward model matches each line to the nebular grid <strong>by rest wavelength</strong>
+(and raises if no grid line lies within 1 Å), so the wavelengths are what must
+be right — the indices are bookkeeping, checked against the wavelength match
+and warned about on disagreement.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Catalogue line fluxes are often quoted in 1e-20 erg s^-1 cm^-2; scale to</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1"># absolute CGS to match the model (adjust the factor to your catalogue).</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">LINE_UNIT</span> <span class="o">=</span> <span class="mf">1.0e-20</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">lines</span> <span class="o">=</span> <span class="n">Lines</span><span class="p">(</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">line_ind</span><span class="o">=</span><span class="p">[</span><span class="mi">59</span><span class="p">,</span> <span class="mi">62</span><span class="p">,</span> <span class="mi">63</span><span class="p">,</span> <span class="mi">71</span><span class="p">,</span> <span class="mi">72</span><span class="p">],</span>                         <span class="c1"># Hβ, [OIII]4959/5007, Hα, [NII]6583</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">line_names</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Hbeta&quot;</span><span class="p">,</span> <span class="s2">&quot;[OIII]4959&quot;</span><span class="p">,</span> <span class="s2">&quot;[OIII]5007&quot;</span><span class="p">,</span> <span class="s2">&quot;Halpha&quot;</span><span class="p">,</span> <span class="s2">&quot;[NII]6583&quot;</span><span class="p">],</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">wavelength</span><span class="o">=</span><span class="p">[</span><span class="mf">4861.3</span><span class="p">,</span> <span class="mf">4958.9</span><span class="p">,</span> <span class="mf">5006.8</span><span class="p">,</span> <span class="mf">6562.8</span><span class="p">,</span> <span class="mf">6583.4</span><span class="p">],</span>   <span class="c1"># Å, vacuum rest</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">flux</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">my_line_flux</span><span class="p">)</span> <span class="o">*</span> <span class="n">LINE_UNIT</span><span class="p">,</span>             <span class="c1"># erg s^-1 cm^-2</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="n">uncertainty</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">my_line_unc</span><span class="p">)</span> <span class="o">*</span> <span class="n">LINE_UNIT</span><span class="p">,</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;lines&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="p">)</span>
 </code></pre></div>
+<p>The model prediction for a <code>Lines</code> observation is the line luminosity read
+from the nebular grid and carried through dust, mass, distance and IGM like the
+continuum; no profile and no width enter, so <code>Kinematics</code> and <code>Instrument</code>
+play no role here. A basis built with <code>add_neb=False</code> (and <code>CSPBasis_afe</code>,
+which has no nebular model) refuses a <code>Lines</code> observation with a <code>ValueError</code>
+rather than predicting zeros for it.</p>
 <div class="admonition tip">
-<p class="admonition-title">Slit losses and <code>eline_scaling</code></p>
-<p>Photometry sees the full field of view, but slit spectroscopy and
-aperture-measured line fluxes lose flux. The model parameter <code>eline_scaling</code>
-is the fractional aperture correction applied to the <strong>slit</strong> spectra and
-lines (1.0 = no loss, 0.65 = lines at 65%). Add a prior on it (below) to
-marginalise over the aperture mismatch when fitting photometry together with
-a slit spectrum/lines.</p>
+<p class="admonition-title">Two independent calibrations: <code>eline_scaling</code> and <code>spectrum_scaling</code></p>
+<p>Photometry sees the full field of view, but slit/fibre spectroscopy and
+aperture-measured line fluxes lose (or miscalibrate) flux. CERIDWEN
+exposes <strong>two separate, independent</strong> nuisances for this:</p>
+<ul>
+<li><code>eline_scaling</code> — the fractional aperture correction applied to the
+  emission-<strong>LINE</strong> component only (1.0 = no loss, 0.65 = lines at 65%).
+  It drives the <code>Lines</code> observation and does <strong>not</strong> touch the spectrum.</li>
+<li><code>spectrum_scaling</code> — a multiplicative spectrophotometric normalisation applied
+  to the whole <strong><code>Spectrum</code></strong> prediction (continuum + any lines), rescaling
+  it onto the photometric flux scale. Photometry is left unscaled, so it
+  anchors the absolute flux while <code>spectrum_scaling</code> absorbs the spectrum's
+  uncertain flux calibration (the Prospector <code>spec_norm</code> convention).</li>
+</ul>
+<p>The two are decoupled by construction: <code>eline_scaling</code> scales lines,
+<code>spectrum_scaling</code> scales the spectrum, and neither affects the photometry. Add a
+prior on each nuisance you want to marginalise over (below).</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Wavelength-dependent calibration: <code>spectrum_calib</code></p>
+<p>A grey factor cannot absorb a <em>shape</em> error in the spectrophotometric
+calibration (relative throughput, differential refraction, aperture colour
+terms; typical for slit spectra flux-calibrated against broad-band
+photometry). <code>spectrum_calib</code> is a vector of Legendre coefficients
+<code>c_1 .. c_order</code> multiplying the <code>Spectrum</code> prediction by
+<code>1 + sum_k c_k P_k(x)</code>, with <code>x</code> the observed pixel wavelength mapped
+affinely onto [-1, 1] (the Prospector <code>polyorder</code> / pPXF <code>mdegree</code>
+idea, but sampled, not solved analytically). There is no <code>c_0</code>: the
+level is <code>spectrum_scaling</code>, and the total factor is
+<code>spectrum_scaling * (1 + sum_k c_k P_k(x))</code>. Photometry is untouched, so
+keep photometry in the fit: it is what pins the continuum shape while the
+polynomial soaks up the spectrum-vs-photometry mismatch. Orders 2-6 are
+typical; higher orders start to eat real features (the 4000 Å break, wide
+molecular bands), so watch the recovered curve. Give it one prior, which is
+broadcast over the vector exactly like <code>logsfr_ratios</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">priors</span><span class="p">[</span><span class="s2">&quot;spectrum_calib&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">free_param_init</span><span class="p">[</span><span class="s2">&quot;spectrum_calib&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span>      <span class="c1"># order 4</span>
+</code></pre></div>
+<p>Absent from <code>theta</code>, the factor is exactly 1 (existing fits are unchanged).
+Implementation: <code>ceridwen/csp/spectrum_calibration.py</code>, applied in
+<code>_project_observations</code> of both <code>CSPBasis</code> and <code>CSPBasis_afe</code>.</p>
 </div>
 <h2 id="5-priors-and-the-model">5. Priors and the model<a class="headerlink" href="#5-priors-and-the-model" title="Permanent link">&para;</a></h2>
 <p>Collect the observations into a single list. Any subset is fine; use an empty
 list for a type you are not fitting. Then define priors for every free parameter.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">observations</span> <span class="o">=</span> <span class="p">[</span><span class="n">phot</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">lines</span><span class="p">]</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">priors</span> <span class="o">=</span> <span class="p">{</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="c1"># Stellar population. Z is log10 ABSOLUTE metallicity (grid ~[-4, -1.4]).</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="s2">&quot;Z&quot;</span><span class="p">:</span>                 <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=-</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">low</span><span class="o">=-</span><span class="mf">4.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=-</span><span class="mf">1.4</span><span class="p">),</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="s2">&quot;logmass&quot;</span><span class="p">:</span>           <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">7.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">12.5</span><span class="p">),</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">:</span>     <span class="n">StudentT</span><span class="p">(</span><span class="n">df</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">0.3</span><span class="p">),</span>   <span class="c1"># non-parametric SFH</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="c1"># Dust.</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="s2">&quot;diffuse_tau_kc&quot;</span><span class="p">:</span>    <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">low</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">4.0</span><span class="p">),</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="s2">&quot;diffuse_dust_index&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.4</span><span class="p">),</span>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>    <span class="s2">&quot;tau_pow&quot;</span><span class="p">:</span>           <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">low</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">4.0</span><span class="p">),</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>    <span class="s2">&quot;alpha_pow&quot;</span><span class="p">:</span>         <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">low</span><span class="o">=-</span><span class="mf">2.5</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.5</span><span class="p">),</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>    <span class="c1"># Nebular (required for the Lines / nebular continuum).</span>
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>    <span class="s2">&quot;gas_logz&quot;</span><span class="p">:</span>          <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.5</span><span class="p">),</span>
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>    <span class="s2">&quot;gas_logu&quot;</span><span class="p">:</span>          <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">4.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">),</span>
-<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>    <span class="c1"># Aperture correction for the slit spectrum + lines.</span>
-<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a>    <span class="s2">&quot;eline_scaling&quot;</span><span class="p">:</span>     <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">2.0</span><span class="p">),</span>
-<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="p">}</span>
-<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>
-<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="c1"># The non-parametric SFH is sampled as logsfr_ratios and turned into the per-bin</span>
-<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="c1"># sfh by a REGISTERED transform; this step is required for logsfr_ratios to work.</span>
-<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="n">sfh_times_yr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">csp</span><span class="o">.</span><span class="n">sfh_times</span><span class="p">)</span>
-<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="k">def</span><span class="w"> </span><span class="nf">logsfr_to_sfh</span><span class="p">(</span><span class="n">free_theta</span><span class="p">,</span> <span class="n">_t</span><span class="o">=</span><span class="n">sfh_times_yr</span><span class="p">):</span>
-<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a>    <span class="k">return</span> <span class="n">logsfr_ratios_to_sfh</span><span class="p">(</span><span class="n">free_theta</span><span class="p">[</span><span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">],</span> <span class="n">sfh_times_yr</span><span class="o">=</span><span class="n">_t</span><span class="p">)</span>
-<a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a>
-<a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="n">N_RATIOS</span> <span class="o">=</span> <span class="mi">4</span>   <span class="c1"># number of SFH bins - 1</span>
-<a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a><span class="n">model</span> <span class="o">=</span> <span class="n">SedModel</span><span class="p">(</span>
-<a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a>    <span class="n">csp</span><span class="p">,</span>
-<a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a>    <span class="n">observations</span><span class="o">=</span><span class="n">observations</span><span class="p">,</span>
-<a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a>    <span class="n">priors</span><span class="o">=</span><span class="n">priors</span><span class="p">,</span>
-<a id="__codelineno-4-31" name="__codelineno-4-31" href="#__codelineno-4-31"></a>    <span class="n">transforms</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;sfh&quot;</span><span class="p">:</span> <span class="n">logsfr_to_sfh</span><span class="p">},</span>        <span class="c1"># REQUIRED for logsfr_ratios</span>
-<a id="__codelineno-4-32" name="__codelineno-4-32" href="#__codelineno-4-32"></a>    <span class="n">free_param_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">N_RATIOS</span><span class="p">),</span>
-<a id="__codelineno-4-33" name="__codelineno-4-33" href="#__codelineno-4-33"></a>                     <span class="s2">&quot;logmass&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">10.0</span><span class="p">])},</span>
-<a id="__codelineno-4-34" name="__codelineno-4-34" href="#__codelineno-4-34"></a>    <span class="n">zred</span><span class="o">=</span><span class="n">ZRED</span><span class="p">,</span>                                <span class="c1"># fixed spectroscopic redshift</span>
-<a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a><span class="p">)</span>
-<a id="__codelineno-4-36" name="__codelineno-4-36" href="#__codelineno-4-36"></a>
-<a id="__codelineno-4-37" name="__codelineno-4-37" href="#__codelineno-4-37"></a><span class="c1"># Fixed knob not sampled here: the birth-cloud (Charlot &amp; Fall) slope.</span>
-<a id="__codelineno-4-38" name="__codelineno-4-38" href="#__codelineno-4-38"></a><span class="n">model</span><span class="o">.</span><span class="n">theta_init</span><span class="p">[</span><span class="s2">&quot;alpha_pow&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">1.0</span><span class="p">])</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">observations</span> <span class="o">=</span> <span class="p">[</span><span class="n">phot</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">lines</span><span class="p">]</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">priors</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="c1"># Stellar population. Z is log10 ABSOLUTE metallicity (MIST grids ~[-4.35, -1.35]).</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="c1"># Birth-cloud dust (&quot;tau_pow&quot;, &quot;alpha_pow&quot; for the powerlaw law) and every</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="c1"># other registered parameter needs a prior: print csp.param_names.</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    <span class="s2">&quot;Z&quot;</span><span class="p">:</span>                 <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=-</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">low</span><span class="o">=-</span><span class="mf">4.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=-</span><span class="mf">1.4</span><span class="p">),</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    <span class="s2">&quot;logmass&quot;</span><span class="p">:</span>           <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">7.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">12.5</span><span class="p">),</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">:</span>     <span class="n">StudentT</span><span class="p">(</span><span class="n">df</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">0.3</span><span class="p">),</span>   <span class="c1"># non-parametric SFH</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="c1"># Dust.</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    <span class="s2">&quot;diffuse_tau_kc&quot;</span><span class="p">:</span>    <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">low</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">4.0</span><span class="p">),</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="s2">&quot;diffuse_dust_index&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.4</span><span class="p">),</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>    <span class="s2">&quot;tau_pow&quot;</span><span class="p">:</span>           <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">low</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">4.0</span><span class="p">),</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>    <span class="s2">&quot;alpha_pow&quot;</span><span class="p">:</span>         <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">low</span><span class="o">=-</span><span class="mf">2.5</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.5</span><span class="p">),</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>    <span class="c1"># Nebular (required for the Lines / nebular continuum).</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>    <span class="s2">&quot;gas_logz&quot;</span><span class="p">:</span>          <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.5</span><span class="p">),</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>    <span class="s2">&quot;gas_logu&quot;</span><span class="p">:</span>          <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">4.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">),</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>    <span class="c1"># Emission-line aperture correction (Lines observation only).</span>
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a>    <span class="s2">&quot;eline_scaling&quot;</span><span class="p">:</span>     <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">2.0</span><span class="p">),</span>
+<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a>    <span class="c1"># Spectrophotometric normalisation of the spectrum onto the photometry</span>
+<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a>    <span class="c1"># (Spectrum observation only; independent of eline_scaling). Omit if the</span>
+<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>    <span class="c1"># spectrum is already flux-calibrated to the photometric system.</span>
+<a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>    <span class="s2">&quot;spectrum_scaling&quot;</span><span class="p">:</span>         <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">low</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">3.0</span><span class="p">),</span>
+<a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a>    <span class="c1"># Stellar velocity dispersion [km/s], the free key named in Kinematics above.</span>
+<a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a>    <span class="c1"># The upper bound must stay below Kinematics.sigma_max (2000 by default).</span>
+<a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a>    <span class="s2">&quot;sigma_gal&quot;</span><span class="p">:</span>         <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">20.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">600.0</span><span class="p">),</span>
+<a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a><span class="p">}</span>
+<a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a>
+<a id="__codelineno-6-29" name="__codelineno-6-29" href="#__codelineno-6-29"></a><span class="c1"># The non-parametric SFH is sampled as logsfr_ratios and turned into the per-bin</span>
+<a id="__codelineno-6-30" name="__codelineno-6-30" href="#__codelineno-6-30"></a><span class="c1"># sfh by a REGISTERED transform; this step is required for logsfr_ratios to work.</span>
+<a id="__codelineno-6-31" name="__codelineno-6-31" href="#__codelineno-6-31"></a><span class="n">sfh_times_yr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">csp</span><span class="o">.</span><span class="n">sfh_times</span><span class="p">)</span>
+<a id="__codelineno-6-32" name="__codelineno-6-32" href="#__codelineno-6-32"></a><span class="k">def</span><span class="w"> </span><span class="nf">logsfr_to_sfh</span><span class="p">(</span><span class="n">free_theta</span><span class="p">,</span> <span class="n">_t</span><span class="o">=</span><span class="n">sfh_times_yr</span><span class="p">):</span>
+<a id="__codelineno-6-33" name="__codelineno-6-33" href="#__codelineno-6-33"></a>    <span class="k">return</span> <span class="n">logsfr_ratios_to_sfh</span><span class="p">(</span><span class="n">free_theta</span><span class="p">[</span><span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">],</span> <span class="n">sfh_times_yr</span><span class="o">=</span><span class="n">_t</span><span class="p">)</span>
+<a id="__codelineno-6-34" name="__codelineno-6-34" href="#__codelineno-6-34"></a>
+<a id="__codelineno-6-35" name="__codelineno-6-35" href="#__codelineno-6-35"></a><span class="n">N_RATIOS</span> <span class="o">=</span> <span class="mi">4</span>   <span class="c1"># number of SFH bins - 1</span>
+<a id="__codelineno-6-36" name="__codelineno-6-36" href="#__codelineno-6-36"></a><span class="n">model</span> <span class="o">=</span> <span class="n">SedModel</span><span class="p">(</span>
+<a id="__codelineno-6-37" name="__codelineno-6-37" href="#__codelineno-6-37"></a>    <span class="n">csp</span><span class="p">,</span>
+<a id="__codelineno-6-38" name="__codelineno-6-38" href="#__codelineno-6-38"></a>    <span class="n">observations</span><span class="o">=</span><span class="n">observations</span><span class="p">,</span>
+<a id="__codelineno-6-39" name="__codelineno-6-39" href="#__codelineno-6-39"></a>    <span class="n">priors</span><span class="o">=</span><span class="n">priors</span><span class="p">,</span>
+<a id="__codelineno-6-40" name="__codelineno-6-40" href="#__codelineno-6-40"></a>    <span class="n">transforms</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;sfh&quot;</span><span class="p">:</span> <span class="n">logsfr_to_sfh</span><span class="p">},</span>        <span class="c1"># REQUIRED for logsfr_ratios</span>
+<a id="__codelineno-6-41" name="__codelineno-6-41" href="#__codelineno-6-41"></a>    <span class="n">free_param_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">N_RATIOS</span><span class="p">),</span>
+<a id="__codelineno-6-42" name="__codelineno-6-42" href="#__codelineno-6-42"></a>                     <span class="s2">&quot;logmass&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">10.0</span><span class="p">]),</span>
+<a id="__codelineno-6-43" name="__codelineno-6-43" href="#__codelineno-6-43"></a>                     <span class="s2">&quot;sigma_gal&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">150.0</span><span class="p">]),</span>
+<a id="__codelineno-6-44" name="__codelineno-6-44" href="#__codelineno-6-44"></a>                     <span class="s2">&quot;eline_scaling&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">]),</span>      <span class="c1"># sampled nuisances that are</span>
+<a id="__codelineno-6-45" name="__codelineno-6-45" href="#__codelineno-6-45"></a>                     <span class="s2">&quot;spectrum_scaling&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.0</span><span class="p">])},</span>  <span class="c1"># not CSP parameters need a start value</span>
+<a id="__codelineno-6-46" name="__codelineno-6-46" href="#__codelineno-6-46"></a>    <span class="n">zred</span><span class="o">=</span><span class="n">ZRED</span><span class="p">,</span>                                <span class="c1"># fixed spectroscopic redshift</span>
+<a id="__codelineno-6-47" name="__codelineno-6-47" href="#__codelineno-6-47"></a>    <span class="n">kinematics</span><span class="o">=</span><span class="n">kin</span><span class="p">,</span>                           <span class="c1"># galaxy dispersions (default: Kinematics(sigma_gal=300.0))</span>
+<a id="__codelineno-6-48" name="__codelineno-6-48" href="#__codelineno-6-48"></a>    <span class="n">broaden_photometry</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                  <span class="c1"># photometry sees the sigma_gal-broadened spectrum (default)</span>
+<a id="__codelineno-6-49" name="__codelineno-6-49" href="#__codelineno-6-49"></a><span class="p">)</span>
 </code></pre></div>
-<p>To fit redshift instead of fixing it, omit <code>zred</code> and add a <code>"zred"</code> prior (and,
-for a non-parametric SFH, register a <code>"lookback_time"</code> transform so the SFH
-age-bin grid tracks the sampled redshift).</p>
+<p><code>SedModel</code> checks the <code>Kinematics</code> against <code>theta</code> and the priors at setup:
+a free key that is missing from <code>theta</code>, a fixed width that also appears in
+<code>theta</code>, or a bounded prior reaching above <code>sigma_max</code> all raise before
+anything is compiled (a free key without a prior gets the usual
+"no prior for sampled parameter" warning). Leaving <code>kinematics=</code> out uses <code>DEFAULT_KINEMATICS</code>,
+<code>Kinematics(sigma_gal=300.0)</code> for stars and gas, which the model summary
+prints so that it is never a hidden number.</p>
+<p>To fit redshift instead of fixing it, add <code>"zred"</code> to <code>free_param_init</code> with a
+bounded prior (<code>Uniform</code> / <code>ClippedNormal</code>) and, for a non-parametric SFH,
+build the CSP with <code>track_zred_age=True</code> so the SFH age-bin grid tracks the
+sampled redshift. Every observation type follows the sampled value: the flux
+factor, the IGM and the line fluxes are evaluated at <code>theta["zred"]</code>;
+<code>Photometry</code> is projected through the filters per sample; a <code>Spectrum</code> gets
+a redshift-aware projector whose log-wavelength window covers the prior's
+support: the model is read at the sampled redshift on every call and the
+lines are painted at <code>lambda_rest (1 + z)</code> (pass <code>Spectrum(zred_range=(z_min,
+z_max))</code> when the prior has no finite bounds or <code>zred</code> comes from a
+transform). The log grid is the fixed-z grid of the reference redshift (the
+<code>zred</code> start value) extended over the range, so at that redshift the free-z
+projection equals the fixed-z one exactly; elsewhere the model is read at a
+different node phase (per-mille level for a MILES-resolution grid), and the
+library width in the fixed kernel stays the one at the reference redshift
+(<code>build</code> warns when it would change by more than 10 %). The gradient with
+respect to <code>zred</code> is that of the linear interpolation: exact for the current
+node configuration, piecewise constant on the scale of one log-grid node
+(1e-8 in z), which NUTS never resolves. Keep the prior as tight as the data
+allow; the window must fit on the model grid for the whole range.</p>
 <h2 id="6-fit">6. Fit<a class="headerlink" href="#6-fit" title="Permanent link">&para;</a></h2>
 <p><code>fitSED</code> builds the joint likelihood automatically from <code>model.observations</code>
 (one Gaussian likelihood per observation, keyed by <code>name</code>) and writes an HDF5
 result.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">model</span><span class="p">,</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">observations</span><span class="p">,</span>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nested&quot;</span><span class="p">,</span>               <span class="c1"># or &quot;nuts&quot; (optionally vi=&quot;tril&quot;)</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;./joint_fit&quot;</span><span class="p">,</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="p">)</span>
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ln Z = </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> +/- </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence_err</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">model</span><span class="p">,</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">observations</span><span class="p">,</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nested&quot;</span><span class="p">,</span>               <span class="c1"># or &quot;nuts&quot; (optionally vi=&quot;tril&quot;)</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;./joint_fit&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="p">)</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ln Z = </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> +/- </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence_err</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
+<p><code>fitSED(model, observations)</code> replaces <code>model.observations</code> and re-runs
+<code>model.setup_observations()</code>; if you assign <code>model.observations = [...]</code>
+yourself, call <code>model.setup_observations()</code> before predicting or fitting.</p>
 <h2 id="7-posterior-and-diagnostics">7. Posterior and diagnostics<a class="headerlink" href="#7-posterior-and-diagnostics" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">ns</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">to_anesthetic</span><span class="p">()</span>                      <span class="c1"># nested-sampling posterior</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">post</span> <span class="o">=</span> <span class="n">ns</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="mi">2000</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;median logmass:&quot;</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">post</span><span class="p">[</span><span class="s2">&quot;logmass&quot;</span><span class="p">])))</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># Predicted data for any posterior point (keyed by observation name):</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="n">theta</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">([</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">post</span><span class="p">[</span><span class="n">k</span><span class="p">]))])</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>         <span class="p">(</span><span class="s2">&quot;Z&quot;</span><span class="p">,</span> <span class="s2">&quot;logmass&quot;</span><span class="p">,</span> <span class="s2">&quot;diffuse_tau_kc&quot;</span><span class="p">,</span> <span class="s2">&quot;diffuse_dust_index&quot;</span><span class="p">,</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>          <span class="s2">&quot;tau_pow&quot;</span><span class="p">,</span> <span class="s2">&quot;alpha_pow&quot;</span><span class="p">,</span> <span class="s2">&quot;gas_logz&quot;</span><span class="p">,</span> <span class="s2">&quot;gas_logu&quot;</span><span class="p">,</span> <span class="s2">&quot;eline_scaling&quot;</span><span class="p">)}</span>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="n">theta</span><span class="p">[</span><span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">post</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;logsfr_ratios[</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">]))</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">4</span><span class="p">)])</span>
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="n">pred</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>        <span class="c1"># {&quot;phot&quot;: maggies, &quot;spec&quot;: F_nu, &quot;lines&quot;: fluxes}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">PostProcess</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">pp</span>  <span class="o">=</span> <span class="n">PostProcess</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">n_samples</span><span class="o">=</span><span class="mi">2000</span><span class="p">)</span>   <span class="c1"># equal-weight draws, nested weights recomputed</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">out</span> <span class="o">=</span> <span class="n">pp</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;median logmass:&quot;</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;theta&quot;</span><span class="p">][</span><span class="s2">&quot;logmass&quot;</span><span class="p">])))</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="n">out</span><span class="p">[</span><span class="s2">&quot;prediction&quot;</span><span class="p">][</span><span class="s2">&quot;photometry&quot;</span><span class="p">][</span><span class="s2">&quot;phot&quot;</span><span class="p">]</span>      <span class="c1"># posterior-predictive maggies (draws x bands)</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="n">out</span><span class="p">[</span><span class="s2">&quot;prediction&quot;</span><span class="p">][</span><span class="s2">&quot;spectra&quot;</span><span class="p">][</span><span class="n">spec</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>      <span class="c1"># posterior-predictive spectrum (draws x pixels)</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="n">out</span><span class="p">[</span><span class="s2">&quot;prediction&quot;</span><span class="p">][</span><span class="s2">&quot;lines&quot;</span><span class="p">][</span><span class="n">lines</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>       <span class="c1"># posterior-predictive line fluxes</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="n">out</span><span class="p">[</span><span class="s2">&quot;bestfit&quot;</span><span class="p">][</span><span class="s2">&quot;theta&quot;</span><span class="p">]</span>                      <span class="c1"># the maximum-likelihood sample</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="n">out</span><span class="p">[</span><span class="s2">&quot;extras&quot;</span><span class="p">][</span><span class="s2">&quot;sfh&quot;</span><span class="p">][</span><span class="s2">&quot;sfr10&quot;</span><span class="p">]</span>                <span class="c1"># derived quantities</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="c1"># Summary (SED + chi, line residuals, SFH, marginals), corner and sampling</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="c1"># diagnostics for this galaxy:</span>
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="n">pp</span><span class="o">.</span><span class="n">figures</span><span class="p">(</span><span class="s2">&quot;./joint_fit/figures&quot;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">&quot;joint fit&quot;</span><span class="p">)</span>
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="n">pp</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;./joint_fit/post.npz&quot;</span><span class="p">)</span>
 </code></pre></div>
-<p><code>result.samples</code> holds the posterior keyed by parameter name; the HDF5 file in
+<p><code>result.samples</code> holds the raw posterior keyed by parameter name; the HDF5 file in
 <code>output_dir</code> stores the observations, priors, samples, and (for nested sampling)
-the log-evidence. See <code>examples/quickstart.py</code> for a complete photometry-only
-script that also builds a corner plot and a model-vs-data figure.</p>
+the log-evidence, and <code>PostProcess(model, "joint_fit/ceridwen_result.h5")</code>
+reloads it. See <a href="../postprocessing/">Post-processing</a> for the output layout and
+<code>examples/demo_3_spectrum_advanced.py</code> for a runnable photometry + spectrum fit.</p>
 <h2 id="consistency-checklist-for-real-joint-fits">Consistency checklist for real joint fits<a class="headerlink" href="#consistency-checklist-for-real-joint-fits" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Flux systems must agree.</strong> Photometry (maggies), spectrum (<code>F_ν</code>) and line
+<li><strong>Flux systems must agree.</strong> Photometry (maggies), spectrum (<code>F_ν</code> in cgs, erg s⁻¹ cm⁻² Hz⁻¹) and line
   fluxes (erg s⁻¹ cm⁻²) must be calibrated to the same physical normalisation
   the model produces at <code>zred</code>. Inconsistent absolute calibration between data
   sets is the most common cause of a "good χ² per set but bad joint fit".</li>
 <li><strong>Don't double-count lines.</strong> If you fit both a spectrum <em>and</em> the line
   fluxes, mask the lines out of the continuum spectrum (<code>spec.mask_lines(...)</code>).</li>
-<li><strong>Aperture.</strong> Use <code>eline_scaling</code> (and, for the spectrum, <code>calibration</code>/
-  <code>noise_floor</code>) to absorb slit-vs-photometry aperture and flux-calibration
-  differences.</li>
+<li><strong>Aperture and flux calibration.</strong> Use <code>eline_scaling</code> for the emission-line
+  aperture loss (Lines) and <code>spectrum_scaling</code> for the spectrum's overall
+  flux-calibration offset relative to the photometry (Spectrum). They are
+  independent; fit whichever your data need. <code>noise_floor</code> (and a fixed
+  per-pixel <code>calibration</code> vector) further absorb residual systematics.</li>
+<li><strong>One width per source.</strong> The galaxy's <code>sigma_gal</code>/<code>sigma_gas</code> are set once
+  in <code>Kinematics</code>; each <code>Spectrum</code> carries only its <code>Instrument</code>. If a fitted
+  <code>sigma_gal</code> comes out at the edge of its prior, check the <code>Instrument</code> unit
+  first (a datasheet <code>R</code> passed as <code>R_sigma</code>, or the reverse, is a factor 2.35
+  in width).</li>
 <li><strong>Know your frames.</strong> The spectrum's pixel grid is <strong>observed-frame</strong> vacuum
   Å (the model is redshifted onto it); line-list wavelengths and
   <code>mask_lines(...)</code> centres are <strong>rest-frame</strong> vacuum Å (redshifted internally

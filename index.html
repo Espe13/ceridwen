@@ -479,6 +479,33 @@
   
   
     <li class="md-nav__item">
+      <a href="postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="api/" class="md-nav__link">
         
   
@@ -534,19 +561,24 @@ runs on CPU or GPU.</p>
 <ul>
 <li>Star formation history (non-parametric continuity or parametric)</li>
 <li>Metallicity history (constant or time-varying)</li>
+<li>[α/Fe] as a sampled stellar axis (<code>CSPBasis_afe</code>, FSPS v4.0 aMIST + C3K grids; continuum-only, downloadable grid — no FSPS install needed)</li>
 <li>Dust attenuation (Kriek &amp; Conroy diffuse, power-law birth-cloud, multi-component age-dependent)</li>
 <li>Dust emission (Draine &amp; Li grids)</li>
 <li>Nebular continuum and emission lines (CLOUDY grids)</li>
 <li>Broadband photometry, spectra, and emission-line fluxes, fit on their own or jointly</li>
+<li>One broadening kernel: galaxy stellar and gas velocity dispersions (<code>Kinematics</code>, fixed or sampled) combined in quadrature with the instrument's line-spread function (<code>Instrument</code>, unit and convention in the constructor name) and the SSP library resolution, which is removed automatically</li>
 <li>Redshift-aware forward model with cosmological flux normalisation</li>
 <li>IGM attenuation (Madau 1995), extensible through an <code>IGMModel</code> base class</li>
 <li>NUTS, nested sampling, and VI-preconditioned NUTS</li>
+<li>Post-processing (<code>PostProcess</code>): derived quantities, posterior-predictive data, and per-galaxy summary, corner and sampling-diagnostic figures</li>
 </ul>
 <h2 id="where-to-next">Where to next<a class="headerlink" href="#where-to-next" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="installation/">Installation</a>: Python 3.11, dependencies, and the FSPS / <code>$SPS_HOME</code> setup.</li>
 <li><a href="quickstart/">Quick start</a>: build a model and fit it end to end.</li>
-<li><a href="conventions/">Conventions &amp; gotchas</a>: the unit and indexing conventions that catch people out. Read this before fitting real data.</li>
+<li><a href="tutorial/">Tutorial: joint fit</a>: photometry, a spectrum, and emission-line fluxes fitted together.</li>
+<li><a href="postprocessing/">Post-processing</a>: derived quantities, predictions, and the figures.</li>
+<li><a href="conventions/">Conventions &amp; gotchas</a>: the unit and indexing conventions that catch people out, and where the three spectral widths are set. Read this before fitting real data.</li>
 <li><a href="api/">API reference</a>: the public classes and functions.</li>
 </ul>
 <h2 id="citing">Citing<a class="headerlink" href="#citing" title="Permanent link">&para;</a></h2>
