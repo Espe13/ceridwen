@@ -38,5 +38,14 @@ runs on CPU or GPU.
 
 ## Citing
 
-If you use CERIDWEN, please cite it. See `CITATION.cff` in the repository; the
-methods paper reference will be added on publication.
+If you use CERIDWEN in your research, please cite it:
+
+```bibtex
+@misc{stoffers2026ceridwen,
+  author       = {Stoffers, Amanda},
+  title        = {{CERIDWEN}: Comprehensive {SED} Estimation Routine Involving Data-driven WEight calculatioNs},
+  year         = {2026},
+  note         = {Version 1.0.1},
+  howpublished = {\url{https://github.com/Espe13/ceridwen}}
+}
+```

@@ -652,6 +652,22 @@ two). The high-res grid is rebuilt from the provider's FITS with
 
 ---
 
+## Citing
+
+If you use ceridwen in your research, please cite it:
+
+```bibtex
+@misc{stoffers2026ceridwen,
+  author       = {Stoffers, Amanda},
+  title        = {{CERIDWEN}: Comprehensive {SED} Estimation Routine Involving Data-driven WEight calculatioNs},
+  year         = {2026},
+  note         = {Version 1.0.1},
+  howpublished = {\url{https://github.com/Espe13/ceridwen}}
+}
+```
+
+---
+
 ## Related projects
 
 - [sedpy](https://github.com/bd-j/sedpy) by Benjamin D. Johnson: the origin of the filter-convolution and attenuation-curve code that ceridwen now carries internally (via [sedpy_jax](https://github.com/Espe13/sedpy_jax), the JAX rewrite), and of the AB photon-counting conventions it follows. Ceridwen no longer depends on either package. Spectral broadening is done inside ceridwen (`ceridwen.broadening`) and reproduces sedpy's direct convolutions to better than 1e-3.
