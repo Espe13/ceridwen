@@ -131,10 +131,11 @@ class SedModel:
                 "improper flat, nested sampling refuses them", stacklevel=2)
 
         self.kinematics.validate_theta(set(self.theta_init) | set(self.transforms), self.priors)
+        self._check_instrument_scales()
         if hasattr(self.csp, "register_known_theta_keys"):
             self.csp.register_known_theta_keys(
                 set(self.param_names) | set(self.priors) | set(self.transforms)
-                | set(self.kinematics.free_keys)
+                | set(self.kinematics.free_keys) | set(self._instrument_scale_keys())
             )
 
         self._zred_fixed = None
@@ -318,11 +319,14 @@ class SedModel:
                     from ..likelihood.eline_marginal import line_table_for, refuse_without_grid
                     refuse_without_grid(self.csp, obs, self.observations)
                     lines_rest = line_table_for(self.csp)["wave"]
+                kw = {}
+                if self._prior_scale_range(obs) is not None:
+                    kw["inst_scale_range"] = self._prior_scale_range(obs)
                 obs.setup_for_model(
                     self.wave, zred=(self._spectrum_zred_ref(zr) if zr else self.zred),
                     kinematics=self.kinematics, lib_resolution=lib,
                     line_wave_rest=lines_rest,
-                    zred_range=zr)
+                    zred_range=zr, **kw)
             elif kind == "photometry":
                 obs.setup_for_model(self.wave, zred=self.zred)
                 obs.free_z = bool(self.zred_is_free)
@@ -337,6 +341,69 @@ class SedModel:
         from ..likelihood.eline_marginal import build_eline_system
         self._eline_system = build_eline_system(self)
 
+
+    def _instrument_scale_keys(self) -> tuple:
+        """Theta keys of the sampled LSF scales of this model's Spectrum instruments."""
+        keys = []
+        for o in self.observations:
+            ins = getattr(o, "instrument", None)
+            if getattr(o, "_kind", None) == "spectrum" and ins is not None:
+                keys += list(getattr(ins, "free_keys", ()))
+        return tuple(dict.fromkeys(keys))
+
+    def _prior_scale_range(self, obs):
+        """(lo, hi) finite bounds of the prior on a Spectrum instrument's sampled scale key,
+        or None (fixed scale, no prior, or an unbounded one)."""
+        ins = getattr(obs, "instrument", None)
+        if ins is None or not isinstance(getattr(ins, "scale", 1.0), str):
+            return None
+        pr = self.priors.get(ins.scale)
+        b = getattr(pr, "bounds", None)
+        b = b() if callable(b) else b
+        if b is None:
+            return None
+        lo = float(np.min(np.asarray(b[0], dtype=float)))
+        hi = float(np.max(np.asarray(b[1], dtype=float)))
+        if not (np.isfinite(lo) and np.isfinite(hi)):
+            return None
+        return (lo, hi)
+
+    def _check_instrument_scales(self):
+        """A sampled Instrument scale (``Instrument(..., scale="<key>")``) is in theta, and the
+        range its compiled kernel must support is known and positive: the finite bounds of its
+        prior, inside the Instrument's own ``scale_range`` when it has one."""
+        from ..broadening import check_scale_range
+        known = set(self.theta_init) | set(self.transforms)
+        for o in self.observations:
+            ins = getattr(o, "instrument", None)
+            if getattr(o, "_kind", None) != "spectrum" or ins is None:
+                continue
+            k = getattr(ins, "scale", 1.0)
+            if not isinstance(k, str):
+                continue
+            if k not in known:
+                raise KeyError(
+                    f"Spectrum {o.name!r}: its Instrument samples the LSF scale as theta['{k}'], "
+                    f"which is not a parameter; add it (free_param_init={{'{k}': 1.0}} and a "
+                    "bounded prior) or give a float to fix it")
+            rng = self._prior_scale_range(o)
+            if rng is not None:
+                rng = check_scale_range(rng, f"prior on '{k}'")
+                own = ins.scale_range
+                if own is not None and (rng[0] < own[0] or rng[1] > own[1]):
+                    raise ValueError(
+                        f"prior on '{k}' spans [{rng[0]:g}, {rng[1]:g}], beyond the Instrument's "
+                        f"scale_range [{own[0]:g}, {own[1]:g}] that the kernel is built for; "
+                        "widen scale_range or narrow the prior")
+            elif ins.scale_range is None:
+                why = ("its prior is unbounded" if k in self.priors
+                       else "it is derived by a transform" if k in self.transforms
+                       else "it has no prior")
+                raise ValueError(
+                    f"Spectrum {o.name!r}: the LSF scale theta['{k}'] needs a finite range for "
+                    f"the compiled kernel, but {why}; give it a bounded prior (Uniform / "
+                    "ClippedNormal, lower bound > 0) or pass Instrument(..., "
+                    "scale_range=(lo, hi))")
 
     def _spectrum_zred_range(self, obs) -> tuple:
         """(z_min, z_max) a Spectrum's projector must cover when zred is sampled: the

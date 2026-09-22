@@ -323,6 +323,11 @@ def build_eline_system(model) -> Optional[ElineSystem]:
     wave = np.asarray(spec.wavelength, dtype=np.float64)
     used = _used_mask(spec, wave.size)
     s_tab = np.asarray(proj.sigma_inst_kms, dtype=np.float64)
+    inst_sc = None
+    if getattr(proj, "free_inst_scale", False):    # sampled LSF scale: at its start value
+        v0 = model.theta_init.get(proj.inst_scale_key, np.array([1.0]))
+        inst_sc = float(np.clip(np.ravel(np.asarray(v0, dtype=float))[0], *proj.inst_scale_range))
+        s_tab = s_tab * inst_sc
     if isinstance(gas, str):
         s_gas = float(np.ravel(np.asarray(model.theta_init[gas]))[0])
     else:
@@ -398,7 +403,7 @@ def build_eline_system(model) -> Optional[ElineSystem]:
         prior_width=float(spec.eline_prior_width), keep_grid=keep_grid,
         phot_cols=phot_cols, lines_cols=lines_cols, not_fitted=tuple(not_fitted),
         ignored=tuple(name_of(r) for r in to_ignore), has_grid=has_grid)
-    _check_conditioning(es, spec, proj, s_gas, used)
+    _check_conditioning(es, spec, proj, s_gas, used, inst_scale=inst_sc)
     es.static = _static_precompute(model, es, spec, phots, lines_obs, proj, s_gas, used, gas)
     return es
 
@@ -408,12 +413,13 @@ _NOISE_KEYS = ("log_err_scale", "log_jitter", "log_f_calib", "log_f_data")
 
 def _static_precompute(model, es, spec, phots, lines_obs, proj, s_gas, used, gas):
     """When nothing the line solve depends on can change between likelihood calls (fixed
-    redshift and sigma_gas, no eline_delta_zred, no sampled spectrum calibration or
+    redshift, sigma_gas and instrument scale, no eline_delta_zred, no sampled spectrum calibration or
     eline_scaling, and noise weights 1/sigma^2 only), precompute the line profiles, the
     design matrices, the weights and -- for a flat prior on every line -- the whole
     factorisation.  Returns None otherwise (the general per-call path is used)."""
     names = set(model.param_names) | set(model.transforms)
-    if (proj.free_z or isinstance(gas, str) or "eline_delta_zred" in names
+    if (proj.free_z or isinstance(gas, str) or getattr(proj, "free_inst_scale", False)
+            or "eline_delta_zred" in names
             or names & {"spectrum_scaling", "spectrum_calib"}
             or (lines_obs and "eline_scaling" in names) or names & set(_NOISE_KEYS)):
         return None
@@ -472,14 +478,16 @@ def eline_marginal_loglike_static(r, st, prior_mean, prior_sd, is_flat):
             + jnp.sum(jnp.where(is_flat, jnp.log(d) + _HALF_LOG_2PI, 0.0)) - st["lognorm"])
 
 
-def _check_conditioning(es, spec, proj, s_gas, used):
+def _check_conditioning(es, spec, proj, s_gas, used, inst_scale=None):
     """Refuse near-degenerate line sets at setup: the spectrum's information matrix at the
     reference redshift and sigma_gas, unit-diagonal scaled, with cond > COND_MAX raises."""
     if spec.uncertainty is None:
         return
     unc = np.asarray(spec.uncertainty, dtype=np.float64)
     w = np.where(used & np.isfinite(unc) & (unc > 0), 1.0 / np.where(unc > 0, unc, 1.0) ** 2, 0.0)
-    A = np.asarray(proj.line_basis(s_gas, proj.opz_ref), dtype=np.float64)[:, es.fit_pos]
+    A = (proj.line_basis(s_gas, proj.opz_ref) if inst_scale is None
+         else proj.line_basis(s_gas, proj.opz_ref, inst_scale))
+    A = np.asarray(A, dtype=np.float64)[:, es.fit_pos]
     M = A.T @ (w[:, None] * A)                 # spectrum only: it is what resolves the lines
     d =1.0 / np.sqrt(np.maximum(np.diag(M), np.finfo(float).tiny))
     C = d[:, None] * M * d[None, :]

@@ -246,6 +246,17 @@ def run_scenarios():
                                                      {"f_outlier_spec": Normal(mean=0.1, sigma=0.1)}))),
         ("LogUniform with mini <= 0 (log of 0)", {"ERROR"},
          lambda: LogUniform(mini=0.0, maxi=1.0)),
+        ("Instrument LSF scale <= 0", {"ERROR"},
+         lambda: Instrument.R_fwhm(1000.0, scale=0.0)),
+        ("sampled LSF scale with an unbounded prior", {"ERROR"},
+         lambda: SedModel(csp, [Spectrum(wavelength=jnp.linspace(4000, 7000, 400), name="s",
+                                         instrument=Instrument.R_fwhm(1000.0, scale="lsf_scale"))],
+                          priors={"lsf_scale": Normal(mean=1.0, sigma=0.1)},
+                          free_param_init={"lsf_scale": 1.0}, zred=0.0)),
+        ("sampled LSF scale not in theta", {"ERROR"},
+         lambda: SedModel(csp, [Spectrum(wavelength=jnp.linspace(4000, 7000, 400), name="s",
+                                         instrument=Instrument.R_fwhm(1000.0, scale="lsf_scale"))],
+                          zred=0.0)),
     ]
 
     rows = []

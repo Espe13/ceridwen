@@ -111,6 +111,8 @@ def fixed_params() -> dict:
         spec_lo=3000.0, spec_hi=8000.0,
         z_grid=list(np.linspace(0.0, 10.0, 11)),
         noise_seed=0,
+        # instrumental LSF scale category
+        lsf_range=[0.8, 1.3], lsf_values=[0.85, 1.0, 1.22], lsf_fixed=1.2,
     )
 
 
@@ -334,6 +336,7 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
 
     out.update(_logzsol_baselines(p))
     out["eline_marginal"] = _eline_marginal_baseline(p, ssp_data)
+    out["lsf_scale"] = _lsf_scale_baseline(p, ssp_data)
     return out
 
 
@@ -473,6 +476,66 @@ def _eline_marginal_baseline(p, ssp_data) -> dict[str, np.ndarray]:
         post = eline_line_fluxes(m, th, lh)
         res[f"mean_{tag}"] = np.asarray(post["mean"])
         res[f"sd_{tag}"] = np.asarray(post["sd"])
+    return res
+
+
+def _lsf_scale_baseline(p, ssp_data) -> dict[str, np.ndarray]:
+    """Instrumental LSF scale (``Instrument(..., scale=...)``, sigma_inst -> s sigma_inst in
+    the continuum kernel and the line widths) at z = 2: a Spectrum (rest 4700-6800 A,
+    R_fwhm = 1500, nebular lines painted, sigma_gal 150 / sigma_gas 90 km/s) with the scale
+    SAMPLED in ``p["lsf_range"]`` and evaluated at each of ``p["lsf_values"]``, and FIXED at
+    ``p["lsf_fixed"]``.
+
+    Justified independently (not "whatever the code printed"): the fixed-scale spectrum equals
+    the one of ``Instrument.R_fwhm(1500 / s)`` built directly (asserted here, rtol 1e-12), and
+    at the top of the range the sampled spectrum equals the fixed-scale one (asserted here,
+    same log grid and band there, rtol 1e-12); elsewhere tests/test_lsf_scale.py checks it on
+    a matched grid to 2 x erfc(5/sqrt 2) (measured < 1e-8)."""
+    import warnings
+    from ceridwen import SedModel, Cosmology
+    from ceridwen.csp.csp import CSPBasis
+    from ceridwen.observation import Spectrum
+
+    z = p["zred"]
+    cosmo = Cosmology.planck18()
+    csp = CSPBasis(ssp_data, lookback_time=jnp.linspace(0.0, float(cosmo.age(z)), 6),
+                   cosmo=cosmo, zh_const=True, sfh_interp="step", add_dust=False,
+                   add_diffuse_dust=True, add_neb=True, add_igm=False, sps_home=SPS_HOME,
+                   verbose=False)
+    fixed = {k: jnp.atleast_1d(jnp.asarray(v)) for k, v in csp.theta_init.items()}
+    fixed.update(sfh=jnp.array([1.0, 1.0, 0.6, 0.3, 0.2, 0.1]),
+                 logzsol=jnp.array([-0.3]),
+                 diffuse_tau_kc=jnp.array([p["diffuse_tau_kc"]]),
+                 diffuse_dust_index=jnp.array([p["diffuse_dust_index"]]),
+                 gas_logu=jnp.array([-2.3]), gas_logz=jnp.array([-0.3]))
+    transforms = {k: (lambda th, v=v: v) for k, v in fixed.items()}
+    wave = np.exp(np.arange(np.log(4700 * (1 + z)), np.log(6800 * (1 + z)),
+                            1 / (2.3548 * 1500) / 2.5))
+    kin = Kinematics(sigma_gal=150.0, sigma_gas=90.0)
+    lo, hi = p["lsf_range"]
+
+    def build(ins, extra=None):
+        init = {"logmass": jnp.array([p["logmass"]])}
+        init.update(extra or {})
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return SedModel(csp, [Spectrum(wavelength=wave, instrument=ins, name="spec")],
+                            transforms=transforms, zred=z, free_param_init=init, kinematics=kin)
+
+    def spec(m, **kw):
+        th = {"logmass": jnp.array([p["logmass"]])}
+        th.update({k: jnp.array([v]) for k, v in kw.items()})
+        return np.asarray(m.predict(th)["spec"], dtype=np.float64)
+
+    ms = build(Instrument.R_fwhm(1500.0, scale="lsf_scale", scale_range=(lo, hi)),
+               {"lsf_scale": jnp.array([1.0])})
+    res = {f"spec_sampled_{i}": spec(ms, lsf_scale=v) for i, v in enumerate(p["lsf_values"])}
+    s = p["lsf_fixed"]
+    res["spec_fixed"] = spec(build(Instrument.R_fwhm(1500.0, scale=s)))
+    np.testing.assert_allclose(res["spec_fixed"], spec(build(Instrument.R_fwhm(1500.0 / s))),
+                               rtol=1e-12, atol=0)
+    np.testing.assert_allclose(spec(ms, lsf_scale=hi), spec(build(Instrument.R_fwhm(1500.0, scale=hi))),
+                               rtol=1e-12, atol=0)
     return res
 
 

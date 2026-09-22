@@ -138,6 +138,8 @@ spec = Spectrum(
     # Instrument.R_sigma(6358)                # sedpy / Prospector R = lambda/sigma (= R_fwhm(2700))
     # Instrument.fwhm_aa(2.5)                 # FWHM in Angstrom, observed frame
     # Instrument.R_fwhm(R_arr, wave=my_obs_wave_aa)   # per-pixel curve (prism)
+    # Instrument.R_fwhm(2700, scale="lsf_scale")      # LSF width x a free scale (bounded
+    #                                   prior + free_param_init; docs/conventions.md)
     # subtract_library=True (default): the SSP library resolution is removed
     # in quadrature; False only for a grid whose stored curve you distrust.
     noise_floor=0.01,               # 1% multiplicative calibration floor (optional)

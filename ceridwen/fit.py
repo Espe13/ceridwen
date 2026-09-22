@@ -426,7 +426,8 @@ def write_result_h5(
             uncertainty    (n_data,)
             wavelength     (n_data,)
             mask           (n_data,)  bool
-            attrs: type, name, [instrument_kind, subtract_library, filternames, ...]
+            attrs: type, name, [instrument_kind, instrument_scale, instrument_scale_range,
+                   subtract_library, filternames, ...]
 
         /model/
             param_names    (n_params,)  variable-length string
@@ -472,6 +473,11 @@ def write_result_h5(
                     og.create_dataset("instrument_wave", data=np.asarray(ins.wave))
                 og.attrs["subtract_library"] = bool(obs.subtract_library)
                 proj = getattr(obs, "_proj", None)
+                sc = getattr(ins, "scale", 1.0)
+                og.attrs["instrument_scale"] = sc if isinstance(sc, str) else float(sc)
+                if proj is not None and getattr(proj, "free_inst_scale", False):
+                    og.attrs["instrument_scale_range"] = np.asarray(proj.inst_scale_range,
+                                                                    dtype=float)
                 if proj is not None and proj.free_z:
                     og.attrs["zred_range"] = np.asarray(proj.zred_range, dtype=float)
                     og.attrs["zred_ref"] = float(proj.opz_ref - 1.0)

@@ -376,3 +376,27 @@ Uniform in `ln x`. Raises unless `0 < mini < maxi < inf`. `fit._detect_bounds` g
 **Verification.** `tests/test_loguniform_prior.py` (values vs a Prospector golden table and
 scipy, KS, round trips, jit/vmap/grad, `_detect_bounds`, nested-sampling evidence vs the
 analytic value, NUTS, fitSED log-posterior gradient vs finite differences).
+
+## 2026-09-22 — free instrumental LSF scale
+
+**What.** `Instrument.<unit>(..., scale=1.0 | float | "<theta key>", scale_range=None)`
+multiplies the instrumental dispersion by `s` in the continuum kernel
+(`sigma_gal^2 + s^2 sigma_inst^2 - sigma_lib^2`) **and** in the line widths
+(`sigma_gas^2 + s^2 sigma_inst^2`). `scale=1.0` (default) takes the unchanged code path; a fixed
+float is folded into `sigma_kms_at` (the same model as the Instrument built with the width times
+`s`); a sampled key uses static band geometry sized for the top of its range and exact per-call
+Gaussian weights (`broadening.ScaledResponse`), so it is exact for any wavelength dependence of
+the LSF. The range comes from the key's bounded prior or `scale_range`; a missing key, an
+unbounded prior, a bound `<= 0` or a non-positive fixed scale raise at construction.
+Result files record `instrument_scale` / `instrument_scale_range` per spectrum.
+Unlike Prospector (`sedmodel.py:289-295`), the lines are scaled too, nothing is mutated in
+place, and bad values raise at setup rather than failing an `assert` mid-sampling. GOTCHAS 15,
+`docs/conventions.md`.
+
+**Verification.** T4 against pre-change `main`: 2703 arrays compared, the only 2 that differ also
+differ between `main` and its own capture (a 8e-45 denormal in a post-processed spectrum, and
+`[logZ, logZ_err]`, whose error comes from anesthetic's random `logZ(12)` draws); 1178 new arrays from the two new configurations. New regression category `lsf_scale`
+(fixed `s = 1.2` equals `Instrument.R_fwhm(1500/1.2)` at rtol 1e-12; sampled equals fixed at the
+top of the range at 1e-12). `tests/test_lsf_scale.py` (15 tests incl. gradients vs finite
+differences, jit/vmap). CPU cost of a sampled scale ~10 % of the value-only log-posterior
+(W=100 and 500); GPU timing pending (`scripts/bench_lsf_scale.py`).

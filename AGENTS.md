@@ -140,7 +140,8 @@ projection → likelihood → sampler.
   `csp_afe.py`: `CSPBasis_afe`, the [alpha/Fe] variant without a nebular model.
   `spectrum_calibration.py`: `spectrum_scaling` / `spectrum_calib` factor.
 - `broadening.py` — `Kinematics` (sigma_gal / sigma_gas, fixed or theta keys),
-  `Instrument` (LSF), `SpectralProjector` (continuum FFT kernel + banded
+  `Instrument` (LSF; `scale=` multiplies its width, a float or a sampled theta key with a
+  bounded prior), `SpectralProjector` (continuum FFT kernel + banded
   instrument response + analytic line painting on the observed pixels),
   `PhotometricBroadener`. The only place spectral widths are set.
 - `dust/` — `DustModel.py`: `Dust`/`DiffuseDust`, age-binned attenuation with

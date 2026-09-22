@@ -385,15 +385,6 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
 - `lnl_pointwise` holds the mixture terms; `chi` stays the inlier (y - mu)/sigma_eff. The
   per-datum outlier probability comes from `likelihood.outlier_probability(...)`.
 
----
-
-### What is *not* guarded (and why)
-
-Runtime, per-sample value checks (e.g. "this drawn `Z` is out of grid") are
-deliberately **not** placed in the jitted hot path — doing so would either break
-JIT or slow every evaluation. Use the non-jitted `csp.check_param_ranges(theta)`
-on your priors/bounds once before sampling instead.
-
 ## 14. Priors ported from Prospector: `LogNormal` and `LogUniform` (2026-09-22)
 
 - **`LogNormal(mode, sigma)` does not mean what Prospector's does.** Same class name, same
@@ -430,3 +421,41 @@ same_as_prospector = LogNormal(mode=m_prosp + sigma**2, sigma=sigma)
 ```
 
 ---
+
+## 15. Instrumental LSF scale (2026-09-22)
+
+`Instrument.<unit>(..., scale=...)` multiplies the instrumental dispersion by `s`, in the
+continuum kernel and in the line widths (`docs/conventions.md`).
+
+- **`scale=1.0` is the default and changes nothing** (the unscaled code path, byte-identical).
+  A fixed float is the same model as the Instrument built with the width times `s`.
+- **Degenerate with `sigma_gal` in the continuum.** The continuum sees only
+  `sigma_gal^2 + s^2 sigma_inst^2`, so with both free and no lines to separate them, `s` and
+  `sigma_gal` trade along that circle: expect a curved, correlated posterior, and a
+  `sigma_gal` that is only as good as the prior on `s`. The lines (`sigma_gas^2 +
+  s^2 sigma_inst^2`) break it only when `sigma_gas` is fixed or resolved differently;
+  with `sigma_gas` TIED the degeneracy is the same in both. Keep the prior on `s` as tight as
+  your LSF calibration allows.
+- **A sampled scale needs a finite range**: a bounded prior (`Uniform`, `ClippedNormal`,
+  `LogUniform`) with a lower bound `> 0`, or `Instrument(..., scale_range=(lo, hi))`
+  (required when the key is a transform). An unbounded prior, a bound `<= 0`, a prior reaching
+  beyond an explicit `scale_range`, a missing key, or a non-positive fixed scale raise at
+  construction. Sampled values outside the range are clipped (zero gradient there).
+- **A sampled scale is not bitwise the fixed one.** The log grid of the projector is sized for
+  the top of the range, so `theta["lsf_scale"] = 1.1` and a fixed `scale=1.1` sample the model
+  on slightly different grids; on a coarse grid with pixels wider than the LSF this is a
+  per-cent-level difference (the same happens between two fixed models whose `sigma_max`
+  differ). Compare sampled with sampled.
+- **Warning to read:** "the continuum kernel of N pixels crosses half a log-grid pixel":
+  the instrument is close to the library resolution there, and the response switches between
+  linear interpolation and a Gaussian inside the range, a small step in `s`. Harmless for
+  nested sampling; for NUTS narrow the range or use a finer grid.
+- Photometry and `Lines` never see the instrument; with `marginalize_elines` a sampled scale
+  switches off the static precomputation (the per-call path is used).
+
+### What is *not* guarded (and why)
+
+Runtime, per-sample value checks (e.g. "this drawn `Z` is out of grid") are
+deliberately **not** placed in the jitted hot path — doing so would either break
+JIT or slow every evaluation. Use the non-jitted `csp.check_param_ranges(theta)`
+on your priors/bounds once before sampling instead.
