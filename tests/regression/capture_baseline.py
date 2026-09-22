@@ -295,15 +295,103 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
         "lnl_total": np.asarray(lnl_phot + lnl_spec, dtype=np.float64),
     }
 
+    out["eline_marginal"] = _eline_marginal_baseline(p, ssp_data)
     return out
+
+
+def _eline_marginal_baseline(p, ssp_data) -> dict[str, np.ndarray]:
+    """Emission-line marginalisation (Spectrum(marginalize_elines=True)) at z = 2: Spectrum
+    (rest 4700-6800 A, R_fwhm = 1000) + Photometry + Lines, nebular parameters fixed; mock =
+    the grid model with [O III] 5007 x3 and Ha x0.6 plus PRNGKey(noise_seed) noise.  Joint
+    marginal ln L and line-flux posterior for a flat prior and eline_prior_width = 0.2.
+    Validated by tests/test_eline_marginalisation.py (exact vs quadrature, vs Prospector's
+    fit_mle_elines, width -> 0 equals the ordinary likelihood)."""
+    from ceridwen import SedModel, Cosmology
+    from ceridwen.csp.csp import CSPBasis
+    from ceridwen.observation import Photometry, Spectrum, Lines
+    from ceridwen.fit import _likelihood_for
+    from ceridwen.likelihood.likelihood import MultiObservationLikelihood
+    from ceridwen.likelihood.eline_marginal import eline_line_fluxes
+
+    z = p["zred"]
+    cosmo = Cosmology.planck18()
+    csp = CSPBasis(ssp_data, lookback_time=jnp.linspace(0.0, float(cosmo.age(z)), 6),
+                   cosmo=cosmo, zh_const=True, sfh_interp="step", add_dust=False,
+                   add_diffuse_dust=True, add_neb=True, add_igm=True, sps_home=SPS_HOME,
+                   verbose=False)
+    fixed = {k: jnp.atleast_1d(jnp.asarray(v)) for k, v in csp.theta_init.items()}
+    fixed.update(sfh=jnp.array([1.0, 1.0, 0.6, 0.3, 0.2, 0.1]), Z=jnp.array([-2.0]),
+                 diffuse_tau_kc=jnp.array([p["diffuse_tau_kc"]]),
+                 diffuse_dust_index=jnp.array([p["diffuse_dust_index"]]),
+                 gas_logu=jnp.array([-2.3]), gas_logz=jnp.array([-0.3]))
+    transforms = {k: (lambda th, v=v: v) for k, v in fixed.items()}
+    wave = np.exp(np.arange(np.log(4700 * (1 + z)), np.log(6800 * (1 + z)), 1 / (2.3548 * 1000) / 2.5))
+    lines_w = [4862.763, 5008.314, 6564.723, 6585.369]
+    rows = [int(np.argmin(np.abs(np.asarray(csp.neb.nebem_line_pos) - w))) for w in lines_w]
+    kin = Kinematics(sigma_gal=150.0, sigma_gas=90.0)
+
+    def build(width, flux=None, phot_y=None, lines_y=None):
+        spec = Spectrum(wavelength=wave, flux=flux, uncertainty=None if flux is None else unc,
+                        instrument=Instrument.R_fwhm(1000.0), name="spec",
+                        marginalize_elines=True, eline_prior_width=width)
+        phot = Photometry(filters=["twomass_J", "twomass_H", "twomass_Ks"], flux=phot_y,
+                          uncertainty=None if phot_y is None else 0.05 * np.abs(phot_y), name="phot")
+        lin = Lines(line_ind=rows, wavelength=lines_w, flux=lines_y,
+                    uncertainty=None if lines_y is None else 0.1 * np.abs(lines_y), name="lines")
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return SedModel(csp, [spec, phot, lin], transforms=transforms, zred=z,
+                            free_param_init={"logmass": jnp.array([p["logmass"]])}, kinematics=kin)
+
+    unc = None
+    m0 = build(0.0)
+    th = {"logmass": jnp.array([p["logmass"]])}
+    pred, aux = m0.predict_with_elines(th)
+    es = m0._eline_system
+    boost = np.ones(es.m)
+    boost[list(es.names).index("[O III] 5007")] = 3.0
+    boost[list(es.names).index("Ba-alpha 6563")] = 0.6
+    F = np.asarray(aux["prior_mean"]) * boost
+    ys = np.asarray(pred["spec"]) + np.asarray(aux["cols"]["spec"]) @ F
+    yp = np.asarray(pred["phot"], float) + np.asarray(aux["cols"]["phot"]) @ F
+    yl = np.asarray(pred["lines"]) + np.asarray(aux["cols"]["lines"]) @ F
+    unc = np.full(wave.size, 0.03 * float(np.median(ys)))
+    ys = ys + unc * np.asarray(jax.random.normal(jax.random.PRNGKey(p["noise_seed"]), ys.shape))
+
+    res = {"wave_rest": np.asarray(es.wave_rest), "cloudy": np.asarray(aux["prior_mean"])}
+    for tag, width in (("flat", 0.0), ("prior", 0.2)):
+        m = build(width, ys, yp, yl)
+        lh = MultiObservationLikelihood(
+            keys=tuple(m.obs_dict), likelihoods=tuple(_likelihood_for(o, m.param_names)
+                                                      for o in m.observations))
+
+        class _P:
+            def log_prob(self, t):
+                return 0.0
+        res[f"lnl_{tag}"] = np.asarray(lh.make_lnprobfn(m.obs_dict, m, _P())(th), dtype=np.float64)
+        post = eline_line_fluxes(m, th, lh)
+        res[f"mean_{tag}"] = np.asarray(post["mean"])
+        res[f"sd_{tag}"] = np.asarray(post["sd"])
+    return res
 
 
 # --------------------------------------------------------------------------- #
 #  Save (run directly)
 # --------------------------------------------------------------------------- #
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only", nargs="+", default=None,
+                    help="write only these categories (never overwrite the others)")
+    args = ap.parse_args()
     BASELINE_DIR.mkdir(parents=True, exist_ok=True)
     baselines = compute_baselines()
+    if args.only is not None:
+        unknown = sorted(set(args.only) - set(baselines))
+        if unknown:
+            raise SystemExit(f"unknown categories {unknown}; known: {sorted(baselines)}")
+        baselines = {k: v for k, v in baselines.items() if k in args.only}
     for category, arrays in baselines.items():
         np.savez(BASELINE_DIR / f"{category}.npz", **arrays)
         print(f"  wrote {category}.npz  ({', '.join(arrays.keys())})")

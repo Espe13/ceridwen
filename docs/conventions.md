@@ -40,6 +40,7 @@ safe".
 | `Spectrum` predictions (`model.predict`) | observed-frame F_ν in erg s⁻¹ cm⁻² Hz⁻¹ (cgs; × 1e32 for nJy), only with a redshift or `lumdist_mpc` in force |
 | Broadband fluxes | AB maggies |
 | Emission-line fluxes | erg s⁻¹ cm⁻² |
+| Marginalised line fluxes (`marginalize_elines=True`: `/elines` in the result, `extras["elines"]`) | erg s⁻¹ cm⁻², observed frame, IGM-transmitted at the line, **not** divided by the spectrum calibration; lines named as in `$SPS_HOME/data/emlines_info.dat`, vacuum rest-frame Å |
 | Stellar mass | `logmass` = log10(M⋆/M☉) |
 
 The forward model is evaluated at unit mass and scaled by `10**logmass`.

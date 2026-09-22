@@ -34,6 +34,7 @@ it. [Installation](#installation), the [quick start](#quick-start) and
 - [x] Dust attenuation (Kriek & Conroy diffuse, power-law birth-cloud, multi-component age-dependent)
 - [x] Dust emission (Draine & Li grids)
 - [x] Nebular continuum + emission lines (CLOUDY grids)
+- [x] Analytic marginalisation over emission-line fluxes, jointly across spectrum, photometry and line fluxes (`Spectrum(marginalize_elines=True)`, [docs](docs/eline_marginalisation.md))
 - [x] Observation input (broadband photometry, emission-line fluxes, spectra)
 - [x] Redshift-aware forward model with cosmological flux normalisation
 - [x] IGM attenuation (Madau 1995), extensible via `IGMModel` ABC

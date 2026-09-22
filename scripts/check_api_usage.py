@@ -88,6 +88,9 @@ def check_source(src: str, label: str, sigs, findings):
                 isinstance(i.context_expr, ast.Call) and _call_name(i.context_expr) == "raises"
                 for i in node.items):
             expected.update(range(node.lineno, node.end_lineno + 1))
+    # scenario tables of deliberate misuse (tests/regression/misuse_report.py) mark the line
+    expected.update(i for i, line in enumerate(src.splitlines(), start=1)
+                    if "# deliberate misuse" in line)
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and node.id in REMOVED_NAMES:
             findings.append(f"{label}:{node.lineno}: removed name {node.id!r}")
@@ -104,9 +107,11 @@ def check_source(src: str, label: str, sigs, findings):
                         if node.lineno not in expected:
                             findings.append(f"{label}:{node.lineno}: {name}({kw.arg}=...) removed")
                     elif kw.arg not in accepted and not has_kwargs:
-                        findings.append(f"{label}:{node.lineno}: {name}() has no argument {kw.arg!r}")
+                        if node.lineno not in expected:
+                            findings.append(f"{label}:{node.lineno}: {name}() has no argument {kw.arg!r}")
                     elif kw.arg not in accepted and has_kwargs and name in ("CSPBasis", "CSPBasis_afe", "Spectrum", "Photometry", "Lines"):
-                        findings.append(f"{label}:{node.lineno}: {name}() would reject {kw.arg!r}")
+                        if node.lineno not in expected:
+                            findings.append(f"{label}:{node.lineno}: {name}() would reject {kw.arg!r}")
 
 
 def markdown_blocks(path: pathlib.Path):
@@ -121,7 +126,9 @@ def main() -> int:
     paths = [*(ROOT / "tests").rglob("*.py"), *(ROOT / "examples").rglob("*.py"),
              ROOT / "scripts" / "bit_identity_check.py"]
     for path in paths:
-        if "_to_delete" in path.parts or "numpy_stub" in path.parts or not path.exists():
+        # tests/reference/ holds reference scripts run with OTHER codes (e.g. Prospector)
+        if ("_to_delete" in path.parts or "numpy_stub" in path.parts or "reference" in path.parts
+                or not path.exists()):
             continue
         check_source(path.read_text(), str(path.relative_to(ROOT)), sigs, findings)
     for path in [ROOT / "README.md", ROOT / "GOTCHAS.md", *sorted((ROOT / "docs").glob("*.md"))]:

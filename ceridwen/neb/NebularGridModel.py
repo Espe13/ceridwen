@@ -209,16 +209,25 @@ class NebularModel:
             self.young_idx  = None
 
         self.emline_index_consistent = None
+        self.nebem_line_names = None
         try:
             _info_path = str(Path(sps_home) / "data" / "emlines_info.dat")
             _info_wave = []
+            _info_name = []
             with open(_info_path) as _f:
                 for _row in _f:
                     _parts = _row.split(",")
                     if len(_parts) >= 2:
                         _info_wave.append(float(_parts[0]))
+                        _info_name.append(_parts[1].strip())
             _info_wave = np.asarray(_info_wave)
             _pos = np.asarray(self.nebem_line_pos)
+            # names per cube row, matched by wavelength (1 A) like CSPBasis matches Lines
+            if _info_wave.size:
+                _j = np.argmin(np.abs(_pos[:, None] - _info_wave[None, :]), axis=1)
+                self.nebem_line_names = [
+                    _info_name[j] if abs(_pos[i] - _info_wave[j]) <= 1.0 else None
+                    for i, j in enumerate(_j)]
             if _info_wave.size != _pos.size:
                 self.emline_index_consistent = False
                 warnings.warn(

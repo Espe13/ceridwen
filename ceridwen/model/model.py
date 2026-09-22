@@ -204,6 +204,8 @@ class SedModel:
                 obs.setup_for_model(self.wave, zred=self.zred)
         for cached in ("_predict_jit_fn", "_predict_vmap_fn"):
             self.__dict__.pop(cached, None)
+        from ..likelihood.eline_marginal import build_eline_system
+        self._eline_system = build_eline_system(self)
 
 
     def _spectrum_zred_range(self, obs) -> tuple:
@@ -263,6 +265,24 @@ class SedModel:
         return self.csp.predict(model_theta, self.observations,
                                 kinematics=self.kinematics,
                                 broaden_photometry=self.broaden_photometry)
+
+    def predict_with_elines(self, theta: dict[str, Array]):
+        """``(predictions, aux)`` for the emission-line marginalisation: the predictions with
+        the fitted lines removed, and ``aux = {"prior_mean", "cols"}`` (their CLOUDY fluxes and
+        the per-observation design columns).  Needs a Spectrum with marginalize_elines=True."""
+        if getattr(self, "_eline_system", None) is None:
+            raise ValueError("no Spectrum of this model has marginalize_elines=True")
+        model_theta = self.apply_transforms(theta)
+        if self._zred_fixed is not None and "zred" not in model_theta:
+            model_theta = dict(model_theta)
+            model_theta["zred"] = self._zred_fixed
+        if self._lumdist_fixed is not None and "lumdist_mpc" not in model_theta:
+            model_theta = dict(model_theta)
+            model_theta["lumdist_mpc"] = self._lumdist_fixed
+        return self.csp.predict(model_theta, self.observations,
+                                kinematics=self.kinematics,
+                                broaden_photometry=self.broaden_photometry,
+                                eline_system=self._eline_system)
 
 
     def predict_jit(self, theta: dict[str, Array]) -> dict[str, Array]:
@@ -351,6 +371,9 @@ class SedModel:
         lines += ["", "Observations", "-" * 40]
         for obs in self.observations:
             lines.append(f"  {obs!r}")
+        es = getattr(self, "_eline_system", None)
+        if es is not None:
+            lines += ["", "Emission lines", "-" * 40, f"  {es.describe()}"]
 
         return "\n".join(lines)
 

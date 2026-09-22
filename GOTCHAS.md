@@ -280,6 +280,45 @@ prefer `predict`/`get_spectrum_components`.
 - `pp.figures(dir)` writes the summary / corner / diagnostics figures
   (`ceridwen.plotting`).
 
+## 12. Emission-line marginalisation (2026-09-21)
+
+`Spectrum(marginalize_elines=True)` integrates the line fluxes out analytically
+(`docs/eline_marginalisation.md`).
+
+- **Masking vs marginalising.** `mask_lines` throws away the line pixels and the
+  stellar absorption under them. Marginalising keeps the pixels: the continuum
+  must still fit them, and only what a line profile of the right width and
+  position can absorb goes into the line. Prefer it when the lines sit on
+  Balmer, Ca II or Mg b absorption.
+- **Emission filling absorption.** A Balmer line of similar width to its
+  absorption trough is partly degenerate with it. The marginalisation shows that
+  as a wide line-flux posterior and a wider age posterior; that is the honest
+  answer, not a bug. A Gaussian prior (`eline_prior_width=0.2`) narrows it by
+  assuming the CLOUDY prediction is roughly right.
+- **The nebular model must not be sampled** (`gas_logu`, `gas_logz`): with free
+  line fluxes the lines cannot constrain it. CERIDWEN samples every CSP key
+  unless a transform derives it, so fix them with constant transforms
+  (`transforms={"gas_logu": lambda th: jnp.array([-2.5]), ...}`); a sampled one
+  raises at construction.
+- **Line names** are FSPS's (`"[O III] 5007"`, `"Ba-alpha 6563"`); a near miss
+  (`"[OIII] 5007"`) raises with the correct name suggested.
+- **The width is `sigma_gas`**, a dispersion in km/s; `Spectrum(eline_sigma=...)`
+  raises (there is no second line width).
+- **Flat prior and many faint lines.** By default every covered grid line is
+  fitted, including ones CLOUDY predicts at ~0. They cost nothing in bias but
+  each adds an Occam factor to the evidence; restrict with `elines_to_fit` when
+  you compare evidences between models.
+- **Ly-α** always has a flat prior.
+- **Evidence with a flat prior** is defined only up to the prior volume of every
+  fitted line: never compare ln Z of a flat-prior marginalised fit with another model.
+- **The 20 % prior assumes star-forming lines.** Its centre and width are the CLOUDY
+  flux F_j(θ), so lines inform the SFH, and where the model predicts ~no line (old
+  populations) the line is pinned at ~0. In quiescent galaxies use the flat prior.
+- **Not with `CSPBasis_afe`**: it has no nebular model; mask the lines instead.
+- `model.predict(theta)` still predicts the CLOUDY lines (the forward model);
+  the fitted lines are in `/elines`, `PostProcess` `extras["elines"]` and its
+  predictions.
+
 ---
 
 ### What is *not* guarded (and why)

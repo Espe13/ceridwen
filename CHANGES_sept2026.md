@@ -177,3 +177,49 @@ static response and the FFT stage are unchanged. Library width frozen at
 **Bit-identity:** the fixed-`zred` path is byte-identical to before
 (`np.array_equal` new vs old module). New tests in `tests/test_broadening.py`
 and `tests/test_spectrum_free_z.py`.
+
+---
+
+## 2026-09-21 — emission-line marginalisation
+
+**What:** `Spectrum(marginalize_elines=True, eline_prior_width=, elines_to_fit=,
+elines_to_fix=, elines_to_ignore=)` and `theta["eline_delta_zred"]`. The fluxes
+of the covered nebular lines are integrated out analytically and jointly over the
+spectrum, every `Photometry` and every `Lines` observation
+(`ceridwen/likelihood/eline_marginal.py`; wiring in `csp.predict(eline_system=)`,
+`SedModel.predict_with_elines`, `run_sampler`, `MultiObservationLikelihood`,
+`SpectralProjector.line_basis`). Flat prior by default (the correct marginal,
+not Prospector's sign), fractional Gaussian prior about the CLOUDY flux as an
+option, Ly-α always flat. Every refusal at construction (no nebular model,
+sampled nebular parameters, no `Instrument`, more than one marginalising
+spectrum, `logify_spectrum`, GP noise, upper limits, photometry with painted
+lines, near-degenerate lines, unknown names). `fitSED` stores `/elines`;
+`read_result_h5` returns it; `PostProcess` predictions carry the posterior lines
+and `extras["elines"]`. `NebularModel.nebem_line_names` (from
+`emlines_info.dat`, wavelength-matched). Design record:
+`docs/dev/eline_marginalisation_design.md`; user page:
+`docs/eline_marginalisation.md`.
+
+**Verification:** `tests/test_eline_marginalisation.py` — exact against numerical
+quadrature (1 and 2 lines, flat / Gaussian / mixed priors), against Prospector's
+`fit_mle_elines` on identical inputs to 1e-10 (8 cases; reference dump
+`tests/reference/`), width → 0 equals the ordinary likelihood, width → ∞ equals
+flat plus the prior volume, jit / vmap at W = 100 / gradients, end-to-end
+`fitSED` → HDF5 → `PostProcess`. New regression category `eline_marginal`. With
+`marginalize_elines=False` the forward model is byte-identical to before
+(`scripts/bit_identity_check.py`, 845 arrays; the two items that differ also
+differ between two runs of the old code).
+
+**Speed (2026-09-21):** a static fast path precomputes the line profiles, design
+matrices, weights and (flat prior) the factorisation when zred, sigma_gas, noise and
+calibration are fixed. Isolated A100, W = 100: flat prior 0.99x (R=1000) / 1.00x
+(R=2700) the ordinary likelihood, 20 % prior 1.11x, per-call path 1.22x / 1.25x; in
+whole fits the marginalised runs took 332-349 s against 358 s for masking. Equal to
+the per-call path to 1e-11 in ln L. `CSPBasis_afe` with `marginalize_elines=True` now
+gets a refusal that names the missing nebular model and suggests `mask_lines`.
+
+**Also:** `Lines` without `line_names` now gets the teaching `ValueError` on a
+wavelength mismatch instead of a `TypeError` (`csp.py` `_neb_cube_rows_for`).
+`scripts/check_api_usage.py` skips `tests/reference/` (scripts for other codes)
+and honours `# deliberate misuse` markers; `capture_baseline.py --only CAT`
+writes only the named categories.
