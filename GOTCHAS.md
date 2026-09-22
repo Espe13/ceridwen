@@ -385,6 +385,26 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
 - `lnl_pointwise` holds the mixture terms; `chi` stays the inlier (y - mu)/sigma_eff. The
   per-datum outlier probability comes from `likelihood.outlier_probability(...)`.
 
+## 14. Formed mass vs surviving mass (v1.0.6)
+
+- `logmass` and `PostProcess` `mass_formed` are the mass **formed**; `ssfrW` divides by it.
+  The Prospector-style stellar mass is `mass_surviving = mfrac * mass_formed` (stars +
+  remnants), with `ssfrW_surviving`. Say which one you quote: they differ by 20-40 %.
+- `mfrac` needs a grid with the surviving-mass table (SSP schema 3.0, `ssp_stellar_mass`).
+  Older grids load as before and `PostProcess` warns and skips the block;
+  `python scripts/attach_stellar_mass.py <grid.h5>` writes a copy with the table (FSPS
+  compiled with the grid's isochrones; `--fsps-python` for another environment). It never
+  writes the original file and refuses an FSPS whose isochrones or nodes differ.
+- The table is FSPS's `stellar_mass` as it is: on MIST it exceeds 1 M_sun per M_sun formed
+  below 10^6.45 yr (up to 4.6 at 10^5 yr), so a population dominated by < 3 Myr stars can
+  have `mfrac > 1`. BPASS stays <= 1.
+- CERIDWEN's composite `mfrac` uses its own SFH weights (the ones behind the spectrum), not
+  FSPS's `csp_gen`. Versus python-fsps for 0.1-10 Gyr constant/rising SFHs: <= 4.2e-4 (step),
+  <= 6.3e-3 (linear). The `"linear"` scheme drops mass formed more recently than the youngest
+  SSP node (10^5 yr MIST, 10^6 yr BPASS) and gives the **oldest** SSP node no weight, so a
+  bin older than the second-oldest node (BPASS 12.6 Gyr) is mis-weighted: -4e-4 on `mfrac`
+  at 13.8 Gyr. Both are pre-existing forward-model behaviour, reported, not changed.
+
 ---
 
 ### What is *not* guarded (and why)

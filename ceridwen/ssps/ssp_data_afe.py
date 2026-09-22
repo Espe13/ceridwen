@@ -16,9 +16,10 @@ from ceridwen.ssps.ssp_data import (
     _validate_fsps_kwargs,
     _read_fsps_provenance,
     _import_fsps,
+    fsps_stellar_mass_source,
 )
 
-SSP_AFE_SCHEMA_VERSION = "2.1"
+SSP_AFE_SCHEMA_VERSION = "3.1"   # 3.1: optional ssp_stellar_mass (n_afe, n_met, n_ages), as SSPData 3.0
 
 FSPS_AFE_VALUES_NAFE5 = np.array([-0.2, 0.0, +0.2, +0.4, +0.6])
 
@@ -73,13 +74,18 @@ class SSPDataAfe(SSPData):
     ssp_wave : jnp.ndarray (n_wave,) -- Angstrom
     ssp_flux : jnp.ndarray (n_afe, n_met, n_ages, n_wave) -- Lsun / Hz per Msun formed
     ssp_resolution : np.ndarray (n_wave,) or None -- sigma_v(lambda) [km/s] on ``ssp_wave``; required by save/load
+    ssp_stellar_mass : np.ndarray (n_afe, n_met, n_ages) or None -- surviving mass per M_sun formed (optional)
     """
 
     ssp_afe: jnp.ndarray = field(kw_only=True)
 
     _display_title = "SSPDataAfe"
-    _schema_label = "SSPDataAfe schema 2.1"
+    _schema_label = "SSPDataAfe schema 3.1"
     _extra_datasets = ("ssp_afe",)
+
+    @classmethod
+    def _schema_version(cls) -> str:
+        return SSP_AFE_SCHEMA_VERSION
 
     def _grid_arrays_for_chash(self):
         return (self.ssp_wave, self.ssp_lg_age_gyr, self.ssp_lgmet, self.ssp_flux, self.ssp_afe)
@@ -182,6 +188,8 @@ class SSPDataAfe(SSPData):
         if ssp_afe is None:
             ssp_afe = jnp.zeros(1)
             arrays['ssp_flux'] = arrays['ssp_flux'][None, ...]
+            if meta.get('ssp_stellar_mass') is not None:
+                meta['ssp_stellar_mass'] = meta['ssp_stellar_mass'][None, ...]
         return cls(**arrays, ssp_afe=ssp_afe, **meta, zsun=zsun)
 
     @classmethod
@@ -252,6 +260,7 @@ class SSPDataAfe(SSPData):
         ssp_lg_age_gyr = jnp.array(ssp.log_age - 9.0)
 
         planes = []
+        mass_planes = []
         _wave = None
         for afe_indx in range(1, n_afe + 1):               # afeindx is 1-based
             if n_afe > 1:
@@ -259,13 +268,16 @@ class SSPDataAfe(SSPData):
                 print(f"[alpha/Fe] plane {afe_indx}/{n_afe} "
                       f"(afe = {ssp_afe[afe_indx - 1]:+.1f})")
             spectrum_collector = []
+            mass_collector = []
             for zmet_indx in range(1, nzmet + 1):
                 print(f"...retrieving metallicity {zmet_indx}/{nzmet} "
                       f"[Z = {ssp.zlegend[zmet_indx - 1]:.4f}]")
                 _wave, _fluxes = ssp.get_spectrum(
                     tage=0.0, zmet=zmet_indx, peraa=False)
                 spectrum_collector.append(_fluxes)
+                mass_collector.append(np.array(ssp.stellar_mass, dtype=np.float64))
             planes.append(np.array(spectrum_collector))
+            mass_planes.append(np.array(mass_collector))
 
             _z_now = np.log10(np.asarray(ssp.zlegend))
             if not np.allclose(_z_now, np.asarray(ssp_lgmet)):
@@ -281,6 +293,8 @@ class SSPDataAfe(SSPData):
 
         meta = _read_fsps_provenance(ssp, kwargs, ssp_wave, ssp_lgmet)
         meta['schema_version'] = SSP_AFE_SCHEMA_VERSION
+        meta['ssp_stellar_mass'] = np.stack(mass_planes, axis=0)
+        meta['stellar_mass_source'] = fsps_stellar_mass_source(meta['fsps_version'])
         if n_afe > 1 and meta.get('isoc_type') == 'mist':
             meta['refused_cells'] = _duplicated_isochrone_cells(n_afe, int(nzmet))
 

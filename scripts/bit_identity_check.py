@@ -137,6 +137,32 @@ def _postprocess(model, theta_np, tag, out):
     o = pp.run()
     o = {k: v for k, v in o.items() if k != "meta"}
     _flat(f"{tag}/postprocess", o, out)
+    _mfrac(model, theta_np, tag, out)
+
+
+def _mfrac(model, theta_np, tag, out):
+    """v1.0.6 surviving-mass fraction per draw, with the FSPS table stored for the test grid
+    (tests/reference/ssp_stellar_mass.npz, matched by chash); skipped on older packages."""
+    csp = model.csp
+    ref = HERE.parent / "tests" / "reference" / "ssp_stellar_mass.npz"
+    if not hasattr(csp, "surviving_mass_fraction") or not ref.is_file():
+        return
+    with np.load(ref) as z:
+        tag_m = next((k[:-6] for k in z.files if k.endswith("/chash")
+                      and str(z[k]) == getattr(csp, "grid_chash", None)), None)
+        if tag_m is None:
+            return
+        mass = np.array(z[f"{tag_m}/mass"])
+    saved = csp.ssp_stellar_mass
+    csp.ssp_stellar_mass = mass
+    try:
+        f = jax.jit(csp.surviving_mass_fraction)
+        n = next(iter(theta_np.values())).shape[0]
+        for i in range(n):
+            t = model.apply_transforms({k: jnp.asarray(v[i]) for k, v in theta_np.items()})
+            out[f"{tag}/mfrac/{i}"] = np.asarray(f(t))
+    finally:
+        csp.ssp_stellar_mass = saved
 
 
 def _likelihood(model, theta_np, tag, out):

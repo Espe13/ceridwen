@@ -130,7 +130,9 @@ population → dust attenuation/emission → nebular → IGM → observed-frame
 projection → likelihood → sampler.
 
 - `ssps/` — `ssp_data.py`: `SSPData` (frozen dataclass, HDF5 I/O, ionising-photon
-  rate derived internally; HDF5 caches the SSP spectral grid). `ssp_basis.py`:
+  rate derived internally; HDF5 caches the SSP spectral grid; schema 3.0 adds the optional
+  surviving-mass table `ssp_stellar_mass`, added to an existing file by
+  `scripts/attach_stellar_mass.py`, used only by `PostProcess` for `mfrac`). `ssp_basis.py`:
   `SSPBasis`, `FastStepBasis` (thin FSPS wrappers + tabular SFH binning).
 - `csp/` — `csp.py`: `CSPBasis`, the core forward model. Holds the `get_spectrum_*`
   variants (stellar ± dust attenuation ± dust emission ± nebular), step/linear
@@ -178,10 +180,12 @@ projection → likelihood → sampler.
 - `igm.py` — IGM attenuation (`Madau1995`), extensible via the `IGMModel` ABC.
 - `fit.py` — `fitSED` (top-level convenience wrapper) + `read_result_h5` /
   `load_result_h5` / `result_cosmology`; writes `<output_dir>/ceridwen_result.h5`
-  (obs, model/priors as JSON, kinematics, cosmology, samples, log-weights,
-  log-evidence).
-- `postprocess.py` — `PostProcess` (equal-weight draws, SFH averages, UV and
-  ionising properties, posterior predictions); `plotting.py` — summary, corner
+  (obs incl. sky / calibration / upper limits and each likelihood's noise model,
+  model/priors as JSON, kinematics, cosmology, samples, log-weights, log-evidence,
+  `/provenance`: version, git state, sampler settings, rng key; `read_provenance`).
+- `postprocess.py` — `PostProcess` (equal-weight draws, SFH averages, formed and
+  surviving mass (`mfrac`, grids with a mass table), UV and ionising properties,
+  posterior predictions); `plotting.py` — summary, corner
   and diagnostic figures.
 
 Design patterns to follow when extending: frozen dataclasses for immutable data

@@ -48,6 +48,10 @@ replaces the input after keeping <name>_schema1_backup.h5.
 Verification (always run): the output is re-loaded through the strict
 loader and every original dataset is compared BIT-FOR-BIT (sha256)
 against the input; any mismatch aborts with a non-zero exit.
+
+The output is labelled with the current schema (SSP 3.0 / SSPDataAfe 3.1), whose
+surviving-mass table is optional; add it afterwards with
+scripts/attach_stellar_mass.py (needs FSPS).
 """
 from __future__ import annotations
 

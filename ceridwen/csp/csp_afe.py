@@ -136,6 +136,10 @@ class CSPBasis_afe(CSPBasis):
              np.asarray(SSPData.ssp_resolution, dtype=np.float64))
             if getattr(SSPData, "ssp_resolution", None) is not None else None)
         self.ssp_ages_lgyr = self.ages + 9                 # log10(yr)
+        # surviving mass per M_sun formed (SSP schema 3); post-processing only, never traced
+        # by the forward model
+        _m = getattr(SSPData, "ssp_stellar_mass", None)
+        self.ssp_stellar_mass = None if _m is None else np.asarray(_m, dtype=np.float64)
 
         self._ssp_isoc_type    = getattr(SSPData, "isoc_type", None)
         self._ssp_spec_library = getattr(SSPData, "spec_library", None)
@@ -327,6 +331,16 @@ class CSPBasis_afe(CSPBasis):
         f_hi = jnp.take(self.flux, k,     axis=0)
         w32  = w.astype(jnp.float32)
         return (jnp.float32(1.0) - w32) * f_lo + w32 * f_hi
+
+    def _stellar_mass_at(self, theta):
+        """(n_z, n_age) surviving-mass table at theta['afe'], interpolated as ``_flux_at_afe``."""
+        m = jnp.asarray(self.ssp_stellar_mass)
+        if self._n_afe == 1:
+            return m[0]
+        if "afe" not in theta:
+            return m[self._afe_solar_idx]
+        k, w = self._afe_coords(theta)
+        return (1.0 - w) * jnp.take(m, k - 1, axis=0) + w * jnp.take(m, k, axis=0)
 
     def configure_spectrum_model(
         self, add_dust, add_diffuse_dust, add_dust_emission, sps_home

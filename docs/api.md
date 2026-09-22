@@ -85,6 +85,8 @@ all outlier fractions default to 0, switch the mixture on explicitly
 
 ::: ceridwen.fit.read_result_h5
 
+::: ceridwen.fit.read_provenance
+
 ::: ceridwen.fit.convert_result
 
 ::: ceridwen.fit.result_cosmology

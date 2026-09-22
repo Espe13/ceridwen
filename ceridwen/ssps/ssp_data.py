@@ -21,7 +21,12 @@ def _import_fsps():
 
 DEFAULT_SSP_BNAME = "ssp_data_fsps_v3.2_lgmet_age.h5"
 
-SSP_SCHEMA_VERSION = "2.0"
+SSP_SCHEMA_VERSION = "3.0"
+
+# Schema history: 2.0 added the library resolution curve ``ssp_resolution`` (required);
+# 3.0 adds the optional surviving stellar-mass table ``ssp_stellar_mass`` (grid shape minus
+# the wavelength axis), which a schema-2 file lacks and scripts/attach_stellar_mass.py adds.
+STELLAR_MASS_SCRIPT = "scripts/attach_stellar_mass.py"
 
 
 _IMF_KWARGS = frozenset({
@@ -141,6 +146,10 @@ class SSPData:
     ssp_wave : array (n_wave,), Angstrom
     ssp_flux : array (n_met, n_ages, n_wave), L_sun/Hz per M_sun formed
     ssp_resolution : ndarray (n_wave,), km/s -- library sigma_v(lambda) on ssp_wave, NaN where unknown; optional in memory, required by save()/load()
+    ssp_stellar_mass : ndarray (n_met, n_ages) or None -- surviving mass (stars + remnants) per
+        M_sun formed of each SSP, FSPS ``stellar_mass`` (schema 3.0, optional); None when the
+        grid carries no table (``scripts/attach_stellar_mass.py`` adds one to an existing file)
+    stellar_mass_source : str or None -- provenance of ``ssp_stellar_mass``
     zsun : float, init-only -- the grid's solar metallicity (mass fraction) when it is neither
         recorded (``log10_zsun``) nor in ``grid_metadata.CHASH_TABLE``; must match a node
     log10_zsun : float -- resolved: the grid's solar node (exact), so logzsol = ssp_lgmet - log10_zsun
@@ -154,6 +163,8 @@ class SSPData:
 
     ssp_resolution: Optional[np.ndarray] = field(default=None, compare=False)
     resolution_source: Optional[str] = field(default=None, compare=False)
+    ssp_stellar_mass: Optional[np.ndarray] = field(default=None, compare=False)
+    stellar_mass_source: Optional[str] = field(default=None, compare=False)
 
     isoc_type: Optional[str] = field(default=None, compare=False)
     spec_library: Optional[str] = field(default=None, compare=False)
@@ -175,7 +186,7 @@ class SSPData:
     _chash_hint: InitVar[Optional[str]] = None
 
     _display_title = "SSPData"
-    _schema_label = "SSP schema 2.0"
+    _schema_label = "SSP schema 3.0"
     _extra_datasets: tuple = ()
 
     def _expected_flux_shape(self) -> tuple:
@@ -213,6 +224,41 @@ class SSPData:
                     "use NaN to mark pixels of unknown library resolution."
                 )
             object.__setattr__(self, "ssp_resolution", res)
+        if self.ssp_stellar_mass is not None:
+            object.__setattr__(self, "ssp_stellar_mass",
+                               self._checked_stellar_mass(self.ssp_stellar_mass))
+
+    def _checked_stellar_mass(self, mass) -> np.ndarray:
+        """``mass`` as float64 of shape ``ssp_flux.shape[:-1]``, finite and positive, else ValueError."""
+        m = np.asarray(mass, dtype=np.float64)
+        want = self._expected_flux_shape()[:-1]
+        if m.shape != want:
+            raise ValueError(
+                f"ssp_stellar_mass shape {m.shape} must be the grid shape without the "
+                f"wavelength axis, {want}: one surviving mass per SSP (M_sun per M_sun formed).")
+        if not np.all(np.isfinite(m)) or np.any(m <= 0.0):
+            raise ValueError("ssp_stellar_mass must be finite and positive (M_sun surviving per "
+                             "M_sun formed); got non-finite or non-positive entries.")
+        return m
+
+    def with_stellar_mass(self, mass, *, source):
+        """Return a copy carrying the surviving stellar-mass table ``mass`` (shape
+        ``ssp_flux.shape[:-1]``, M_sun per M_sun formed) with its provenance ``source``."""
+        import dataclasses as _dc
+        if not source:
+            raise ValueError("with_stellar_mass: pass source= (where the masses come from)")
+        return _dc.replace(self, ssp_stellar_mass=self._checked_stellar_mass(mass),
+                           stellar_mass_source=str(source), schema_version=self._schema_version())
+
+    @classmethod
+    def _schema_version(cls) -> str:
+        return SSP_SCHEMA_VERSION
+
+    def require_stellar_mass(self) -> np.ndarray:
+        """The surviving stellar-mass table; ValueError naming the attach script when absent."""
+        if self.ssp_stellar_mass is None:
+            raise ValueError(missing_stellar_mass_message(type(self).__name__))
+        return self.ssp_stellar_mass
 
     def _grid_arrays_for_chash(self):
         return (self.ssp_wave, self.ssp_lg_age_gyr, self.ssp_lgmet, self.ssp_flux, None)
@@ -378,6 +424,13 @@ class SSPData:
                           "(unknown everywhere; no subtraction will occur)"]
             if self.resolution_source:
                 lines += [f"  resolution source        : {self.resolution_source}"]
+        if self.ssp_stellar_mass is None:
+            lines += [f"  surviving stellar mass   : not in this grid (add it with "
+                      f"{STELLAR_MASS_SCRIPT})"]
+        else:
+            m = self.ssp_stellar_mass
+            lines += [f"  surviving stellar mass   : [{m.min():.4g}, {m.max():.4g}] M_sun per "
+                      f"M_sun formed ({self.stellar_mass_source or 'source not recorded'})"]
         lines += self._display_note_lines()
 
         txt = "\n".join(lines)
@@ -412,6 +465,13 @@ class SSPData:
             f.attrs['units_flux']         = 'L_sun Hz^-1 M_sun^-1'
             f.attrs['units_resolution']   = 'sigma_v [km/s]; NaN = unknown'
             self._save_extra(f)
+            if self.ssp_stellar_mass is not None:
+                f.create_dataset('ssp_stellar_mass',
+                                 data=np.asarray(self.ssp_stellar_mass, dtype=np.float64))
+                f.attrs['units_stellar_mass'] = ('M_sun surviving (stars + remnants) per '
+                                                 'M_sun formed, per SSP')
+                if self.stellar_mass_source is not None:
+                    f.attrs['stellar_mass_source'] = str(self.stellar_mass_source)
             if self.resolution_source is not None:
                 f.attrs['resolution_source'] = str(self.resolution_source)
 
@@ -485,10 +545,17 @@ class SSPData:
                      for name, v in raw_extra.items()}
             ssp_resolution = np.asarray(f['ssp_resolution'][:],
                                         dtype=np.float64)
+            # schema 3.0, optional; deliberately NOT part of the content hash (chash), which
+            # identifies the flux grid: attaching a mass table keeps the grid's identity
+            ssp_stellar_mass = (np.asarray(f['ssp_stellar_mass'][:], dtype=np.float64)
+                                if 'ssp_stellar_mass' in f else None)
 
             a = f.attrs
             meta = {
                 'ssp_resolution':    ssp_resolution,
+                'ssp_stellar_mass':  ssp_stellar_mass,
+                'stellar_mass_source': _decode(a['stellar_mass_source'])
+                                       if 'stellar_mass_source' in a else None,
                 'resolution_source': _decode(a['resolution_source'])
                                      if 'resolution_source' in a else None,
                 'schema_version': _decode(a['schema_version'])
@@ -578,17 +645,21 @@ def _collect_ssp_and_meta(**kwargs):
     ssp_lg_age_gyr = ssp.log_age - 9.0
 
     spectrum_collector = []
+    mass_collector = []
     for zmet_indx in range(1, nzmet + 1):              # 1-based metallicity index
         print(f"...retrieving metallicity {zmet_indx}/{nzmet} "
               f"[Z = {ssp.zlegend[zmet_indx-1]:.4f}]")
         _wave, _fluxes = ssp.get_spectrum(tage=0.0, zmet=zmet_indx, peraa=False)
         spectrum_collector.append(_fluxes)
+        mass_collector.append(np.array(ssp.stellar_mass, dtype=np.float64))
 
     ssp_wave       = jnp.array(_wave)
     ssp_flux       = jnp.array(spectrum_collector)
     ssp_lg_age_gyr = jnp.array(ssp_lg_age_gyr)
 
     meta = _read_fsps_provenance(ssp, kwargs, ssp_wave, ssp_lgmet)
+    meta["ssp_stellar_mass"] = np.array(mass_collector)
+    meta["stellar_mass_source"] = fsps_stellar_mass_source(meta["fsps_version"])
     return ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, meta
 
 
@@ -628,6 +699,21 @@ def _read_fsps_provenance(ssp, kwargs: dict, ssp_wave, ssp_lgmet) -> dict:
         "wave_max":       float(np.max(np.array(ssp_wave))),
         "schema_version": SSP_SCHEMA_VERSION,
     }
+
+
+def missing_stellar_mass_message(what="this grid") -> str:
+    return (f"{what} carries no surviving stellar-mass table (ssp_stellar_mass, SSP schema "
+            f"3.0), so mfrac and the surviving mass cannot be computed.  Add it to a COPY of the "
+            f"grid file, without rebuilding the spectra, with\n"
+            f"    python {STELLAR_MASS_SCRIPT} <grid.h5>\n"
+            f"(needs python-fsps compiled with the grid's isochrones and $SPS_HOME).")
+
+
+def fsps_stellar_mass_source(fsps_version) -> str:
+    """Provenance string of a stellar-mass table read from FSPS."""
+    import os
+    return (f"FSPS StellarPopulation.stellar_mass (sfh=0, tage=0; stars + remnants per M_sun "
+            f"formed), python-fsps {fsps_version}, SPS_HOME={os.environ.get('SPS_HOME')}")
 
 
 def collect_ssp_data(**kwargs) -> typing.Tuple[jnp.ndarray, jnp.ndarray,

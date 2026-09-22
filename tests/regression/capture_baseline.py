@@ -333,6 +333,7 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
     out["outlier_likelihood"]["lnl_phot_upper_limit"] = np.asarray(lnl_p_ul, dtype=np.float64)
 
     out.update(_logzsol_baselines(p))
+    out.update(_stellar_mass_baseline(p))
     out["eline_marginal"] = _eline_marginal_baseline(p, ssp_data)
     return out
 
@@ -394,6 +395,56 @@ def _logzsol_baselines(p) -> dict:
             blk["logzsol_total"] = np.asarray(csp.logzsol_total(th), dtype=np.float64)
         out[cat] = blk
     return out
+
+
+STELLAR_MASS_TABLES = REPO_ROOT / "tests" / "reference" / "ssp_stellar_mass.npz"
+
+
+def _stellar_mass_baseline(p) -> dict:
+    """Surviving-mass fraction (v1.0.6, SSP schema 3) on the canonical test grid with the
+    FSPS mass table stored in tests/reference/ssp_stellar_mass.npz (matched by chash; the
+    category is absent when the grid is another one).  mfrac of a two-burst SFH and of a
+    constant SFH on a 0-10 Gyr grid, in both SFH schemes, at logzsol = -0.4 (constant) and
+    for a metallicity history.  Justified in the commit message: the constant-SFH values
+    equal an independent analytic integral of the table to 1e-10 (tests/test_stellar_mass.py),
+    and the table equals FSPS's stellar_mass at the nodes (examples/recipes/reference_mfrac.json
+    burst values)."""
+    from ceridwen.ssps.ssp_data import SSPData
+    from ceridwen.csp.csp import CSPBasis
+    from ceridwen.cosmology import Cosmology
+    if not STELLAR_MASS_TABLES.is_file():
+        return {}
+    grid = SSPData.load(SSP_FILE)
+    with np.load(STELLAR_MASS_TABLES) as z:
+        tag = next((k[:-len("/chash")] for k in z.files
+                    if k.endswith("/chash") and str(z[k]) == grid.chash), None)
+        if tag is None:
+            return {}
+        grid = grid.with_stellar_mass(np.array(z[f"{tag}/mass"]), source=str(z[f"{tag}/source"]))
+    # 0-10 Gyr: every bin stays below the grid's second-oldest SSP age (BPASS 10^10.1 yr),
+    # clear of the pre-v1.0.6 "linear"-scheme defect that gives the oldest SSP node no weight
+    # (reported in REPORT_feat-mfrac-and-noise.md; not fixed here)
+    n = 10
+    lb = jnp.linspace(0.0, 10.0, n)
+    sfh = (jnp.exp(-0.5 * ((lb - 0.05) / 0.03) ** 2)
+           + 0.7 * jnp.exp(-0.5 * ((lb - 8.0) / 0.8) ** 2))
+    out = {}
+    for interp in ("step", "linear"):
+        for zh in ("const", "var"):
+            theta = {"lookback_time": lb, "sfh": sfh}
+            if zh == "const":
+                theta["logzsol"] = jnp.array([LOGZSOL_INTERIOR])
+            else:
+                theta["logzsol_hist"] = jnp.linspace(LOGZSOL_INTERIOR, -1.2, n)
+            csp = CSPBasis(grid, theta=theta, cosmo=Cosmology.planck18(),
+                           zh_const=(zh == "const"), add_neb=False, add_dust=False,
+                           add_diffuse_dust=False, add_igm=False, verbose=False,
+                           sfh_interp=interp)
+            th = dict(csp.theta_init)
+            vals = [csp.surviving_mass_fraction(th),
+                    csp.surviving_mass_fraction(dict(th, sfh=jnp.ones(n)))]
+            out[f"mfrac_{interp}_{zh}zh"] = np.asarray(vals, dtype=np.float64)
+    return {"stellar_mass": out}
 
 
 def _eline_marginal_baseline(p, ssp_data) -> dict[str, np.ndarray]:

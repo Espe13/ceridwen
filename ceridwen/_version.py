@@ -1,3 +1,3 @@
 # Keep in sync with pyproject.toml [project].version.
-__version__ = version = "1.0.5"
-__version_tuple__ = version_tuple = (1, 0, 5)
+__version__ = version = "1.0.6"
+__version_tuple__ = version_tuple = (1, 0, 6)

@@ -39,6 +39,9 @@ unless you reassigned `model.observations` without calling
 | `out['extras']['sfh']['mass_formed']` | `(N,)` | ∫ SFR dt, M⊙ |
 | `out['extras']['sfh']['sfr10']`, `sfr100`, ... | `(N,)` | mean SFR over the last 10, 100, ... Myr (`windows_myr`, default 3, 5, 10, 20, 50, 100, 500) |
 | `out['extras']['sfh']['ssfr10']`, ... | `(N,)` | `sfrW / mass_formed`, 1/yr |
+| `out['extras']['sfh']['mfrac']` | `(N,)` | surviving / formed mass (stars + remnants); only with a grid that carries a mass table (below) |
+| `out['extras']['sfh']['mass_surviving']` | `(N,)` | `mfrac * mass_formed`, M⊙ |
+| `out['extras']['sfh']['ssfr10_surviving']`, ... | `(N,)` | `sfrW / mass_surviving`, 1/yr |
 | `out['extras']['uv']['MUV']`, `LUV` | `(N,)` | absolute AB magnitude at 1500 Å and mean L_ν over 1450–1550 Å (erg/s/Hz) of the full (dust-attenuated) model |
 | `out['extras']['uv']['MUV_intrinsic']`, `LUV_intrinsic` | `(N,)` | the same from the stellar-intrinsic spectrum |
 | `out['extras']['ionizing']['nion']` | `(N,)` | Q(H) in s⁻¹ from the intrinsic spectrum, with the nebular model's constants |
@@ -54,10 +57,10 @@ unless you reassigned `model.observations` without calling
 | `out['prediction']['spectra_dustfree']` | `(N, n_wave)` | stars + nebular continuum + lines, no dust |
 | `out['derived'][name]` | `(N,)` or `(N, k)` | your functions (below) |
 | `out['bestfit']` | same tree, one draw | the highest-likelihood raw sample, with all of the above |
-| `out['meta']` | | `n_samples`, `n_raw`, `seed`, `resampled`, `windows_myr`, `param_names`, `zred_fixed`, `cosmology`, `sampler`, `weights` (source), `log_evidence`, `log_evidence_err`, `observations`, `sfh_interp`, `sfh_per_bin` |
+| `out['meta']` | | `n_samples`, `n_raw`, `seed`, `resampled`, `windows_myr`, `param_names`, `zred_fixed`, `cosmology`, `sampler`, `weights` (source), `log_evidence`, `log_evidence_err`, `observations`, `sfh_interp`, `sfh_per_bin`, `metallicity` (convention and grid Z_sun), `mfrac` (computed or not) |
 
 Blocks can be switched off: `PostProcess(..., sfr=False, ssfr=False,
-uv=False, ionizing=False, predictions=False)`.
+uv=False, ionizing=False, predictions=False, mfrac=False)`.
 
 ## Conventions you should know
 
@@ -80,8 +83,26 @@ the CSP's convention. The physical SFR is that shape × 10^logmass when
 under `logsfr_ratios_to_sfh`. `sfrW` is the mean SFR over the last W Myr of
 the same piecewise function the weight kernel integrates: constant per bin
 for `sfh_interp="step"`, linear between nodes for `"linear"`; beyond the
-oldest node the SFR is zero. `ssfrW` divides by the formed mass; no stellar
-return fraction is applied, because the SSP grid carries none.
+oldest node the SFR is zero. `ssfrW` divides by the formed mass, with no
+stellar return fraction, and keeps that meaning.
+
+**Surviving mass (v1.0.6).** `mfrac` is the fraction of the formed mass still in
+stars and remnants: the SSP grid's surviving-mass table (`ssp_stellar_mass`, FSPS's
+`stellar_mass` per SSP, SSP schema 3) weighted by the draw's SSP weights, the same
+weights that make its spectrum. `mass_surviving = mfrac * mass_formed` and
+`ssfrW_surviving = sfrW / mass_surviving` are the Prospector-style stellar mass and
+sSFR. A grid written before schema 3 has no table: `PostProcess` then warns, names
+the script that adds one to a copy of the file,
+
+```bash
+python scripts/attach_stellar_mass.py ssp_data.h5          # writes ssp_data_schema3.h5
+```
+
+and reports `mass_formed` only (`mfrac=True` makes the missing table an error,
+`mfrac=False` skips the block silently). The composite `mfrac` follows CERIDWEN's
+SFH integration, not FSPS's `csp_gen`: against python-fsps for constant and rising
+SFHs of 0.1-10 Gyr it agrees to 4.2e-4 (step) and 6.3e-3 (linear, young populations on
+MIST, whose youngest node is 10^5 yr); GOTCHAS section 14.
 
 **Model-grid spectra** are rest-frame luminosity densities: no distance, no
 (1+z), no IGM. To compare with an observation use the per-observation

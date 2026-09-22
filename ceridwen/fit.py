@@ -147,7 +147,7 @@ def fitSED(
 
         _t0_h5 = time.perf_counter()
         write_result_h5(output_path, model, result, verbose=verbose,
-                        likelihood=multi_likelihood)
+                        likelihood=multi_likelihood, adapter=adapter, rng_key=rng_key)
         _t_h5 = time.perf_counter() - _t0_h5
 
         _t_total = _t_likelihood + _t_adapter + _t_sampler + _t_h5
@@ -414,6 +414,8 @@ def write_result_h5(
     result,
     verbose: bool = True,
     likelihood=None,
+    adapter=None,
+    rng_key=None,
 ):
     """Write ``result`` and the model/observation metadata to HDF5 ``path``::
 
@@ -422,7 +424,14 @@ def write_result_h5(
             uncertainty    (n_data,)
             wavelength     (n_data,)
             mask           (n_data,)  bool
-            attrs: type, name, [instrument_kind, subtract_library, filternames, ...]
+            sky, calibration, upper_limit   (n_data,)  when the observation has them
+            attrs: type, name, noise_floor, [instrument_kind, subtract_library, filternames, ...],
+                   likelihood_json (with ``likelihood``: kernel class and noise-model settings)
+
+        /provenance/        attrs: ceridwen_version, ceridwen_githash (build stamp),
+                            git_head / git_dirty (live, when the package is a git checkout),
+                            jax_version, written_utc, sampler_json (the adapter's settings
+                            actually used, with ``adapter``); dataset rng_key (with ``rng_key``)
 
         /model/
             param_names    (n_params,)  variable-length string
@@ -459,6 +468,14 @@ def write_result_h5(
             og.create_dataset("mask", data=np.asarray(obs.mask))
             og.attrs["type"] = type(obs).__name__
             og.attrs["name"] = obs.name
+            for extra in ("sky", "calibration", "upper_limit"):
+                val = getattr(obs, extra, None)
+                if val is not None:
+                    og.create_dataset(extra, data=np.asarray(val))
+            og.attrs["noise_floor"] = float(getattr(obs, "noise_floor", 0.0) or 0.0)
+            if likelihood is not None and obs.name in tuple(likelihood.keys):
+                lh = likelihood.likelihoods[tuple(likelihood.keys).index(obs.name)]
+                og.attrs["likelihood_json"] = json.dumps(_likelihood_config(lh))
 
             ins = getattr(obs, "instrument", None)
             if ins is not None:
@@ -529,6 +546,8 @@ def write_result_h5(
         mod_grp.attrs["n_metallicities"] = int(model.csp.zmet.shape[0]) if hasattr(model.csp, "zmet") else -1
         _write_metallicity_provenance(mod_grp, model)
 
+        _write_run_provenance(f, adapter, rng_key, model)
+
         samp_grp = f.create_group("samples")
 
         for name in result.param_names:
@@ -575,6 +594,109 @@ def write_result_h5(
     if verbose:
         size_mb = path.stat().st_size / 1024**2
         logger.info(f"  Wrote {path}  ({size_mb:.1f} MB)")
+
+
+def _likelihood_config(lh) -> dict:
+    """JSON-able description of an observation's likelihood: kernel class + noise model."""
+    import dataclasses
+    nm = getattr(lh, "noise_model", None)
+    cfg = {"class": type(lh).__name__}
+    if nm is not None:
+        cfg["noise_model"] = {"class": type(nm).__name__}
+        if dataclasses.is_dataclass(nm):
+            cfg["noise_model"].update(
+                {fld.name: getattr(nm, fld.name) for fld in dataclasses.fields(nm)})
+        cfg["noise_model"]["sampled_parameters"] = list(
+            getattr(nm, "nuisance_param_names", ())) + list(getattr(nm, "outlier_param_names", ()))
+    return cfg
+
+
+def _git_state(path) -> tuple:
+    """``(head, dirty)`` of the git checkout containing ``path``, or (None, None)."""
+    import os
+    import subprocess
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+    try:
+        head = subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"], env=env,
+                              capture_output=True, text=True, timeout=10)
+        if head.returncode:
+            return None, None
+        st = subprocess.run(["git", "-C", str(path), "status", "--porcelain",
+                             "--untracked-files=no"], env=env,
+                            capture_output=True, text=True, timeout=10)
+        return head.stdout.strip(), (bool(st.stdout.strip()) if st.returncode == 0 else None)
+    except (OSError, subprocess.SubprocessError):
+        return None, None
+
+
+def adapter_settings(adapter, model=None) -> dict:
+    """The sampler settings an adapter actually runs with (defaults resolved as the adapter
+    resolves them; ``num_inner_steps`` needs ``model`` for its 5 x n_dims default)."""
+    if adapter is None:
+        return {}
+    cls = type(adapter).__name__
+    out = {"adapter": cls}
+    if cls == "BlackJAXNestedSamplerAdapter":
+        inner = adapter._num_inner_steps
+        if inner is None and model is not None:
+            inner = 5 * sum(int(jnp.size(v)) for v in model.theta_init.values())
+        out.update(num_live=adapter.num_live,
+                   num_inner_steps=inner,
+                   num_delete=(adapter._num_delete if adapter._num_delete is not None
+                               else max(1, adapter.num_live // 5)),
+                   logZ_tol=adapter.logZ_tol,
+                   checkpoint_interval_s=adapter.checkpoint_interval_s)
+        return out
+    for k in ("num_warmup", "num_samples", "num_chains", "target_acceptance",
+              "initial_step_size", "max_num_doublings", "dense_mass", "bounds"):
+        if hasattr(adapter, k):
+            v = getattr(adapter, k)
+            out[k] = ({n: list(b) for n, b in v.items()} if isinstance(v, dict) else v)
+    if hasattr(adapter, "vi"):
+        vi = adapter.vi
+        out["vi"] = vi if (vi is None or isinstance(vi, str)) else type(vi).__name__
+        out["vi_kwargs"] = {k: (v if isinstance(v, (int, float, str, bool)) or v is None
+                                else repr(v)) for k, v in getattr(adapter, "vi_kwargs", {}).items()}
+    return out
+
+
+def _write_run_provenance(f, adapter, rng_key, model=None) -> None:
+    import datetime
+    import ceridwen
+    g = f.create_group("provenance")
+    g.attrs["ceridwen_version"] = str(ceridwen.__version__)
+    g.attrs["ceridwen_githash"] = str(getattr(ceridwen, "__githash__", None))
+    g.attrs["ceridwen_githash_note"] = ("build stamp (_buildstamp.py): stale in an editable "
+                                        "install; git_head is the checkout's live HEAD")
+    head, dirty = _git_state(Path(ceridwen.__file__).resolve().parent)
+    g.attrs["git_head"] = str(head) if head is not None else "unavailable (not a git checkout)"
+    if dirty is not None:
+        g.attrs["git_dirty"] = bool(dirty)
+    g.attrs["jax_version"] = str(jax.__version__)
+    g.attrs["written_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat(
+        timespec="seconds")
+    g.attrs["sampler_json"] = json.dumps(adapter_settings(adapter, model))
+    if rng_key is not None:
+        key = rng_key
+        if jnp.issubdtype(jnp.asarray(key).dtype, jax.dtypes.prng_key):
+            key = jax.random.key_data(key)
+        g.create_dataset("rng_key", data=np.asarray(key))
+
+
+def read_provenance(path) -> dict:
+    """The ``/provenance`` group of a result file (JSON attrs decoded); {} for older files."""
+    import h5py
+    with h5py.File(Path(path), "r") as f:
+        return _provenance_from_group(f["provenance"]) if "provenance" in f else {}
+
+
+def _provenance_from_group(g) -> dict:
+    out = {}
+    for k, v in g.attrs.items():
+        out[k[:-5] if k.endswith("_json") else k] = json.loads(v) if k.endswith("_json") else v
+    for k in g:
+        out[k] = np.array(g[k])
+    return out
 
 
 METALLICITY_CONVENTION = "logzsol"
@@ -847,8 +969,9 @@ def result_cosmology(path: str | Path):
 
 
 def read_result_h5(path: str | Path) -> dict:
-    """Read a result HDF5 file into a nested dict with keys ``'obs'``, ``'model'``, ``'samples'``
-    (and ``'elines'`` when the fit marginalised the emission lines)."""
+    """Read a result HDF5 file into a nested dict with keys ``'obs'``, ``'model'``, ``'samples'``,
+    ``'provenance'`` (files written by fitSED since v1.0.6) and ``'elines'`` (when the fit
+    marginalised the emission lines)."""
     import h5py
 
     out = {"obs": {}, "model": {}, "samples": {}}
@@ -860,6 +983,8 @@ def read_result_h5(path: str | Path) -> dict:
             obs_data = {k: np.array(og[k]) for k in og}
             for attr_name in og.attrs:
                 obs_data[attr_name] = og.attrs[attr_name]
+            if "likelihood_json" in og.attrs:
+                obs_data["likelihood"] = json.loads(og.attrs["likelihood_json"])
             out["obs"][obs_name] = obs_data
 
         mod = f["model"]
@@ -891,6 +1016,9 @@ def read_result_h5(path: str | Path) -> dict:
 
         for attr_name in samp.attrs:
             out["samples"][attr_name] = samp.attrs[attr_name]
+
+        if "provenance" in f:
+            out["provenance"] = _provenance_from_group(f["provenance"])
 
         if "elines" in f:
             g = f["elines"]
