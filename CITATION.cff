@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use CERIDWEN in your research, please cite it as below."
-title: "CERIDWEN: Comprehensive SED Estimation Routine Involving Data-driven WEight calculatioNs"
+title: "CERIDWEN: Fast and Flexible GPU-Accelerated Stellar Population Inference"
 abstract: >-
   CERIDWEN is a JAX-native, GPU-capable spectral energy distribution (SED)
   fitting package for galaxies. It provides a differentiable forward model
@@ -15,7 +15,7 @@ authors:
     email: aas208@cam.ac.uk
     affiliation: "Kavli Institute for Cosmology, University of Cambridge"
     orcid: "https://orcid.org/0009-0009-5464-3558"
-version: "1.0.2"
+version: "1.0.3"
 date-released: "2026-09-22"
 license: MIT
 repository-code: "https://github.com/Espe13/ceridwen"

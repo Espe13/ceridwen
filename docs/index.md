@@ -43,9 +43,9 @@ If you use CERIDWEN in your research, please cite it:
 ```bibtex
 @misc{stoffers2026ceridwen,
   author       = {Stoffers, Amanda},
-  title        = {{CERIDWEN}: Comprehensive {SED} Estimation Routine Involving Data-driven WEight calculatioNs},
+  title        = {{CERIDWEN}: Fast and Flexible {GPU}-Accelerated Stellar Population Inference},
   year         = {2026},
-  note         = {Version 1.0.2},
+  note         = {Version 1.0.3},
   howpublished = {\url{https://github.com/Espe13/ceridwen}}
 }
 ```

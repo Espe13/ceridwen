@@ -226,3 +226,19 @@ wavelength mismatch instead of a `TypeError` (`csp.py` `_neb_cube_rows_for`).
 `scripts/check_api_usage.py` skips `tests/reference/` (scripts for other codes)
 and honours `# deliberate misuse` markers; `capture_baseline.py --only CAT`
 writes only the named categories.
+
+---
+
+## 2026-09-22 — v1.0.3 (CI fix)
+
+v1.0.2's CI failed: the test of line marginalisation without a nebular model read
+`$SPS_HOME/data/emlines_info.dat`, and CI's FSPS-free job has no `$SPS_HOME`. The test now
+skips without it, like the other `$SPS_HOME` tests. Without a nebular grid the refusals
+of `eline_prior_width > 0`, `elines_to_fix` and `Lines` observations now run before the
+line list is read, so a missing `$SPS_HOME` no longer masks them
+(`eline_marginal.refuse_without_grid`, called from `SedModel.setup_observations`).
+`mkdocs.yml` excludes `docs/dev/` from the site. No change to any likelihood or prediction.
+
+The citation title is now "CERIDWEN: Fast and Flexible GPU-Accelerated Stellar Population
+Inference" (`CITATION.cff`, and the BibTeX entries in `README.md` and `docs/index.md`).
+

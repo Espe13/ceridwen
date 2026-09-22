@@ -437,6 +437,8 @@ def test_without_a_nebular_model_lines_come_from_emlines_info():
     """add_neb=False: the lines come from $SPS_HOME/data/emlines_info.dat with a flat prior,
     and injected lines are recovered exactly, jointly over Spectrum and Photometry."""
     from ceridwen.likelihood.eline_marginal import line_table_for
+    if not __import__("os").environ.get("SPS_HOME"):
+        pytest.skip("SPS_HOME not set (the line list is $SPS_HOME/data/emlines_info.dat)")
     csp0 = T._csp(add_neb=False)
     gen = _noneb_model(csp0)
     es = gen._eline_system

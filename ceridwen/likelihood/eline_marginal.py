@@ -214,6 +214,28 @@ def line_profiles_on_grid(wave, pos, sigma_kms=0.0, res_floor_factor=2.0):
     return prof / (SQRT_2PI * dl[None, :]) * (pos[None, :] ** 2 / CLIGHT_AA_S)
 
 
+def refuse_without_grid(csp, spec, observations):
+    """Setup-time refusals for a marginalising ``spec`` on a basis without a nebular grid:
+    everything that needs the CLOUDY fluxes (a prior, fixed lines, Lines observations).
+    Called before the line list is read, so these messages win over a missing $SPS_HOME."""
+    from ..observation.lines import Lines
+    what = ("CSPBasis_afe has no nebular grid (there are no alpha-enhanced CLOUDY grids)"
+            if _is_afe(csp) else "this CSP has no nebular model (add_neb=False)")
+    if spec.eline_prior_width > 0.0:
+        raise ValueError(
+            f"Spectrum {spec.name!r}: eline_prior_width={spec.eline_prior_width:g} needs the "
+            f"CLOUDY line fluxes to centre the prior on, and {what}. Use the flat prior, "
+            "eline_prior_width=0 (the default), or build the basis with add_neb=True")
+    if spec.elines_to_fix:
+        raise ValueError(
+            f"Spectrum {spec.name!r}: elines_to_fix={list(spec.elines_to_fix)} keeps lines at "
+            f"their CLOUDY flux, and {what}; fit them, or ignore them (elines_to_ignore)")
+    if any(isinstance(o, Lines) for o in observations):
+        raise ValueError(
+            f"a Lines observation needs the nebular grid's line fluxes, and {what}; remove "
+            "the Lines observation or build the basis with add_neb=True")
+
+
 def build_eline_system(model) -> Optional[ElineSystem]:
     """Validate the configuration and build the ``ElineSystem`` (None when no Spectrum
     marginalises its lines).  Every refusal happens here, at setup, never in a kernel."""
@@ -238,21 +260,7 @@ def build_eline_system(model) -> Optional[ElineSystem]:
         # grids): the line list, rest wavelengths and names come from FSPS's emlines_info.dat
         # (none of them depends on [alpha/Fe] or Z), the widths from sigma_gas and the
         # instrument as always; without grid fluxes the prior must be flat
-        what = ("CSPBasis_afe has no nebular grid (there are no alpha-enhanced CLOUDY grids)"
-                if _is_afe(csp) else "this CSP has no nebular model (add_neb=False)")
-        if spec.eline_prior_width > 0.0:
-            raise ValueError(
-                f"Spectrum {spec.name!r}: eline_prior_width={spec.eline_prior_width:g} needs the "
-                f"CLOUDY line fluxes to centre the prior on, and {what}. Use the flat prior, "
-                "eline_prior_width=0 (the default), or build the basis with add_neb=True")
-        if spec.elines_to_fix:
-            raise ValueError(
-                f"Spectrum {spec.name!r}: elines_to_fix={list(spec.elines_to_fix)} keeps lines at "
-                f"their CLOUDY flux, and {what}; fit them, or ignore them (elines_to_ignore)")
-        if any(isinstance(o, Lines) for o in model.observations):
-            raise ValueError(
-                f"a Lines observation needs the nebular grid's line fluxes, and {what}; remove "
-                "the Lines observation or build the basis with add_neb=True")
+        refuse_without_grid(csp, spec, model.observations)
         tab = line_table_for(csp)
         neb = SimpleNamespace(nebem_line_pos=tab["wave"], nebem_line_names=tab["names"])
     fitted_neb = sorted(set(getattr(csp, "neb_param_names", [])) & set(model.param_names))
