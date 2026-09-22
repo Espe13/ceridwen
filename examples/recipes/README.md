@@ -1,0 +1,35 @@
+# Recipes: Prospector features without package changes
+
+Small, JIT-safe, float64 add-ons written against the post-rebuild working-tree API (`logzsol`, `logzsol_hist`, ...). None of them changes `ceridwen/`. Each one prepares a package feature: when that feature lands, it must reproduce the numbers below exactly. Checks run on CPU in minutes.
+
+Setup for the checks:
+
+```bash
+git clone https://github.com/bd-j/prospector && git -C prospector checkout a78d153
+git clone https://github.com/cconroy20/fsps fsps_src           # tested at bd187a0
+export PROSPECTOR_DIR=$PWD/prospector FSPS_SRC=$PWD/fsps_src SPS_HOME=/path/to/fsps
+JAX_PLATFORMS=cpu python examples/recipes/tests/check_<name>.py
+```
+
+A missing `PROSPECTOR_DIR` or `FSPS_SRC` prints FAIL, never a silent skip. Import a recipe with `sys.path.insert(0, "examples/recipes")`; there is no package `__init__`.
+
+| Recipe | What it gives you | Check (22 Sep 2026, CPU) | Package change it prepares |
+|---|---|---|---|
+| `derived_quantities.py` | `make_derived(csp, filters=, colors=)` returns a `PostProcess(derived=...)` dict: mass-weighted age, t50, t90, rest-frame absolute AB magnitudes and colours. The SFH integrals reuse `PostProcess`'s own helpers (`postprocess.py:116`, `:132`, `:147`). | **PASS**. Cumulative mass = `mass_formed` to 2.2e-16; constant SFH gives mwa = t50 = T/2 exactly; mwa/t50/t90 = Prospector formulas to 4.4e-16; magnitudes vs Prospector `absolute_rest_maggies` 1.7e-11 mag (10 bands). | Built-in derived quantities in `PostProcess`, with the private SFH helpers made public. |
+| `map_fit.py` | `map_fit(model, n_starts=)`: L-BFGS (optax) on `fitSED`'s own log-posterior, in the NUTS adapter's unconstrained space. The result `.theta` is ready to use as `free_param_init`. `laplace_sigma` gives inverse-Hessian widths. | **FAIL** (1 of 2). The MAP ln p of 38190.27 beats the best of 1000 prior draws (37094.58). The "all within 1σ of truth" check fails: 8/9 within 1σ, logzsol pull +1.0013, 9/9 within 3σ. Wall time 81 s for 16 starts, compile included. | A `fitSED(optimize=True)` / MAP-start option for NUTS. |
+| `igm_damping_dla.py` | `MadauDampingDLA`, an `IGMModel` subclass: Madau (1995) × IGM damping wing (fixed `x_HI`) × DLA Voigt profile (fixed `logN_HI`, `z_dla`). Pass it as `CSPBasis(igm_model=...)`. | **PASS** 63/63. Damping wing vs Prospector `tau_damping` ≤ 3.8e-12; DLA vs `voigt_profile` 1.1e-16; `x_HI=0` and `N_HI→0` give Madau byte-identically; `jax.grad` through the CSP is finite. | Sampled `x_HI` / `logN_HI` / `z_dla`: theta passed into `IGMModel.attenuation` at its 4 CSP call sites, plus theta keys, serialisation and a golden config (docstring). |
+| `extra_dust_laws.py` | `gordon03_smcbar` (FSPS dust_type 5) and `reddy15` (FSPS dust_type 6), plus `register()` into `ATTENUATION_LAWS`. | **PASS** 14/14. Both accepted by `Dust` and `DiffuseDust`; Gordon+03 vs the FSPS table and Fortran is 0.0 / 1.1e-16; Reddy+15 vs Prospector is 1.1e-16. The normalisation at 5500 Å is 1 (Gordon) and 0.997113 (Reddy, = FSPS `dust2`). | Built-in registry entries (and fixes to `noll` / `drude`, see below). |
+| `loguniform_prior.py` | `loguniform(name, lo, hi)` / `loguniform_setup(...)`: a `Uniform` on `log10_<name>` plus a transform `name = 10**log10_<name>`. Also the LogNormal `mode` conversion to Prospector's. | **PASS** 5/5. KS vs Prospector `LogUniform`, 1e5 draws: D = 0.0057, p = 0.074; `_detect_bounds` sees the bounds; LogNormal log-pdfs match after conversion to 7e-15. | A native `LogUniform` prior, and a documented `LogNormal` parametrisation. |
+| `make_reference_mfrac.py` → `reference_mfrac.json` | FSPS surviving-mass fractions for constant / rising / burst SFHs at 0.1, 1 and 10 Gyr, on BPASS (the test grid) and MIST. | **PASS** 9/9 (`check_reference_mfrac.py`). BPASS values recomputed from the raw `bpass.mass` table agree to ≤ 2.8e-9 (tolerance 1e-7). | Surviving stellar mass in `PostProcess` (stellar mass vs formed mass). |
+| `PAPER_CORRECTIONS.md` | 16 items where `Method_Paper/mnras_template.tex` disagrees with the working-tree code, including which paper numbers depend on Prospector's ln 2π likelihood bug. | n/a | Paper revision. |
+
+## Findings for the package (reported, not fixed)
+
+- `dust/attenuation_laws.py`, the `noll` law: `params` says `E_bump` (`:485`), while the signature and `defaults` say `Ebump` (`:135`, `:491`). In `Dust` the bump is therefore silently dropped. In `DiffuseDust`, the advertised name `diffuse_E_bump` raises `KeyError: 'diffuse_Ebump'`.
+- `dust/attenuation_laws.py`, the `drude` law expects inverse microns (`:117-133`) but is registered as a law (`:467`) and gets Å: `Dust(laws=['drude'])` gives ~1e-7 where 0.06-1.0 is expected. It also has no amplitude parameter.
+- `smc` / `lmc` registry entries say "Gordon et al. (2003)" and "optical depth at 1500 Å" (`:408-423`). The functions are Pei (1992) curves normalised at 5500 Å (`:310-358`).
+- `ceridwen.priors.LogNormal.scale` (`sampler/priors.py:297-299`) returns Prospector's `exp(mode+σ²)`, which is not the scale of the `tfd.LogNormal(loc=mode)` that is actually sampled.
+- Photometry: the gridded `FilterSet` projection used for fit predictions differs from sedpy / `Filter.ab_mag` by up to 1.5e-3 mag (sdss_u0 on a BPASS SSP). `Filter.ab_mag` itself equals sedpy exactly.
+- L_sun: CERIDWEN and FSPS use 3.839e33 (`postprocess.py:68`, FSPS `sps_vars.f90:422`); Prospector uses 3.846e33 (`prospect/sources/constants.py:15`). The same L_sun/Hz array therefore gives magnitudes 1.98 mmag apart.
+- `BlackJAXNUTSAdapter._flatten` (`sampler/nuts.py:121-131`) concatenates in dict order. `jax.vmap` returns dicts with sorted keys, so a future caller flattening inside `vmap` would pair values with the wrong bounds. It is harmless today, because NUTS flattens outside any transform.
+- Prospector at a78d153: `add_dla` converts to the absorber frame upside down (`sedmodel.py:816`: `wave_rest*(1+dla_z)/(1+zred)` should be `*(1+zred)/(1+dla_z)`), so a foreground DLA lands redward of Lyα. Its plain `NoiseModel` multiplies χ² by ln 2π (`noise_model.py:90-91`).

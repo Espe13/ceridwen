@@ -1,0 +1,148 @@
+{
+  "description": "Surviving-mass fraction mfrac = M_surviving/M_formed (stars + remnants, FSPS stellar_mass / formed_mass).",
+  "made_by": "examples/recipes/make_reference_mfrac.py",
+  "SPS_HOME": "/Users/amanda/Prospector/fsps",
+  "ages_gyr": [
+    0.1,
+    1.0,
+    10.0
+  ],
+  "logzsol": 0.0,
+  "sfh_definitions": {
+    "constant": "FSPS sfh=3 table SFR=1 on [0,T] forward time",
+    "rising": "FSPS sfh=3 table SFR proportional to t on [0,T]",
+    "burst": "FSPS sfh=0 SSP of age T"
+  },
+  "libraries": {
+    "bpass": {
+      "python_fsps": "0.4.7",
+      "libraries": [
+        "bpss",
+        "bpass",
+        "DL07"
+      ],
+      "mfrac": {
+        "0.1": {
+          "constant": {
+            "stellar_mass": 89848228.4792394,
+            "formed_mass_fsps": 99999999.0,
+            "formed_mass_trapz": 100000000.0,
+            "mfrac": 0.898482293777217
+          },
+          "rising": {
+            "stellar_mass": 45856191.62930247,
+            "formed_mass_fsps": 49999999.0,
+            "formed_mass_trapz": 50000000.0,
+            "mfrac": 0.9171238509285264
+          },
+          "burst": {
+            "stellar_mass": 0.861,
+            "mfrac": 0.861
+          }
+        },
+        "1.0": {
+          "constant": {
+            "stellar_mass": 814286142.576803,
+            "formed_mass_fsps": 999999999.0,
+            "formed_mass_trapz": 1000000000.0,
+            "mfrac": 0.8142861433910891
+          },
+          "rising": {
+            "stellar_mass": 416091150.64279896,
+            "formed_mass_fsps": 499999999.0,
+            "formed_mass_trapz": 500000000.0,
+            "mfrac": 0.8321823029499625
+          },
+          "burst": {
+            "stellar_mass": 0.7779999995613311,
+            "mfrac": 0.7779999995613311
+          }
+        },
+        "10.0": {
+          "constant": {
+            "stellar_mass": 7095758401.2980995,
+            "formed_mass_fsps": 9999999999.0,
+            "formed_mass_trapz": 10000000000.0,
+            "mfrac": 0.7095758402007676
+          },
+          "rising": {
+            "stellar_mass": 3667247025.749001,
+            "formed_mass_fsps": 4999999999.0,
+            "formed_mass_trapz": 5000000000.0,
+            "mfrac": 0.73344940529649
+          },
+          "burst": {
+            "stellar_mass": 0.6629999997493321,
+            "mfrac": 0.6629999997493321
+          }
+        }
+      },
+      "note": "Matches ceridwen/data/test_data/ssp_data_bpass.h5 isochrones (isoc_type='bpss'). BPASS ignores imf_type; mass from $SPS_HOME/ISOCHRONES/BPASS/bpass.mass. python-fsps here is 0.4.7 (the grid was built with 0.5.0); the mass table is read from SPS_HOME, not compiled in."
+    },
+    "mist": {
+      "python_fsps": "0.5.0",
+      "libraries": [
+        "mist",
+        "miles",
+        "DL07"
+      ],
+      "mfrac": {
+        "0.1": {
+          "constant": {
+            "stellar_mass": 83686170.455957,
+            "formed_mass_fsps": 99999999.00000001,
+            "formed_mass_trapz": 100000000.0,
+            "mfrac": 0.836861712928187
+          },
+          "rising": {
+            "stellar_mass": 43597244.55386068,
+            "formed_mass_fsps": 49999999.00000001,
+            "formed_mass_trapz": 50000000.0,
+            "mfrac": 0.8719449085161116
+          },
+          "burst": {
+            "stellar_mass": 0.7759598573131158,
+            "mfrac": 0.7759598573131158
+          }
+        },
+        "1.0": {
+          "constant": {
+            "stellar_mass": 718319906.8014787,
+            "formed_mass_fsps": 999999999.0000001,
+            "formed_mass_trapz": 1000000000.0,
+            "mfrac": 0.7183199075197986
+          },
+          "rising": {
+            "stellar_mass": 371201295.9246973,
+            "formed_mass_fsps": 499999999.0,
+            "formed_mass_trapz": 500000000.0,
+            "mfrac": 0.7424025933341998
+          },
+          "burst": {
+            "stellar_mass": 0.6712198706433781,
+            "mfrac": 0.6712198706433781
+          }
+        },
+        "10.0": {
+          "constant": {
+            "stellar_mass": 6099319315.0810795,
+            "formed_mass_fsps": 9999999999.0,
+            "formed_mass_trapz": 10000000000.0,
+            "mfrac": 0.6099319315691012
+          },
+          "rising": {
+            "stellar_mass": 3155488883.0550895,
+            "formed_mass_fsps": 4999999999.0,
+            "formed_mass_trapz": 5000000000.0,
+            "mfrac": 0.6310977767372374
+          },
+          "burst": {
+            "stellar_mass": 0.5715509973062208,
+            "mfrac": 0.5715509973062208
+          }
+        }
+      },
+      "note": "Matches the MIST test grids (isoc_type='mist', imf_type=1). Spectral library differs (miles vs c3k_lr), which does not enter mfrac."
+    }
+  }
+}
