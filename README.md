@@ -37,7 +37,7 @@ it. [Installation](#installation), the [quick start](#quick-start) and
 - [x] Analytic marginalisation over emission-line fluxes, jointly across spectrum, photometry and line fluxes (`Spectrum(marginalize_elines=True)`, [docs](docs/eline_marginalisation.md))
 - [x] Observation input (broadband photometry, emission-line fluxes, spectra)
 - [x] Redshift-aware forward model with cosmological flux normalisation
-- [x] IGM attenuation (Madau 1995), extensible via `IGMModel` ABC
+- [x] IGM attenuation (Madau 1995), optionally with an IGM damping wing (`x_HI`) and a damped Ly-α absorber (`logN_HI`, `z_dla`) as fixed or sampled parameters (`MadauDampingDLA`); extensible via `IGMModel` ABC
 - [x] NUTS / nested sampling / variational-inference preconditioned NUTS
 - [x] Post-processing (`PostProcess`): SFR averages, M_UV, Q(H), xi_ion, posterior-predictive photometry/spectra/lines, intrinsic and dust-free spectra, best fit, user-defined quantities
 - [x] Per-galaxy figures (`ceridwen.plotting`): summary, corner, sampling diagnostics
@@ -638,7 +638,7 @@ two). The high-res grid is rebuilt from the provider's FITS with
 | `ceridwen.model`        | `SedModel` parameter + prediction layer |
 | `ceridwen.sampler`      | priors, nested sampling, NUTS, VI transport maps |
 | `ceridwen.cosmology`    | `Cosmology` (Planck18/Planck15/WMAP9 presets, `flat`, `from_astropy`), JAX-native distances and ages |
-| `ceridwen.igm`          | IGM attenuation models (Madau 1995 by default) |
+| `ceridwen.igm`          | IGM attenuation models (Madau 1995 by default; `MadauDampingDLA` adds the damping wing and a DLA) |
 | `ceridwen.fit`          | `fitSED` top-level convenience wrapper |
 | `ceridwen.postprocess`  | `PostProcess`: posterior distributions of derived quantities and predictions |
 | `ceridwen.plotting`     | summary, corner and sampling-diagnostic figures (`PostProcess.figures`) |
@@ -649,6 +649,7 @@ two). The high-res grid is rebuilt from the provider's FITS with
 
 - **Hoffman et al. 2019**, *NeuTra-lizing Bad Geometry in HMC Using Neural Transport*, [arXiv:1903.03704](https://arxiv.org/abs/1903.03704) (VI-preconditioned NUTS, `ceridwen.sampler.vi`)
 - **Madau 1995**, ApJ 441, 18 (IGM transmission, `ceridwen.igm.Madau1995`)
+- **Miralda-Escudé 1998** and **Totani et al. 2006** (IGM damping wing), **Tepper-García 2006, 2007** (Voigt profile of the DLA), as cited by and ported from Prospector (`ceridwen.igm.MadauDampingDLA`)
 - **Planck Collaboration 2020**, A&A 641, A6 (default cosmology, `ceridwen.cosmology`)
 - **Kriek & Conroy 2013**, ApJ 775, L16 (diffuse dust attenuation shape, `ceridwen.dust`)
 - **Conroy, Gunn & White 2009** (FSPS, upstream SSP provider)

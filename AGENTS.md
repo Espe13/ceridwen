@@ -175,7 +175,10 @@ projection → likelihood → sampler.
   `vi.py` (VI transport maps: TriL, IAF/NeuTra), `runner.py` (`SamplerAdapter`
   protocol, `SamplingResult`, `run_sampler`, `to_anesthetic`).
 - `cosmology.py` — JAX-native flat ΛCDM (Planck 18) with an astropy fallback.
-- `igm.py` — IGM attenuation (`Madau1995`), extensible via the `IGMModel` ABC.
+- `igm.py` — IGM attenuation (`Madau1995`; `MadauDampingDLA` = Madau × damping wing × DLA,
+  with theta keys `x_HI` / `logN_HI` / `z_dla` declared in `IGMModel.param_names` and passed
+  as `attenuation(..., params=)` by `CSPBasis._igm_transmission`), extensible via the
+  `IGMModel` ABC. `igm_factor` scales the Madau forest only; it is NOT `x_HI`.
 - `fit.py` — `fitSED` (top-level convenience wrapper) + `read_result_h5` /
   `load_result_h5` / `result_cosmology`; writes `<output_dir>/ceridwen_result.h5`
   (obs, model/priors as JSON, kinematics, cosmology, samples, log-weights,

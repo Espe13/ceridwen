@@ -332,9 +332,43 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
         y_phot_o, mu_phot, sig_phot, mask_phot, is_upper_limit=ul_p)
     out["outlier_likelihood"]["lnl_phot_upper_limit"] = np.asarray(lnl_p_ul, dtype=np.float64)
 
+    out["igm_damping_dla"] = _igm_damping_dla_baseline()
     out.update(_logzsol_baselines(p))
     out["eline_marginal"] = _eline_marginal_baseline(p, ssp_data)
     return out
+
+
+def _igm_damping_dla_baseline() -> dict[str, np.ndarray]:
+    """``MadauDampingDLA`` transmission on a rest-frame grid through Ly-alpha (WMAP9 with
+    Ob0 = 0.04628, Prospector's cosmology).  Justification: the damping-wing and DLA components
+    equal Prospector's ``tau_damping`` / ``voigt_profile`` (@ a78d153) to <= 1e-12 in
+    transmission (``examples/recipes/tests/check_igm_damping_dla.py``, 63/63), and the
+    ``x_HI = 0`` / ``logN_HI = -inf`` rows equal ``Madau1995`` byte for byte.  ``*_theta`` rows
+    go through the ``params`` (theta) path; ``fg_dla`` is a foreground absorber, trough at rest
+    1215.67 (1 + z_dla) / (1 + zred)."""
+    from ceridwen.igm import MadauDampingDLA
+    from ceridwen.cosmology import Cosmology
+    c = Cosmology.wmap9()
+    wave = jnp.asarray(1000.0 + 0.25 * np.arange(2400))      # 1000-1600 A rest
+    z = jnp.asarray(7.0)
+    base = MadauDampingDLA(Ob0=0.04628, cosmo=c)
+    th = lambda **kw: {k: jnp.asarray([v]) for k, v in kw.items()}
+    return {
+        "wave": np.asarray(wave),
+        "madau": np.asarray(base.attenuation(wave, z)),
+        "damp_x03": np.asarray(jnp.exp(-base.tau_damp(wave, z, th(x_HI=0.3)))),
+        "damp_x10": np.asarray(jnp.exp(-base.tau_damp(wave, z, th(x_HI=1.0)))),
+        "dla_215_z3": np.asarray(jnp.exp(-base.tau_dla(wave, jnp.asarray(3.0),
+                                                       th(logN_HI=21.5)))),
+        "total_fixed": np.asarray(MadauDampingDLA(
+            Ob0=0.04628, cosmo=c, x_HI=0.8, logN_HI=21.0).attenuation(wave, z, factor=0.9)),
+        "total_theta": np.asarray(base.attenuation(
+            wave, z, factor=0.9, params=th(x_HI=0.8, logN_HI=21.0))),
+        "fg_dla_theta": np.asarray(base.attenuation(
+            wave, z, params=th(logN_HI=21.0, z_dla=6.5))),
+        "off_theta": np.asarray(base.attenuation(
+            wave, z, params=th(x_HI=0.0, logN_HI=-np.inf))),
+    }
 
 
 # ---------------------------------------------------------------------------- #

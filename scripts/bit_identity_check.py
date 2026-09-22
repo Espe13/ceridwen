@@ -57,7 +57,7 @@ def _flat(prefix, obj, out):
         out[prefix] = np.asarray(obj)
 
 
-def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False):
+def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False):
     path = find_test_grid()
     if path is None:
         sys.exit("no test SSP grid found (tests/_gridfixture.py)")
@@ -69,6 +69,9 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False):
               verbose=False, cosmo=cosmo)
     if gas_tied:
         kw["gas_tied"] = True          # v1.0.5 path: gas_logz := logzsol
+    if igm_dla:                        # IGM damping wing + DLA with sampled theta keys
+        from ceridwen.igm import MadauDampingDLA
+        kw["igm_model"] = MadauDampingDLA(Ob0=0.04897)
     if add_neb or dust_emission:
         kw["sps_home"] = os.environ["SPS_HOME"]
     csp = CSPBasis(ssp, **kw)
@@ -89,6 +92,8 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False):
                          flux=np.full(len(LINES), 1e-17), uncertainty=np.full(len(LINES), 1e-18),
                          name="lines"))
     init = {"logsfr_ratios": jnp.zeros(N_TIME - 1), "logmass": jnp.array([10.0])}
+    if igm_dla:
+        init.update(x_HI=jnp.array([0.5]), logN_HI=jnp.array([20.5]))
     model = SedModel(csp, obs, priors={}, transforms={"sfh": _sfh},
                      free_param_init=init, zred=ZRED,
                      kinematics=Kinematics(sigma_gal=sigma_losvd))
@@ -229,6 +234,13 @@ def collect(args):
                                          dust_emission=False, gas_tied=True)))
     else:
         print("SPS_HOME not set: nebular configurations skipped")
+    # last, so the shared rng gives the earlier configurations the same draws as before
+    try:
+        from ceridwen.igm import MadauDampingDLA  # noqa: F401
+        configs.append(("igm_dla", dict(add_neb=False, add_igm=True, sigma_losvd=250.0,
+                                        dust_emission=False, igm_dla=True)))
+    except ImportError:
+        print("  (package has no MadauDampingDLA: igm_dla configuration skipped)")
     for tag, cfg in configs:
         t0 = time.perf_counter()
         model = _build(**cfg)

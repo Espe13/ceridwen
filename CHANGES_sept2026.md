@@ -361,3 +361,40 @@ difference, where reading the same number as absolute `log10 Z` is 0.231 and a w
 `Z_sun = 0.0142` is 3e-2 to 9e-2 off), `tests/test_result_metallicity.py`, three new
 regression categories `logzsol_bpass` / `logzsol_mist` / `logzsol_afe`, and 12 new
 `misuse_report` rows (37 rows, 0 SILENT).
+
+---
+
+## 2026-09-22 — IGM damping wing and DLA (`igm.py`, `csp/csp.py`)
+
+**What.** `ceridwen.igm.MadauDampingDLA` (registry name `"madau1995_damping_dla"`), promoted
+from `examples/recipes/igm_damping_dla.py`: Madau (1995) × IGM damping wing × damped Ly-α
+absorber, `exp(-(igm_factor tau_Madau + tau_damp(x_HI) + tau_DLA(logN_HI, z_dla)))`. The
+kernels are Prospector's (`sedmodel.py` @ a78d153, `:1192-1245` and `:1261-1333`), made
+JIT-safe (masked `jnp.where`, `x = 0` singularity of the Voigt approximation moved to
+`|x| = 1e-3`).
+
+`x_HI`, `logN_HI`, `z_dla` are **theta keys**, like `igm_factor`: fixed by the constructor,
+by theta, or sampled through `SedModel(free_param_init=..., priors=...)`. Mechanism:
+`IGMModel.param_names` (new class attribute, empty by default) lists a model's keys;
+`CSPBasis._igm_transmission` (new, used at all four IGM call sites, previously four copies of
+the same code) passes `attenuation(..., params={key: scalar})` only to models that declare
+keys, so a user subclass with the three-argument `attenuation` still works, and adds the keys
+to the known theta keys. A model with `bind_cosmology` gets the CSP's cosmology (`h`, `Om0`);
+`Ob0` is a required constructor argument for the wing (the `Cosmology` has none).
+`igm_factor` is **not** reused as `x_HI` (Prospector does, `sedmodel.py:824`).
+
+**Behaviour change.** None for existing models: `Madau1995` and `NoIGM` are untouched and the
+refactored call sites are byte-identical (T4). `MadauDampingDLA()` with no damping/DLA
+switched on, `x_HI = 0` and `logN_HI = -inf` all equal `Madau1995` byte for byte.
+
+**Verification.** `examples/recipes/tests/check_igm_damping_dla.py` now runs against the
+package code: 63/63 (damping wing vs Prospector ≤ 1.0e-12 in transmission, DLA 1.1e-16).
+`tests/test_igm_damping_dla.py` (theta = constructor bit for bit, Madau limits bit for bit
+through `csp.predict` and `SedModel.predict`, finite non-zero gradients in all three keys,
+guards). New regression category `igm_damping_dla` (each row ≤ 9.4e-14 from Prospector's
+own `tau_damping` / `voigt_profile`); new `igm_dla` configuration in
+`scripts/bit_identity_check.py` (sampled `x_HI`, `logN_HI`).
+
+**Not done.** `fit.py` does not record the IGM model or its fixed arguments in
+`ceridwen_result.h5` (it records no IGM information at all, for any model); sampled keys are
+stored like any other parameter.

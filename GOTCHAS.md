@@ -385,6 +385,20 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
 - `lnl_pointwise` holds the mixture terms; `chi` stays the inlier (y - mu)/sigma_eff. The
   per-datum outlier probability comes from `likelihood.outlier_probability(...)`.
 
+## 14. IGM damping wing / DLA (2026-09-22)
+
+- **`igm_factor` is not the neutral fraction.** It scales the Madau (1995) forest only.
+  `MadauDampingDLA` reads its own theta keys `x_HI`, `logN_HI`, `z_dla` (constructor values
+  are the defaults; a theta entry, fixed or sampled, overrides them). Prospector reads `x_HI`
+  from `igm_factor` (`sedmodel.py:824`); CERIDWEN deliberately does not.
+- **`Ob0` must be given** for the damping wing (`MadauDampingDLA(Ob0=...)`): the `Cosmology`
+  carries no baryon density, so it is never guessed. Missing, it raises at construction
+  (constructor `x_HI > 0`) or at trace time (a theta `x_HI`). `h`/`Om0` come from the CSP's
+  cosmology; a model built with a different `cosmo=` raises in `CSPBasis`.
+- **The wing is off for `zred <= zmin`** (default 5), as in Prospector, and there is no DLA
+  when `z_dla > zred`. A foreground DLA sits at rest `1215.67 (1+z_dla)/(1+zred)` Å; Prospector
+  divides the other way (`sedmodel.py:816`), which only agrees at `z_dla = zred`.
+
 ---
 
 ### What is *not* guarded (and why)

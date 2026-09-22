@@ -185,12 +185,7 @@ class CSPBasis_afe(CSPBasis):
                 "for an astropy cosmology use Cosmology.from_astropy(...)")
         self._cosmo = cosmo
         self.track_zred_age = bool(track_zred_age)
-        if add_igm:
-            from ..igm import make_igm_model
-            self.igm = make_igm_model(igm_model)
-        else:
-            self.igm = None
-        self.igm_factor = float(igm_factor)
+        self._setup_igm(add_igm, igm_model, igm_factor)
 
         if add_diffuse_dust or add_dust:
             self.set_attenuation_function(add_diffuse_dust, add_dust)
