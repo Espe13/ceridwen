@@ -143,6 +143,19 @@ def run_sampler(
         ul = None if ul is None or not bool(jnp.any(ul)) else jnp.asarray(ul, dtype=bool)
         _static_data[key] = (y, obs.uncertainty, obs.mask, getattr(obs, "calibration", None), ul)
 
+    if getattr(model, "_eline_system", None) is not None:
+        from ..likelihood.eline_marginal import joint_loglike
+
+        @jax.jit
+        def loglike_fn(theta: dict[str, Array]) -> Array:
+            return joint_loglike(model, _keys, _likelihoods, _static_data, theta)
+
+        @jax.jit
+        def logprior_fn(theta: dict[str, Array]) -> Array:
+            return model.ln_prior(theta)
+
+        return adapter.run(loglike_fn, logprior_fn, model.theta_init, rng_key)
+
     @jax.jit
     def loglike_fn(theta: dict[str, Array]) -> Array:
         predictions = model.predict(theta)

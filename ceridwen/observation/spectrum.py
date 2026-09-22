@@ -33,6 +33,19 @@ class Spectrum(Observation):
         only.
     zred_range : (z_min, z_max) -- support of a SAMPLED redshift; otherwise taken from
         the finite bounds of the model's ``zred`` prior.
+    marginalize_elines : bool -- marginalise analytically over the fluxes of the nebular
+        lines in this spectrum (jointly with the model's Photometry and Lines), instead of
+        fixing them at the CLOUDY prediction; needs an ``instrument``; with a nebular model
+        its parameters must not be sampled, without one (``add_neb=False``, ``CSPBasis_afe``)
+        the lines come from ``$SPS_HOME/data/emlines_info.dat`` and the prior is flat.  See
+        ``docs/eline_marginalisation.md``.
+    eline_prior_width : float -- 0 (default): flat prior on each fitted line flux;
+        > 0: Gaussian prior centred on the CLOUDY flux with this FRACTIONAL width.
+        Ly-alpha is always flat.
+    elines_to_fit, elines_to_fix, elines_to_ignore : sequences of FSPS line names
+        (``$SPS_HOME/data/emlines_info.dat``, e.g. ``"[O III] 5007"``).  Default: fit every
+        grid line covered by the spectrum; fixed lines keep their CLOUDY flux; ignored
+        lines are removed from every observation.
 
     The galaxy's velocity dispersions are not a property of the observation:
     they are set once on the model (``SedModel(kinematics=Kinematics(...))``).
@@ -71,12 +84,23 @@ class Spectrum(Observation):
         sky          = None,
         noise_floor  = 0.0,
         zred_range   = None,
+        marginalize_elines = False,
+        eline_prior_width  = 0.0,
+        elines_to_fit      = None,
+        elines_to_fix      = None,
+        elines_to_ignore   = None,
         **kwargs,
     ):
         for k in list(kwargs):
             if k in self._removed_kwargs:
                 raise TypeError(
                     f"Spectrum(): '{k}' was removed; use {self._removed_kwargs[k]}")
+        if "eline_sigma" in kwargs:
+            raise TypeError(
+                "Spectrum(): there is no eline_sigma. The marginalised lines have the same "
+                "width as every other line, sqrt(sigma_gas^2 + sigma_inst^2): set sigma_gas "
+                "(a velocity DISPERSION in km/s, not a FWHM) once on the model, "
+                "SedModel(kinematics=Kinematics(sigma_gal=..., sigma_gas=...))")
         if instrument is not None and not isinstance(instrument, Instrument):
             raise TypeError(
                 "Spectrum(instrument=...) takes a ceridwen.broadening.Instrument "
@@ -100,6 +124,8 @@ class Spectrum(Observation):
         self.zred_range      = (None if zred_range is None
                                 else (float(zred_range[0]), float(zred_range[1])))
         self._proj = None
+        self._set_eline_options(marginalize_elines, eline_prior_width,
+                                elines_to_fit, elines_to_fix, elines_to_ignore, noise)
 
         super().__init__(
             flux        = flux,
@@ -109,6 +135,54 @@ class Spectrum(Observation):
             name        = name,
             **kwargs,
         )
+
+    def _set_eline_options(self, marginalize, width, to_fit, to_fix, to_ignore, noise):
+        """Validate the emission-line marginalisation options (construction time)."""
+        def _names(v, what):
+            if v is None:
+                return None
+            if isinstance(v, str):
+                v = [v]
+            v = [str(x) for x in v]
+            if len(set(v)) != len(v):
+                raise ValueError(f"Spectrum({what}=...): duplicate line names {v}")
+            return tuple(v)
+        self.marginalize_elines = bool(marginalize)
+        self.elines_to_fit = _names(to_fit, "elines_to_fit")
+        self.elines_to_fix = _names(to_fix, "elines_to_fix")
+        self.elines_to_ignore = _names(to_ignore, "elines_to_ignore")
+        w = float(width)
+        if not np.isfinite(w) or w < 0.0:
+            raise ValueError(
+                f"eline_prior_width must be a finite fraction >= 0 (0 = flat prior), got {width}")
+        self.eline_prior_width = w
+        if not self.marginalize_elines:
+            given = [k for k, v in (("eline_prior_width", w or None),
+                                    ("elines_to_fit", self.elines_to_fit),
+                                    ("elines_to_fix", self.elines_to_fix),
+                                    ("elines_to_ignore", self.elines_to_ignore)) if v]
+            if given:
+                raise ValueError(
+                    f"Spectrum({', '.join(given)}=...) only acts with "
+                    "marginalize_elines=True; without it every line keeps its CLOUDY flux")
+            return
+        for a, b, na, nb in ((self.elines_to_fit, self.elines_to_fix, "elines_to_fit", "elines_to_fix"),
+                             (self.elines_to_fit, self.elines_to_ignore, "elines_to_fit", "elines_to_ignore"),
+                             (self.elines_to_fix, self.elines_to_ignore, "elines_to_fix", "elines_to_ignore")):
+            both = sorted(set(a or ()) & set(b or ()))
+            if both:
+                raise ValueError(f"lines {both} are in both {na} and {nb}")
+        if self.instrument is None:
+            raise ValueError(
+                "Spectrum(marginalize_elines=True) needs the instrument's line-spread function "
+                "(instrument=Instrument.R_fwhm(...), Instrument.sigma_kms(...), ...): the fitted "
+                "lines are Gaussians of width sqrt(sigma_gas^2 + sigma_inst^2)")
+        if self.logify_spectrum:
+            raise ValueError("marginalize_elines=True is linear in the line fluxes and cannot be "
+                             "combined with logify_spectrum=True")
+        if noise is not None:
+            raise ValueError("marginalize_elines=True assumes independent Gaussian pixel noise; "
+                             "a GaussianProcess noise model is not supported with it")
 
     @property
     def wavelength(self):
@@ -337,6 +411,9 @@ class Spectrum(Observation):
             f"  calibration   : {'provided' if self.calibration is not None else 'none'}",
             f"  sky           : {'provided' if self.sky is not None else 'none'}",
             f"  noise_floor   : {self.noise_floor:.4f}",
+            f"  lines         : " + (("marginalised, " + ("flat prior" if not self.eline_prior_width
+                                      else f"prior width {self.eline_prior_width:g} x CLOUDY"))
+                                     if self.marginalize_elines else "CLOUDY fluxes"),
             f"  noise model   : {repr(self.noise) if self.noise is not None else 'none'}",
             f"  masked pixels : {self.ndata - self.ndof} / {self.ndata}",
         ]

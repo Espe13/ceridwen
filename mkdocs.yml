@@ -58,5 +58,6 @@ nav:
   - Quick start: quickstart.md
   - 'Tutorial: joint fit': tutorial.md
   - Conventions & gotchas: conventions.md
+  - Emission-line marginalisation: eline_marginalisation.md
   - Post-processing: postprocessing.md
   - API reference: api.md

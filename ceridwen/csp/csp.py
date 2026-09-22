@@ -658,7 +658,7 @@ class CSPBasis:
         return continuum, full - continuum
 
     def predict(self, theta: dict, observations: list, *, kinematics=None,
-                broaden_photometry=False) -> dict:
+                broaden_photometry=False, eline_system=None) -> dict:
         """``{obs.name: prediction}``: Photometry -> maggies (n_filters,), Spectrum -> F_nu [erg/s/cm^2/Hz]
         on the observed pixels, Lines -> integrated fluxes (n_lines,).  Observed-frame only when
         ``theta`` carries ``zred``.
@@ -669,6 +669,10 @@ class CSPBasis:
         sampled sigma_gas and ``broaden_photometry``, or ``_force_paint_lines``); otherwise fixed-z
         Photometry adds them through the static basis ``G = obs._T @ (IGM * profiles)``, Spectrum
         paints them on the observed pixels and Lines reads them from the grid.
+
+        ``eline_system`` (``ElineSystem`` of ``SedModel``, line marginalisation): returns
+        ``(predictions, aux)`` with the fitted lines removed from every prediction and
+        ``aux = {"prior_mean": CLOUDY fluxes of the fitted lines, "cols": {obs.name: design}}``.
         """
         from ..observation.observation import (
             Spectrum as _Spectrum, Photometry as _Photometry,
@@ -695,6 +699,7 @@ class CSPBasis:
             observations, theta, paint_lines=paint_lines,
             line_component=None if lines is None else lines_s,
             kinematics=kinematics, broaden_photometry=broaden_photometry,
+            eline_system=eline_system,
         )
 
     def _assemble_components(self, theta, paint_lines):
@@ -738,7 +743,7 @@ class CSPBasis:
     def _project_observations(self, spectrum_phot, spectrum_slit,
                               observations, theta, *, paint_lines=True,
                               line_component=None, kinematics=None,
-                              broaden_photometry=False):
+                              broaden_photometry=False, eline_system=None):
         """``{obs.name: prediction}`` from the scaled observer-frame spectra: ``spectrum_phot`` is the
         continuum (+ painted lines), ``spectrum_slit`` the continuum alone (Spectrum projector input),
         ``line_component`` the painted lines alone (or None).
@@ -766,6 +771,24 @@ class CSPBasis:
             self.predict_line_fluxes(theta, for_photometry=True)
             if (not paint_lines) and _has_neb and _has_phot_obs
             else None)
+        es = eline_system
+        aux_cols = {}
+        if es is not None:
+            if paint_lines:
+                raise ValueError(
+                    "line marginalisation needs the static photometric line basis, but this "
+                    "prediction paints the lines on the model grid (free-z Photometry, a sampled "
+                    "sigma_gas with broaden_photometry, or _force_paint_lines)")
+            keep = jnp.asarray(es.keep_grid)
+            if _line_fluxes_spec is None:          # no nebular grid (CSPBasis_afe): flat prior only
+                prior_mean = jnp.zeros(es.m)
+            else:
+                prior_mean = _line_fluxes_spec[es.fit_rows]
+                _line_fluxes_spec = _line_fluxes_spec * keep
+            if _line_fluxes is not None:
+                _line_fluxes = _line_fluxes * keep
+            if _line_fluxes_phot is not None:
+                _line_fluxes_phot = _line_fluxes_phot * keep
         s_gal = s_gas = None
         gas_untied = False
         if kinematics is not None and broaden_photometry and _has_phot_obs:
@@ -781,12 +804,29 @@ class CSPBasis:
                     out[obs.name] = _B @ _line_fluxes
                 else:
                     out[obs.name] = _line_fluxes[self._neb_cube_rows_for(obs)]
+                if es is not None and obs.name in es.lines_cols:
+                    scale = (jnp.ravel(theta["eline_scaling"])[0]
+                             if "eline_scaling" in theta else 1.0)
+                    aux_cols[obs.name] = jnp.asarray(es.lines_cols[obs.name]) * scale
                 continue
             if isinstance(obs, _Spectrum):
-                pred = obs.predict(spectrum_slit, self.wave, _line_fluxes_spec, theta)
+                A = None
+                if es is not None and obs.name == es.spec_key:
+                    pred, A = obs._proj.predict_with_line_basis(
+                        spectrum_slit, _line_fluxes_spec, theta, es.fit_pos,
+                        basis=None if es.static is None else es.static["basis"])
+                elif "eline_delta_zred" in theta and getattr(obs, "_proj", None) is not None:
+                    pred, _ = obs._proj.predict_with_line_basis(
+                        spectrum_slit, _line_fluxes_spec, theta)
+                else:
+                    pred = obs.predict(spectrum_slit, self.wave, _line_fluxes_spec, theta)
                 calib = _spec_calib(obs, theta, dtype=pred.dtype)
                 if calib is not None:
                     pred = pred * calib
+                    if A is not None:
+                        A = A * (calib[:, None] if jnp.ndim(calib) else calib)
+                if A is not None:
+                    aux_cols[obs.name] = A
                 out[obs.name] = pred
                 continue
             spec_for_obs = spectrum_phot
@@ -818,7 +858,11 @@ class CSPBasis:
                 else:
                     G = obs._T @ gnb
                 pred = pred + G @ _line_fluxes_phot.astype(pred.dtype)
+            if es is not None and obs.name in es.phot_cols:
+                aux_cols[obs.name] = jnp.asarray(es.phot_cols[obs.name])
             out[obs.name] = pred
+        if es is not None:
+            return out, {"prior_mean": prior_mean, "cols": aux_cols}
         return out
 
     def _neb_cube_rows_for(self, obs):
@@ -836,7 +880,7 @@ class CSPBasis:
             worst = int(np.argmax(np.abs(pos[idx] - lam)))
             raise ValueError(
                 "Emission-line wavelength matching failed: observed line "
-                f"{getattr(obs, 'line_names', ['?'] * len(lam))[worst]!r} at "
+                f"{(getattr(obs, 'line_names', None) or ['?'] * len(lam))[worst]!r} at "
                 f"{lam[worst]:.2f} A has no nebular-cube line within 1 A "
                 f"(nearest {pos[idx[worst]]:.2f} A). The ZAU .lines cube and "
                 "emlines_info.dat likely come from different FSPS versions.")

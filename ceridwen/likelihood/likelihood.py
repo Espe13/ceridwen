@@ -339,6 +339,16 @@ class MultiObservationLikelihood(LikelihoodBase):
         keys        = self.keys
         likelihoods = self.likelihoods
 
+        if getattr(model, "_eline_system", None) is not None:
+            from .eline_marginal import joint_loglike
+
+            @jax.jit
+            def lnprobfn_elines(theta: dict[str, Array]) -> Array:
+                return (joint_loglike(model, keys, likelihoods, static_data, theta)
+                        + prior.log_prob(theta))
+
+            return lnprobfn_elines
+
         @jax.jit
         def lnprobfn(theta: dict[str, Array]) -> Array:
             predictions: dict[str, Array] = model.predict(theta)

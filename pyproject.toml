@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ceridwen"
-version = "1.0.1"
+version = "1.0.2"
 description = "JAX-native, GPU-capable Bayesian SED fitting with nested sampling and VI-preconditioned HMC"
 readme = "README.md"
 # Python 3.11+ required: nested sampling pins official blackjax (main), which
@@ -115,6 +115,7 @@ testpaths = ["tests"]
 markers = [
     "fsps: requires a working FSPS install (deselect with -m 'not fsps')",
     "gpu: requires a GPU (deselect with -m 'not gpu')",
+    "prospector: compares against a reference dump of the installed Prospector (tests/reference)",
 ]
 # Silence third-party deprecation noise we can't fix (tensorflow-probability's
 # JAX substrate, pkg_resources). We deliberately do NOT blanket-ignore

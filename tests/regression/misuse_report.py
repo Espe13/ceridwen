@@ -38,6 +38,8 @@ from ceridwen.ssps.ssp_data import SSPData
 from ceridwen.csp.csp import CSPBasis
 from ceridwen.cosmology import Cosmology
 from ceridwen.observation.observation import Photometry, Spectrum, Lines
+from ceridwen.model.model import SedModel
+from ceridwen.broadening import Instrument
 
 from _gridfixture import require_test_grid
 
@@ -122,6 +124,18 @@ def run_scenarios():
                            uncertainty=jnp.zeros(40), name="s"))),
         ("Photometry.predict before setup", {"ERROR"},
          lambda: Photometry(filters=["sdss_g0"], name="p").predict(csp.get_spectrum(th), csp.wave)),
+        ("eline prior width without a nebular model", {"ERROR"},
+         lambda: SedModel(csp, [Spectrum(wavelength=jnp.linspace(4000, 7000, 400), flux=jnp.ones(400),
+                                         uncertainty=jnp.ones(400), name="s",
+                                         instrument=Instrument.R_fwhm(1000.0),
+                                         marginalize_elines=True, eline_prior_width=0.2)], zred=0.0)),
+        ("Spectrum(eline_sigma=...)", {"ERROR"},
+         lambda: Spectrum(wavelength=jnp.linspace(4000, 7000, 40), name="s",  # deliberate misuse
+                          instrument=Instrument.R_fwhm(1000.0), marginalize_elines=True,
+                          eline_sigma=100.0)),
+        ("marginalize_elines without instrument", {"ERROR"},
+         lambda: Spectrum(wavelength=jnp.linspace(4000, 7000, 40), name="s",
+                          marginalize_elines=True)),
     ]
 
     rows = []

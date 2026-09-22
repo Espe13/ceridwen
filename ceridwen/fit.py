@@ -116,6 +116,8 @@ def fitSED(
         logger.info(f"  Observations: {list(keys)}")
         for k, lh in zip(keys, likelihoods):
             logger.info(f"    {k}: {_describe_likelihood(obs_dict[k], lh)}")
+        if getattr(model, "_eline_system", None) is not None:
+            logger.info(f"  Emission lines: {model._eline_system.describe()}")
         logger.info(f"  Output      : {output_path}")
         logger.info(f"  Log         : {log_path}")
         logger.info(f"  Likelihood build: {_t_likelihood:.3f} s")
@@ -136,7 +138,8 @@ def fitSED(
         logger.info(f"\n{result.summary()}")
 
         _t0_h5 = time.perf_counter()
-        write_result_h5(output_path, model, result, verbose=verbose)
+        write_result_h5(output_path, model, result, verbose=verbose,
+                        likelihood=multi_likelihood)
         _t_h5 = time.perf_counter() - _t0_h5
 
         _t_total = _t_likelihood + _t_adapter + _t_sampler + _t_h5
@@ -278,6 +281,7 @@ def write_result_h5(
     model,
     result,
     verbose: bool = True,
+    likelihood=None,
 ):
     """Write ``result`` and the model/observation metadata to HDF5 ``path``::
 
@@ -301,6 +305,13 @@ def write_result_h5(
             log_weights        (n_samples,)
             attrs: log_evidence, log_evidence_err, sampler_name,
                    wall_time_s, n_likelihood_calls
+
+        /elines/            (only with Spectrum(marginalize_elines=True) and ``likelihood``)
+            names          (m,)  FSPS line names
+            wave_rest      (m,)  vacuum rest wavelengths [A]
+            mean, sd       (n_samples, m)  posterior line fluxes per draw [erg s^-1 cm^-2]
+            cloudy         (n_samples, m)  the CLOUDY (grid) fluxes per draw
+            attrs: spectrum, observations (JSON), prior_width, not_fitted, ignored (JSON)
     """
     import h5py
 
@@ -425,9 +436,47 @@ def write_result_h5(
             if "num_warmup" in result.raw:
                 samp_grp.attrs["num_warmup"] = int(result.raw["num_warmup"])
 
+    if likelihood is not None and getattr(model, "_eline_system", None) is not None:
+        _write_eline_group(path, model, result, likelihood)
+
     if verbose:
         size_mb = path.stat().st_size / 1024**2
         logger.info(f"  Wrote {path}  ({size_mb:.1f} MB)")
+
+
+def eline_fluxes_for_samples(model, samples, likelihood, chunk=256):
+    """Posterior line fluxes of every draw in ``samples`` ({param: (n, ...)}): dict of
+    ``mean``, ``sd``, ``cloudy`` arrays (n, m), evaluated with ``jax.vmap`` in chunks."""
+    from .likelihood.eline_marginal import eline_line_fluxes
+    names = [p for p in model.theta_init if p in samples]
+    n = int(np.asarray(samples[names[0]]).shape[0])
+    theta = {p: jnp.asarray(np.asarray(samples[p]).reshape((n,) + tuple(np.shape(model.theta_init[p]))))
+             for p in names}
+
+    def one(th):
+        post = eline_line_fluxes(model, th, likelihood)
+        return post["mean"], post["sd"], post["cloudy"]
+    f = jax.jit(jax.vmap(one))
+    parts = [f({p: v[i:i + chunk] for p, v in theta.items()}) for i in range(0, n, chunk)]
+    mean, sd, cloudy = (np.concatenate([np.asarray(q[k]) for q in parts]) for k in range(3))
+    return dict(mean=mean, sd=sd, cloudy=cloudy)
+
+
+def _write_eline_group(path, model, result, likelihood):
+    import h5py
+    es = model._eline_system
+    vals = eline_fluxes_for_samples(model, result.samples, likelihood)
+    with h5py.File(path, "a") as f:
+        g = f.create_group("elines")
+        g.create_dataset("names", data=np.array(es.names, dtype=object), dtype=h5py.string_dtype())
+        g.create_dataset("wave_rest", data=np.asarray(es.wave_rest))
+        for k, v in vals.items():
+            g.create_dataset(k, data=v, compression="gzip")
+        g.attrs["spectrum"] = es.spec_key
+        g.attrs["observations"] = json.dumps(list(es.keys))
+        g.attrs["prior_width"] = float(es.prior_width)
+        g.attrs["not_fitted"] = json.dumps([list(t) for t in es.not_fitted])
+        g.attrs["ignored"] = json.dumps(list(es.ignored))
 
 
 def load_result_h5(path: str | Path):
@@ -483,7 +532,8 @@ def result_cosmology(path: str | Path):
 
 
 def read_result_h5(path: str | Path) -> dict:
-    """Read a result HDF5 file into a nested dict with keys ``'obs'``, ``'model'``, ``'samples'``."""
+    """Read a result HDF5 file into a nested dict with keys ``'obs'``, ``'model'``, ``'samples'``
+    (and ``'elines'`` when the fit marginalised the emission lines)."""
     import h5py
 
     out = {"obs": {}, "model": {}, "samples": {}}
@@ -525,5 +575,12 @@ def read_result_h5(path: str | Path) -> dict:
 
         for attr_name in samp.attrs:
             out["samples"][attr_name] = samp.attrs[attr_name]
+
+        if "elines" in f:
+            g = f["elines"]
+            out["elines"] = {k: (list(g[k].asstr()[()]) if k == "names" else np.array(g[k]))
+                             for k in g}
+            for attr_name in g.attrs:
+                out["elines"][attr_name] = g.attrs[attr_name]
 
     return out

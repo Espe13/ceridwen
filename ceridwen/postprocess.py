@@ -12,6 +12,8 @@ spectra, the best-fit point and user-defined derived quantities.
     out["extras"]["sfh"]["ssfr10"]                   # (N,)  sfr10 / formed mass  [1/yr]
     out["extras"]["uv"]["MUV"]                       # (N,)  absolute AB mag at 1500 A (dust-attenuated)
     out["extras"]["ionizing"]["nion"]                # (N,)  Q(H) [s^-1] from the intrinsic spectrum
+    out["extras"]["elines"]["mean"]                  # (N, m) posterior line fluxes [erg/s/cm^2] (Spectrum(marginalize_elines=True) only;
+                                                     #        also "sd", "cloudy", "names", "wave_rest"; predictions then carry these lines)
     out["prediction"]["photometry"]["phot"]          # (N, n_bands) maggies
     out["prediction"]["spectra"]["spec"]             # (N, n_pix)   as the Spectrum observation
     out["prediction"]["spectra_model"]               # (N, n_wave)  rest-frame L_nu [L_sun/Hz] on wave_rest, model resolution (no kinematic broadening)
@@ -368,6 +370,35 @@ class PostProcess:
             self._f_spectra = jax.jit(jax.vmap(self._spectra_one))
             self._f_sfh = jax.jit(jax.vmap(self._sfh_one))
 
+    def _predictor(self):
+        """Batched posterior-predictive observations: ``model.predict_vmap``, or, when a
+        Spectrum marginalises the emission lines, the predictions with each draw's
+        posterior-mean line fluxes (the likelihood fitSED builds) plus the line posteriors."""
+        es = getattr(self.model, "_eline_system", None)
+        if es is None:
+            return self.model.predict_vmap
+        if getattr(self, "_f_elines", None) is None:
+            from .fit import _likelihood_for
+            from .likelihood.likelihood import MultiObservationLikelihood
+            from .likelihood.eline_marginal import eline_line_fluxes
+            model = self.model
+            lh = MultiObservationLikelihood(
+                keys=tuple(model.obs_dict),
+                likelihoods=tuple(_likelihood_for(o, model.param_names) for o in model.observations))
+
+            def one(th):
+                pred, aux = model.predict_with_elines(th)
+                post = eline_line_fluxes(model, th, lh)
+                out = dict(pred)
+                for k, A in aux["cols"].items():
+                    out[k] = pred[k] + (A @ post["mean"]).astype(pred[k].dtype)
+                out["__elines_mean"] = post["mean"]
+                out["__elines_sd"] = post["sd"]
+                out["__elines_cloudy"] = post["cloudy"]
+                return out
+            self._f_elines = jax.jit(jax.vmap(one))
+        return self._f_elines
+
     def _run_batches(self, theta_batch: dict) -> dict:
         n = next(iter(theta_batch.values())).shape[0]
         want_pred = self.want["predictions"] and self.model.observations
@@ -377,7 +408,7 @@ class PostProcess:
             b = min(a + self.batch_size, n)
             tb = {k: v[a:b] for k, v in theta_batch.items()}
             current = (self._f_spectra(tb), self._f_sfh(tb),
-                       self.model.predict_vmap(tb) if want_pred else None)
+                       self._predictor()(tb) if want_pred else None)
             if pending is not None:
                 self._collect(pending, spec, sfh, pred)
             pending = current
@@ -480,6 +511,13 @@ class PostProcess:
                     continue
                 pred[slot][obs.name] = np.asarray(raw["pred"][obs.name], dtype=float)
         out["prediction"] = pred
+        es = getattr(m, "_eline_system", None)
+        if es is not None and raw["pred"]:
+            out["extras"]["elines"] = {
+                "names": list(es.names), "wave_rest": np.asarray(es.wave_rest),
+                "mean": np.asarray(raw["pred"]["__elines_mean"], dtype=float),
+                "sd": np.asarray(raw["pred"]["__elines_sd"], dtype=float),
+                "cloudy": np.asarray(raw["pred"]["__elines_cloudy"], dtype=float)}
 
         if self.derived:
             samples = []

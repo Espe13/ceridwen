@@ -440,6 +440,9 @@ class SpectralProjector:
     sigma_fix_kms: np.ndarray
     zred_range: Optional[tuple] = None
     opz_ref: float = 1.0
+    wave_obs: Optional[np.ndarray] = None
+    line_wave_rest: Optional[np.ndarray] = None
+    line_sigma_table_kms: Optional[np.ndarray] = None
     _line_idx_j: jnp.ndarray = field(init=False)
 
     def __post_init__(self):
@@ -541,6 +544,7 @@ class SpectralProjector:
         J, W = build_response(window.grid, np.log(wave_obs) - np.log(opz), s_fix)
 
         paint, line_idx = None, np.zeros(0, dtype=np.int64)
+        lw_kept = s_table = None
         if line_wave_rest is not None:
             lwr = np.asarray(line_wave_rest, dtype=np.float64)
             marg_l = BAND_NSIGMA * (b.sigma_max + float(s_inst.max())) / CKMS
@@ -553,6 +557,7 @@ class SpectralProjector:
                     s_table = 0.5 * CKMS * np.gradient(np.log(wave_obs))
                 else:
                     s_table = s_inst
+                lw_kept = lwr[keep]
                 if zred_range is None:
                     lw = lwr[keep] * opz
                     paint = make_line_painter(wave_obs, lw, np.interp(lw, wave_obs, s_table))
@@ -564,7 +569,8 @@ class SpectralProjector:
                    J=jnp.asarray(J), W=jnp.asarray(W), paint=paint,
                    line_idx=line_idx, sigma_inst_kms=s_inst,
                    sigma_lib_kms=s_lib, sigma_fix_kms=s_fix,
-                   zred_range=zred_range, opz_ref=opz)
+                   zred_range=zred_range, opz_ref=opz, wave_obs=wave_obs,
+                   line_wave_rest=lw_kept, line_sigma_table_kms=s_table)
 
     def continuum(self, spec_rest, sigma_gal_kms, opz=None):
         """Continuum on the observed pixels; ``opz`` = 1 + z (traced) when ``free_z``."""
@@ -591,6 +597,47 @@ class SpectralProjector:
         if self.paint is not None and line_flux_obs_all is not None:
             out = out + self.lines(line_flux_obs_all, s_gas, opz)
         return out
+
+    def line_basis(self, sigma_gas_kms, opz_line):
+        """(n_pix, n_kept) f_nu of UNIT-flux lines on the observed pixels, centred at
+        ``line_wave_rest * opz_line`` (traced), width sqrt(sigma_gas^2 + sigma_inst^2) with the
+        instrument width interpolated at the line; the painter's profile, one column per line."""
+        wo = np.asarray(self.wave_obs, dtype=np.float64)
+        lam = jnp.asarray(np.asarray(self.line_wave_rest, dtype=np.float64))
+        lnl = jnp.log(lam) + jnp.log(opz_line)
+        s_inst = jnp.interp(lam * opz_line, jnp.asarray(wo),
+                            jnp.asarray(np.asarray(self.line_sigma_table_kms, dtype=np.float64)))
+        s = jnp.sqrt(sigma_gas_kms ** 2 + s_inst ** 2) / CKMS
+        x = (jnp.asarray(np.log(wo))[:, None] - lnl[None, :]) / s[None, :]
+        phi = jnp.exp(-0.5 * x * x) / (jnp.sqrt(2.0 * jnp.pi) * s[None, :])
+        return phi * jnp.asarray(wo / C_AA_S)[:, None]
+
+    def predict_with_line_basis(self, spec_rest, line_flux_obs_all, theta, fit_pos=None,
+                                basis=None):
+        """``(prediction, A)``: continuum plus the lines of ``line_flux_obs_all`` painted with
+        :meth:`line_basis` at ``(1 + zred + eline_delta_zred)`` (theta key, default 0), and the
+        unit-flux columns ``A`` (n_pix, len(fit_pos)) of the kept lines at positions ``fit_pos``
+        (None when ``fit_pos`` is None)."""
+        s_gal, s_gas = self.kinematics.resolve(theta)
+        opz = None
+        if self.free_z:
+            if "zred" not in theta:
+                raise KeyError("projector built with zred_range needs theta['zred']")
+            opz = 1.0 + jnp.ravel(jnp.asarray(theta["zred"]))[0]
+        out = self.continuum(spec_rest, s_gal, opz)
+        if self.line_wave_rest is None or self.line_idx.size == 0:
+            return out, None
+        if basis is None:           # a precomputed basis is only passed for fixed z, width, dz = 0
+            opz_line = self.opz_ref if opz is None else opz
+            if "eline_delta_zred" in theta:
+                opz_line = opz_line + jnp.ravel(jnp.asarray(theta["eline_delta_zred"]))[0]
+            basis = self.line_basis(s_gas, opz_line)
+        else:
+            basis = jnp.asarray(basis)
+        if line_flux_obs_all is not None:
+            out = out + basis @ line_flux_obs_all[self._line_idx_j]
+        A = None if fit_pos is None else basis[:, np.asarray(fit_pos, dtype=np.int64)]
+        return out, A
 
     def summary(self) -> str:
         b = self.kinematics
