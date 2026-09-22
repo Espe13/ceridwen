@@ -31,7 +31,7 @@ it. [Installation](#installation), the [quick start](#quick-start) and
 
 - [x] Star formation history (non-parametric continuity + parametric)
 - [x] Metallicity history
-- [x] Dust attenuation (Kriek & Conroy diffuse, power-law birth-cloud, multi-component age-dependent)
+- [x] Dust attenuation (Kriek & Conroy diffuse, power-law birth-cloud, multi-component age-dependent; 12 registered laws incl. Calzetti, Noll, Pei SMC/LMC, Gordon+03 SMC bar `gordon03_smcbar`, Reddy+15 `reddy15`)
 - [x] Dust emission (Draine & Li grids)
 - [x] Nebular continuum + emission lines (CLOUDY grids)
 - [x] Analytic marginalisation over emission-line fluxes, jointly across spectrum, photometry and line fluxes (`Spectrum(marginalize_elines=True)`, [docs](docs/eline_marginalisation.md))

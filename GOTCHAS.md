@@ -385,7 +385,7 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
 - `lnl_pointwise` holds the mixture terms; `chi` stays the inlier (y - mu)/sigma_eff. The
   per-datum outlier probability comes from `likelihood.outlier_probability(...)`.
 
-## 14. IGM damping wing / DLA (2026-09-22)
+## 14. IGM damping wing / DLA and attenuation-law names (2026-09-22)
 
 - **`igm_factor` is not the neutral fraction.** It scales the Madau (1995) forest only.
   `MadauDampingDLA` reads its own theta keys `x_HI`, `logN_HI`, `z_dla` (constructor values
@@ -398,6 +398,13 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
 - **The wing is off for `zred <= zmin`** (default 5), as in Prospector, and there is no DLA
   when `z_dla > zred`. A foreground DLA sits at rest `1215.67 (1+z_dla)/(1+zred)` Å; Prospector
   divides the other way (`sedmodel.py:816`), which only agrees at `z_dla = zred`.
+- **Attenuation-law parameter names are the function-signature names.** `Dust` passes a law
+  only the names that are both in the signature and in its registry `params`; since
+  2026-09-22 every built-in entry is tested for this (`tests/test_dust_laws.py`). `noll`'s bump
+  is `Ebump` (was silently dropped in an age-bin `Dust`); `drude` now takes Å; `smc` / `lmc`
+  are Pei (1992), normalised at 5500 Å; the Gordon et al. (2003) SMC bar is
+  `gordon03_smcbar`, and Reddy et al. (2015) is `reddy15` (its `tau_reddy` is FSPS's `dust2`,
+  so tau(5500 Å) = 0.997 `tau_reddy`).
 
 ---
 

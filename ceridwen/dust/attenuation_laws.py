@@ -55,8 +55,9 @@ import warnings, sys
 # --------------------
 
 __all__ = ["calzetti", "chevallard", "conroy", "noll",
-           "powerlaw", "drude", 
-           "cardelli", "smc", "lmc", "kriek_conroy"]
+           "powerlaw", "drude", "drude_law",
+           "cardelli", "smc", "lmc", "kriek_conroy",
+           "gordon03_smcbar", "reddy15"]
 
 def powerlaw(wave, tau_pow=1.0, alpha_pow=-1.0, **kwargs):
     """Simple power-law attenuation, normalized to 5500 Å.
@@ -131,6 +132,17 @@ def drude(x, x0=4.59, gamma=0.90, **extras):
         The value of the Drude profile at x, normalized such that the peak is 1.
     """
     return (x * gamma) ** 2 / ((x ** 2 - x0 ** 2) ** 2 + (x * gamma) ** 2)
+
+def drude_law(wave, x0=4.59, gamma=0.90, **kwargs):
+    """The Drude profile as a registered law (``"drude"``): ``drude`` evaluated at
+    ``x = 1e4 / wave``.
+
+    :param wave: wavelengths in Angstrom (what ``Dust`` / ``DiffuseDust`` pass every law)
+    :param x0: centre of the profile (inverse microns)
+    :param gamma: width of the profile (inverse microns)
+    :returns: the profile, 1 at ``x = x0`` (2178.6 A for the default); no amplitude parameter
+    """
+    return drude(1e4 / wave, x0=x0, gamma=gamma)
 
 def noll(wave, tau_noll=1.0, delta=0.0, c_r=0.0, Ebump=0.0, **kwargs):
     """Noll 2009 attenuation curve (Calzetti + Drude bump + power-law tilt).
@@ -401,26 +413,94 @@ def kriek_conroy(wave, tau_kc=1.0, dust_index=0.0, **kwargs):
 
 
 
+# Gordon et al. 2003 Table 4, SMC Bar: lambda [um] and A(lambda)/A(V), ascending lambda
+# (identical to $SPS_HOME/dust/Gordon03_table4.dat columns 1 and 3, read in reverse by FSPS).
+# 2.198 um: 0.016 and 1.25 um: 0.131 are the published values, which dust_extinction's
+# G03_SMCBar replaces with 0.110 / 0.250 (Gordon et al. 2016); FSPS, and this port, keep them.
+_G03_LAM_UM = (
+    0.116, 0.119, 0.123, 0.127, 0.131, 0.136, 0.140, 0.145, 0.151, 0.157,
+    0.163, 0.170, 0.178, 0.186, 0.195, 0.205, 0.216, 0.229, 0.242, 0.258,
+    0.276, 0.296, 0.370, 0.440, 0.550, 0.650, 0.810, 1.250, 1.650, 2.198,
+)
+_G03_AXAV = (
+    6.992, 6.436, 6.297, 6.074, 5.795, 5.575, 5.272, 5.000, 4.776, 4.472,
+    4.243, 4.013, 3.866, 3.637, 3.489, 3.293, 3.161, 2.947, 2.661, 2.428,
+    2.220, 2.000, 1.672, 1.374, 1.000, 0.801, 0.567, 0.131, 0.169, 0.016,
+)
+_G03_LAM_AA = jnp.array(_G03_LAM_UM, dtype=jnp.float64) * 1e4
+_G03_Y = jnp.array(_G03_AXAV, dtype=jnp.float64)
+
+
+def gordon03_smcbar(wave, tau_g03smc=1.0, **kwargs):
+    """Gordon et al. (2003, ApJ 594, 279) SMC bar extinction curve, Table 4 (FSPS dust_type=5,
+    ``src/sps_setup.f90:1374-1394`` + ``src/attn_curve.f90:157-161``).
+
+    :param wave: wavelengths in Angstrom
+    :param tau_g03smc: optical depth at 5500 A (exact: the table has a node there)
+    :returns: optical depth tau(lambda); linear in lambda between the 30 table nodes,
+        constant blueward of 1160 A, 0 redward of 21980 A (as FSPS).
+    """
+    wave = jnp.asarray(wave, dtype=jnp.float64)
+    curve = jnp.interp(wave, _G03_LAM_AA, _G03_Y, left=_G03_Y[0], right=0.0)
+    return tau_g03smc * curve
+
+
+def _reddy_blue(mic):
+    return -5.726 + 4.004 / mic - 0.525 / mic**2 + 0.029 / mic**3 + 2.505
+
+
+def _reddy_red(mic):
+    # the -0.036221981 is not in Reddy+15; FSPS/Prospector add it for continuity at 0.6 um
+    return -2.672 - 0.010 / mic + 1.532 / mic**2 - 0.412 / mic**3 + 2.505 - 0.036221981
+
+
+def reddy15(wave, tau_reddy=1.0, **kwargs):
+    """Reddy et al. (2015, ApJ 806, 259) attenuation curve, eq. 8 (FSPS dust_type=6; ported from
+    Prospector ``prospect/sources/fake_fsps.py:102-123`` @ a78d153).
+
+    Branch boundaries at exactly 1500 / 6000 / 28500 A (FSPS and Prospector place them at the
+    nearest grid pixel, so they differ only in the pixels next to a boundary); constant at its
+    1500 A value blueward, 0 at and redward of 28500 A.
+
+    :param wave: wavelengths in Angstrom
+    :param tau_reddy: amplitude, FSPS/Prospector ``dust2``; tau(5500 A) = 0.997113 tau_reddy
+        (k(0.55 um) / R_V with R_V = 2.505, not renormalised, so ``dust2`` means the same thing)
+    :returns: optical depth tau(lambda) = tau_reddy * k(lambda) / 2.505
+    """
+    wave = jnp.asarray(wave, dtype=jnp.float64)
+    mic = wave / 1e4
+    # evaluate each branch only where it is used, so the gradient stays finite everywhere
+    mic_blue = jnp.where((wave >= 1500.0) & (wave < 6000.0), mic, 0.55)
+    mic_red = jnp.where((wave >= 6000.0) & (wave < 28500.0), mic, 1.0)
+    k = jnp.where(wave < 1500.0, _reddy_blue(0.15),
+        jnp.where(wave < 6000.0, _reddy_blue(mic_blue),
+        jnp.where(wave < 28500.0, _reddy_red(mic_red), 0.0)))
+    return tau_reddy * k / 2.505
+
+
+# Every "params" / "defaults" key must be a parameter name of "func" (Dust passes a law only
+# the signature names that are also "params" keys, DustModel.py; a mismatch is silently dropped).
+# tests/test_dust_laws.py enforces this for every entry.
 ATTENUATION_LAWS = {
     "smc": {
         "func": smc,
         "params": {
-            "tau_smc": "Optical depth at 1500 Å",
+            "tau_smc": "Optical depth at 5500 Å",
         },
         "defaults": {
             "tau_smc": 1.0
         },
-        "doc": "SMC extinction curve from Gordon et al. (2003), appropriate for low-metallicity environments."
+        "doc": "SMC extinction curve of Pei (1992), appropriate for low-metallicity environments (for the Gordon et al. 2003 SMC bar curve use 'gordon03_smcbar')."
     },
     "lmc": {
         "func": lmc,
         "params": {
-            "tau_lmc": "Optical depth at 1500 Å",
+            "tau_lmc": "Optical depth at 5500 Å",
         },
         "defaults": {
             "tau_lmc": 1.0
         },
-        "doc": "LMC extinction curve following Gordon et al. (2003), intermediate dust properties."
+        "doc": "LMC extinction curve of Pei (1992), intermediate dust properties."
     },
     "kriek_conroy": {
         "func": kriek_conroy,
@@ -465,7 +545,9 @@ ATTENUATION_LAWS = {
         "doc": "Empirical attenuation curve for local starbursts (Calzetti et al. 2000)."
     },
     "drude": {
-        "func": drude,
+        # 2026-09-22: was "func": drude, which takes inverse microns; Dust passes Angstrom, so
+        # the law returned ~1e-7 instead of a profile peaking at 1 at 2179 A.
+        "func": drude_law,
         "params": {
             "gamma": "Width of the Drude profile (inverse microns)",
             "x0": "Center of the Drude profile (inverse microns)",
@@ -482,7 +564,7 @@ ATTENUATION_LAWS = {
             "tau_noll": "V-band optical depth",
             "delta": "Deviation from Calzetti slope",
             "c_r": "Constant modifying effective R_v ",
-            "E_bump": "Bump strength (normalized Drude at 2175 \AA)"
+            "Ebump": "Bump strength (normalized Drude at 2175 \AA)"
         },
         "defaults": {
             "tau_noll": 1.0,
@@ -527,5 +609,25 @@ ATTENUATION_LAWS = {
             "f_bump": 0.6
         },
         "doc": "Flexible model from Conroy et al. including empirical bump and slope modifications."
+    },
+    "gordon03_smcbar": {
+        "func": gordon03_smcbar,
+        "params": {
+            "tau_g03smc": "Optical depth at 5500 Å (exact)",
+        },
+        "defaults": {
+            "tau_g03smc": 1.0,
+        },
+        "doc": "SMC bar extinction curve, Gordon et al. (2003) Table 4 (FSPS dust_type=5).",
+    },
+    "reddy15": {
+        "func": reddy15,
+        "params": {
+            "tau_reddy": "Amplitude (FSPS dust2); tau(5500 Å) = 0.99711 tau_reddy",
+        },
+        "defaults": {
+            "tau_reddy": 1.0,
+        },
+        "doc": "z~2 star-forming galaxy attenuation curve, Reddy et al. (2015) eq. 8 (FSPS dust_type=6).",
     },
 }

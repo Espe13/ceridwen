@@ -398,3 +398,52 @@ own `tau_damping` / `voigt_profile`); new `igm_dla` configuration in
 **Not done.** `fit.py` does not record the IGM model or its fixed arguments in
 `ceridwen_result.h5` (it records no IGM information at all, for any model); sampled keys are
 stored like any other parameter.
+
+## 2026-09-22 — Gordon+03 SMC bar and Reddy+15 attenuation laws (`dust/attenuation_laws.py`)
+
+**What.** Two new registered laws, promoted from `examples/recipes/extra_dust_laws.py`:
+`gordon03_smcbar` (parameter `tau_g03smc`, FSPS dust_type=5, tau(5500 Å) = `tau_g03smc`
+exactly) and `reddy15` (parameter `tau_reddy`, FSPS dust_type=6 / Prospector `fake_fsps`,
+tau(5500 Å) = 0.997113 `tau_reddy`, i.e. FSPS `dust2`). Registry parameter names equal the
+signature names. `examples/recipes/extra_dust_laws.py` is now a re-export, and its `register()`
+is kept for old scripts.
+
+**Verification.** `check_extra_dust_laws.py` against the package: 14 passed, 0 failed,
+0 skipped (Gordon vs the FSPS table and Fortran 0.0 / 1.1e-16; Reddy vs Prospector 1.1e-15 on
+2901 node-aligned pixels, and vs the FSPS Fortran with its single-precision literals 4.4e-16).
+New regression category `dust_laws`.
+
+## 2026-09-22 — attenuation-law registry bugs (`dust/attenuation_laws.py`)
+
+`Dust` passes a law only the parameters that are both in its signature and in its registry
+`params` (`DustModel.py:107-113`). Three registry entries were wrong. **Each fix changes
+results for anyone who used that law as described below.** `tests/test_dust_laws.py` fails on
+`main` for each of them (6 failures) and passes after (22/22); it also checks every built-in
+law for signature/registry agreement and that every registered parameter reaches the curve.
+
+- **`noll`: bump strength never reached an age-bin `Dust`.** Registry `params` said
+  `E_bump`, the signature and `defaults` say `Ebump`. In an age-bin `Dust` (and each renamed
+  copy `Ebump1`, `Ebump2`, ... when the law is used in several bins) the bump was dropped, so
+  the curve was always the `Ebump = 0` curve; `get_param_names()` advertised `E_bump`, which
+  was then warned as unknown. Measured: at 2175 Å with `tau_noll = 1`, `Ebump = 3`, the curve
+  was 2.0946 and is now 2.8351 (= a direct `noll(...)` call). `DiffuseDust("noll")` read
+  `diffuse_Ebump` correctly before and is unchanged. **Who is affected:** fits with `noll` in
+  `init_dust_params["laws"]` and a non-zero `Ebump`: their bump was ignored; results move.
+- **`drude`: registered with a function that takes inverse microns.** `Dust` feeds Å, so
+  `Dust(laws=["drude"])` returned 1.7e-7 at 2175 Å instead of 0.9997. The registry now points
+  at `drude_law(wave, x0, gamma)`, which evaluates `drude(1e4 / wave)` (peak 1 at
+  x0 = 4.59 µm⁻¹, 2178.6 Å). `drude` itself (used by `noll`) is unchanged. **Who is affected:**
+  any use of the `drude` law (it attenuated nothing before). It still has no amplitude
+  parameter: as a bin law it is a fixed bump of peak optical depth 1.
+- **`smc` / `lmc`: registry text.** The entries said "Optical depth at 1500 Å" and credited
+  Gordon et al. (2003); the functions are Pei (1992) curves normalised at 5500 Å
+  (tau(5500 Å) = `tau_smc` exactly, measured). Text only, the numbers are unchanged. **Who is
+  affected:** anyone who read `tau_smc` / `tau_lmc` as a 1500 Å optical depth: it is the
+  5500 Å depth, and the 1500 Å depth is 4.59× (SMC) / 3.45× (LMC) the parameter (measured).
+  Also anyone who cited Gordon et al. (2003) for these laws. The Gordon SMC bar curve is now
+  `gordon03_smcbar`.
+
+Golden coverage: regression category `dust_laws` holds the age-bin and diffuse curves of all
+six laws (noll with `Ebump = 2`, drude) and two CSP spectra with multi-bin
+(`noll`/`gordon03_smcbar`/`lmc` + diffuse `reddy15`; `drude`/`smc` + diffuse `noll`)
+configurations: any of the three bugs would have moved them.

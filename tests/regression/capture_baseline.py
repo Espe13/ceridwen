@@ -333,6 +333,7 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
     out["outlier_likelihood"]["lnl_phot_upper_limit"] = np.asarray(lnl_p_ul, dtype=np.float64)
 
     out["igm_damping_dla"] = _igm_damping_dla_baseline()
+    out["dust_laws"] = _dust_laws_baseline(p, ssp_data)
     out.update(_logzsol_baselines(p))
     out["eline_marginal"] = _eline_marginal_baseline(p, ssp_data)
     return out
@@ -369,6 +370,58 @@ def _igm_damping_dla_baseline() -> dict[str, np.ndarray]:
         "off_theta": np.asarray(base.attenuation(
             wave, z, params=th(x_HI=0.0, logN_HI=-np.inf))),
     }
+
+
+def _dust_laws_baseline(p, ssp_data) -> dict[str, np.ndarray]:
+    """Laws added or fixed 2026-09-22, through the package's own ``Dust`` / ``DiffuseDust`` and a
+    CSP.  Curves: ``gordon03_smcbar`` (= FSPS dust_type=5 table + interpolation, and the FSPS
+    Fortran, to 1e-16) and ``reddy15`` (= Prospector ``fake_fsps`` to 1e-15), per
+    ``examples/recipes/tests/check_extra_dust_laws.py``; ``noll`` with ``Ebump = 2`` in an age
+    bin (= a direct ``noll(...)`` call, which before the fix it was not: the bump was dropped);
+    ``drude`` (= ``drude(1e4 / wave)``, peak 1 at 2178.6 A; before the fix ~1e-7); ``smc`` /
+    ``lmc`` (tau(5500) = amplitude).  Spectra: the stellar CSP with three age bins
+    (noll / gordon03_smcbar / lmc) and a ``reddy15`` diffuse screen, and with
+    (drude / smc) bins and a ``noll`` diffuse screen."""
+    from ceridwen.csp.csp import CSPBasis
+    from ceridwen.cosmology import Cosmology
+    from ceridwen.dust.DustModel import Dust, DiffuseDust
+    import contextlib
+    import io
+
+    wave = jnp.asarray(np.geomspace(912.0, 3e4, 500))
+    out = {"wave": np.asarray(wave)}
+    for law, pars in (("gordon03_smcbar", {"tau_g03smc": 0.7}), ("reddy15", {"tau_reddy": 0.7}),
+                      ("noll", {"tau_noll": 0.7, "delta": -0.2, "c_r": 0.1, "Ebump": 2.0}),
+                      ("drude", {"x0": 4.59, "gamma": 0.9}), ("smc", {"tau_smc": 0.7}),
+                      ("lmc", {"tau_lmc": 0.7})):
+        th = {k: jnp.asarray(v) for k, v in pars.items()}
+        out[f"bin_{law}"] = np.asarray(
+            Dust(bin_edges=[(-jnp.inf, jnp.inf)], laws=[law]).compute_attenuation(wave, th)[0])
+        out[f"diffuse_{law}"] = np.asarray(DiffuseDust(law).compute_attenuation(
+            wave, {f"diffuse_{k}": v for k, v in th.items()}))
+
+    configs = {
+        "a": ({"bin_edges": [(-jnp.inf, -2.0), (-2.0, -1.0), (-1.0, jnp.inf)],
+               "laws": ["noll", "gordon03_smcbar", "lmc"]}, "reddy15",
+              {"tau_noll": 0.6, "delta": -0.2, "c_r": 0.0, "Ebump": 2.0, "tau_g03smc": 0.4,
+               "tau_lmc": 0.2, "diffuse_tau_reddy": 0.3}),
+        "b": ({"bin_edges": [(-jnp.inf, -2.0), (-2.0, jnp.inf)], "laws": ["drude", "smc"]},
+              "noll", {"x0": 4.59, "gamma": 0.9, "tau_smc": 0.3, "diffuse_tau_noll": 0.3,
+                       "diffuse_delta": -0.1, "diffuse_c_r": 0.0, "diffuse_Ebump": 1.5}),
+    }
+    for tag, (bins, diffuse, vals) in configs.items():
+        with contextlib.redirect_stdout(io.StringIO()):
+            csp = CSPBasis(ssp_data, theta={"lookback_time": p["lookback"], "sfh": p["sfh"],
+                                            "logzsol": jnp.array([-0.4])},
+                           cosmo=Cosmology.planck18(), zh_const=True, add_neb=False,
+                           add_dust=True, add_diffuse_dust=True, init_dust_params=bins,
+                           diffuse_law=diffuse, verbose=False, sfh_interp="step")
+        th = dict(csp.theta_init, **{k: jnp.atleast_1d(jnp.asarray(v)) for k, v in vals.items()})
+        attn, attn_diffuse = csp.attenuate_dust(csp.wave, th)
+        out[f"csp_{tag}_attn_binwise"] = np.asarray(attn)
+        out[f"csp_{tag}_attn_diffuse"] = np.asarray(attn_diffuse)
+        out[f"csp_{tag}_spectrum"] = np.asarray(csp.get_spectrum(th, include_lines=False))
+    return out
 
 
 # ---------------------------------------------------------------------------- #

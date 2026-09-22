@@ -130,3 +130,15 @@ def test_grad_igm_damping_dla():
               "z_dla": (6.0, 7.0)},
         fixed={"sfh": np.ones(5), "logzsol": -0.5})
     _check(f, names, lo, hi)
+
+
+def test_grad_dust_laws():
+    csp = _csp(add_dust=True, add_diffuse_dust=True, diffuse_law="reddy15",
+               init_dust_params={"bin_edges": [(-jnp.inf, -2.0), (-2.0, jnp.inf)],
+                                 "laws": ["noll", "gordon03_smcbar"]})
+    f, names, lo, hi = _lnprob(
+        csp, ["sdss_u0", "sdss_g0", "sdss_r0", "sdss_i0"], (1800.0, 3000.0), 1.0,
+        free={"logmass": (8.0, 10.0), "tau_noll": (0.0, 2.0), "Ebump": (0.0, 4.0),
+              "tau_g03smc": (0.0, 1.0), "diffuse_tau_reddy": (0.0, 1.0)},
+        fixed={"sfh": np.ones(5), "logzsol": -0.5, "delta": -0.2, "c_r": 0.0})
+    _check(f, names, lo, hi)

@@ -150,6 +150,12 @@ def _sampled_x_hi_without_ob0():
     return c.predict(th, [ph])
 
 
+def _noll_old_bump_name():
+    c = _short_csp(add_dust=True, init_dust_params={"bin_edges": [(-jnp.inf, -1.97)],
+                                                    "laws": ["noll"]})
+    return c.get_spectrum_components(dict(c.theta_init, E_bump=jnp.array([2.0])))
+
+
 def run_scenarios():
     csp = _good_csp()
     th = dict(csp.theta_init)
@@ -263,6 +269,7 @@ def run_scenarios():
         ("IGM model cosmology != CSP cosmology", {"ERROR"},
          lambda: _dla_csp(__import__("ceridwen.igm", fromlist=["x"]).MadauDampingDLA(
              Ob0=0.05, cosmo=Cosmology.wmap9()))),
+        ("noll bump under its old name E_bump", {"WARN"}, _noll_old_bump_name),
     ]
 
     rows = []

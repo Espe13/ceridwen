@@ -17,7 +17,7 @@ runs on CPU or GPU.
 - Star formation history (non-parametric continuity or parametric)
 - Metallicity history (constant or time-varying)
 - [α/Fe] as a sampled stellar axis (`CSPBasis_afe`, FSPS v4.0 aMIST + C3K grids; continuum-only, downloadable grid — no FSPS install needed)
-- Dust attenuation (Kriek & Conroy diffuse, power-law birth-cloud, multi-component age-dependent)
+- Dust attenuation (Kriek & Conroy diffuse, power-law birth-cloud, multi-component age-dependent; Gordon+03 SMC bar and Reddy+15 among the registered laws)
 - Dust emission (Draine & Li grids)
 - Nebular continuum and emission lines (CLOUDY grids)
 - Broadband photometry, spectra, and emission-line fluxes, fit on their own or jointly
