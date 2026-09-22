@@ -99,6 +99,7 @@ from ceridwen.observation import Photometry, Spectrum, Lines
 from ceridwen.priors import (Prior, Uniform, TopHat, Normal, ClippedNormal,
                              LogNormal, LogUniform, StudentT)
 from ceridwen.sampler import run_sampler
+from ceridwen.optimize import map_fit          # MAP (L-BFGS from prior draws)
 from ceridwen.likelihood import DiagonalGaussianLikelihood, MultiObservationLikelihood
 ```
 
@@ -181,6 +182,9 @@ projection → likelihood → sampler.
   `load_result_h5` / `result_cosmology`; writes `<output_dir>/ceridwen_result.h5`
   (obs, model/priors as JSON, kinematics, cosmology, samples, log-weights,
   log-evidence).
+- `optimize.py` — `map_fit` (L-BFGS on fitSED's log-posterior from `theta_init` + N prior
+  draws; `.theta` is a `free_param_init`), `laplace_sigma`; `fitSED(optimize=True)` starts NUTS
+  there and writes `/map`.
 - `postprocess.py` — `PostProcess` (equal-weight draws, SFH averages, UV and
   ionising properties, posterior predictions); `plotting.py` — summary, corner
   and diagnostic figures.

@@ -35,7 +35,7 @@ REMOVED_THETA_KEYS = {"Z": "logzsol", "zh": "logzsol_hist"}
 CHECKED = {
     "CSPBasis", "CSPBasis_afe", "SedModel", "Spectrum", "Photometry", "Lines", "Kinematics",
     "Instrument", "PostProcess", "fitSED", "NebularModel", "SSPData", "SSPDataAfe",
-    "DiagonalNoiseModel", "GaussianProcess", "BlackJAXNestedSamplerAdapter", "BlackJAXNUTSAdapter",
+    "DiagonalNoiseModel", "GaussianProcess", "map_fit", "run_sampler", "BlackJAXNestedSamplerAdapter", "BlackJAXNUTSAdapter",
     "Uniform", "Normal", "ClippedNormal", "LogNormal", "LogUniform", "StudentT", "TopHat",
 }
 

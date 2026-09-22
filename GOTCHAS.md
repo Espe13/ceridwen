@@ -459,3 +459,20 @@ Runtime, per-sample value checks (e.g. "this drawn `Z` is out of grid") are
 deliberately **not** placed in the jitted hot path — doing so would either break
 JIT or slow every evaluation. Use the non-jitted `csp.check_param_ranges(theta)`
 on your priors/bounds once before sampling instead.
+
+## 16. MAP optimisation (`map_fit`, `fitSED(optimize=True)`) (2026-09-22)
+
+- **The MAP is the maximum of `ln L + ln prior` in the parameters you sample**, not of the
+  density NUTS explores: NUTS adds the log-Jacobian of its logit map for bounded priors, whose
+  maximum is elsewhere. `map_fit` optimises in the logit coordinates only as a change of
+  variables, without the Jacobian. It is also not the maximum-likelihood point (the prior is
+  included), and it depends on the parametrisation (a `LogUniform` on `x` and a `Uniform` on
+  `log10 x` have different MAPs).
+- **Nested sampling ignores it**: live points are prior draws. `fitSED(optimize=True,
+  sampler="nested")` records `/map` and says so in the log.
+- **Every free parameter needs a prior** (the starts are prior draws); a parameter at a bound
+  of a `Uniform` stays strictly inside it (the logit map never reaches the edge).
+- **Deterministic for a fixed `rng_key`** (checked byte for byte on CPU). The default key in
+  `fitSED` is `fold_in(rng_key, 1)`, so switching `optimize` on does not change the sampler's
+  own key. Several starts reaching the same `ln p` is the sign of a well-defined optimum; a
+  spread in `MAPResult.lnp_starts` means local optima.

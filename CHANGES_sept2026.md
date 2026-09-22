@@ -400,3 +400,19 @@ differ between `main` and its own capture (a 8e-45 denormal in a post-processed 
 top of the range at 1e-12). `tests/test_lsf_scale.py` (15 tests incl. gradients vs finite
 differences, jit/vmap). CPU cost of a sampled scale ~10 % of the value-only log-posterior
 (W=100 and 500); GPU timing pending (`scripts/bench_lsf_scale.py`).
+
+## 2026-09-22 — MAP optimisation: `ceridwen.optimize.map_fit`, `fitSED(optimize=True)`
+
+**What.** `examples/recipes/map_fit.py` promoted into the package. `map_fit(model, n_starts=16,
+rng_key=...)` maximises fitSED's own log-posterior (`fit._likelihood_for` +
+`MultiObservationLikelihood.make_lnprobfn`) with `optax.lbfgs` from `model.theta_init` plus
+`n_starts` prior draws (Prospector's `nmin`, `fitting.py:223-310`), in the NUTS adapter's logit
+coordinates without a Jacobian; returns `MAPResult` (`.theta` is a `free_param_init`,
+`.lnp_starts`, `.summary()`). `fitSED(optimize=True, optimize_kwargs=...)` runs it, starts NUTS
+(and VI) there through the new `run_sampler(..., theta_init=)`, and writes `/map`
+(read back by `read_result_h5(...)["map"]`). Default off; with it off every array is unchanged.
+
+**Verification.** `tests/test_map_fit.py` on the `examples/make_mock_data.py` mock (test grid):
+ln p(MAP) = 38346.50 vs 36914.37 for the best of 1000 prior draws; two runs at the same key
+byte-identical; `.theta` rebuilds the model at the same ln p; fitSED hands the MAP to the
+sampler and stores it.

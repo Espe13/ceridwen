@@ -1,4 +1,7 @@
 """
+map_fit.py -- MAP optimisation before sampling.  Now in the package as
+``ceridwen.optimize.map_fit`` / ``fitSED(optimize=True)``; this recipe is kept as the record.
+
 map_fit.py -- MAP optimisation before sampling (Prospector's ``nmin`` + LM/Powell), no package code.
 
 What it does
@@ -18,8 +21,7 @@ only.
   (``ceridwen/likelihood/likelihood.py:519-561``) for the jitted ``theta -> ln L + ln prior``.
   The prior term is ``SedModel.log_prob`` = ``ln_prior`` (``ceridwen/model/model.py:397-407``).
 * The optimiser works in the unconstrained space of the NUTS adapter: bounds from
-  ``fit._detect_bounds`` (``ceridwen/fit.py:394-408``: Uniform / TopHat / bounded
-  ClippedNormal), the sigmoid/logit map ``_build_transforms`` / ``_to_constrained`` /
+  ``fit._detect_bounds`` (Uniform / TopHat / bounded ClippedNormal / LogUniform), the sigmoid/logit map ``_build_transforms`` / ``_to_constrained`` /
   ``_to_unconstrained`` (``ceridwen/sampler/nuts.py:18-52``) and the adapter's flattening order
   (``BlackJAXNUTSAdapter._flatten`` / ``_unflatten``, ``nuts.py:121-131``).
 * **The objective has no log-Jacobian.**  NUTS samples ``ln p(theta(x)) + ln|J(x)|``

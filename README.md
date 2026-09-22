@@ -363,6 +363,22 @@ plt.figure(); plt.plot(result.raw["vi_losses"]); plt.yscale("log")   # -ELBO
 plt.xlabel("VI iteration"); plt.ylabel(r"$-\mathrm{ELBO}$")
 ```
 
+#### Starting NUTS at the MAP
+
+`fitSED(..., optimize=True)` first maximises the same log-posterior with L-BFGS
+(`ceridwen.optimize.map_fit`, from `model.theta_init` plus `n_starts` prior draws, Prospector's
+`nmin`), starts NUTS (and its VI map) there, and stores the MAP under `/map` in the result file.
+Nested sampling draws its live points from the prior, so there the MAP is only recorded.
+`map_fit(model)` on its own returns a `MAPResult` whose `.theta` is a ready `free_param_init`.
+
+```python
+from ceridwen.optimize import map_fit
+
+best = map_fit(model, n_starts=16, rng_key=jax.random.PRNGKey(1))
+result = fitSED(model, sampler="nuts", optimize=True,
+                optimize_kwargs={"n_starts": 16}, output_dir="./my_fit")
+```
+
 #### Inspecting the results (identical for both samplers)
 
 Nested samples carry importance weights; NUTS draws do not. `PostProcess`
