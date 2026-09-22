@@ -16,7 +16,7 @@
         <link rel="prev" href="../tutorial/">
       
       
-        <link rel="next" href="../postprocessing/">
+        <link rel="next" href="../eline_marginalisation/">
       
       
         
@@ -586,6 +586,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../eline_marginalisation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Emission-line marginalisation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../postprocessing/" class="md-nav__link">
         
   
@@ -714,6 +741,10 @@ safe".</p>
 <tr>
 <td>Emission-line fluxes</td>
 <td>erg s⁻¹ cm⁻²</td>
+</tr>
+<tr>
+<td>Marginalised line fluxes (<code>marginalize_elines=True</code>: <code>/elines</code> in the result, <code>extras["elines"]</code>)</td>
+<td>erg s⁻¹ cm⁻², observed frame, IGM-transmitted at the line, <strong>not</strong> divided by the spectrum calibration; lines named as in <code>$SPS_HOME/data/emlines_info.dat</code>, vacuum rest-frame Å</td>
 </tr>
 <tr>
 <td>Stellar mass</td>

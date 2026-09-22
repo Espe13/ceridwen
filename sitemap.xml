@@ -2,30 +2,34 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/</loc>
-         <lastmod>2026-09-21</lastmod>
+         <lastmod>2026-09-22</lastmod>
     </url>
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/api/</loc>
-         <lastmod>2026-09-21</lastmod>
+         <lastmod>2026-09-22</lastmod>
     </url>
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/conventions/</loc>
-         <lastmod>2026-09-21</lastmod>
+         <lastmod>2026-09-22</lastmod>
+    </url>
+    <url>
+         <loc>https://www.amanda-stoffers.de/ceridwen/eline_marginalisation/</loc>
+         <lastmod>2026-09-22</lastmod>
     </url>
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/installation/</loc>
-         <lastmod>2026-09-21</lastmod>
+         <lastmod>2026-09-22</lastmod>
     </url>
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/postprocessing/</loc>
-         <lastmod>2026-09-21</lastmod>
+         <lastmod>2026-09-22</lastmod>
     </url>
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/quickstart/</loc>
-         <lastmod>2026-09-21</lastmod>
+         <lastmod>2026-09-22</lastmod>
     </url>
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/tutorial/</loc>
-         <lastmod>2026-09-21</lastmod>
+         <lastmod>2026-09-22</lastmod>
     </url>
 </urlset>
