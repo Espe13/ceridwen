@@ -460,7 +460,9 @@ def write_result_h5(
             wave           (n_wave,)
             theta_init/<param_name>    (shape,)
             priors/  attrs: <param_name> -> JSON string
-            attrs: zred, kinematics_*, broaden_photometry, cosmo_*, transforms (JSON list of "derived <- fn")
+            sfh_times_yr   (n_time,)  the CSP's construction lookback grid [yr]
+            attrs: zred, kinematics_*, broaden_photometry, cosmo_*, transforms (JSON list of "derived <- fn"),
+                   csp_config (JSON: CSP class, spectrum model, SFH / metallicity / IGM options, SSP library)
 
         /samples/
             <param_name>       (n_samples, *shape)
@@ -568,6 +570,7 @@ def write_result_h5(
         mod_grp.attrs["n_ssp_ages"] = int(model.csp.ages.shape[0]) if hasattr(model.csp, "ages") else -1
         mod_grp.attrs["n_metallicities"] = int(model.csp.zmet.shape[0]) if hasattr(model.csp, "zmet") else -1
         _write_metallicity_provenance(mod_grp, model)
+        _write_csp_config(mod_grp, model)
 
         samp_grp = f.create_group("samples")
 
@@ -627,6 +630,26 @@ def write_result_h5(
     if verbose:
         size_mb = path.stat().st_size / 1024**2
         logger.info(f"  Wrote {path}  ({size_mb:.1f} MB)")
+
+
+def _write_csp_config(mod_grp, model) -> None:
+    """The CSP choices a rebuilt model is checked against (``ceridwen.resultfile``)."""
+    csp = model.csp
+    igm = getattr(csp, "igm", None)
+    cfg = {"class": type(csp).__name__,
+           "spectrum_model": getattr(getattr(csp, "get_spectrum", None), "__name__", None),
+           "sfh_interp": getattr(csp, "sfh_interp", None),
+           "zh_const": getattr(csp, "zh_const", None),
+           "track_zred_age": getattr(csp, "track_zred_age", None),
+           "nebemlineinspec": getattr(csp, "nebemlineinspec", None),
+           "fesc_geometry": getattr(csp, "fesc_geometry", None),
+           "igm": None if igm is None else type(igm).__name__,
+           "igm_factor": getattr(csp, "igm_factor", None),
+           "isoc_type": getattr(csp, "_ssp_isoc_type", None),
+           "spec_library": getattr(csp, "_ssp_spec_library", None)}
+    mod_grp.attrs["csp_config"] = json.dumps(cfg, default=str)
+    if hasattr(csp, "sfh_times"):
+        mod_grp.create_dataset("sfh_times_yr", data=np.asarray(csp.sfh_times))
 
 
 METALLICITY_CONVENTION = "logzsol"

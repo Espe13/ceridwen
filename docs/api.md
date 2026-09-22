@@ -89,6 +89,12 @@ all outlier fractions default to 0, switch the mixture on explicitly
 
 ::: ceridwen.fit.result_cosmology
 
+::: ceridwen.resultfile.rebuild_model
+
+::: ceridwen.resultfile.check_model_against_result
+
+::: ceridwen.resultfile.priors_from_result
+
 ::: ceridwen.optimize.map_fit
 
 ::: ceridwen.optimize.MAPResult

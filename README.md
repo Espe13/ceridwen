@@ -379,6 +379,19 @@ result = fitSED(model, sampler="nuts", optimize=True,
                 optimize_kwargs={"n_starts": 16}, output_dir="./my_fit")
 ```
 
+#### Resuming a nested-sampling run
+
+A nested-sampling run with checkpoints (`checkpoint_dir=` or `$CERIDWEN_CHECKPOINT_DIR`) can be
+continued after a kill with `resume_from=`: it reproduces the uninterrupted run at the same
+`rng_key`, and refuses a checkpoint whose settings, parameter shapes or live-point
+log-likelihoods do not match the model.
+
+```python
+result = fitSED(model, sampler="nested", output_dir="./my_fit",
+                sampler_kwargs={"checkpoint_dir": "./ckpt",
+                                "resume_from": "./ckpt/ns_checkpoint_12345.pkl"})
+```
+
 #### Inspecting the results (identical for both samplers)
 
 Nested samples carry importance weights; NUTS draws do not. `PostProcess`
@@ -391,6 +404,10 @@ This block also works on a reloaded fit from an earlier session:
 `result = load_result_h5("my_fit/ceridwen_result.h5")` (importable from
 `ceridwen`) returns the same result object; only the model from Step 1 has
 to be rebuilt, with the same `ZRED` (recorded in the file's `/model` attrs).
+`ceridwen.resultfile.rebuild_model(path, csp, observations, transforms=...)` takes the priors,
+free parameters, zred and kinematics from the file and raises if the rebuilt model differs from
+the one recorded; `check_model_against_result(model, path)` lists every difference. The CSP,
+the observations and the transform callables are not stored and must be supplied.
 
 ```python
 from ceridwen import PostProcess

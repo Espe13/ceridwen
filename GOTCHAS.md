@@ -476,3 +476,22 @@ on your priors/bounds once before sampling instead.
   `fitSED` is `fold_in(rng_key, 1)`, so switching `optimize` on does not change the sampler's
   own key. Several starts reaching the same `ln p` is the sign of a well-defined optimum; a
   spread in `MAPResult.lnp_starts` means local optima.
+
+## 17. Result files: resuming nested sampling, rebuilding the model (2026-09-22)
+
+- **`resume_from=` needs a periodic checkpoint written by this version**
+  (`ns_checkpoint_<pid>.pkl`, which now carries the live state, dead list, rng key and
+  iteration). A rescue pickle (`ns_raw_dead_*`) or an older checkpoint holds only the finalised
+  dead points: it still loads with `load_checkpoint`, but resuming from it raises.
+- **Resume with the same model, settings and `rng_key`.** `num_live`, `num_delete`,
+  `num_inner_steps` and the parameter names/shapes must match, and the live points' saved
+  `ln L` must equal this model's (rtol 1e-9); anything else raises before sampling. A resumed
+  CPU run is byte-identical to the uninterrupted one. `logZ_tol` may differ (it is only the
+  stopping rule). The checkpoint file is named after the PID, so the resumed run writes a new one.
+- **A result file stores transforms by name only** (`"sfh <- my_function"`), and not the CSP or
+  the observation objects. `rebuild_model` therefore needs them from you, and checks what the
+  file does record (priors, free parameters and shapes, transform names, zred, kinematics,
+  cosmology, grid provenance, `csp_config`, `sfh_times_yr`, every observation's data and
+  instrument). It cannot see a transform whose body changed under the same name, CSP options
+  outside `csp_config`, or observation options not stored (noise floor, upper limits,
+  calibration, sky): `ceridwen.resultfile.NOT_RECORDED` lists them.

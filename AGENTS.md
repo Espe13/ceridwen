@@ -101,6 +101,7 @@ from ceridwen.priors import (Prior, Uniform, TopHat, Normal, ClippedNormal,
 from ceridwen.sampler import run_sampler
 from ceridwen.optimize import map_fit          # MAP (L-BFGS from prior draws)
 from ceridwen.likelihood import DiagonalGaussianLikelihood, MultiObservationLikelihood
+from ceridwen.resultfile import rebuild_model, check_model_against_result
 ```
 
 Equivalent namespaced paths also work: `ceridwen.ssps.SSPData`,
@@ -173,7 +174,8 @@ projection → likelihood → sampler.
   explicitly), applied by the likelihood kernels `lnlike_diag_outlier[_with_upper_limits]`;
   `docs/outlier_model.md`).
 - `sampler/` — `priors.py` (TFP-JAX priors with logpdf/sample/unit_transform),
-  `nested.py` (BlackJAX nested sampling), `nuts.py` (NUTS, VI-preconditioned),
+  `nested.py` (BlackJAX nested sampling; periodic checkpoints carry the sampler state, and
+  `resume_from=` continues a killed run bit for bit), `nuts.py` (NUTS, VI-preconditioned),
   `vi.py` (VI transport maps: TriL, IAF/NeuTra), `runner.py` (`SamplerAdapter`
   protocol, `SamplingResult`, `run_sampler`, `to_anesthetic`).
 - `cosmology.py` — JAX-native flat ΛCDM (Planck 18) with an astropy fallback.
@@ -181,7 +183,10 @@ projection → likelihood → sampler.
 - `fit.py` — `fitSED` (top-level convenience wrapper) + `read_result_h5` /
   `load_result_h5` / `result_cosmology`; writes `<output_dir>/ceridwen_result.h5`
   (obs, model/priors as JSON, kinematics, cosmology, samples, log-weights,
-  log-evidence).
+  log-evidence, `csp_config` + `sfh_times_yr`).
+- `resultfile.py` — `rebuild_model` / `check_model_against_result` / `priors_from_result`:
+  rebuild a `SedModel` from a result file given the CSP, observations and transform callables
+  (not stored), and name every difference between a model and the file.
 - `optimize.py` — `map_fit` (L-BFGS on fitSED's log-posterior from `theta_init` + N prior
   draws; `.theta` is a `free_param_init`), `laplace_sigma`; `fitSED(optimize=True)` starts NUTS
   there and writes `/map`.

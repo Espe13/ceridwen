@@ -416,3 +416,23 @@ coordinates without a Jacobian; returns `MAPResult` (`.theta` is a `free_param_i
 ln p(MAP) = 38346.50 vs 36914.37 for the best of 1000 prior draws; two runs at the same key
 byte-identical; `.theta` rebuilds the model at the same ln p; fitSED hands the MAP to the
 sampler and stores it.
+
+## 2026-09-22 — result files: resumable nested sampling, model rebuild and check
+
+**What.** `BlackJAXNestedSamplerAdapter(..., resume_from=<checkpoint>)`: periodic checkpoints now
+also carry the raw sampler state (live `AdaptiveNSState`, dead list, rng key, iteration, calls,
+elapsed time, settings); a run started from one continues where the killed run stopped and is
+byte-identical to the uninterrupted run at the same key (CPU). Settings, parameter shapes and
+the live points' `ln L` are checked first. Works through `fitSED(sampler_kwargs=
+{"resume_from": ...})`. New `ceridwen.resultfile`: `priors_from_result`,
+`kinematics_from_result`, `rebuild_model(path, csp, observations, transforms)` and
+`check_model_against_result(model, path)`, which writes the model's record through
+`write_result_h5` and names every differing attribute/dataset. `write_result_h5` now also
+records `/model@csp_config` (CSP class, spectrum model, SFH/metallicity/IGM options, SSP library)
+and `/model/sfh_times_yr`. A full rebuild without the user's CSP and transform callables is not
+possible (they are not stored).
+
+**Verification.** `tests/test_ns_checkpoint.py` (+2: kill after 3 iterations and resume ->
+samples, ln L, birth ln L, weights, ln Z and call count byte-identical; foreign / old
+checkpoints refused), `tests/test_resultfile.py` (round trip; each kind of difference named;
+priors of every class rebuilt exactly).
