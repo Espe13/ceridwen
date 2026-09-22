@@ -269,6 +269,8 @@ def run_scenarios():
         ("IGM model cosmology != CSP cosmology", {"ERROR"},
          lambda: _dla_csp(__import__("ceridwen.igm", fromlist=["x"]).MadauDampingDLA(
              Ob0=0.05, cosmo=Cosmology.wmap9()))),
+        ("duste_model='THEMIS' without dust emission", {"ERROR"},
+         lambda: _short_csp(duste_model="THEMIS")),
         ("noll bump under its old name E_bump", {"WARN"}, _noll_old_bump_name),
     ]
 

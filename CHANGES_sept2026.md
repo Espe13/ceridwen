@@ -447,3 +447,22 @@ Golden coverage: regression category `dust_laws` holds the age-bin and diffuse c
 six laws (noll with `Ebump = 2`, drude) and two CSP spectra with multi-bin
 (`noll`/`gordon03_smcbar`/`lmc` + diffuse `reddy15`; `drude`/`smc` + diffuse `noll`)
 configurations: any of the three bugs would have moved them.
+
+## 2026-09-22 — THEMIS dust emission is selectable (`csp/csp.py`, `csp/csp_afe.py`)
+
+**What.** `CSPBasis(..., duste_model="THEMIS")` (and `CSPBasis_afe`). `DustEmission` has read
+the THEMIS templates (Jones et al. 2013, 2017; `$SPS_HOME/dust/dustem/THEMIS_MW3.1_*.dat`) all
+along, but `CSPBasis` always built it with its `"DL07"` default (`csp.py:716` before this
+change), so THEMIS was unreachable. Default unchanged (`"DL07"`, byte-identical, T4
+`neb_duste`). A value other than `"DL07"`/`"THEMIS"`, or `"THEMIS"` without
+`add_dust_emission=True`, raises at construction. Note the THEMIS `duste_qpah` axis is FSPS's
+mass-fraction nodes × 100/2.2, i.e. 0.91-18.2, against 0.47-4.58 for DL07; the same
+`duste_qpah` number therefore means a different PAH abundance in the two models.
+
+**Verification.** FSPS selects THEMIS only at compile time (`src/sps_vars.f90:551-560`), and
+the installed python-fsps is built with DL07, so there is no FSPS THEMIS spectrum to compare
+with. Instead, `tests/test_dust_emission_themis.py`: the (qPAH, Umin) axes equal FSPS's own
+(parsed from `$SPS_HOME/src/sps_vars.f90`); a template column equals a direct read of the file;
+energy balance (emitted = absorbed, no self-absorption) to 1e-10; the CSP spectrum equals DL07
+blueward of 0.9 µm and differs by > 5 % in the mid-IR; `jax.grad` in `duste_qpah` finite.
+New regression category `dust_emission_themis`.

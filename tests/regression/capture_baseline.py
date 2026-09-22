@@ -242,6 +242,13 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
         "tduste": np.asarray(tduste, dtype=np.float64),
     }
 
+    # THEMIS dust emission (CSPBasis(duste_model="THEMIS"), 2026-09-22): the same inputs as
+    # "dust_emission" through the THEMIS templates, plus a THEMIS CSP spectrum.  Justified by
+    # tests/test_dust_emission_themis.py: FSPS's own THEMIS (qPAH, Umin) axes
+    # (src/sps_vars.f90), template columns = the $SPS_HOME files, energy balance to 1e-10.
+    out["dust_emission_themis"] = _dust_emission_themis_baseline(
+        p, ssp_data, spec_attn, spec_dustfree, diffuse_curve)
+
     # nebular (NebularModel.evaluate at fixed logZ, logU, logage, logQ)
     neb_cont, neb_lines = csp.neb.evaluate(
         jnp.asarray(p["neb_logZ"]), jnp.asarray(p["neb_logU"]),
@@ -369,6 +376,30 @@ def _igm_damping_dla_baseline() -> dict[str, np.ndarray]:
             wave, z, params=th(logN_HI=21.0, z_dla=6.5))),
         "off_theta": np.asarray(base.attenuation(
             wave, z, params=th(x_HI=0.0, logN_HI=-np.inf))),
+    }
+
+
+def _dust_emission_themis_baseline(p, ssp_data, spec_attn, spec_dustfree, diffuse_curve):
+    from ceridwen.csp.csp import CSPBasis
+    from ceridwen.cosmology import Cosmology
+    csp = CSPBasis(ssp_data, theta={"lookback_time": p["lookback"], "sfh": p["sfh"],
+                                    "logzsol": jnp.array([-0.4])},
+                   cosmo=Cosmology.planck18(), zh_const=True, add_neb=False, add_dust=True,
+                   add_diffuse_dust=True, add_dust_emission=True, duste_model="THEMIS",
+                   sps_home=SPS_HOME, verbose=False, sfh_interp="step")
+    specdust, mdust, tduste = csp.dust_emi.compute_dust_emission(
+        spec_attn, spec_dustfree, csp.wave, diffuse_curve,
+        jnp.asarray(p["duste_qpah"]), jnp.asarray(p["duste_umin"]),
+        jnp.asarray(p["duste_gamma"]))
+    th = dict(csp.theta_init, diffuse_tau_kc=jnp.array([p["diffuse_tau_kc"]]),
+              duste_qpah=jnp.array([8.0]), duste_umin=jnp.array([2.2]),
+              duste_gamma=jnp.array([0.05]))
+    return {
+        "wave": np.asarray(csp.wave),
+        "specdust": np.asarray(specdust),
+        "mdust": np.asarray(mdust, dtype=np.float64),
+        "tduste": np.asarray(tduste, dtype=np.float64),
+        "csp_spectrum": np.asarray(csp.get_spectrum(th, include_lines=False)),
     }
 
 

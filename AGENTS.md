@@ -145,7 +145,8 @@ projection → likelihood → sampler.
   `PhotometricBroadener`. The only place spectral widths are set.
 - `dust/` — `DustModel.py`: `Dust`/`DiffuseDust`, age-binned attenuation with
   multiple switchable laws per bin via `lax.switch` (params are plain dicts).
-  `DustEmission.py`: DL07 + THEMIS grids, bilinear interp in (qPAH, Umin), dust
+  `DustEmission.py`: DL07 + THEMIS grids (`CSPBasis(duste_model=...)`, default DL07),
+  bilinear interp in (qPAH, Umin), dust
   mass. `AGBDustShell.py`: optional AGB circumstellar dust.
 - `neb/` — `NebularGridModel.py`: `NebularModel` (CLOUDY grids, each cube
   interpolated against its own gas_logz/gas_logu/age axes, line profiles at

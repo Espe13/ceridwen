@@ -129,6 +129,17 @@ def prior_support(prior):
     return float(np.min(np.asarray(lo, dtype=np.float64))), float(np.max(np.asarray(hi, dtype=np.float64)))
 
 
+def _check_duste_model(duste_model, add_dust_emission):
+    """``duste_model`` validated at construction: 'DL07' or 'THEMIS', and only meaningful with
+    ``add_dust_emission=True`` (a non-default choice without it would silently do nothing)."""
+    if duste_model not in ("DL07", "THEMIS"):
+        raise ValueError(f"duste_model must be 'DL07' or 'THEMIS', got {duste_model!r}")
+    if duste_model != "DL07" and not add_dust_emission:
+        raise ValueError(f"duste_model={duste_model!r} selects dust-emission templates, but "
+                         "add_dust_emission=False; set add_dust_emission=True or drop duste_model")
+    return duste_model
+
+
 class CSPBasis:
     """Composite stellar population basis.  ``predict(theta, observations)`` projects the model onto observations.
 
@@ -150,6 +161,10 @@ class CSPBasis:
         (Byler+2017; its node set is 0.019- or 0.020-based), which is the FSPS/Prospector
         convention.
     add_neb, add_dust, add_diffuse_dust, add_dust_emission, add_igm : bool -- physics switches.
+    duste_model : {'DL07', 'THEMIS'} -- dust-emission templates with ``add_dust_emission``:
+        Draine & Li (2007) or THEMIS (Jones et al. 2013, 2017), both from $SPS_HOME/dust/dustem
+        with FSPS's (qPAH, Umin) axes.  THEMIS's ``duste_qpah`` axis spans 0.91-18.2 (the FSPS
+        mass-fraction nodes x 100/2.2), DL07's 0.47-4.58.
     sps_home : str -- data directory for the nebular and dust-emission grids; defaults to $SPS_HOME.
     init_neb_params, init_dust_params : dict -- forwarded to NebularModel / Dust.  ``isoc_type`` is
         taken from the SSP grid's provenance when recorded.
@@ -186,6 +201,7 @@ class CSPBasis:
         lookback_time=None,
         sfh_per_bin=False,
         fesc_geometry="runaway_bc",
+        duste_model="DL07",
         cosmo=None,
         gas_tied=False,
         **kwargs,
@@ -289,6 +305,7 @@ class CSPBasis:
                 "(your FSPS data directory) or pass sps_home=... explicitly."
             )
         self.sps_home   = sps_home
+        self.duste_model = _check_duste_model(duste_model, add_dust_emission)
         from ..cosmology import Cosmology as _Cosmology
         if cosmo is None:
             raise TypeError(
@@ -743,7 +760,8 @@ class CSPBasis:
         if add_dust_emission:
             if self.verbose:
                 print("Initializing DustEmission model...")
-            self.dust_emi = DustEmission(spec_lambda=self.wave, dust_file=sps_home)
+            self.dust_emi = DustEmission(duste_model=getattr(self, "duste_model", "DL07"),
+                                         spec_lambda=self.wave, dust_file=sps_home)
 
             emi_defaults = self.dust_emi.get_default_params()
             for k, v in emi_defaults.items():

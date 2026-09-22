@@ -16,7 +16,8 @@ import jax.numpy as jnp
 import pprint
 
 from ceridwen.csp.csp import (CSPBasis, LOGZSOL_KEYS, REMOVED_METALLICITY_KEYS,
-                              _default_logzsol, removed_metallicity_key_error)
+                              _check_duste_model, _default_logzsol,
+                              removed_metallicity_key_error)
 from ceridwen.ssps.grid_metadata import logzsol_total as _logzsol_total, refused_cell_bounds
 
 
@@ -50,6 +51,7 @@ class CSPBasis_afe(CSPBasis):
         lookback_time=None,
         sfh_per_bin=False,
         cosmo=None,
+        duste_model="DL07",
         **kwargs,
     ):
         self.verbose = bool(verbose)
@@ -186,6 +188,7 @@ class CSPBasis_afe(CSPBasis):
         self._cosmo = cosmo
         self.track_zred_age = bool(track_zred_age)
         self._setup_igm(add_igm, igm_model, igm_factor)
+        self.duste_model = _check_duste_model(duste_model, add_dust_emission)
 
         if add_diffuse_dust or add_dust:
             self.set_attenuation_function(add_diffuse_dust, add_dust)

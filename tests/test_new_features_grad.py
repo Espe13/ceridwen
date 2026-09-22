@@ -142,3 +142,16 @@ def test_grad_dust_laws():
               "tau_g03smc": (0.0, 1.0), "diffuse_tau_reddy": (0.0, 1.0)},
         fixed={"sfh": np.ones(5), "logzsol": -0.5, "delta": -0.2, "c_r": 0.0})
     _check(f, names, lo, hi)
+
+
+@pytest.mark.skipif(not SPS_HOME, reason="SPS_HOME not set (dust-emission templates)")
+def test_grad_themis():
+    csp = _csp(add_dust=True, add_diffuse_dust=True, add_dust_emission=True,
+               duste_model="THEMIS", sps_home=SPS_HOME)
+    f, names, lo, hi = _lnprob(
+        csp, ["wise_w1", "wise_w2", "wise_w3", "wise_w4"], (5000.0, 7000.0), 0.1,
+        free={"logmass": (8.0, 10.0), "diffuse_tau_kc": (0.1, 1.5),
+              "duste_qpah": (1.0, 18.0), "duste_umin": (0.2, 50.0), "duste_gamma": (0.0, 0.5)},
+        fixed={"sfh": np.ones(5), "logzsol": -0.5, "diffuse_dust_index": 0.0,
+               "tau_pow": 0.3, "alpha_pow": -1.0})
+    _check(f, names, lo, hi)
