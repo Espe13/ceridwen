@@ -23,7 +23,7 @@ import pytest
 
 # tests/ on sys.path so `_gridfixture` imports from any subdir (mirrors conftest).
 sys.path.insert(0, os.path.dirname(__file__))
-from _gridfixture import require_test_grid  # noqa: E402
+from _gridfixture import require_test_grid, REPO_ROOT  # noqa: E402
 
 from ceridwen.ssps import SSPData  # noqa: E402
 from ceridwen.ssps.ssp_data import (  # noqa: E402
@@ -43,6 +43,9 @@ def _tiny_ssp(**meta) -> SSPData:
     lgage = jnp.array([-1.0, 0.0, 1.0])
     wave = jnp.linspace(1000.0, 10000.0, 5)
     flux = jnp.ones((2, 3, 5))
+    # a synthetic grid is in no metadata table, so its Z_sun must be given (v1.0.5);
+    # 0.01 is its lower node, i.e. logzsol = [0, +1]
+    meta.setdefault("zsun", 0.01)
     return SSPData(lgmet, lgage, wave, flux, **meta)
 
 
@@ -134,7 +137,12 @@ def _legacy_ssp():
     """An arrays-only SSPData (no provenance, no resolution) — legal in
     memory as an intermediate object, but not serialisable (schema 2.0)."""
     full = SSPData.load(str(require_test_grid()))
-    return SSPData(full.ssp_lgmet, full.ssp_lg_age_gyr, full.ssp_wave, full.ssp_flux)
+    # Perturb the flux so the grid is NOT recognised by the v1.0.5 content-hash table
+    # (which would otherwise supply the provenance this helper is meant to lack); Z_sun is
+    # then passed explicitly, as any unknown grid must.
+    flux = full.ssp_flux.at[0, 0, 0].multiply(1.0000001)
+    return SSPData(full.ssp_lgmet, full.ssp_lg_age_gyr, full.ssp_wave, flux,
+                   zsun=float(full.zsun_nominal))
 
 
 def test_save_without_resolution_raises(tmp_path):
@@ -220,6 +228,8 @@ def _tiny_afe(**meta):
     lgage = jnp.array([-1.0, 0.0, 1.0])
     wave = jnp.linspace(1000.0, 10000.0, 5)
     flux = jnp.ones((1, 2, 3, 5))
+    meta.setdefault("zsun", 0.01)
+    meta.setdefault("axis_meaning", "feh")
     return SSPDataAfe(lgmet, lgage, wave, flux, ssp_afe=afe, **meta)
 
 
@@ -265,7 +275,7 @@ def test_afe_load_without_resolution_raises_with_converter_pointer(tmp_path):
 # ----------------------------------------------------------------------
 def _minimal_theta(n=5):
     lb = jnp.linspace(0.0, 13.8, n)
-    return {"lookback_time": lb, "sfh": jnp.ones(n), "Z": jnp.array([-1.85])}
+    return {"lookback_time": lb, "sfh": jnp.ones(n), "logzsol": jnp.array([-0.15])}
 
 
 def test_csp_reads_isoc_type_from_ssp_grid():
@@ -278,9 +288,22 @@ def test_csp_reads_isoc_type_from_ssp_grid():
 
 
 def test_csp_legacy_grid_has_none_isoc_type():
+    """A grid the metadata table does not know keeps isoc_type None (and CSPBasis then warns
+    and falls back to 'mist' for the nebular grid)."""
     csp = CSPBasis(_legacy_ssp(), theta=_minimal_theta(), zh_const=True,
                    add_neb=False, add_igm=False, verbose=False, cosmo=Cosmology.planck18())
     assert csp._ssp_isoc_type is None
+
+
+def test_table_supplies_isoc_type_for_a_grid_without_provenance():
+    """The shipped BPASS+AGB fixture records no isochrone set; the chash table supplies it
+    (v1.0.5), so CSPBasis no longer falls back to the WRONG 'mist' CLOUDY grid."""
+    path = REPO_ROOT / "tests" / "fixtures" / "ssp_data_bpass_agb_dust.h5"
+    if not path.is_file():
+        pytest.skip("BPASS+AGB fixture not present")
+    ssp = SSPData.load(str(path))
+    assert ssp.isoc_type == "bpss"
+    assert ssp.zsun_source.startswith("chash table")
 
 
 # ----------------------------------------------------------------------

@@ -105,7 +105,7 @@ def _build(csp_kwargs=None):
     return CSPBasis(
         ssp_data,
         theta={"lookback_time": jnp.array([0.0, 0.01]),
-               "sfh": jnp.ones(1), "Z": jnp.array([-2.0])},
+               "sfh": jnp.ones(1), "logzsol": jnp.array([-0.3])},
         **kw,
         cosmo=Cosmology.planck18(),
     )
@@ -132,7 +132,7 @@ def _predict(csp, obs, t_lo, t_hi):
     theta = {
         "lookback_time": jnp.array([t_lo, t_hi]),
         "sfh": jnp.array([1.0]),
-        "Z": jnp.array([-2.0]),
+        "logzsol": jnp.array([-0.3]),
         "gas_logz": jnp.array([-0.5]), "gas_logu": jnp.array([-2.5]),
         "logmass": jnp.array([np.log10(dt_yr)]),
         "zred": jnp.array([2.0]),
@@ -262,7 +262,7 @@ def test_T5_aperture_matches_direct_integration(setup):
     dt_yr = (t_hi - t_lo) * 1e9
     theta = {
         "lookback_time": jnp.array([t_lo, t_hi]), "sfh": jnp.array([1.0]),
-        "Z": jnp.array([-2.0]),
+        "logzsol": jnp.array([-0.3]),
         "gas_logz": jnp.array([-0.5]), "gas_logu": jnp.array([-2.5]),
         "logmass": jnp.array([np.log10(dt_yr)]), "zred": jnp.array([2.0]),
         "eline_scaling": jnp.array([1.0]),

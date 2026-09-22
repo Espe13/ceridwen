@@ -88,6 +88,11 @@ def main() -> int:
                         "file (promoted to n_afe=1 at [alpha/Fe]=0); 4-D "
                         "or ssp_afe-carrying files are dispatched "
                         "automatically")
+    p.add_argument("--zsun", type=float, default=None,
+                   help="the grid's solar metallicity (mass fraction), needed only when the "
+                        "old file records no log10_zsun and its content hash is not in "
+                        "ceridwen.ssps.grid_metadata.CHASH_TABLE (e.g. 0.020 for BPASS, "
+                        "0.0185 for FSPS >= 2026-07 MIST/C3K, 0.0142 for python-fsps <= 0.4.7)")
     p.add_argument("--out", type=Path, default=None,
                    help="output path (default <name>_schema2.h5)")
     p.add_argument("--in-place", action="store_true",
@@ -199,16 +204,20 @@ def main() -> int:
                           ssp_wave=arrays["ssp_wave"],
                           ssp_flux=arrays["ssp_flux"],
                           ssp_resolution=sigma_v,
-                          resolution_source=source, **meta)
+                          resolution_source=source, zsun=args.zsun, **meta)
     else:
         data = SSPData(**arrays, ssp_resolution=sigma_v,
-                       resolution_source=source, **meta)
+                       resolution_source=source, zsun=args.zsun, **meta)
 
     floor = sampling_floor_sigma_v(wave)
     print(f"{src.name}: {'SSPDataAfe' if is_afe else 'SSPData'}  "
           f"spec_library={meta.get('spec_library')} "
           f"isoc={meta.get('isoc_type')}"
           + (f"  n_afe={ssp_afe.size}" if is_afe else ""))
+    print(f"  Z_sun          : {data.zsun_nominal:.6g}  (log10 Z_sun = "
+          f"{data.log10_zsun!r}; {data.zsun_source}); logzsol axis "
+          f"[{data.logzsol_axis.min():+.3f}, {data.logzsol_axis.max():+.3f}]"
+          + (f"  = [Fe/H]" if data.axis_meaning == "feh" else ""))
     print(f"  sampling floor : sigma_v [{floor.min():.1f}, "
           f"{floor.max():.1f}] km/s")
     print(f"  stored curve   : sigma_v [{sigma_v.min():.1f}, "

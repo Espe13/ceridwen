@@ -1,11 +1,12 @@
 """SSP interpolation grids (:class:`SSPData`): construction, provenance and HDF5 I/O."""
 
 import json
+import math
 import typing
 import h5py
 import numpy as np
 import jax.numpy as jnp
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, InitVar
 from typing import Optional
 
 def _import_fsps():
@@ -51,8 +52,10 @@ _CSP_OWNED_KWARGS = {
     **_owned(
         ["zmet", "logzsol", "pmetals"],
         "metallicity — the SSP grid spans metallicity itself (ssp_lgmet, on "
-        "FSPS's discrete zlegend); CSPBasis samples Z from the grid, so a "
-        "fixed metallicity must not be set at build time",
+        "FSPS's discrete zlegend); the metallicity is a FIT parameter, "
+        "theta['logzsol'] = log10(Z/Z_sun) (or theta['logzsol_hist']), sampled "
+        "by CSPBasis on that axis, so a fixed metallicity must not be set at "
+        "build time",
     ),
     **_owned(
         ["dust_type", "dust1", "dust2", "dust3", "dust_index", "dust1_index",
@@ -132,11 +135,16 @@ class SSPData:
 
     Parameters
     ----------
-    ssp_lgmet : array (n_met,) -- log10 absolute metallicity Z, NOT log10 Z/Zsun
+    ssp_lgmet : array (n_met,) -- the grid's NATIVE metallicity axis, log10 Z: absolute Z for
+        BPASS, the FSPS label log10(zsun 10^[Fe/H]) for MIST/aMIST (not MIST's physical initial Z)
     ssp_lg_age_gyr : array (n_ages,) -- log10(age / Gyr)
     ssp_wave : array (n_wave,), Angstrom
     ssp_flux : array (n_met, n_ages, n_wave), L_sun/Hz per M_sun formed
     ssp_resolution : ndarray (n_wave,), km/s -- library sigma_v(lambda) on ssp_wave, NaN where unknown; optional in memory, required by save()/load()
+    zsun : float, init-only -- the grid's solar metallicity (mass fraction) when it is neither
+        recorded (``log10_zsun``) nor in ``grid_metadata.CHASH_TABLE``; must match a node
+    log10_zsun : float -- resolved: the grid's solar node (exact), so logzsol = ssp_lgmet - log10_zsun
+    axis_meaning : {"feh", "log_z_over_zsun"} -- what logzsol is on this grid ([Fe/H] for MIST/aMIST)
     """
 
     ssp_lgmet: jnp.ndarray
@@ -155,6 +163,16 @@ class SSPData:
     wave_min: Optional[float] = field(default=None, compare=False)
     wave_max: Optional[float] = field(default=None, compare=False)
     schema_version: Optional[str] = field(default=None, compare=False)
+
+    log10_zsun: Optional[float] = field(default=None, compare=False)
+    zsun_nominal: Optional[float] = field(default=None, compare=False)
+    axis_meaning: Optional[str] = field(default=None, compare=False)
+    zsun_source: Optional[str] = field(default=None, compare=False)
+    chash: Optional[str] = field(default=None, compare=False)
+    refused_cells: tuple = field(default=(), compare=False)
+    refused_reason: Optional[str] = field(default=None, compare=False)
+    zsun: InitVar[Optional[float]] = None
+    _chash_hint: InitVar[Optional[str]] = None
 
     _display_title = "SSPData"
     _schema_label = "SSP schema 2.0"
@@ -177,8 +195,9 @@ class SSPData:
                 f"consistent (n_met, n_ages, n_wave).{hint}"
             )
 
-    def __post_init__(self):
+    def __post_init__(self, zsun=None, _chash_hint=None):
         self._check_flux_shape()
+        self._resolve_metallicity(zsun, _chash_hint)
         if self.ssp_resolution is not None:
             res = np.asarray(self.ssp_resolution, dtype=np.float64)
             if res.shape != (int(self.ssp_wave.size),):
@@ -194,6 +213,61 @@ class SSPData:
                     "use NaN to mark pixels of unknown library resolution."
                 )
             object.__setattr__(self, "ssp_resolution", res)
+
+    def _grid_arrays_for_chash(self):
+        return (self.ssp_wave, self.ssp_lg_age_gyr, self.ssp_lgmet, self.ssp_flux, None)
+
+    def _resolve_metallicity(self, zsun, chash_hint):
+        """Resolve Z_sun (``grid_metadata.resolve_zsun``) and fill the metallicity provenance."""
+        from .grid_metadata import chash_arrays, resolve_zsun, AXIS_MEANINGS
+        wave, age, lgmet, flux, afe = self._grid_arrays_for_chash()
+        ch = chash_hint or chash_arrays(wave, age, lgmet, flux, afe)
+        log10_zsun, sources, meta = resolve_zsun(
+            ssp_lgmet=lgmet, zsun_kwarg=zsun, provenance_log10_zsun=self.log10_zsun,
+            chash=ch, describe=f"this {type(self).__name__} grid")
+        axis = self.axis_meaning
+        if meta is not None:
+            if axis is not None and axis != meta.axis_meaning:
+                raise ValueError(
+                    f"axis_meaning={axis!r} contradicts the metadata table entry "
+                    f"{meta.name!r} ({meta.axis_meaning!r}) for this grid's chash {ch}")
+            axis = meta.axis_meaning
+        if axis is not None and axis not in AXIS_MEANINGS:
+            raise ValueError(f"axis_meaning must be one of {AXIS_MEANINGS}, got {axis!r}")
+        nominal = self.zsun_nominal
+        if nominal is None:
+            nominal = (meta.zsun_nominal if meta is not None
+                       else float(zsun) if zsun is not None else 10.0 ** log10_zsun)
+        set_ = lambda k, v: object.__setattr__(self, k, v)  # noqa: E731  (frozen dataclass)
+        set_("log10_zsun", float(log10_zsun))
+        set_("zsun_nominal", float(nominal))
+        set_("axis_meaning", axis)
+        set_("zsun_source", " + ".join(sources))
+        set_("chash", ch)
+        if meta is not None:
+            for k in ("isoc_type", "spec_library"):
+                if getattr(self, k) is None:
+                    set_(k, getattr(meta, k))
+            if self.fsps_version is None and meta.fsps_version is not None:
+                set_("fsps_version", meta.fsps_version)
+            set_("refused_cells", tuple(tuple(c) for c in meta.refused_cells))
+            set_("refused_reason", meta.refused_reason)
+        else:
+            set_("refused_cells", tuple(tuple(int(i) for i in c) for c in self.refused_cells))
+        self._check_metallicity_meta()
+
+    def _check_metallicity_meta(self):
+        """Subclass hook: extra consistency checks on the resolved metallicity metadata."""
+        return None
+
+    @property
+    def logzsol_axis(self) -> np.ndarray:
+        """The metallicity axis in logzsol = ssp_lgmet - log10_zsun (float64)."""
+        return np.asarray(self.ssp_lgmet, dtype=np.float64) - self.log10_zsun
+
+    def _metadata_entry(self):
+        from .grid_metadata import CHASH_TABLE
+        return CHASH_TABLE.get(self.chash)
 
     def with_resolution(self, *, sigma_v=None, segments=None, source=None):
         """Return a copy carrying a library resolution curve from exactly one of ``sigma_v`` (km/s on ssp_wave, NaN where unknown) or ``segments``."""
@@ -217,9 +291,7 @@ class SSPData:
         wave  = np.asarray(self.ssp_wave)
         n_met, n_age, n_wave = self.ssp_flux.shape
         age_gyr = 10.0 ** lgage
-        return [
-            f"  metallicity  log10 Z     : {n_met:>4d} pts   "
-            f"[{lgmet.min():+.3f}, {lgmet.max():+.3f}]  (absolute Z, NOT Z/Zsun)",
+        return self._metallicity_display_lines(n_met) + [
             f"  age          log10(Gyr)  : {n_age:>4d} pts   "
             f"[{lgage.min():+.3f}, {lgage.max():+.3f}]  "
             f"= [{age_gyr.min():.3g}, {age_gyr.max():.3g}] Gyr",
@@ -228,6 +300,25 @@ class SSPData:
             f"  flux (n_met,n_age,n_wave): {tuple(int(s) for s in self.ssp_flux.shape)}  "
             f"[L_sun Hz^-1 M_sun^-1]  {np.asarray(self.ssp_flux).dtype}  {size_str}",
         ]
+
+    def _metallicity_display_lines(self, n_met) -> list:
+        lgmet = np.asarray(self.ssp_lgmet, dtype=np.float64)
+        lz = self.logzsol_axis
+        meaning = {"feh": "[Fe/H] (FSPS MIST node label)",
+                   "log_z_over_zsun": "log10(Z/Z_sun), Z = metal mass fraction",
+                   None: "not recorded"}[self.axis_meaning]
+        out = [
+            f"  metallicity  logzsol     : {n_met:>4d} pts   "
+            f"[{lz.min():+.3f}, {lz.max():+.3f}]  = {meaning}",
+            f"  metallicity  native      :            "
+            f"[{lgmet.min():+.4f}, {lgmet.max():+.4f}]  log10 Z = logzsol + log10 Z_sun",
+            f"  Z_sun                    : {self.zsun_nominal:.6g}  "
+            f"(log10 Z_sun = {self.log10_zsun!r}, the solar node; source: {self.zsun_source})",
+        ]
+        if self.axis_meaning == "feh":
+            out.append("  native values are FSPS labels log10(Z_sun 10^[Fe/H]), not MIST's "
+                       "physical initial Z (0.0164 at [Fe/H]=0)")
+        return out
 
     def _display_note_lines(self) -> list:
         if self.isoc_type is None:
@@ -315,7 +406,7 @@ class SSPData:
                                              dtype=np.float64))
 
             f.attrs['description']        = 'FSPS SSP interpolation grids'
-            f.attrs['units_lgmet']        = 'log10(absolute_metallicity)'
+            f.attrs['units_lgmet']        = self._units_lgmet()
             f.attrs['units_lg_age_gyr']   = 'log10(age/Gyr)'
             f.attrs['units_wave']         = 'Angstrom'
             f.attrs['units_flux']         = 'L_sun Hz^-1 M_sun^-1'
@@ -336,6 +427,21 @@ class SSPData:
             if self.wave_max is not None:
                 f.attrs['wave_max'] = float(self.wave_max)
             f.attrs['fsps_kwargs_json'] = json.dumps(self.fsps_kwargs or {})
+            f.attrs['log10_zsun'] = float(self.log10_zsun)
+            f.attrs['zsun_nominal'] = float(self.zsun_nominal)
+            if self.axis_meaning is not None:
+                f.attrs['axis_meaning'] = str(self.axis_meaning)
+            f.attrs['chash'] = str(self.chash)
+            if self.refused_cells:
+                f.attrs['refused_cells_json'] = json.dumps([list(c) for c in self.refused_cells])
+
+    def _units_lgmet(self) -> str:
+        if self.axis_meaning == "feh":
+            return ("log10(Z_label) = [Fe/H] + log10_zsun: FSPS MIST node label, not the "
+                    "total metal mass fraction; logzsol = [Fe/H]")
+        if self.axis_meaning == "log_z_over_zsun":
+            return "log10(Z), Z = metal mass fraction; logzsol = log10(Z) - log10_zsun"
+        return "log10(Z); logzsol = log10(Z) - log10_zsun (axis meaning not recorded)"
 
     def _save_extra(self, f):
         """Subclass hook for extra datasets / attrs, called inside save()."""
@@ -358,15 +464,25 @@ class SSPData:
                     f"copies the existing arrays and attaches the library "
                     f"resolution curve."
                 )
+            from .grid_metadata import cached_chash, remember_chash, chash_arrays
+            raw = {k: f[k][:] for k in ('ssp_lgmet', 'ssp_lg_age_gyr', 'ssp_wave', 'ssp_flux')}
+            raw_extra = {name: (f[name][:] if name in f else None)
+                         for name in cls._extra_datasets}
+            extras = tuple(k for k, v in raw_extra.items() if v is not None)
+            chash = cached_chash(filename, extras)
+            if chash is None:
+                chash = chash_arrays(raw['ssp_wave'], raw['ssp_lg_age_gyr'], raw['ssp_lgmet'],
+                                     raw['ssp_flux'], raw_extra.get('ssp_afe'))
+                remember_chash(filename, chash, extras)
             arrays = {
-                'ssp_lgmet':      jnp.array(f['ssp_lgmet'][:]),
-                'ssp_lg_age_gyr': jnp.array(f['ssp_lg_age_gyr'][:]),
-                'ssp_wave':       jnp.array(f['ssp_wave'][:]),
-                'ssp_flux':       jnp.asarray(f['ssp_flux'][:] if flux_dtype is None
-                                              else f['ssp_flux'][:].astype(flux_dtype)),
+                'ssp_lgmet':      jnp.array(raw['ssp_lgmet']),
+                'ssp_lg_age_gyr': jnp.array(raw['ssp_lg_age_gyr']),
+                'ssp_wave':       jnp.array(raw['ssp_wave']),
+                'ssp_flux':       jnp.asarray(raw['ssp_flux'] if flux_dtype is None
+                                              else raw['ssp_flux'].astype(flux_dtype)),
             }
-            extra = {name: (jnp.array(f[name][:]) if name in f else None)
-                     for name in cls._extra_datasets}
+            extra = {name: (jnp.array(v) if v is not None else None)
+                     for name, v in raw_extra.items()}
             ssp_resolution = np.asarray(f['ssp_resolution'][:],
                                         dtype=np.float64)
 
@@ -386,18 +502,31 @@ class SSPData:
                 'imf_type':       int(a['imf_type']) if 'imf_type' in a else None,
                 'wave_min':       float(a['wave_min']) if 'wave_min' in a else None,
                 'wave_max':       float(a['wave_max']) if 'wave_max' in a else None,
+                'log10_zsun':     float(a['log10_zsun']) if 'log10_zsun' in a else None,
+                'zsun_nominal':   float(a['zsun_nominal']) if 'zsun_nominal' in a else None,
+                'axis_meaning':   _decode(a['axis_meaning']) if 'axis_meaning' in a else None,
+                'refused_cells':  (tuple(tuple(c) for c in json.loads(_decode(a['refused_cells_json'])))
+                                   if 'refused_cells_json' in a else ()),
+                '_chash_hint':    chash,
             }
             if 'fsps_kwargs_json' in a:
                 meta['fsps_kwargs'] = json.loads(_decode(a['fsps_kwargs_json']))
             else:
                 meta['fsps_kwargs'] = {}
+            if 'chash' in a and _decode(a['chash']) != chash:
+                import warnings
+                warnings.warn(
+                    f"{filename}: its recorded chash {_decode(a['chash'])} differs from the "
+                    f"content hash of its arrays ({chash}); the arrays were modified after the "
+                    "file was written.", UserWarning, stacklevel=3)
         return arrays, extra, meta
 
     @classmethod
-    def load(cls, filename, flux_dtype=None):
-        """Load a grid from HDF5; raises ValueError if the file lacks ``ssp_resolution``. ``flux_dtype`` casts the flux cube on read."""
+    def load(cls, filename, flux_dtype=None, zsun=None):
+        """Load a grid from HDF5; raises ValueError if the file lacks ``ssp_resolution``. ``flux_dtype`` casts the flux cube on read.
+        ``zsun`` supplies the grid's solar metallicity when it is neither recorded in the file nor in ``grid_metadata.CHASH_TABLE``."""
         arrays, _extra, meta = cls._read_h5(filename, flux_dtype=flux_dtype)
-        return cls(**arrays, **meta)
+        return cls(**arrays, **meta, zsun=zsun)
 
     @classmethod
     def from_fsps(cls, save_to: Optional[str] = None,
@@ -459,11 +588,11 @@ def _collect_ssp_and_meta(**kwargs):
     ssp_flux       = jnp.array(spectrum_collector)
     ssp_lg_age_gyr = jnp.array(ssp_lg_age_gyr)
 
-    meta = _read_fsps_provenance(ssp, kwargs, ssp_wave)
+    meta = _read_fsps_provenance(ssp, kwargs, ssp_wave, ssp_lgmet)
     return ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, meta
 
 
-def _read_fsps_provenance(ssp, kwargs: dict, ssp_wave) -> dict:
+def _read_fsps_provenance(ssp, kwargs: dict, ssp_wave, ssp_lgmet) -> dict:
     """Return the provenance dict for a built StellarPopulation."""
     def _dec(x):
         if isinstance(x, (bytes, bytearray)):
@@ -480,10 +609,19 @@ def _read_fsps_provenance(ssp, kwargs: dict, ssp_wave) -> dict:
         imf_type = kwargs.get("imf_type")
         imf_type = int(imf_type) if imf_type is not None else None
 
+    zsol = float(getattr(ssp, "solar_metallicity"))     # python-fsps: driver.get_zsol()
+    from .grid_metadata import solar_node
+    log10_zsun = solar_node(np.asarray(ssp_lgmet, dtype=np.float64), math.log10(zsol))
+    # sps_setup.f90:141-145: MIST zlegend = 10**[Fe/H] * zsol (a label), others read linear Z
+    axis_meaning = "feh" if isoc_type == "mist" else "log_z_over_zsun"
+
     return {
         "isoc_type":      isoc_type,
         "spec_library":   spec_library,
         "imf_type":       imf_type,
+        "log10_zsun":     log10_zsun,
+        "zsun_nominal":   float(np.float32(zsol)),
+        "axis_meaning":   axis_meaning,
         "fsps_version":   getattr(_import_fsps(), "__version__", None),
         "fsps_kwargs":    dict(kwargs),
         "wave_min":       float(np.min(np.array(ssp_wave))),

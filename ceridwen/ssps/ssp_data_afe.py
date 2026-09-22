@@ -23,13 +23,51 @@ SSP_AFE_SCHEMA_VERSION = "2.1"
 FSPS_AFE_VALUES_NAFE5 = np.array([-0.2, 0.0, +0.2, +0.4, +0.6])
 
 
+_MIST_AFE_ISO = ("m2", "p0", "p2", "p4", "p6")      # FSPS sps_vars.f90 afe_str_iso (AFE_FLAG=1)
+
+
+def _duplicated_isochrone_cells(n_afe: int, n_z: int) -> tuple:
+    """(iz, ia) cells whose MIST isochrone file in $SPS_HOME is byte-identical to another
+    [alpha/Fe] plane's file at the same [Fe/H] tag (e.g. isoc_feh_p050_afe_p6 == _p4): FSPS
+    then builds that plane on the wrong isochrone, so the cell is refused at fit time."""
+    import hashlib
+    import os
+    import warnings
+    home = os.environ.get("SPS_HOME")
+    if not home or n_afe != len(_MIST_AFE_ISO):
+        warnings.warn("cannot check the MIST isochrone files for duplicated [alpha/Fe] planes "
+                      "($SPS_HOME unset or unexpected n_afe); no cell is refused", stacklevel=3)
+        return ()
+    iso = os.path.join(home, "ISOCHRONES", "MIST")
+    try:
+        tags = [ln[:4] for ln in open(os.path.join(iso, "zlegend.dat")) if ln.strip()]
+    except OSError:
+        return ()
+    cells = []
+    for iz, tag in enumerate(tags[:n_z]):
+        seen = {}
+        for ia, a in enumerate(_MIST_AFE_ISO):
+            fn = os.path.join(iso, f"isoc_feh_{tag}_afe_{a}_vvcrit0.4_full.dat")
+            try:
+                with open(fn, "rb") as fh:
+                    d = hashlib.sha256(fh.read()).hexdigest()
+            except OSError:
+                continue
+            if d in seen and ia > 0:
+                cells.append((iz, ia))
+            seen.setdefault(d, ia)
+    return tuple(c for c in cells if c[0] >= 1)
+
+
 @dataclass(frozen=True)
 class SSPDataAfe(SSPData):
     """Immutable alpha-enhanced SSP grid: an ``SSPData`` whose flux cube has a leading [alpha/Fe] axis.
 
     Parameters
     ----------
-    ssp_lgmet : jnp.ndarray (n_met,) -- log10 absolute TOTAL metallicity Z, NOT [Fe/H]
+    ssp_lgmet : jnp.ndarray (n_met,) -- native axis [Fe/H] + log10(Z_sun), the SAME on every [alpha/Fe]
+        plane (FSPS AFE_FLAG=1 loads isoc_feh_<tag>_afe_<a> per node): logzsol = [Fe/H] here, and
+        the total metallicity is [Z/H] = logzsol + grid_metadata.f_alpha(afe); NOT the total Z
     ssp_afe : jnp.ndarray (n_afe,), keyword-only -- [alpha/Fe] grid, strictly increasing
     ssp_lg_age_gyr : jnp.ndarray (n_ages,) -- log10(age / Gyr)
     ssp_wave : jnp.ndarray (n_wave,) -- Angstrom
@@ -42,6 +80,18 @@ class SSPDataAfe(SSPData):
     _display_title = "SSPDataAfe"
     _schema_label = "SSPDataAfe schema 2.1"
     _extra_datasets = ("ssp_afe",)
+
+    def _grid_arrays_for_chash(self):
+        return (self.ssp_wave, self.ssp_lg_age_gyr, self.ssp_lgmet, self.ssp_flux, self.ssp_afe)
+
+    def _check_metallicity_meta(self):
+        if self.n_afe > 1 and self.axis_meaning != "feh":
+            raise ValueError(
+                f"an alpha-enhanced grid (n_afe = {self.n_afe}) must have axis_meaning='feh' "
+                f"(got {self.axis_meaning!r}): CERIDWEN's alpha interpolation and logzsol_total "
+                "assume the FSPS layout, where every [alpha/Fe] plane shares one [Fe/H] axis.  "
+                "Pass axis_meaning='feh' if the grid was built that way; a grid on a total-Z "
+                "axis per plane is not supported.")
 
     def _expected_flux_shape(self) -> tuple:
         return (int(self.ssp_afe.size), int(self.ssp_lgmet.size),
@@ -77,9 +127,9 @@ class SSPDataAfe(SSPData):
         return [
             f"  [alpha/Fe]               : {n_afe:>4d} pts   "
             f"{np.array2string(afe, precision=2)}",
-            f"  metallicity  log10 Z     : {n_met:>4d} pts   "
-            f"[{lgmet.min():+.3f}, {lgmet.max():+.3f}]  "
-            f"(absolute TOTAL Z, NOT Z/Zsun, NOT [Fe/H])",
+        ] + self._metallicity_display_lines(n_met) + [
+            "  total metallicity        : [Z/H] = logzsol + log10(1 - x + x 10^[a/Fe]), "
+            "x = 0.687490 (MIST v2.5 GS98; ceridwen.ssps.grid_metadata.logzsol_total)",
             f"  age          log10(Gyr)  : {n_age:>4d} pts   "
             f"[{lgage.min():+.3f}, {lgage.max():+.3f}]  "
             f"= [{age_gyr.min():.3g}, {age_gyr.max():.3g}] Gyr",
@@ -92,33 +142,47 @@ class SSPDataAfe(SSPData):
         ]
 
     def _display_note_lines(self) -> list:
+        notes = []
+        if self.refused_cells:
+            notes += ["refused interpolation cells (construction raises if a prior reaches them)"]
+            for iz, ia in self.refused_cells:
+                notes.append(f"  logzsol in ({self.logzsol_axis[iz - 1]:+.2f}, "
+                             f"{self.logzsol_axis[iz]:+.2f}] x [alpha/Fe] in "
+                             f"({float(self.ssp_afe[ia - 1]):+.1f}, {float(self.ssp_afe[ia]):+.1f}]"
+                             ": duplicated isoc_feh_p050_afe_p6 (= p4) in FSPS")
+        if self.n_afe > 1 and "chash table" in (self.zsun_source or ""):
+            notes += ["note",
+                      "  grids written before v1.0.5 carry units_lgmet = 'absolute total "
+                      "metallicity'; that is wrong: the axis is [Fe/H] + log10 Z_sun on every "
+                      "plane.  The metadata table (by chash) overrides it."]
         if self.n_afe == 1:
-            return [
+            return notes + [
                 "note",
                 "  single [alpha/Fe] plane (AFE_FLAG=0 build or legacy "
                 "promotion):",
                 "  CSPBasis_afe compiles the alpha interpolation away "
                 "(static no-op).",
             ]
-        return []
+        return notes
 
     def _save_extra(self, f):
         f.create_dataset('ssp_afe', data=np.array(self.ssp_afe))
         f.attrs['description']     = ('FSPS alpha-enhanced SSP '
                                       'interpolation grids')
-        f.attrs['units_lgmet']     = 'log10(absolute_total_metallicity)'
+        f.attrs['units_lgmet']     = self._units_lgmet()
         f.attrs['units_afe']       = '[alpha/Fe] (dex)'
         f.attrs['flux_axis_order'] = '(afe, met, age, wave)'
 
     @classmethod
-    def load(cls, filename, flux_dtype=None):
-        """Load from HDF5; a 3-D grid without ``ssp_afe`` is promoted to n_afe = 1 at [alpha/Fe] = 0."""
+    def load(cls, filename, flux_dtype=None, zsun=None):
+        """Load from HDF5; a 3-D grid without ``ssp_afe`` is promoted to n_afe = 1 at [alpha/Fe] = 0.
+        ``zsun`` as for :meth:`SSPData.load`."""
         arrays, extra, meta = cls._read_h5(filename, flux_dtype=flux_dtype)
         ssp_afe = extra['ssp_afe']
         if ssp_afe is None:
             ssp_afe = jnp.zeros(1)
             arrays['ssp_flux'] = arrays['ssp_flux'][None, ...]
-        return cls(**arrays, ssp_afe=ssp_afe, **meta)
+        return cls(**arrays, ssp_afe=ssp_afe, **meta, zsun=zsun)
 
     @classmethod
     def from_fsps(cls, save_to: Optional[str] = None,
@@ -215,8 +279,10 @@ class SSPDataAfe(SSPData):
         ssp_wave = jnp.array(_wave)
         ssp_flux = jnp.array(np.stack(planes, axis=0))
 
-        meta = _read_fsps_provenance(ssp, kwargs, ssp_wave)
+        meta = _read_fsps_provenance(ssp, kwargs, ssp_wave, ssp_lgmet)
         meta['schema_version'] = SSP_AFE_SCHEMA_VERSION
+        if n_afe > 1 and meta.get('isoc_type') == 'mist':
+            meta['refused_cells'] = _duplicated_isochrone_cells(n_afe, int(nzmet))
 
         from .library_resolution import combined_sigma_v, combined_source
         sigma_v = combined_sigma_v(np.asarray(ssp_wave),

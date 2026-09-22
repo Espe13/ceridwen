@@ -225,7 +225,7 @@ FILTERS = ["galex_FUV", "galex_NUV", "sdss_u0", "sdss_g0", "sdss_r0",
 SPEC_WAVE = np.linspace(4000.0, 8000.0, 600)       # observed-frame vacuum Angstrom
 TRUTH = {                                          # parameters to inject and recover
     "logsfr_ratios":      jnp.array([0.3, 0.2, -0.1, -0.4, -0.6]),
-    "Z":                  jnp.array([-2.0]),       # log10 ABSOLUTE Z (ssp_lgmet)
+    "logzsol":            jnp.array([-0.2]),       # log10(Z/Z_sun) of the SSP grid
     "logmass":            jnp.array([10.5]),
     "diffuse_tau_kc":     jnp.array([0.5]),
     "diffuse_dust_index": jnp.array([-0.7]),
@@ -266,12 +266,12 @@ def build_model(observations):
     return SedModel(
         csp, observations=observations,
         priors={
-            # Z is log10 ABSOLUTE metallicity (= ssp_lgmet), NOT log10(Z/Zsun);
-            # solar ~ -1.85. Keep priors inside the grid (about [-4.35, -1.35]
+            # logzsol = log10(Z/Z_sun) of the loaded grid; 0.0 is solar.  Keep the
+            # prior inside the grid axis (BPASS [-2.30, +0.30], MIST [-2.50, +0.50]
             # for the MIST grids); print the exact range with
             #     print(float(csp.zmet.min()), float(csp.zmet.max()))
             # and csp.check_param_ranges() warns about out-of-grid values.
-            "Z": Uniform(low=-3.9, high=-1.45),
+            "logzsol": Uniform(low=-2.0, high=0.2),
             "logmass": Uniform(low=9.0, high=12.0),
             "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
             "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
@@ -383,7 +383,7 @@ pp  = PostProcess(model, result, n_samples=2000)
 out = pp.run()
 
 # Recovered vs injected truth (equal-weight draws, so plain percentiles).
-truth = {p: float(TRUTH[p][0]) for p in ("Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index")}
+truth = {p: float(TRUTH[p][0]) for p in ("logzsol", "logmass", "diffuse_tau_kc", "diffuse_dust_index")}
 for p, t in truth.items():
     lo, med, hi = np.percentile(out["theta"][p], [16, 50, 84])
     print(f"{p:>20}: true {t:+7.3f}   fit {med:+7.3f}  (-{med - lo:.3f}/+{hi - med:.3f})")
@@ -521,7 +521,7 @@ whoever or whatever proposes it:
 
 - **Conventions are written down where a tool reads them first.**
   [`AGENTS.md`](AGENTS.md) holds the conventions that are easy to get wrong
-  (absolute-`log10 Z` metallicity, lookback-time ordering, units and frames),
+  (solar-relative `logzsol` metallicity, lookback-time ordering, units and frames),
   the hard requirements and the module map; [`GOTCHAS.md`](GOTCHAS.md) is the
   misuse guide. Both are checked against the code by the static API check.
 - **A change has to say what it is.** A refactor or optimisation must be
@@ -573,7 +573,7 @@ csp = CSPBasis_afe(ssp, lookback_time=jnp.linspace(0.0, 12.0, 9),
 theta = {
     "lookback_time": jnp.linspace(0.0, 12.0, 9),
     "sfh":           jnp.exp(-jnp.linspace(0.0, 12.0, 9) / 1.0),
-    "Z":             jnp.array([-1.9]),   # log10 TOTAL Z (absolute) — unchanged
+    "logzsol":       jnp.array([-0.3]),   # = [Fe/H] on an aMIST grid
     "afe":           jnp.array([0.4]),    # [α/Fe]: re-partitions that Z
     "tau_pow":           jnp.array([0.3]),
     "diffuse_tau_kc":    jnp.array([0.2]),
@@ -584,8 +584,9 @@ wave, fnu = csp.wave, csp.get_spectrum(theta)   # rest-frame Lsun/Hz per Msun
 
 Notes: `theta["afe"]` is interpolated differentiably between the two
 bracketing grid planes, so it works under `jit`/`grad`/`vmap` and in every
-sampler; `Z` stays the total metal mass fraction ([Fe/H] becomes a derived
-quantity); `CSPBasis_afe` accepts **only** α-aware 4-D grids — passing a
+sampler; `logzsol` is `[Fe/H]` here (every `[alpha/Fe]` plane shares one `[Fe/H]` axis,
+FSPS AFE_FLAG=1), and the total metallicity `[Z/H]` is the derived `logzsol_total`
+= `logzsol + log10(1 - x + x 10^[alpha/Fe])`, `x = 0.687490` (MIST v2.5 / GS98); `CSPBasis_afe` accepts **only** α-aware 4-D grids — passing a
 legacy 3-D grid raises a `TypeError` telling you to use `CSPBasis`;
 emission-line observations are rejected (continuum and photometry only)
 until α-enhanced photoionisation grids exist.
@@ -601,7 +602,8 @@ predates schema 2: `fetch_grid("amist_c3k_lr_chab_afe")` still downloads it,
 but the strict loader wants a one-time upgrade
 (`python scripts/convert_grids_schema2.py ~/.ceridwen/grids/amist_c3k_lr_chab_afe.h5`,
 then load the `_schema2.h5` it writes). Both share the *same* `(afe, [Fe/H], age)` node grid and
-the same `log10 Z` axis (Z = 0.0185·10^[Fe/H]), so they are drop-in
+the same native axis (the FSPS label log10 Z = [Fe/H] + log10(0.0185), i.e. logzsol =
+[Fe/H]), so they are drop-in
 interchangeable — only the spectral resolution and the IMF differ (mind the
 Chabrier↔Kroupa mass-normalisation offset when comparing masses across the
 two). The high-res grid is rebuilt from the provider's FITS with
@@ -614,7 +616,7 @@ two). The high-res grid is rebuilt from the provider's FITS with
   or wrong `$SPS_HOME`, whether float64 is enabled, and whether nested sampling is available, each with the fix.
 - **Install needs Python 3.11+** (see Installation); the pinned `blackjax`
   requires it.
-- **Common scientific pitfalls** (the metallicity-units trap, silently-ignored
+- **Common scientific pitfalls** (metallicity conventions, silently-ignored
   `theta` typos, the lookback-time convention) are documented in
   [`GOTCHAS.md`](GOTCHAS.md). If you're letting an AI assistant help you use
   ceridwen, point it at [`AGENTS.md`](AGENTS.md).
@@ -662,7 +664,7 @@ If you use ceridwen in your research, please cite it:
   author       = {Stoffers, Amanda},
   title        = {{CERIDWEN}: Fast and Flexible {GPU}-Accelerated Stellar Population Inference},
   year         = {2026},
-  note         = {Version 1.0.4},
+  note         = {Version 1.0.5},
   howpublished = {\url{https://github.com/Espe13/ceridwen}}
 }
 ```

@@ -79,7 +79,7 @@ def _run(fn):
 
 
 def _good_csp():
-    return CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr, "Z": jnp.array([-1.85])},
+    return CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr, "logzsol": jnp.array([-0.15])},
                     **_kw())
 
 
@@ -91,37 +91,105 @@ def _outlier_model(names, priors, n_spec=1):
                            theta_init={n: jnp.array([0.1]) for n in names})
 
 
+def _short_csp(**over):
+    """A CSP whose oldest node fits inside the Universe at zred = 0.5 (8.59 Gyr)."""
+    lb = jnp.linspace(0.0, 8.0, 10)
+    return CSPBasis(_ssp, theta={"lookback_time": lb, "sfh": jnp.ones(10),
+                                 "logzsol": jnp.array([-0.15])}, **_kw(**over))
+
+
+def _model_with(priors=None, csp_obj=None):
+    """A SedModel on a short-grid CSP with one photometric observation (for prior checks)."""
+    c = csp_obj if csp_obj is not None else _short_csp()
+    ph = Photometry(filters=["sdss_g0", "sdss_r0"], flux=[1e-9, 1e-9],
+                    uncertainty=[1e-10, 1e-10], name="p")
+    return SedModel(c, [ph], priors=priors or {}, zred=0.5)
+
+
+def _unknown_zsun_grid():
+    """An in-memory grid that is in no metadata table and records no Z_sun."""
+    import dataclasses
+    lgmet = jnp.asarray(np.asarray(_ssp.ssp_lgmet) + 0.123)      # perturbed -> new chash
+    return SSPData(lgmet, _ssp.ssp_lg_age_gyr, _ssp.ssp_wave, _ssp.ssp_flux,
+                   ssp_resolution=_ssp.ssp_resolution)
+
+
+def _tied_gas_with_prior():
+    if not os.environ.get("SPS_HOME"):
+        raise RuntimeError("SPS_HOME unset: gas_tied needs the nebular grids (scenario n/a)")
+    c = _short_csp(add_neb=True, gas_tied=True, sps_home=os.environ["SPS_HOME"])
+    return _model_with(priors={"gas_logz": TopHat(low=-1.0, high=0.2)}, csp_obj=c)
+
+
+def _afe_refused_cell():
+    """The (logzsol, afe) corner built on FSPS's duplicated isoc_feh_p050_afe_p6 file."""
+    from ceridwen.ssps.ssp_data_afe import SSPDataAfe
+    from ceridwen.csp.csp_afe import CSPBasis_afe
+    path = REPO / "ceridwen" / "data" / "test_data" / "amist_c3k_lr_chab_afe.h5"
+    if not path.is_file():
+        raise RuntimeError("alpha grid not present (scenario n/a)")
+    ssp = SSPDataAfe.load(str(path))
+    c = CSPBasis_afe(ssp, theta={"lookback_time": jnp.linspace(0.0, 8.0, 10),
+                                 "sfh": jnp.ones(10),
+                                 "logzsol": jnp.array([0.0]), "afe": jnp.array([0.0])},
+                     **{k: v for k, v in _kw().items() if k != "add_neb"})
+    return _model_with(priors={"logzsol": TopHat(low=-1.0, high=0.5),
+                               "afe": TopHat(low=-0.2, high=0.6)}, csp_obj=c)
+
+
 def run_scenarios():
     csp = _good_csp()
     th = dict(csp.theta_init)
 
     scenarios = [
         # label, expected-good-kinds, fn
-        ("zh_const=True, no 'Z'", {"ERROR"},
+        ("zh_const=True, no 'logzsol'", {"ERROR"},
          lambda: CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr}, **_kw())),
-        ("zh_const=False, no 'zh'", {"ERROR"},
-         lambda: CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr, "Z": jnp.array([-1.85])},
+        ("zh_const=False, no 'logzsol_hist'", {"ERROR"},
+         lambda: CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr, "logzsol": jnp.array([-0.15])},
                           **_kw(zh_const=False))),
         ("NaN in sfh", {"ERROR"},
          lambda: CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr.at[0].set(jnp.nan),
-                                       "Z": jnp.array([-1.85])}, **_kw())),
+                                       "logzsol": jnp.array([-0.15])}, **_kw())),
         ("negative SFR", {"WARN"},
          lambda: CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": -jnp.abs(_sfr),
-                                       "Z": jnp.array([-1.85])}, **_kw())),
+                                       "logzsol": jnp.array([-0.15])}, **_kw())),
         ("missing 'sfh'", {"ERROR"},
-         lambda: CSPBasis(_ssp, theta={"lookback_time": _lb, "Z": jnp.array([-1.85])}, **_kw())),
-        ("wrong 'Z' shape", {"ERROR"},
-         lambda: CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr, "Z": jnp.zeros(10)}, **_kw())),
+         lambda: CSPBasis(_ssp, theta={"lookback_time": _lb, "logzsol": jnp.array([-0.15])}, **_kw())),
+        ("wrong 'logzsol' shape", {"ERROR"},
+         lambda: CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr, "logzsol": jnp.zeros(10)}, **_kw())),
         ("wrong 'sfh' length", {"ERROR"},
          lambda: CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": jnp.ones(13),
-                                       "Z": jnp.array([-1.85])}, **_kw())),
+                                       "logzsol": jnp.array([-0.15])}, **_kw())),
         ("sfh_interp typo", {"ERROR"},
-         lambda: CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr, "Z": jnp.array([-1.85])},
+         lambda: CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr, "logzsol": jnp.array([-0.15])},
                           **_kw(sfh_interp="steppe"))),
         ("typo theta key (logmas)", {"WARN"},
          lambda: csp.get_spectrum_components({**th, "logmas": jnp.array([10.0])})),
-        ("Z outside metallicity grid", {"WARN"},
-         lambda: csp.check_param_ranges({**th, "Z": jnp.array([0.0])})),
+        ("logzsol outside metallicity grid", {"WARN"},
+         lambda: csp.check_param_ranges({**th, "logzsol": jnp.array([3.0])})),
+        ("old absolute key theta['Z']", {"ERROR"},
+         lambda: csp.check_param_ranges({**th, "Z": jnp.array([-1.85])})),  # deliberate misuse
+        ("old absolute key theta['zh']", {"ERROR"},
+         lambda: CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr,
+                                       "zh": jnp.full(10, -1.85)},   # deliberate misuse
+                          **_kw(zh_const=False))),
+        ("old absolute prior name 'Z' on the model", {"ERROR"},
+         lambda: _model_with(priors={"Z": TopHat(low=-3.5, high=-1.5)})),  # deliberate misuse
+        ("absolute-looking logzsol value (-1.85)", {"WARN"},
+         lambda: csp.check_param_ranges({**th, "logzsol": jnp.array([-1.85])})),
+        ("absolute-looking logzsol prior", {"WARN"},
+         lambda: _model_with(priors={"logzsol": TopHat(low=-2.2, high=-1.5)})),
+        ("logzsol prior wider than the grid", {"ERROR"},
+         lambda: _model_with(priors={"logzsol": TopHat(low=-4.0, high=1.0)})),
+        ("grid with unknown Z_sun (no provenance, not in the table)", {"ERROR"},
+         lambda: _unknown_zsun_grid()),
+        ("zsun= disagreeing with the grid's own solar node", {"ERROR"},
+         lambda: SSPData.load(SSP, zsun=0.0142)),
+        ("gas_tied=True plus an explicit gas_logz prior", {"ERROR"},
+         lambda: _tied_gas_with_prior()),
+        ("alpha grid: logzsol x afe priors reach the refused cell", {"ERROR"},
+         lambda: _afe_refused_cell()),
         ("Spectrum.predict before setup", {"ERROR"},
          lambda: Spectrum(wavelength=jnp.linspace(4000, 7000, 40), flux=jnp.ones(40),
                           uncertainty=jnp.ones(40), name="s").predict(

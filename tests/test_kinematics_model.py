@@ -57,8 +57,8 @@ def _model(csp, obs, kin, **kw):
 
 def _theta(model):
     th = {k: jnp.asarray(v) for k, v in model.theta_init.items()}
-    if "Z" in th:
-        th["Z"] = jnp.array([-2.0])
+    if "logzsol" in th:
+        th["logzsol"] = jnp.array([-0.3])
     return th
 
 

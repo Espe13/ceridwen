@@ -62,7 +62,7 @@ SPEC_RES = 150.0                                # instrument LSF sigma [km/s]
 
 TRUTH = {
     "logsfr_ratios":      jnp.array([+0.3, +0.2, -0.1, -0.4, -0.6]),
-    "Z":                  jnp.array([-2.0]),
+    "logzsol":            jnp.array([-0.2]),
     "logmass":            jnp.array([10.5]),
     "diffuse_tau_kc":     jnp.array([0.5]),
     "diffuse_dust_index": jnp.array([-0.7]),
@@ -115,7 +115,7 @@ def main() -> None:
         return SedModel(
             csp, observations=observations,
             priors={
-                "Z": Uniform(low=-3.9, high=-1.45),
+                "logzsol": Uniform(low=-2.0, high=0.2),
                 "logmass": Uniform(low=9.0, high=12.0),
                 "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0,
                                                 low=0.0, high=4.0),
@@ -170,7 +170,7 @@ def main() -> None:
 
     # ── Post-process (NUTS draws are uniform-weight; the diagnostics page
     #    shows the per-chain traces with split-R-hat and ESS) ───────────────
-    params = ("logmass", "Z", "sigma_gal", "diffuse_tau_kc", "diffuse_dust_index")
+    params = ("logmass", "logzsol", "sigma_gal", "diffuse_tau_kc", "diffuse_dust_index")
     truths = {p: float(TRUTH[p][0]) for p in params}
     pp = PostProcess(model, result)
     out = pp.run()

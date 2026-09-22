@@ -54,7 +54,7 @@ SNR_PHOT, SNR_SPEC = 20.0, 25.0
 
 TRUTH = {
     "logsfr_ratios":      jnp.array([+0.3, +0.2, -0.1, -0.4, -0.6]),
-    "Z":                  jnp.array([-2.0]),      # log10 ABSOLUTE Z (ssp_lgmet units)
+    "logzsol":            jnp.array([-0.2]),      # log10(Z/Z_sun) of the SSP grid
     "logmass":            jnp.array([10.5]),
     "diffuse_tau_kc":     jnp.array([0.5]),
     "diffuse_dust_index": jnp.array([-0.7]),

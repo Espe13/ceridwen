@@ -126,9 +126,10 @@ def main() -> int:
     csp = CSPBasis(
         ssp_data,
         theta={"lookback_time": lookback, "sfh": jnp.ones(N_TIME),
-               # Z is log10 of ABSOLUTE metallicity (= ssp_lgmet), NOT log10(Z/Zsun).
-               # This FSPS grid spans roughly [-4.0, -1.4]; solar ~ -1.85.
-               "Z": jnp.array([-2.0])},
+               # logzsol = log10(Z / Z_sun) with the SSP grid's OWN Z_sun (0 = solar).
+               # Every shipped grid covers at least [-2.3, +0.3]; csp.zmet prints the axis
+               # and csp.zsun_nominal the Z_sun it was resolved to.
+               "logzsol": jnp.array([-0.2])},
         zh_const=True,
         sfh_interp="step",
         add_dust=False,
@@ -141,7 +142,7 @@ def main() -> int:
 
     # ---- Step 2: mock photometry from known truth ------------------------
     TRUE_LOGSFR_RATIOS = jnp.array([+0.3, +0.2, -0.1, -0.5])
-    TRUE_Z = jnp.array([-2.0])      # log10 absolute Z, inside the grid (~Z/2 Zsun)
+    TRUE_Z = jnp.array([-0.2])      # logzsol = log10(Z/Z_sun): 0.63 Z_sun
     TRUE_LOGMASS = jnp.array([10.5])
     TRUE_DIFFDUST = jnp.array([0.5])
     TRUE_DUST_INDEX = jnp.array([-0.7])
@@ -154,7 +155,7 @@ def main() -> int:
     dummy_phot.setup_for_model(csp.wave)
 
     spec_unit = csp.get_spectrum(
-        {"sfh": sfh_true, "Z": TRUE_Z,
+        {"sfh": sfh_true, "logzsol": TRUE_Z,
          "diffuse_tau_kc": TRUE_DIFFDUST, "diffuse_dust_index": TRUE_DUST_INDEX}
     )
     maggies_unit = np.array(dummy_phot.predict(spec_unit, csp.wave))
@@ -177,7 +178,7 @@ def main() -> int:
 
     priors = {
         "logsfr_ratios": StudentT(mean=0.0, scale=1.0, df=2.0),
-        "Z": Uniform(low=-3.9, high=-1.45),   # stay within the FSPS metallicity grid
+        "logzsol": Uniform(low=-2.0, high=0.2),   # inside every shipped grid's logzsol axis
         "logmass": Uniform(low=9.0, high=12.0),
         "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
         "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
@@ -218,7 +219,7 @@ def main() -> int:
     # PostProcess resamples the nested-sampling draws to equal weight, pushes
     # them through the forward model and writes three figures per galaxy.
     TRUTH = {
-        "Z": float(TRUE_Z[0]),
+        "logzsol": float(TRUE_Z[0]),
         "logmass": float(TRUE_LOGMASS[0]),
         "diffuse_tau_kc": float(TRUE_DIFFDUST[0]),
         "diffuse_dust_index": float(TRUE_DUST_INDEX[0]),

@@ -191,7 +191,7 @@ def _model(csp, obs, extra_init=None):
 
 def _theta(model, **over):
     th = {k: jnp.asarray(v) for k, v in model.theta_init.items()}
-    th["Z"] = jnp.array([-2.0])
+    th["logzsol"] = jnp.array([-0.3])
     th["gas_logu"] = jnp.array([-2.23])          # off the CLOUDY logU nodes (kinks)
     th["gas_logz"] = jnp.array([-0.37])          # off the logZ nodes
     th.update({k: jnp.asarray(v) for k, v in over.items()})
@@ -397,7 +397,7 @@ def test_lines_observation_without_nebular_model_raises():
     spec, phot, lines = _obs()
     model = _model(csp0, (spec, phot, lines))
     th = {k: jnp.asarray(v) for k, v in model.theta_init.items()}
-    th["Z"] = jnp.array([-2.0])
+    th["logzsol"] = jnp.array([-0.3])
     with pytest.raises(ValueError, match="add_neb=True"):
         model.predict(th)
 

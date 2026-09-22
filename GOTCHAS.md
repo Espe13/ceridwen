@@ -14,20 +14,46 @@ Run `python tests/regression/misuse_report.py` to regenerate
 
 ---
 
-## 1. The metallicity units trap (most dangerous)
+## 1. Metallicity is SOLAR-RELATIVE (v1.0.5) — and Z_sun is per grid
 
-`theta["Z"]` (constant-Z mode) and `theta["zh"]` (time-varying mode) are
-searched **directly** into `SSPData.ssp_lgmet`, i.e. they must be in the **same
-units as the SSP grid: `log10` of the absolute metallicity** (`ssp_lgmet`),
-**not** `log10(Z/Zsun)`.
+`theta["logzsol"]` (constant) and `theta["logzsol_hist"]` (time-varying) are
+**`log10(Z / Z_sun)`**, with the Z_sun **of the SSP grid you loaded**. `0.0` is solar on
+every grid. Before v1.0.5 the keys were `theta["Z"]` / `theta["zh"]` and held `log10` of the
+*absolute* metallicity; both now raise a `ValueError` that prints the converted value.
 
-- The grid for `ssp_data.h5` is roughly `[-4.35, -1.35]`; solar is ~`-1.85`
-  (`log10(0.0142)`), **not `0.0`**.
-- Passing `Z = 0.0` (a natural "solar" guess if you read it as `Z/Zsun`) is
-  **outside the grid** and is **silently clamped** to the maximum grid node.
-- **Guard:** `CSPBasis.__init__` now calls `check_param_ranges(theta_init)` and
-  warns at construction; call `csp.check_param_ranges(theta)` yourself on sampled
-  `theta`/bounds before a fit.
+- Z_sun is never guessed from `isoc_type`: FSPS changed MIST's `zsol` from 0.0142 to 0.0191
+  to 0.0185 (commits `0498750`, `c8752a1`, `1c9d876`) under the same name, so two grids
+  labelled `mist` can differ by 0.11 dex. It is resolved at load, in this order:
+  an explicit `SSPData.load(..., zsun=)`, the file's own `log10_zsun` provenance, or
+  `ceridwen.ssps.grid_metadata.CHASH_TABLE` keyed by the grid's content hash. If none
+  applies, loading **raises**; sources that disagree also raise.
+- `log10 Z_sun` is the grid's own solar node, so `logzsol = 0` is exactly a grid point.
+  `csp.zmet` is the axis in logzsol, `csp.zmet_native` the native axis, and
+  `csp.zsun_nominal` / `csp.zsun_source` say what was resolved and from where.
+- **Grid ranges** (logzsol): BPASS `[-2.30, +0.30]` (Z_sun = 0.020), MIST/aMIST
+  `[-2.50, +0.50]` (Z_sun = 0.0185; 0.0142 for grids built with python-fsps <= 0.4.7).
+- **On MIST and aMIST grids `logzsol` is `[Fe/H]`**, not the total metallicity: FSPS loads
+  each node from `isoc_feh_<tag>_afe_<a>`, so every `[alpha/Fe]` plane shares one `[Fe/H]`
+  axis. The *native* values there are FSPS labels `log10(Z_sun 10^[Fe/H])`, not MIST's
+  physical initial Z (which is 0.0164 at `[Fe/H] = 0`, Dotter+2026 Table 1). On an alpha
+  grid the total metallicity is the derived `logzsol_total`
+  = `[Z/H]` = `logzsol + log10(1 - x + x 10^[alpha/Fe])`, `x = 0.687490`
+  (`ceridwen.ssps.grid_metadata.logzsol_total`).
+- The **gas** metallicity `theta["gas_logz"]` was already solar-relative and is unchanged:
+  `log10(Z_gas / Z_sun,neb)` on the CLOUDY axis (Byler+2017), which spans `[-1.98, +0.20]`
+  for the MIST/Padova/PARSEC grids and `[-1.3, +0.3]` for BPASS. `CSPBasis(gas_tied=True)`
+  ties it to the stars, `gas_logz := logzsol` (Prospector's convention); `gas_logz` is then
+  not a parameter, and giving one anyway raises. The tie sets the same *number* on two axes
+  with different solar references (the SSP grid's Z_sun, the CLOUDY grid's); that is the
+  FSPS/Prospector meaning of "gas metallicity = stellar metallicity", not equal absolute Z.
+- **Guards:** out-of-grid values warn at construction and name the grid's Z_sun; a value or
+  prior that lies entirely below `logzsol = -1.2` warns that it looks like an old absolute
+  `log10 Z`; a *bounded* prior wider than the grid raises, and so does a constant transform
+  outside it. The one route that cannot be checked at construction is a transform whose value
+  depends on sampled parameters: it is warned about, and the forward model still clamps at the
+  grid edge (`csp.check_param_ranges(theta)` on your own draws is the check).
+- The FSPS manual (`$SPS_HOME/doc/sps.tex`) still prints `Z_sun = 0.0191` for MIST, which
+  contradicts its own source (0.0185). CERIDWEN follows the source and the grid axis.
 
 ## 2. `theta` is a dict — typos are silently ignored
 
@@ -40,11 +66,12 @@ prefer `predict`/`get_spectrum_components`.
 
 ## 3. Metallicity-mode ↔ key mismatch
 
-- `zh_const=True` needs `theta["Z"]` (shape `(1,)`); `zh_const=False` needs
-  `theta["zh"]` (shape `(n_time,)`).
-- Previously a mismatch constructed fine and only failed later with a cryptic
-  `KeyError` inside a JIT trace. **Guard:** construction now raises a clear
-  `ValueError` naming the fix, and warns if you supply *both* keys.
+- `zh_const=True` needs `theta["logzsol"]` (shape `(1,)`); `zh_const=False` needs
+  `theta["logzsol_hist"]` (shape `(n_time,)`, index 0 = today).
+- A mismatch raises a clear `ValueError` at construction naming the fix, and supplying
+  *both* keys now raises as well (it warned before v1.0.5).
+- `theta["Z"]` / `theta["zh"]` raise wherever they appear — theta, `priors`,
+  `free_param_init`, `transforms` — with the converted value in the message.
 
 ## 4. SFH pitfalls
 
@@ -57,9 +84,9 @@ prefer `predict`/`get_spectrum_components`.
   valid lengths switch interpretation silently — make sure you know which you
   mean.
 - **Metallicity & SFR units are now identical across all four
-  `calculate_ssp_weights_*` calculations.** Metallicity (`theta["Z"]` for
-  constant-Z, `theta["zh"]` for time-varying) is `log10` of the *absolute*
-  metallicity on the `self.zmet` / `ssp_lgmet` grid in **every** variant; the
+  `calculate_ssp_weights_*` calculations.** Metallicity (`theta["logzsol"]` for
+  constant-Z, `theta["logzsol_hist"]` for time-varying) is `log10(Z/Z_sun)` on the
+  `self.zmet` logzsol axis in **every** variant; the
   SFR history `theta["sfh"]` is a linear rate floored identically at `1e-30`
   everywhere. Previously `var_zh` floored SFR with `self.tiny_logt = -70` (a
   log10-time constant), so it weighted the same SFR history differently from
@@ -299,6 +326,9 @@ prefer `predict`/`get_spectrum_components`.
   as a wide line-flux posterior and a wider age posterior; that is the honest
   answer, not a bug. A Gaussian prior (`eline_prior_width=0.2`) narrows it by
   assuming the CLOUDY prediction is roughly right.
+- **`gas_tied=True` is allowed** with `marginalize_elines`: a tied gas metallicity is not a
+  free parameter, it follows `logzsol`, which the stellar continuum constrains. `gas_logu`
+  still has to be fixed.
 - **The nebular model must not be sampled** (`gas_logu`, `gas_logz`): with free
   line fluxes the lines cannot constrain it. CERIDWEN samples every CSP key
   unless a transform derives it, so fix them with constant transforms

@@ -11,10 +11,19 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
 
 ## Conventions that are easy to get wrong — do not assume the common defaults
 
-1. **Metallicity is log10 of ABSOLUTE Z, not Z/Z_sun.** The parameter `Z`
-   (and `ssp_lgmet`) is `log10(Z)` in absolute units. A solar value is roughly
-   `-1.85` (Z_sun ≈ 0.014), *not* `0.0`. Priors like `Uniform(low=-2.5, high=0.2)`
-   are correct; do not "fix" them to be centred on 0.
+1. **Metallicity is SOLAR-RELATIVE: `logzsol = log10(Z/Z_sun)` (v1.0.5).** The parameters
+   are `theta["logzsol"]` (constant, shape `(1,)`) and `theta["logzsol_hist"]`
+   (shape `(n_time,)`); `0.0` is solar on every grid. Z_sun is the **grid's own** solar node,
+   resolved at load from `zsun=`, the file's `log10_zsun` provenance, or the content-hash
+   table in `ceridwen/ssps/grid_metadata.py` — never from `isoc_type` (FSPS changed MIST's
+   `zsol` 0.0142 -> 0.0191 -> 0.0185 under the same name). A grid whose Z_sun is unknown
+   raises. Typical ranges: BPASS `[-2.30, +0.30]` (Z_sun 0.020), MIST/aMIST `[-2.50, +0.50]`
+   (Z_sun 0.0185). `Uniform(low=-2.0, high=0.2)` is safe on every shipped grid; a bounded
+   prior wider than the grid raises. The old absolute keys `Z` / `zh` raise everywhere with
+   the converted value. On MIST/aMIST grids `logzsol` **is `[Fe/H]`** and the total
+   metallicity is the derived `logzsol_total` = `[Z/H]`. `gas_logz` was already
+   solar-relative (CLOUDY axis) and is unchanged; `CSPBasis(gas_tied=True)` sets
+   `gas_logz := logzsol`.
 
 2. **`lookback_time` INCREASES with index; index 0 = today.** Element 0 is the
    present, the last element is the oldest bin (≈ age of the universe). The SFH
@@ -197,7 +206,7 @@ bin, automatic parameter renaming when a law is reused); `@jit`/`vmap` throughou
 ## Repository pointers
 
 - `README.md` — install + quick start for humans.
-- `GOTCHAS.md` — the misuse/user-error guide (metallicity-units trap, silent
+- `GOTCHAS.md` — the misuse/user-error guide (metallicity conventions, silent
   `theta` typos, …). Read it before constructing models; it expands on the
   conventions above.
 - `examples/quickstart.py` — minimal runnable fit (mock photometry).

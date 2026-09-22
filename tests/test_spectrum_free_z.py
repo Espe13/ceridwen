@@ -75,8 +75,8 @@ def _model(csp, obs, *, zred_prior=None, zred_fixed=None, extra_priors=None):
 
 def _theta(model, z=None):
     th = {k: jnp.asarray(v) for k, v in model.theta_init.items()}
-    if "Z" in th:
-        th["Z"] = jnp.array([-2.0])
+    if "logzsol" in th:
+        th["logzsol"] = jnp.array([-0.3])
     if z is not None:
         th["zred"] = jnp.array([z])
     return th

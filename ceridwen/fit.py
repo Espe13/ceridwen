@@ -6,6 +6,7 @@ plus readers for the result file.
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Sequence
@@ -526,6 +527,7 @@ def write_result_h5(
         mod_grp.attrs["n_time"] = int(model.csp.n_time) if hasattr(model.csp, "n_time") else -1
         mod_grp.attrs["n_ssp_ages"] = int(model.csp.ages.shape[0]) if hasattr(model.csp, "ages") else -1
         mod_grp.attrs["n_metallicities"] = int(model.csp.zmet.shape[0]) if hasattr(model.csp, "zmet") else -1
+        _write_metallicity_provenance(mod_grp, model)
 
         samp_grp = f.create_group("samples")
 
@@ -575,6 +577,187 @@ def write_result_h5(
         logger.info(f"  Wrote {path}  ({size_mb:.1f} MB)")
 
 
+METALLICITY_CONVENTION = "logzsol"
+
+
+def _write_metallicity_provenance(mod_grp, model) -> None:
+    """Record the metallicity convention, the grid's Z_sun / axis / identity and the nebular
+    reference, so a result file can never be read in the wrong units."""
+    csp = model.csp
+    if not hasattr(csp, "log10_zsun"):
+        return
+    mod_grp.attrs["metallicity_convention"] = METALLICITY_CONVENTION
+    mod_grp.attrs["log10_zsun"] = float(csp.log10_zsun)
+    if getattr(csp, "zsun_nominal", None) is not None:
+        mod_grp.attrs["zsun_nominal"] = float(csp.zsun_nominal)
+    for key, val in (("metallicity_axis_meaning", getattr(csp, "axis_meaning", None)),
+                     ("zsun_source", getattr(csp, "zsun_source", None)),
+                     ("grid_chash", getattr(csp, "grid_chash", None))):
+        if val is not None:
+            mod_grp.attrs[key] = str(val)
+    from .ssps.grid_metadata import CHASH_TABLE
+    meta = CHASH_TABLE.get(getattr(csp, "grid_chash", None))
+    if meta is not None:
+        mod_grp.attrs["grid_name"] = meta.name
+        mod_grp.attrs["grid_file_sha256"] = json.dumps(list(meta.file_sha256))
+    mod_grp.create_dataset("metallicity_axis_native", data=np.asarray(csp.zmet_native))
+    mod_grp.create_dataset("metallicity_axis_logzsol", data=np.asarray(csp.zmet))
+    mod_grp.attrs["gas_tied"] = bool(getattr(csp, "gas_tied", False))
+    neb = getattr(csp, "neb", None)
+    if neb is not None:
+        iso = str(getattr(neb, "isoc_type", "") or "")
+        mod_grp.attrs["nebular_isoc_type"] = iso
+        axis = np.asarray(neb.nebem_logz, dtype=float)
+        mod_grp.attrs["nebular_axis_logz"] = axis
+        # Byler+17: gas abundances Dopita+00 on Anders & Grevesse 1989.  The ZAU_* axis is
+        # log10(Z_gas / Z_sun,neb); the nominal Z_sun,neb is identified from the NODE SET
+        # itself (never from isoc_type), and omitted when the axis matches neither.
+        nom, src = _nebular_zsun_from_axis(axis)
+        if nom is not None:
+            mod_grp.attrs["nebular_zsun_nominal"] = nom
+        mod_grp.attrs["nebular_zsun_source"] = src
+
+
+#: the two CLOUDY node sets ceridwen can load, as log10(Z_gas / Z_sun,neb) (Byler+2017):
+#: BPASS zlegend[1:] / 0.020, and the Padova2007 subset / 0.019 (MIST / Padova / PARSEC files)
+_NEB_AXES = {
+    0.020: np.array([-1.3, -1.0, -0.82, -0.7, -0.52, -0.4, -0.3, -0.15, 0.0, 0.18, 0.3]),
+    0.019: np.array([-1.98, -1.5, -0.98, -0.58, -0.39, -0.3, -0.2, -0.1, 0.0, 0.1, 0.2]),
+}
+
+
+def _nebular_zsun_from_axis(axis):
+    """(nominal Z_sun,neb, provenance string) identified from the CLOUDY axis node set."""
+    for nom, ref in _NEB_AXES.items():
+        if axis.shape == ref.shape and np.allclose(axis, ref, rtol=0, atol=5e-3):
+            return float(nom), (
+                f"Byler+2017 CLOUDY axis log10(Z_gas/Z_sun,neb); Z_sun,neb = {nom:g} "
+                "identified from the node set itself, not from isoc_type")
+    return None, ("Byler+2017 CLOUDY axis log10(Z_gas/Z_sun,neb); its node set matches "
+                  "neither shipped set, so no nominal Z_sun,neb is recorded")
+
+
+def _legacy_metallicity_keys(param_names, extra=()) -> list:
+    from .csp.csp import REMOVED_METALLICITY_KEYS
+    seen = list(param_names) + list(extra)
+    return [k for k in REMOVED_METALLICITY_KEYS if k in seen]
+
+
+def _require_logzsol_result(path, f) -> None:
+    """Refuse a pre-v1.0.5 result whose metallicity samples are absolute log10 Z."""
+    mod = f["model"]
+    if str(mod.attrs.get("metallicity_convention", "")) == METALLICITY_CONVENTION:
+        return
+    names = list(mod["param_names"].asstr()[()]) if "param_names" in mod else []
+    extra = list(f["samples"]) + list(mod["theta_init"]) if "theta_init" in mod else list(f["samples"])
+    if "priors" in mod:
+        extra += list(mod["priors"].attrs)
+    legacy = _legacy_metallicity_keys(names, extra)
+    if not legacy:
+        return
+    raise ValueError(
+        f"{path}: this result was written before v1.0.5 and its metallicity parameter(s) "
+        f"{legacy} are log10 of ABSOLUTE Z, not logzsol = log10(Z/Z_sun); reading it as "
+        "logzsol would silently misstate the metallicity by log10 Z_sun (0.15-0.85 dex).  "
+        "Convert it with\n"
+        "    from ceridwen.fit import convert_result\n"
+        f"    convert_result({str(path)!r}, ssp_grid=<the grid the fit used>)\n"
+        "which checks the grid against the file before shifting the samples, priors and "
+        "theta_init, or refit.")
+
+
+def convert_result(path, ssp_grid, out=None, *, overwrite=False):
+    """Convert a pre-v1.0.5 result file to the logzsol convention, writing a NEW file.
+
+    ``ssp_grid`` is the grid the fit used (``SSPData``/``SSPDataAfe`` or a path); its shape is
+    checked against the file, and every absolute metallicity (samples, theta_init, priors) is
+    shifted by -log10 Z_sun.  Returns the new path.  The input file is never modified.
+    """
+    import h5py
+    from .ssps.ssp_data import SSPData
+
+    path = Path(path)
+    grid = ssp_grid if hasattr(ssp_grid, "log10_zsun") else SSPData.load(str(ssp_grid))
+    l0 = float(grid.log10_zsun)
+    n_z = int(np.asarray(grid.ssp_lgmet).size)
+    n_age = int(np.asarray(grid.ssp_lg_age_gyr).size)
+    out = Path(out) if out is not None else path.with_name(path.stem + "_logzsol.h5")
+    if out.exists() and not overwrite:
+        raise FileExistsError(f"{out} exists; pass overwrite=True or another out=")
+    with h5py.File(path, "r") as f:
+        mod = f["model"]
+        if str(mod.attrs.get("metallicity_convention", "")) == METALLICITY_CONVENTION:
+            raise ValueError(f"{path} is already in the logzsol convention")
+        names = list(mod["param_names"].asstr()[()])
+        legacy = _legacy_metallicity_keys(names, list(f["samples"]) + list(mod["theta_init"]))
+        if not legacy:
+            raise ValueError(f"{path} has no absolute-metallicity parameter to convert "
+                             f"(parameters: {names})")
+        f_nz = int(mod.attrs.get("n_metallicities", -1))
+        f_nage = int(mod.attrs.get("n_ssp_ages", -1))
+        if f_nz not in (-1, n_z) or f_nage not in (-1, n_age):
+            raise ValueError(
+                f"{path} was fitted with a grid of {f_nz} metallicities x {f_nage} SSP ages, "
+                f"but {getattr(grid, 'chash', 'the given grid')} has {n_z} x {n_age}: this is "
+                "not the grid of that fit, and its Z_sun would be wrong.  Pass the grid the "
+                "fit actually used.")
+    shutil.copyfile(path, out)
+    with h5py.File(out, "r+") as f:
+        mod, samp = f["model"], f["samples"]
+        rename = {"Z": "logzsol", "zh": "logzsol_hist"}
+        for old, new in rename.items():
+            if old in samp:
+                samp[new] = np.asarray(samp[old]) - l0
+                del samp[old]
+            if "theta_init" in mod and old in mod["theta_init"]:
+                mod["theta_init"][new] = np.asarray(mod["theta_init"][old]) - l0
+                del mod["theta_init"][old]
+            if "priors" in mod and old in mod["priors"].attrs:
+                mod["priors"].attrs[new] = json.dumps(
+                    _shift_prior(json.loads(mod["priors"].attrs[old]), -l0, old))
+                del mod["priors"].attrs[old]
+        names = [rename.get(n, n) for n in list(mod["param_names"].asstr()[()])]
+        del mod["param_names"]
+        mod.create_dataset("param_names", data=np.array(names, dtype=object),
+                           dtype=h5py.string_dtype())
+        if "transforms" in mod.attrs:
+            tx = json.loads(mod.attrs["transforms"])
+            mod.attrs["transforms"] = json.dumps(
+                [t.replace("Z <-", "logzsol <-").replace("zh <-", "logzsol_hist <-") for t in tx])
+        mod.attrs["metallicity_convention"] = METALLICITY_CONVENTION
+        mod.attrs["log10_zsun"] = l0
+        if getattr(grid, "zsun_nominal", None) is not None:
+            mod.attrs["zsun_nominal"] = float(grid.zsun_nominal)
+        if getattr(grid, "axis_meaning", None):
+            mod.attrs["metallicity_axis_meaning"] = str(grid.axis_meaning)
+        if getattr(grid, "chash", None):
+            mod.attrs["grid_chash"] = str(grid.chash)
+        mod.attrs["converted_from"] = str(path)
+        mod.attrs["converted_note"] = (
+            f"metallicity samples/priors shifted by -log10 Z_sun = {-l0!r} (v1.0.5 conversion)")
+    return out
+
+
+_SHIFTABLE_PRIOR_PARAMS = {"Uniform": ("low", "high"), "TopHat": ("low", "high"),
+                           "Normal": ("mean",), "ClippedNormal": ("mean", "low", "high"),
+                           "StudentT": ("mean",)}
+
+
+def _shift_prior(spec: dict, shift: float, name: str) -> dict:
+    kind = spec.get("type")
+    if kind not in _SHIFTABLE_PRIOR_PARAMS:
+        raise ValueError(
+            f"cannot convert the {kind!r} prior on {name!r}: its location parameters are not "
+            f"known to be a shift of logzsol (supported: {sorted(_SHIFTABLE_PRIOR_PARAMS)}).  "
+            "Rebuild the prior in logzsol by hand.")
+    out = dict(spec)
+    for k in _SHIFTABLE_PRIOR_PARAMS[kind]:
+        if k in out:
+            v = np.asarray(out[k], dtype=float) + shift
+            out[k] = v.tolist() if v.ndim else float(v)
+    return out
+
+
 def eline_fluxes_for_samples(model, samples, likelihood, chunk=256):
     """Posterior line fluxes of every draw in ``samples`` ({param: (n, ...)}): dict of
     ``mean``, ``sd``, ``cloudy`` arrays (n, m), evaluated with ``jax.vmap`` in chunks."""
@@ -617,6 +800,7 @@ def load_result_h5(path: str | Path):
 
     path = Path(path)
     with h5py.File(path, "r") as f:
+        _require_logzsol_result(path, f)
         samp = f["samples"]
         param_names = list(f["model"]["param_names"].asstr()[()])
 
@@ -670,6 +854,7 @@ def read_result_h5(path: str | Path) -> dict:
     out = {"obs": {}, "model": {}, "samples": {}}
 
     with h5py.File(path, "r") as f:
+        _require_logzsol_result(path, f)
         for obs_name in f["obs"]:
             og = f["obs"][obs_name]
             obs_data = {k: np.array(og[k]) for k in og}

@@ -25,21 +25,38 @@ COLORS = {
 _MAGGIE_TO_NJY = 3.631e12
 _CGS_FNU_TO_NJY = 1e32
 _LABELS = {
-    "logmass": r"$\log M_\ast/\mathrm{M}_\odot$", "Z": r"$\log Z_\ast$ (abs.)", "zred": r"$z$",
-    "gas_logz": r"$\log Z_\mathrm{gas}/\mathrm{Z}_\odot$", "gas_logu": r"$\log U$",
+    "logmass": r"$\log M_\ast/\mathrm{M}_\odot$", "zred": r"$z$",
+    "logzsol": r"$\log(Z_\star/\mathrm{Z}_\odot)$",
+    "logzsol_hist": r"$\log(Z_\star/\mathrm{Z}_\odot)$",
+    "logzsol_total": r"$[Z/\mathrm{H}]$",
+    "gas_logz": r"$\log(Z_\mathrm{gas}/\mathrm{Z}_\odot)$", "gas_logu": r"$\log U$",
     "frac_obrun": r"$f_\mathrm{esc}$", "eline_scaling": r"$s_\mathrm{line}$",
     "spectrum_scaling": r"$s_\mathrm{spec}$", "sigma_gal": r"$\sigma_\star$ [km/s]", "sigma_gas": r"$\sigma_\mathrm{gas}$ [km/s]",
     "igm_factor": r"$f_\mathrm{IGM}$", "afe": r"[$\alpha$/Fe]",
 }
 
 
-def _label(name: str) -> str:
-    if name in _LABELS:
-        return _LABELS[name]
+_FEH_LABELS = {"logzsol": r"$[\mathrm{Fe}/\mathrm{H}]$",
+               "logzsol_hist": r"$[\mathrm{Fe}/\mathrm{H}]$"}
+
+
+def _label(name: str, feh: bool = False) -> str:
+    """LaTeX label; ``feh`` (an alpha / MIST grid, axis_meaning 'feh') labels logzsol [Fe/H]."""
+    labels = {**_LABELS, **(_FEH_LABELS if feh else {})}
+    if name in labels:
+        return labels[name]
     base, _, idx = name.partition("[")
-    if base in _LABELS and idx:
-        return _LABELS[base][:-1] + rf"_{{{idx[:-1]}}}$"
+    if base in labels and idx:
+        return labels[base][:-1] + rf"_{{{idx[:-1]}}}$"
     return name.replace("_", " ")
+
+
+def _feh_axis(out) -> bool:
+    """True when the fit's grid labels logzsol as [Fe/H] (MIST / aMIST)."""
+    try:
+        return out["meta"]["metallicity"]["axis_meaning"] == "feh"
+    except (KeyError, TypeError):
+        return False
 
 
 def _flat_params(theta: dict, names: Optional[Sequence[str]] = None):
@@ -122,6 +139,7 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
 
     C = COLORS
     theta = out["theta"]
+    feh = _feh_axis(out)
     cols = _flat_params(theta, params)
     best = _flat_point(out["bestfit"]["theta"], (params or list(theta.keys())))
     prior = None
@@ -312,7 +330,7 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
         if name in truth_pt:
             ax.axvline(truth_pt[name], color=C["truth"], lw=1.2, ls="--")
         ax.set_yticks([]); ax.tick_params(axis="x", labelsize=7)
-        ax.set_title(_label(name), fontsize=9, pad=3)
+        ax.set_title(_label(name, feh), fontsize=9, pad=3)
         ax.set_xlabel(_fmt_q(*q), fontsize=8, labelpad=1)
         for s_ in ("top", "right", "left"):
             ax.spines[s_].set_visible(False)
@@ -359,8 +377,14 @@ def corner_figure(out, *, params=None, truths=None, savepath=None, bins=30, pane
     maximum-likelihood sample (red) and, when given, ``truths`` (green) marked."""
     import matplotlib.pyplot as plt
     C = COLORS
-    cols = _flat_params(out["theta"], params)
+    feh = _feh_axis(out)
+    cols = dict(_flat_params(out["theta"], params))
     best = _flat_point(out["bestfit"]["theta"], (params or list(out["theta"].keys())))
+    tot = out.get("extras", {}).get("metallicity", {}).get("logzsol_total")
+    best_tot = out.get("bestfit", {}).get("extras", {}).get("metallicity", {}).get("logzsol_total")
+    if params is None and tot is not None and best_tot is not None:
+        cols["logzsol_total"] = np.asarray(tot).reshape(-1)
+        best["logzsol_total"] = float(np.asarray(best_tot).reshape(-1)[0])
     truth_pt = _flat_point(truths, list(truths)) if truths else {}
     names = list(cols)
     K = len(names)
@@ -386,7 +410,7 @@ def corner_figure(out, *, params=None, truths=None, savepath=None, bins=30, pane
                 ax.axvline(best[names[i]], color=C["bestfit"], lw=1.2)
                 if names[i] in truth_pt:
                     ax.axvline(truth_pt[names[i]], color=C["truth"], lw=1.2, ls="--")
-                ax.set_title(_label(names[i]) + "\n" + _fmt_q(*q), fontsize=8)
+                ax.set_title(_label(names[i], feh) + "\n" + _fmt_q(*q), fontsize=8)
                 ax.set_yticks([]); ax.set_xlim(lims[i])
             else:
                 x, y = X[:, j], X[:, i]
@@ -409,11 +433,11 @@ def corner_figure(out, *, params=None, truths=None, savepath=None, bins=30, pane
             if i < K - 1:
                 ax.tick_params(labelbottom=False)
             else:
-                ax.set_xlabel(_label(names[j]), fontsize=8)
+                ax.set_xlabel(_label(names[j], feh), fontsize=8)
             if j > 0 or i == 0:
                 ax.tick_params(labelleft=False)
             else:
-                ax.set_ylabel(_label(names[i]), fontsize=8)
+                ax.set_ylabel(_label(names[i], feh), fontsize=8)
             ax.tick_params(labelsize=6)
     fig.text(0.62, 0.95, "dashed: posterior median (dotted: 16 / 84 %)\nred: maximum-likelihood sample"
              + ("\ngreen: injected truth" if truth_pt else ""), fontsize=9, color=C["data"], va="top")

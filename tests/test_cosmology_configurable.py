@@ -260,7 +260,7 @@ def _build_csp_kw(cosmo=DEFAULT_COSMO, track=True, oldest=None, **extra):
     ssp = SSPData.load(str(require_test_grid()))
     lb = np.linspace(0.0, float(age_gyr(2.0)) if oldest is None else oldest, _NB)
     theta = {"lookback_time": jnp.asarray(lb),
-             "sfh": jnp.ones(_NB), "Z": jnp.array([-2.0])}
+             "sfh": jnp.ones(_NB), "logzsol": jnp.array([-0.3])}
     return CSPBasis(ssp, theta=theta, zh_const=True,
                     sfh_interp="step", add_dust=False, add_diffuse_dust=False,
                     add_neb=False, add_igm=False, track_zred_age=track,

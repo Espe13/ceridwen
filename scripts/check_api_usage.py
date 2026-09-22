@@ -26,6 +26,10 @@ REMOVED_NAMES = {
     "_apply_losvd", "_setup_losvd_kernel", "NebularModelFSPSMatch", "SVDCSPBasis",
     "ThetaVector", "make_theta_vector_from_csp", "flux_factor_maggies",
 }
+# theta / prior / free_param_init keys removed in v1.0.5 (absolute log10 Z -> logzsol).
+# They are STRING keys, so no name or kwarg check can see them: dict literals and
+# subscripts are scanned separately (check_source).
+REMOVED_THETA_KEYS = {"Z": "logzsol", "zh": "logzsol_hist"}
 
 # constructor / function names whose keyword arguments are checked
 CHECKED = {
@@ -92,6 +96,22 @@ def check_source(src: str, label: str, sigs, findings):
     expected.update(i for i, line in enumerate(src.splitlines(), start=1)
                     if "# deliberate misuse" in line)
     for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            for k in node.keys:
+                if (isinstance(k, ast.Constant) and k.value in REMOVED_THETA_KEYS
+                        and k.lineno not in expected):
+                    findings.append(
+                        f"{label}:{k.lineno}: removed theta/prior key {k.value!r} "
+                        f"(use {REMOVED_THETA_KEYS[k.value]!r}, log10(Z/Z_sun))")
+        if (isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant)
+                and node.slice.value in REMOVED_THETA_KEYS
+                and isinstance(node.value, ast.Name)
+                and node.value.id in ("theta", "th", "priors", "free_param_init", "truths")
+                and node.lineno not in expected):
+            findings.append(
+                f"{label}:{node.lineno}: removed theta key "
+                f"{node.value.id}[{node.slice.value!r}] "
+                f"(use {REMOVED_THETA_KEYS[node.slice.value]!r}, log10(Z/Z_sun))")
         if isinstance(node, ast.Name) and node.id in REMOVED_NAMES:
             findings.append(f"{label}:{node.lineno}: removed name {node.id!r}")
         if isinstance(node, ast.Attribute) and node.attr in REMOVED_NAMES:

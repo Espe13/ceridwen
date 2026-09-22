@@ -13,6 +13,14 @@ treat everything else as internal.
 
 ::: ceridwen.ssps.available_grids
 
+### Grid metallicity metadata
+
+::: ceridwen.ssps.grid_metadata.logzsol_total
+
+::: ceridwen.ssps.grid_metadata.f_alpha
+
+::: ceridwen.ssps.grid_metadata.chash_arrays
+
 ## Composite stellar population (forward model)
 
 ::: ceridwen.csp.CSPBasis
@@ -76,6 +84,8 @@ all outlier fractions default to 0, switch the mixture on explicitly
 ::: ceridwen.fit.load_result_h5
 
 ::: ceridwen.fit.read_result_h5
+
+::: ceridwen.fit.convert_result
 
 ::: ceridwen.fit.result_cosmology
 

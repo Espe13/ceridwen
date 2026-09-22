@@ -34,7 +34,7 @@ FILTERS = ["galex_FUV", "galex_NUV", "sdss_u0", "sdss_g0", "sdss_r0",
            "wise_w1", "wise_w2"]
 TRUTH = {
     "logsfr_ratios":      jnp.array([+0.3, +0.2, -0.1, -0.4, -0.6]),
-    "Z":                  jnp.array([-2.0]),
+    "logzsol":            jnp.array([-0.3010]),
     "logmass":            jnp.array([LOGMASS]),
     "diffuse_tau_kc":     jnp.array([0.5]),
     "diffuse_dust_index": jnp.array([-0.7]),

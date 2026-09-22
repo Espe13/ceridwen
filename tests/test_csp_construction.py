@@ -50,14 +50,14 @@ def test_shortcut_matches_full_theta_structure(ssp):
     lb = jnp.linspace(0.0, 12.0, 6)
     via_theta = CSPBasis(
         ssp, theta={"lookback_time": lb, "sfh": jnp.ones(6),
-                    "Z": jnp.array([-1.85])}, **KW)
+                    "logzsol": jnp.array([-0.15])}, **KW)
     via_shortcut = CSPBasis(ssp, lookback_time=lb, **KW)
 
     np.testing.assert_allclose(np.asarray(via_shortcut.sfh_times),
                                np.asarray(via_theta.sfh_times))
     assert via_shortcut.n_time == via_theta.n_time == 6
     assert via_shortcut.sfh_per_bin is False
-    assert via_shortcut.zh_is_scalar is True          # zh_const -> 'Z' mode
+    assert via_shortcut.zh_is_scalar is True          # zh_const -> 'logzsol' mode
     # Neutral initial Z must lie inside the grid: no clamp messages.
     assert via_shortcut.check_param_ranges(warn=False) == []
 
@@ -73,14 +73,14 @@ def test_shortcut_time_varying_zh(ssp):
     kw = dict(KW, zh_const=False)
     csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6), **kw)
     assert csp.zh_is_scalar is False
-    assert csp.theta_init["zh"].shape == (6,)
+    assert csp.theta_init["logzsol_hist"].shape == (6,)
 
 
 def test_theta_and_shortcut_are_mutually_exclusive(ssp):
     lb = jnp.linspace(0.0, 12.0, 6)
     with pytest.raises(ValueError, match="not both"):
         CSPBasis(ssp, theta={"lookback_time": lb, "sfh": jnp.ones(6),
-                             "Z": jnp.array([-1.85])},
+                             "logzsol": jnp.array([-0.15])},
                  lookback_time=lb, **KW)
 
 
@@ -92,12 +92,12 @@ def test_no_structure_raises_with_both_routes_named(ssp):
 def test_missing_sfh_is_a_valueerror_not_keyerror(ssp):
     with pytest.raises(ValueError, match="'sfh'"):
         CSPBasis(ssp, theta={"lookback_time": jnp.linspace(0.0, 12.0, 6),
-                             "Z": jnp.array([-1.85])}, **KW)
+                             "logzsol": jnp.array([-0.15])}, **KW)
 
 
 def test_missing_lookback_time_is_a_valueerror_not_keyerror(ssp):
     with pytest.raises(ValueError, match="'lookback_time'"):
-        CSPBasis(ssp, theta={"sfh": jnp.ones(6), "Z": jnp.array([-1.85])},
+        CSPBasis(ssp, theta={"sfh": jnp.ones(6), "logzsol": jnp.array([-0.15])},
                  **KW)
 
 

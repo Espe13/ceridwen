@@ -116,6 +116,8 @@ class SedModel:
                 if p not in self.param_names:
                     self.param_names.append(p)
 
+        self._check_metallicity_setup(free_param_init)
+
         unknown = sorted(set(self.priors) - set(self.param_names))
         if unknown:
             raise ValueError(
@@ -169,6 +171,128 @@ class SedModel:
                 "the data are in the same unitless convention",
                 stacklevel=2)
 
+
+    def _check_metallicity_setup(self, free_param_init):
+        """Refuse the removed absolute-metallicity keys, and check every metallicity prior /
+        fixed value against the grid (and the nebular axis when the gas is tied)."""
+        from ..csp.csp import (LOGZSOL_KEYS, REMOVED_METALLICITY_KEYS, prior_support,
+                               removed_metallicity_key_error, ABSOLUTE_LOOKING_LOGZSOL)
+        csp = self.csp
+        l0 = getattr(csp, "log10_zsun", None)
+        if l0 is None:
+            return
+        for where, d in (("priors", self.priors), ("transforms", self.transforms),
+                         ("free_param_init", free_param_init or {}),
+                         ("theta_init", self.theta_init)):
+            for old in REMOVED_METALLICITY_KEYS:
+                if old in d:
+                    v = d[old] if where in ("free_param_init", "theta_init") else None
+                    raise removed_metallicity_key_error(old, v, l0,
+                                                        getattr(csp, "axis_meaning", None),
+                                                        where=where)
+        if getattr(csp, "gas_tied", False):
+            for where, d in (("priors", self.priors), ("transforms", self.transforms),
+                             ("free_param_init", free_param_init or {})):
+                if "gas_logz" in d:
+                    raise ValueError(
+                        f"the CSP was built with gas_tied=True (gas_logz := logzsol), so "
+                        f"'gas_logz' cannot also appear in {where}; drop it, or rebuild the "
+                        "CSP with gas_tied=False to sample the gas metallicity separately.")
+        zlo, zhi = float(np.min(csp.zmet)), float(np.max(csp.zmet))
+        for name in LOGZSOL_KEYS:
+            prior = self.priors.get(name)
+            if prior is None:
+                fixed = self._transform_value(name)
+                if fixed is None:
+                    continue
+                lo = float(np.min(fixed)); hi = float(np.max(fixed))
+                if lo < zlo - 1e-12 or hi > zhi + 1e-12:
+                    raise ValueError(
+                        f"the transform for {name!r} gives {np.array2string(fixed, precision=3)}, "
+                        f"outside this grid's logzsol range [{zlo:+.3f}, {zhi:+.3f}] (Z_sun = "
+                        f"{getattr(csp, 'zsun_nominal', float('nan')):.6g}); the metallicity "
+                        "interpolation would clamp there.")
+                if hi < ABSOLUTE_LOOKING_LOGZSOL:
+                    warnings.warn(
+                        f"the transform for {name!r} gives {np.array2string(fixed, precision=3)}, "
+                        f"below logzsol = {ABSOLUTE_LOOKING_LOGZSOL} everywhere: is it an OLD "
+                        f"absolute log10 Z?  It would be logzsol = "
+                        f"{np.array2string(fixed - l0, precision=3)}.", stacklevel=3)
+                continue
+            lo, hi = prior_support(prior)
+            if np.isfinite(lo) and np.isfinite(hi) and (lo < zlo - 1e-12 or hi > zhi + 1e-12):
+                raise ValueError(
+                    f"the prior on {name!r} covers [{lo:+.3f}, {hi:+.3f}], outside this grid's "
+                    f"logzsol range [{zlo:+.3f}, {zhi:+.3f}] (Z_sun = "
+                    f"{getattr(csp, 'zsun_nominal', float('nan')):.6g}); the metallicity "
+                    "interpolation clamps there, which makes a degenerate posterior tail that "
+                    "looks like a constraint.  Narrow the prior to the grid, e.g. "
+                    f"Uniform(low={zlo:+.3f}, high={zhi:+.3f}).")
+            if not (np.isfinite(lo) and np.isfinite(hi)):
+                warnings.warn(
+                    f"the prior on {name!r} is unbounded; logzsol is clamped to the grid "
+                    f"[{zlo:+.3f}, {zhi:+.3f}] outside it.  Prefer a bounded prior "
+                    "(Uniform / TopHat / ClippedNormal).", stacklevel=3)
+            elif hi < ABSOLUTE_LOOKING_LOGZSOL:
+                warnings.warn(
+                    f"the prior on {name!r} lies entirely below logzsol = "
+                    f"{ABSOLUTE_LOOKING_LOGZSOL} ([{lo:+.3f}, {hi:+.3f}]): is it an OLD "
+                    f"absolute-log10-Z prior?  logzsol = log10(Z/Z_sun) is 0 at solar; the "
+                    f"absolute bounds [{lo:+.3f}, {hi:+.3f}] convert to "
+                    f"[{lo - l0:+.3f}, {hi - l0:+.3f}].", stacklevel=3)
+        self._check_refused_alpha_cell()
+
+    def _transform_value(self, name):
+        """The value a CONSTANT transform gives for ``name`` (None when there is no transform
+        for it, or when it depends on sampled parameters and cannot be evaluated here)."""
+        fn = self.transforms.get(name)
+        if fn is None:
+            return None
+        try:
+            v = np.atleast_1d(np.asarray(fn(dict(self.theta_init)), dtype=float))
+        except Exception:
+            return None
+        return v if v.size and np.all(np.isfinite(v)) else None
+
+    def _check_refused_alpha_cell(self):
+        """Raise when the logzsol and afe priors both reach into a refused interpolation cell."""
+        from ..csp.csp import prior_support
+        csp = self.csp
+        cells = getattr(csp, "refused_cells_logzsol", None)
+        if cells is None:
+            return
+        cells = cells()
+        if not cells:
+            return
+        zname = "logzsol" if getattr(csp, "zh_const", True) else "logzsol_hist"
+        def _hi(name):
+            if name in self.priors:
+                return prior_support(self.priors[name])[1]
+            fixed = self._transform_value(name)          # a transform-derived value counts too
+            if fixed is not None:
+                return float(np.max(fixed))
+            v = self.theta_init.get(name)
+            return float(np.max(np.asarray(v))) if v is not None else None
+        z_hi, a_hi = _hi(zname), _hi("afe")
+        if zname in self.transforms and self._transform_value(zname) is None:
+            warnings.warn(
+                f"the transform for {zname!r} depends on sampled parameters, so the refused "
+                "[Fe/H] x [alpha/Fe] cell cannot be checked at construction; check it yourself "
+                "with csp.refused_cells_logzsol().", stacklevel=3)
+        if "afe" in self.transforms and self._transform_value("afe") is None:
+            warnings.warn(
+                "the transform for 'afe' depends on sampled parameters, so the refused "
+                "[Fe/H] x [alpha/Fe] cell cannot be checked at construction; check it yourself "
+                "with csp.refused_cells_logzsol().", stacklevel=3)
+        if z_hi is None or a_hi is None:
+            return
+        for z_lo, z_up, a_lo, a_up, reason in cells:
+            if z_hi > z_lo and a_hi > a_lo:
+                raise ValueError(
+                    f"the {zname} and afe ranges (up to {z_hi:+.3f} and {a_hi:+.2f}) both reach "
+                    f"into the refused interpolation cell logzsol in ({z_lo:+.3f}, {z_up:+.3f}] "
+                    f"x afe in ({a_lo:+.2f}, {a_up:+.2f}]: {reason}.  Cap one of them "
+                    f"(logzsol <= {z_lo!r} or afe <= {a_lo!r}).")
 
     @property
     def cosmo(self):
@@ -463,15 +587,16 @@ class SedModel:
 
         _LATEX = {
             "sfh":         r"$\mathbf{w}_\mathrm{SFH}$",
-            "logzsol":     r"$\log Z_\star/Z_\odot$",
-            "Z":           r"$Z$",
+            "logzsol":     r"$\log(Z_\star/Z_\odot)$",
+            "logzsol_hist": r"$\log(Z_\star/Z_\odot)(t)$",
+            "logzsol_total": r"$[Z/\mathrm{H}]$",
             "zred":        r"$z$",
             "tau_dust":    r"$\hat{\tau}$",
             "tau_1":       r"$\hat{\tau}_1$",
             "tau_2":       r"$\hat{\tau}_2$",
             "dust_index":  r"$\delta_\mathrm{dust}$",
             "dust_ratio":  r"$f_\mathrm{dust}$",
-            "gas_logz":    r"$\log Z_\mathrm{neb}$",
+            "gas_logz":    r"$\log(Z_\mathrm{gas}/Z_\odot)$",
             "gas_logu":    r"$\log U$",
             "sigma_v":     r"$\sigma_v$",
             "f_agn":       r"$f_\mathrm{AGN}$",

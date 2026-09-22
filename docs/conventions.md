@@ -4,22 +4,34 @@ A few conventions cause silent mistakes if you get them wrong. Read them before
 fitting real data. The repository also ships a fuller misuse guide in
 `GOTCHAS.md`.
 
-## Metallicity is log10 of ABSOLUTE Z
+## Metallicity is solar-relative: `logzsol = log10(Z/Z_sun)`
 
-The parameter `Z` (and `ssp_lgmet`) is `log10(Z)` in **absolute** units, not
-`log10(Z/Z☉)`. Solar is roughly `-1.85` (Z☉ ≈ 0.014), not `0.0`.
+The stellar metallicity is `theta["logzsol"]` (constant) or `theta["logzsol_hist"]`
+(one value per lookback node), in `log10(Z / Z_sun)` with the **Z_sun of the grid you
+loaded**: `0.0` is solar everywhere. The pre-v1.0.5 keys `Z` / `zh` held `log10` of the
+*absolute* metallicity and now raise, printing the converted value.
 
-The MIST grids span about `[-4.35, -1.35]` (`log10(0.0142) + logzsol`; print
-`csp.zmet` for your grid). Values outside it are silently
-clamped to the nearest grid edge, so a "solar" guess of `Z = 0.0` is off the
-grid and gets clamped.
+Typical ranges: BPASS `[-2.30, +0.30]` (Z_sun = 0.020); MIST and aMIST `[-2.50, +0.50]`
+(Z_sun = 0.0185, or 0.0142 for grids built with python-fsps <= 0.4.7). Print the axis of
+your own grid with `print(csp.zmet.min(), csp.zmet.max(), csp.zsun_nominal)`.
+
+Z_sun comes from the grid, never from `isoc_type` (FSPS changed MIST's value twice in 2026
+under the same name): an explicit `zsun=`, the file's `log10_zsun` provenance, or the
+content-hash table in `ceridwen.ssps.grid_metadata`. A grid whose Z_sun cannot be
+established raises at load.
+
+On MIST and aMIST grids `logzsol` **is `[Fe/H]`**; the total metallicity `[Z/H]` is the
+derived `logzsol_total` (see `grid_metadata.logzsol_total`). The gas-phase `gas_logz` is
+solar-relative on the CLOUDY grid's own reference, and `CSPBasis(gas_tied=True)` sets
+`gas_logz := logzsol` — the same number on two axes whose solar references are not identical
+(the SSP grid's Z_sun vs the CLOUDY grid's), which is what FSPS and Prospector mean by tying
+the gas to the stars.
 
 !!! danger "Common mistake"
-    A prior like `Uniform(low=-2.5, high=0.2)` puts most of its mass off the
-    grid. Use something like `ClippedNormal(mean=-2.0, sigma=0.5, low=-4.0, high=-1.4)`. If
-    you are unsure of your grid bounds, print them with
-    `print(float(csp.zmet.min()), float(csp.zmet.max()))`, or call
-    `csp.check_param_ranges(theta)` to warn about out-of-grid values.
+    Passing an old absolute value such as `-1.85` as `logzsol`: on BPASS that is inside the
+    grid (0.014 Z_sun), so it cannot be an error — it warns instead. A *bounded* prior wider
+    than the grid raises; `Uniform(low=-2.0, high=0.2)` is a safe default on every shipped
+    grid. `csp.check_param_ranges(theta)` reports in logzsol and names the grid's Z_sun.
 
 ## Lookback time increases with index (index 0 = today)
 

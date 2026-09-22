@@ -43,7 +43,7 @@ BOOST = {"[O III] 4959": 3.0, "[O III] 5007": 3.0, "[O II] 3726": 0.5, "[O II] 3
          "Ba-gamma 4341": 1.5, "Ba-delta 4101.76A": 1.5}
 TRUTH = {
     "logsfr_ratios":      jnp.array([-0.6, -0.3, 0.2, 0.3, 0.3]),   # rising then quenching slowly
-    "Z":                  jnp.array([-2.0]),
+    "logzsol":            jnp.array([-0.2]),
     "logmass":            jnp.array([10.3]),
     "diffuse_tau_kc":     jnp.array([0.4]),
     "diffuse_dust_index": jnp.array([-0.3]),
@@ -70,7 +70,7 @@ def main() -> None:
         phot = Photometry(filters=FILTERS, flux=phot_flux, uncertainty=phot_unc, name="phot")
         return SedModel(
             csp, [spec, phot], zred=ZRED,
-            priors={"Z": Uniform(low=-3.9, high=-1.45),
+            priors={"logzsol": Uniform(low=-2.0, high=0.2),
                     "logmass": Uniform(low=9.0, high=11.5),
                     "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=3.0),
                     "diffuse_dust_index": Uniform(low=-1.0, high=0.4),

@@ -292,3 +292,72 @@ OUTLIER_MODEL_2026-09-22.md section 12 (`scripts/outlier/tursa/`). A100 full sui
 failures (17 with an upload artefact) fail identically on 9b21fd6 on the same node, i.e.
 pre-existing GPU float32 / FSPS-library (C3K_lr on Tursa vs MILES locally) differences
 against CPU contracts; none new (section 13). Docs: `docs/outlier_model.md`, GOTCHAS sections 5 and 13.
+
+---
+
+## 2026-09-22 — v1.0.5: metallicity is solar-relative (`logzsol`)
+
+**What.** Every user-facing stellar metallicity is now `logzsol = log10(Z / Z_sun)`, with
+`Z_sun` the solar metallicity **of the grid in use**. `theta["Z"]` -> `theta["logzsol"]`
+(shape `(1,)`) and `theta["zh"]` -> `theta["logzsol_hist"]` (shape `(n_time,)`); the old keys
+raise wherever they appear (theta, priors, `free_param_init`, transforms, result files) with
+the converted value in the message. `gas_logz` was already solar-relative and is unchanged;
+`CSPBasis(gas_tied=True)` now ties it to the stars (`gas_logz := logzsol`) as Prospector does.
+
+**Why.** `Z_sun` is not a package constant: FSPS changed MIST's `zsol` 0.0142 -> 0.0191 ->
+0.0185 (`0498750`, `c8752a1`, `1c9d876`) under the same `isoc_type`, so absolute `log10 Z`
+values were only meaningful together with the grid that produced them, and priors, figures and
+cross-code comparisons silently mixed conventions (see the Phase 0/A audit in
+`Claude outputs/metallicity_phase0_2026-09-22/`).
+
+**How `Z_sun` is resolved** (`ceridwen/ssps/grid_metadata.py`, one table, code not data):
+`zsun=` keyword -> the file's `log10_zsun` provenance -> the `chash-v1` content-hash table ->
+otherwise a teaching error. Sources that are both present must agree bitwise. `log10 Z_sun` is
+the grid's own solar node, so `logzsol = 0` is exactly a grid point, and
+`self.zmet = ssp_lgmet - log10_zsun` is computed once at CSP construction (no per-call cost).
+The content hash is over the arrays only, so a re-saved or converted copy of a grid still
+matches (a file sha256 does not; it is kept as an alias).
+
+**Per-grid table** (`log10_zsun` is the exact solar node; evidence in the module):
+
+| grid | native axis | Z_sun | logzsol means |
+|---|---|---|---|
+| `mist_miles_chab`, `mist_c3k_lr_chab` (python-fsps 0.5.0) | `log10(Z_sun 10^[Fe/H])` | 0.0185 | `[Fe/H]`, `[-2.5, +0.5]` |
+| `mist_bpass_v2`, `bpass_agb_dust` | `log10 Z` (BPASS zlegend) | 0.020 | `log10(Z/Z_sun)`, `[-2.301, +0.301]` |
+| `examples/ssp_data.h5` (python-fsps 0.4.7) | `log10(Z_sun 10^[Fe/H])` | 0.0142 | `[Fe/H]`, `[-2.5, +0.5]` |
+| `amist_c3k_lr_chab_afe`, `amist_c3k_hr_krou_afe` | `[Fe/H] + log10 Z_sun`, same on every plane | 0.0185 | `[Fe/H]`; `[Z/H]` = `logzsol_total` |
+| CLOUDY nebular (`gas_logz`) | already `log10(Z_gas/Z_sun,neb)` | 0.019 (Padova nodes) / 0.020 (BPASS) | unchanged |
+
+**Alpha grids.** `logzsol` is `[Fe/H]` (FSPS loads `isoc_feh_<tag>_afe_<a>` per node, so the
+planes share one `[Fe/H]` axis; confirmed on the grid itself: from `[alpha/Fe]` 0 to +0.4 at a
+fixed node Fe5270 moves -0.11 A while Mgb moves +2.3 A). The total metallicity is the derived
+`logzsol_total` = `[Z/H]` = `logzsol + log10(1 - x + x 10^[alpha/Fe])`, `x = 0.687490`, from the
+MESA `input_XYZ` of all 85 MIST v2.5 compositions (reproduced to 1.7e-11 dex). The
+`([Fe/H] = +0.5, [alpha/Fe] = +0.6)` cell is **refused**: FSPS ships a byte-identical copy of the
+`+0.4` isochrone there (MIST v2.5 excluded that model), and the grid's own L_bol confirms it.
+`SSPDataAfe.from_fsps` now detects such duplicates at build time.
+
+**Gas tie and marginalised lines.** `marginalize_elines=True` normally refuses a sampled
+nebular model ("the lines no longer constrain it"). `gas_tied=True` is a deliberate exception:
+the gas metallicity is not free, it follows `logzsol`, which the stellar continuum constrains.
+It warns at construction naming the sampled key. The tie sets the same *number* on two axes
+whose solar references differ (the SSP grid's Z_sun, the CLOUDY grid's), which is what
+FSPS/Prospector mean by tying the gas to the stars.
+
+**Result files.** `ceridwen_result.h5` records `metallicity_convention`, `log10_zsun`,
+`zsun_nominal`, the axis meaning, both axes and the grid's `chash`. Pre-v1.0.5 files with
+`Z`/`zh` samples are refused by `load_result_h5` / `read_result_h5`;
+`ceridwen.fit.convert_result(path, ssp_grid=...)` converts one after checking the grid, into a
+new file.
+
+**Also.** `display()` shows both axes, `Z_sun` and where it came from, and states that MIST /
+aMIST native values are FSPS labels, not MIST's physical initial Z (0.0164 at `[Fe/H] = 0`).
+The FSPS manual still prints `Z_sun = 0.0191` for MIST, contradicting its own source (0.0185);
+CERIDWEN follows the source and the grid.
+
+**Verification.** T1/T2/T3/T4 in the commit message. New: `tests/test_logzsol_convention.py`
+(63 tests, incl. agreement with python-fsps's own `logzsol` to 1.1e-16 median fractional
+difference, where reading the same number as absolute `log10 Z` is 0.231 and a wrong
+`Z_sun = 0.0142` is 3e-2 to 9e-2 off), `tests/test_result_metallicity.py`, three new
+regression categories `logzsol_bpass` / `logzsol_mist` / `logzsol_afe`, and 12 new
+`misuse_report` rows (37 rows, 0 SILENT).

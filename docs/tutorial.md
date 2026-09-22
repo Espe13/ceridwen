@@ -17,7 +17,7 @@ with your own data.
 
 !!! note "Before you start"
     Read **[Conventions & gotchas](conventions.md)**, especially that `Z` is
-    log10 *absolute* metallicity and that `lookback_time` index 0 is *today*.
+    `logzsol = log10(Z/Z_sun)` of the loaded grid and that `lookback_time` index 0 is *today*.
     Make sure FSPS and `$SPS_HOME` are set up ([Installation](installation.md));
     emission lines and nebular continuum need the CLOUDY grids from FSPS.
 
@@ -57,7 +57,7 @@ csp = CSPBasis(
     ssp,
     lookback_time=lookback,
     cosmo=cosmo,
-    zh_const=True, sfh_interp="step",       # one metallicity "Z"; zh_const=False samples a history "zh"
+    zh_const=True, sfh_interp="step",       # one "logzsol"; zh_const=False samples "logzsol_hist"
     add_dust=True, add_diffuse_dust=True,   # birth-cloud + diffuse attenuation
     add_neb=True,                           # nebular continuum + lines (needs $SPS_HOME)
     add_igm=True,                           # Madau (1995), auto-scales with zred
@@ -240,10 +240,10 @@ list for a type you are not fitting. Then define priors for every free parameter
 observations = [phot, spec, lines]
 
 priors = {
-    # Stellar population. Z is log10 ABSOLUTE metallicity (MIST grids ~[-4.35, -1.35]).
+    # Stellar population. logzsol = log10(Z/Z_sun); MIST grids span [-2.50, +0.50].
     # Birth-cloud dust ("tau_pow", "alpha_pow" for the powerlaw law) and every
     # other registered parameter needs a prior: print csp.param_names.
-    "Z":                 ClippedNormal(mean=-2.0, sigma=0.5, low=-4.0, high=-1.4),
+    "logzsol":           ClippedNormal(mean=-0.3, sigma=0.5, low=-2.0, high=0.2),
     "logmass":           Uniform(low=7.0, high=12.5),
     "logsfr_ratios":     StudentT(df=2.0, mean=0.0, scale=0.3),   # non-parametric SFH
     # Dust.
@@ -252,7 +252,7 @@ priors = {
     "tau_pow":           ClippedNormal(mean=0.3, sigma=0.5, low=0.0, high=4.0),
     "alpha_pow":         ClippedNormal(mean=-1.0, sigma=0.5, low=-2.5, high=0.5),
     # Nebular (required for the Lines / nebular continuum).
-    "gas_logz":          Uniform(low=-2.0, high=0.5),
+    "gas_logz":          Uniform(low=-1.3, high=0.2),   # inside the CLOUDY axis
     "gas_logu":          Uniform(low=-4.0, high=-1.0),
     # Emission-line aperture correction (Lines observation only).
     "eline_scaling":     Uniform(low=0.1, high=2.0),

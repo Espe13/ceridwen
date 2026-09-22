@@ -22,6 +22,8 @@ which is well conditioned and exact also for s_j = 0 (a line pinned at its prior
 """
 from __future__ import annotations
 
+import warnings
+
 import difflib
 import os
 from dataclasses import dataclass, field
@@ -263,6 +265,16 @@ def build_eline_system(model) -> Optional[ElineSystem]:
         refuse_without_grid(csp, spec, model.observations)
         tab = line_table_for(csp)
         neb = SimpleNamespace(nebem_line_pos=tab["wave"], nebem_line_names=tab["names"])
+    if getattr(csp, "gas_tied", False):
+        zkey = "logzsol" if getattr(csp, "zh_const", True) else "logzsol_hist"
+        if zkey in model.param_names:
+            warnings.warn(
+                f"marginalize_elines=True with gas_tied=True: the gas metallicity follows the "
+                f"sampled {zkey!r}, so the nebular model still varies although the line fluxes "
+                "are free.  That is allowed -- unlike a free gas_logz it is constrained, by the "
+                "stellar continuum -- but the CLOUDY line predictions no longer act on it.  Fix "
+                f"{zkey!r} with a constant transform if you want the nebular model held still.",
+                stacklevel=3)
     fitted_neb = sorted(set(getattr(csp, "neb_param_names", [])) & set(model.param_names))
     if fitted_neb:
         example = ", ".join(f'"{k}": lambda th: jnp.array([...])' for k in fitted_neb)

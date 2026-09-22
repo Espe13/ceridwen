@@ -230,6 +230,20 @@ class PostProcess:
         else:
             warnings.warn(f"{path}: no cosmology recorded in the file (written before it was "
                           "stored); cannot verify it against the model")
+        csp = self.csp
+        if hasattr(csp, "log10_zsun"):
+            f_l0 = a.get("log10_zsun", None)
+            if f_l0 is not None and float(f_l0) != float(csp.log10_zsun):
+                raise ValueError(
+                    f"the result was fitted on a grid with log10 Z_sun = {float(f_l0)!r} but "
+                    f"the model's grid has {float(csp.log10_zsun)!r}: its logzsol samples mean "
+                    "a different metallicity.  Rebuild the model with the grid of that fit.")
+            f_ch = a.get("grid_chash", None)
+            if f_ch is not None and str(f_ch) != str(getattr(csp, "grid_chash", "")):
+                warnings.warn(
+                    f"{path}: fitted with SSP grid {str(f_ch)} but the model uses "
+                    f"{getattr(csp, 'grid_chash', None)}; Z_sun agrees, the grids differ "
+                    "otherwise (library, IMF or ages).")
         kin = getattr(m, "kinematics", None)
         if kin is not None and "kinematics_sigma_gal" in a:
             got = (str(a["kinematics_sigma_gal"]), str(a["kinematics_sigma_gas"]),
@@ -520,6 +534,10 @@ class PostProcess:
                 "sd": np.asarray(raw["pred"]["__elines_sd"], dtype=float),
                 "cloudy": np.asarray(raw["pred"]["__elines_cloudy"], dtype=float)}
 
+        tot = self._logzsol_total_batch(theta_np, n)
+        if tot is not None:
+            out["extras"]["metallicity"] = {"logzsol_total": tot}
+
         if self.derived:
             samples = []
             for i in range(n):
@@ -541,6 +559,17 @@ class PostProcess:
                     raise ValueError(f"derived[{name!r}] returned inconsistent shapes {shapes}")
                 out["derived"][name] = np.stack(vals) if vals[0].ndim else np.array(vals)
         return out
+
+    def _logzsol_total_batch(self, theta_np: dict, n: int):
+        """[Z/H] = logzsol + f([alpha/Fe]) per draw on an alpha grid, else None."""
+        csp = self.csp
+        if not hasattr(csp, "logzsol_total") or int(getattr(csp, "_n_afe", 1)) == 1:
+            return None
+        vals = []
+        for i in range(n):
+            th = self._model_theta_np(theta_np, i)
+            vals.append(np.asarray(csp.logzsol_total(th), dtype=float).reshape(-1))
+        return np.stack(vals)
 
     def _model_theta_np(self, theta_np: dict, i: int) -> dict:
         if not self.model.transforms:
@@ -584,9 +613,24 @@ class PostProcess:
             "log_evidence_err": float(getattr(self.result, "log_evidence_err", float("nan"))),
             "observations": [(o.name, getattr(o, "_kind", "")) for o in self.model.observations],
             "sfh_interp": self.csp.sfh_interp, "sfh_per_bin": bool(getattr(self.csp, "sfh_per_bin", False)),
+            "metallicity": self._metallicity_meta(),
         }
         self.output = out
         return out
+
+    def _metallicity_meta(self) -> dict:
+        """Convention and grid Z_sun behind every metallicity in this output."""
+        csp = self.csp
+        if not hasattr(csp, "log10_zsun"):
+            return {}
+        return {"convention": "logzsol = log10(Z/Z_sun)",
+                "log10_zsun": float(csp.log10_zsun),
+                "zsun_nominal": (float(csp.zsun_nominal)
+                                 if getattr(csp, "zsun_nominal", None) is not None else None),
+                "axis_meaning": getattr(csp, "axis_meaning", None),
+                "zsun_source": getattr(csp, "zsun_source", None),
+                "grid_chash": getattr(csp, "grid_chash", None),
+                "gas_tied": bool(getattr(csp, "gas_tied", False))}
 
     def figures(self, outdir, *, prefix="", title=None, truths=None, fmt="pdf"):
         """Write the summary, corner and sampling-diagnostic figures

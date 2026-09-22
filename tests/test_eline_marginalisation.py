@@ -238,7 +238,7 @@ def _lnl(model, lh):
 
 def _theta(model, **over):
     th = {k: jnp.asarray(v) for k, v in model.theta_init.items()}
-    th["Z"] = jnp.array([-2.0])                  # the metallicity of the mock (T._theta)
+    th["logzsol"] = jnp.array([-0.3])                  # the metallicity of the mock (T._theta)
     th.update({k: jnp.asarray(v) for k, v in over.items()})
     return th
 
@@ -447,7 +447,7 @@ def test_without_a_nebular_model_lines_come_from_emlines_info():
     for n in ("Ba-beta 4861", "[O III] 5007", "Ba-alpha 6563"):
         assert es.wave_rest[es.names.index(n)] == tab["wave"][tab["names"].index(n)]
     th = {k: jnp.asarray(v) for k, v in gen.theta_init.items()}
-    th["Z"] = jnp.array([-2.0])
+    th["logzsol"] = jnp.array([-0.3])
     pred, aux = gen.predict_with_elines(th)
     F = np.abs(np.random.default_rng(2).normal(1.0, 0.5, es.m)) * 1e-17
     y = np.asarray(pred["spec"]) + np.asarray(aux["cols"]["spec"]) @ F

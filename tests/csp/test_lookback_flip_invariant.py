@@ -60,6 +60,22 @@ def ssp():
     return SSPData.load(SSP_FILE)
 
 
+def test_baseline_logzsol_matches_the_capture_value(ssp):
+    """LOGZSOL_BASELINE must be the capture-time metallicity, native log10 Z = -2.0, in the
+    v1.0.5 convention: logzsol + log10 Z_sun == -2.0 exactly, so the goldens still apply.
+    (-2.0 is one ulp above grid node 7, -1.9999999999999998, where the weight clips to 1.)"""
+    assert LOGZSOL_BASELINE + float(ssp.log10_zsun) == -2.0
+    assert abs(LOGZSOL_BASELINE - (float(np.asarray(ssp.ssp_lgmet)[7]) -
+                                   float(ssp.log10_zsun))) < 1e-15
+
+
+# The goldens were captured at the native axis value log10 Z = -2.0 on the BPASS grid
+# (Z = 0.01), which is grid node 7.  In the logzsol convention (v1.0.5) that is
+# -2.0 - log10 Z_sun = -2.0 - (-1.6989700043360187), i.e. the same physical metallicity and
+# the same exact node, so the stored arrays are unchanged (tested in _assert_baseline_node).
+LOGZSOL_BASELINE = -0.30102999566398125
+
+
 def _build_theta_new(zh_const: bool, per_bin: bool):
     """Rebuild the same physical SFH used at baseline-capture time.
     After the 2026-06-03 lookback flip the manifest stores NEW-convention
@@ -77,9 +93,10 @@ def _build_theta_new(zh_const: bool, per_bin: bool):
         "sfh":           sfh,
     }
     if zh_const:
-        theta["Z"] = jnp.asarray([-2.0])
+        theta["logzsol"] = jnp.asarray([LOGZSOL_BASELINE])
     else:
-        theta["zh"] = jnp.asarray(np.full(N_TIME, -2.0))   # constant Z history
+        theta["logzsol_hist"] = jnp.asarray(       # constant metallicity history
+            np.full(N_TIME, LOGZSOL_BASELINE))
     return theta
 
 

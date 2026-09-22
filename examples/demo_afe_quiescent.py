@@ -91,7 +91,7 @@ SPEC_WAVE = np.linspace(3600.0, 9800.0, 1500)
 LOGSFR_RATIOS_TRUE = -0.5 * jnp.ones(N_BINS - 1)
 TRUTH = {
     "logsfr_ratios":      LOGSFR_RATIOS_TRUE,
-    "Z":                  jnp.array([-2.3]),     # log10 absolute metallicity
+    "logzsol":            jnp.array([-0.6]),     # logzsol = [Fe/H] on an aMIST grid
     "afe":                jnp.array([+0.3]),     # supersolar [alpha/Fe]
     "logmass":            jnp.array([10.8]),
     "diffuse_tau_kc":     jnp.array([0.15]),     # low dust (quiescent)
@@ -151,7 +151,10 @@ def main() -> None:
             csp, observations=observations,
             priors={
                 # Stellar population.
-                "Z":   ClippedNormal(mean=-2.0, sigma=0.6, low=-3.9, high=-1.45),
+                # logzsol is [Fe/H] here; the upper edge stays at the +0.25 node because
+                # ([Fe/H] > +0.25) x ([alpha/Fe] > +0.4) is refused (FSPS ships a duplicate
+                # isochrone there -- see csp.refused_cells_logzsol()).
+                "logzsol": ClippedNormal(mean=-0.3, sigma=0.6, low=-2.2, high=0.25),
                 "afe": Uniform(low=-0.2, high=0.6),        # over the grid support
                 "logmass": Uniform(low=9.0, high=12.0),
                 "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=0.3),  # continuity
@@ -206,7 +209,7 @@ def main() -> None:
     )
 
     # -- Post-process --------------------------------------------------------
-    params = ("afe", "Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index", "spectrum_scaling")
+    params = ("afe", "logzsol", "logmass", "diffuse_tau_kc", "diffuse_dust_index", "spectrum_scaling")
     truths = {p: float(TRUTH[p][0]) for p in params}
     pp = PostProcess(model, result, n_samples=4000, uv=False, ionizing=False)
     out = pp.run()

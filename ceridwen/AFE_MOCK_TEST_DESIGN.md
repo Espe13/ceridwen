@@ -150,6 +150,9 @@ deep spectra; consider the SVD compression (csp_svd) if it is.
 No.  In FSPS v4.0 and in ceridwen, [alpha/Fe] is an ADDITIONAL axis,
 orthogonal to Z:
 
+- (v1.0.5: `theta["Z"]` / `theta["zh"]` are now `theta["logzsol"]` /
+  `theta["logzsol_hist"]` = log10(Z/Z_sun) of the grid, which on an aMIST grid is
+  `[Fe/H]`; the text below describes the pre-v1.0.5 absolute convention.)
 - `ssp_lgmet` / `theta["Z"]` (or `zh`) remains log10 of the absolute
   TOTAL metal mass fraction, exactly as before (project convention).
 - `afe` re-partitions that fixed total Z between alpha elements and the

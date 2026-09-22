@@ -162,10 +162,15 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
     from ceridwen.observation.observation import Photometry, Spectrum
 
     ssp_data = SSPData.load(SSP_FILE)
+    # These baselines were captured with the pre-v1.0.5 key "Z" = 0.0, an ABSOLUTE log10 Z
+    # above the BPASS grid (max -1.39794), so the metallicity interpolation clamped every
+    # weight onto the top node.  In logzsol the same physical point is that top node, which
+    # gives the identical (clipped) weights -- the stored arrays are unchanged.
+    top_node_logzsol = float(np.asarray(ssp_data.ssp_lgmet)[-1] - ssp_data.log10_zsun)
     base_theta = {
         "lookback_time": p["lookback"],
         "sfh": p["sfh"],
-        "Z": jnp.array([0.0]),
+        "logzsol": jnp.array([top_node_logzsol]),
     }
     csp = CSPBasis(
         ssp_data,
@@ -327,7 +332,67 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
         y_phot_o, mu_phot, sig_phot, mask_phot, is_upper_limit=ul_p)
     out["outlier_likelihood"]["lnl_phot_upper_limit"] = np.asarray(lnl_p_ul, dtype=np.float64)
 
+    out.update(_logzsol_baselines(p))
     out["eline_marginal"] = _eline_marginal_baseline(p, ssp_data)
+    return out
+
+
+# ---------------------------------------------------------------------------- #
+#  logzsol categories (v1.0.5): one per grid family, at an INTERIOR metallicity
+# ---------------------------------------------------------------------------- #
+LOGZSOL_INTERIOR = -0.4      # interior on every shipped grid, and not a node on any of them
+AFE_INTERIOR = 0.3           # between the +0.2 and +0.4 planes, clear of the refused cell
+
+LOGZSOL_GRIDS = {
+    # the canonical test grid, resolved like every other test grid ($CERIDWEN_TEST_SSP ->
+    # tests/fixtures -> ceridwen/data/test_data), so CI runs this category too
+    "logzsol_bpass": (SSP_FILE, False),
+    "logzsol_mist":  ("ceridwen/data/test_data/ssp_data_mist_miles.h5", False),
+    "logzsol_afe":   ("ceridwen/data/test_data/amist_c3k_hr_krou_afe.h5", True),
+}
+
+
+def _logzsol_baselines(p) -> dict:
+    """Stellar weights and spectrum at a fixed logzsol on each available grid family.
+
+    These are the v1.0.5 metallicity-convention baselines: the inputs are logzsol =
+    log10(Z/Z_sun) with the grid's own Z_sun, at an interior (non-node) value, so they pin
+    the conversion itself and not just a grid point.  Their numbers are justified in the
+    commit message: each equals the pre-v1.0.5 code evaluated at the converted absolute
+    metallicity (logzsol + log10 Z_sun) to the stated tolerance, and the same convention is
+    checked against python-fsps directly in tests/test_logzsol_convention.py.
+    """
+    from ceridwen.ssps.ssp_data import SSPData
+    from ceridwen.ssps.ssp_data_afe import SSPDataAfe
+    from ceridwen.csp.csp import CSPBasis
+    from ceridwen.csp.csp_afe import CSPBasis_afe
+    from ceridwen.cosmology import Cosmology
+
+    out = {}
+    for cat, (rel, is_afe) in LOGZSOL_GRIDS.items():
+        path = pathlib.Path(rel) if pathlib.Path(rel).is_absolute() else REPO_ROOT / rel
+        if not path.is_file():
+            continue
+        cls, basis = (SSPDataAfe, CSPBasis_afe) if is_afe else (SSPData, CSPBasis)
+        ssp = cls.load(str(path))
+        theta = {"lookback_time": p["lookback"], "sfh": p["sfh"],
+                 "logzsol": jnp.array([LOGZSOL_INTERIOR])}
+        if is_afe:
+            theta["afe"] = jnp.array([AFE_INTERIOR])
+        csp = basis(ssp, theta=theta, cosmo=Cosmology.planck18(), zh_const=True,
+                    add_dust=False, add_diffuse_dust=False, add_dust_emission=False,
+                    add_igm=False, verbose=False, sfh_interp="step",
+                    **({} if is_afe else {"add_neb": False}))
+        th = dict(csp.theta_init)
+        blk = {
+            "logzsol_axis": np.asarray(csp.zmet, dtype=np.float64),
+            "log10_zsun": np.asarray([csp.log10_zsun], dtype=np.float64),
+            "weights": np.asarray(csp.calculate_ssp_weights(th), dtype=np.float64),
+            "spectrum": np.asarray(csp.get_spectrum(th), dtype=np.float64),
+        }
+        if is_afe:
+            blk["logzsol_total"] = np.asarray(csp.logzsol_total(th), dtype=np.float64)
+        out[cat] = blk
     return out
 
 
@@ -352,7 +417,10 @@ def _eline_marginal_baseline(p, ssp_data) -> dict[str, np.ndarray]:
                    add_diffuse_dust=True, add_neb=True, add_igm=True, sps_home=SPS_HOME,
                    verbose=False)
     fixed = {k: jnp.atleast_1d(jnp.asarray(v)) for k, v in csp.theta_init.items()}
-    fixed.update(sfh=jnp.array([1.0, 1.0, 0.6, 0.3, 0.2, 0.1]), Z=jnp.array([-2.0]),
+    # captured at the native axis value log10 Z = -2.0; in logzsol that is the same
+    # physical metallicity, -2.0 - log10 Z_sun (BPASS: -0.30102999566398125)
+    fixed.update(sfh=jnp.array([1.0, 1.0, 0.6, 0.3, 0.2, 0.1]),
+                 logzsol=jnp.array([-2.0 - float(ssp_data.log10_zsun)]),
                  diffuse_tau_kc=jnp.array([p["diffuse_tau_kc"]]),
                  diffuse_dust_index=jnp.array([p["diffuse_dust_index"]]),
                  gas_logu=jnp.array([-2.3]), gas_logz=jnp.array([-0.3]))

@@ -43,7 +43,7 @@ def _build_csp(track):
     ssp = SSPData.load(_SSP)
     lb_build = np.linspace(0.0, float(age_gyr(2.0)), _NB)        # Gyr, oldest~age(2)
     theta = {"lookback_time": jnp.asarray(lb_build),
-             "sfh": jnp.ones(_NB), "Z": jnp.array([-2.0])}
+             "sfh": jnp.ones(_NB), "logzsol": jnp.array([-0.3])}
     return CSPBasis(ssp, theta=theta, zh_const=True,
                     sfh_interp="step", add_dust=False, add_diffuse_dust=False,
                     add_neb=False, add_igm=False, track_zred_age=track,
@@ -51,7 +51,7 @@ def _build_csp(track):
 
 
 def _rest_spectrum(csp, z):
-    th = {"sfh": jnp.ones(_NB), "Z": jnp.array([-2.0]),
+    th = {"sfh": jnp.ones(_NB), "logzsol": jnp.array([-0.3]),
           "logmass": jnp.array([10.0]), "zred": jnp.array([float(z)])}
     return csp.get_spectrum(theta=th)
 
@@ -80,7 +80,7 @@ def test_grad_flows_through_age_grid():
     csp = _build_csp(track=True)
 
     def scalar(z):
-        th = {"sfh": jnp.ones(_NB), "Z": jnp.array([-2.0]),
+        th = {"sfh": jnp.ones(_NB), "logzsol": jnp.array([-0.3]),
               "logmass": jnp.array([10.0]), "zred": z}
         return jnp.sum(csp.get_spectrum(theta=th))     # zred enters ONLY via grid
 

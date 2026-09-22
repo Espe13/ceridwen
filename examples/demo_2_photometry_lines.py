@@ -59,7 +59,7 @@ LINE_WAVE  = [4861.3, 4958.9, 5006.8, 6562.8, 6583.4]   # vacuum rest [A]
 
 TRUTH = {
     "logsfr_ratios":      jnp.array([+0.3, +0.2, -0.1, -0.4, -0.6]),
-    "Z":                  jnp.array([-2.0]),
+    "logzsol":            jnp.array([-0.2]),
     "logmass":            jnp.array([10.5]),
     "diffuse_tau_kc":     jnp.array([0.5]),
     "diffuse_dust_index": jnp.array([-0.7]),
@@ -100,14 +100,14 @@ def main() -> None:
         return SedModel(
             csp, observations=observations,
             priors={
-                "Z": Uniform(low=-3.9, high=-1.45),
+                "logzsol": Uniform(low=-2.0, high=0.2),
                 "logmass": Uniform(low=9.0, high=12.0),
                 "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0,
                                                 low=0.0, high=4.0),
                 "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
                 "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=1.0),
                 # gas + slit-loss: the line-fitting-specific parameters
-                "gas_logz":       Uniform(low=-2.0, high=0.5),
+                "gas_logz":       Uniform(low=-1.3, high=0.2),   # inside the CLOUDY axis
                 "gas_logu":       Uniform(low=-4.0, high=-1.0),
                 "eline_scaling":  Uniform(low=0.1, high=2.0),
             },
@@ -156,7 +156,7 @@ def main() -> None:
     )
 
     # ── Post-process ──────────────────────────────────────────────────────
-    params = ("logmass", "Z", "gas_logz", "gas_logu", "eline_scaling")
+    params = ("logmass", "logzsol", "gas_logz", "gas_logu", "eline_scaling")
     truths = {p: float(TRUTH[p][0]) for p in params}
     pp = PostProcess(model, result, n_samples=2000)
     out = pp.run()

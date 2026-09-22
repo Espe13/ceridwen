@@ -57,7 +57,7 @@ def _flat(prefix, obj, out):
         out[prefix] = np.asarray(obj)
 
 
-def _build(add_neb, add_igm, sigma_losvd, dust_emission):
+def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False):
     path = find_test_grid()
     if path is None:
         sys.exit("no test SSP grid found (tests/_gridfixture.py)")
@@ -67,6 +67,8 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission):
               zh_const=True, sfh_interp="step", add_dust=True, add_diffuse_dust=True,
               add_neb=add_neb, add_igm=add_igm, add_dust_emission=dust_emission,
               verbose=False, cosmo=cosmo)
+    if gas_tied:
+        kw["gas_tied"] = True          # v1.0.5 path: gas_logz := logzsol
     if add_neb or dust_emission:
         kw["sps_home"] = os.environ["SPS_HOME"]
     csp = CSPBasis(ssp, **kw)
@@ -190,7 +192,10 @@ def _nested(model, tag, out):
     from ceridwen.sampler.priors import Uniform, StudentT
     model.priors = {"logsfr_ratios": StudentT(mean=0.0, scale=1.0, df=2.0),
                     "logmass": Uniform(low=9.0, high=11.0),
-                    "Z": Uniform(low=-3.5, high=-1.5),
+                    # the pre-v1.0.5 prior Uniform(-3.5, -1.5) on the absolute log10 Z, in
+                    # logzsol: the SAME physical prior, so T4 compares like with like
+                    "logzsol": Uniform(low=-3.5 - model.csp.log10_zsun,
+                                       high=-1.5 - model.csp.log10_zsun),
                     "tau_pow": Uniform(low=0.0, high=2.0),
                     "alpha_pow": Uniform(low=-2.0, high=0.0),
                     "diffuse_tau_kc": Uniform(low=0.0, high=2.0),
@@ -220,6 +225,8 @@ def collect(args):
     if os.environ.get("SPS_HOME"):
         configs.append(("neb", dict(add_neb=True, add_igm=True, sigma_losvd=250.0, dust_emission=False)))
         configs.append(("neb_duste", dict(add_neb=True, add_igm=True, sigma_losvd=250.0, dust_emission=True)))
+        configs.append(("neb_tied", dict(add_neb=True, add_igm=True, sigma_losvd=250.0,
+                                         dust_emission=False, gas_tied=True)))
     else:
         print("SPS_HOME not set: nebular configurations skipped")
     for tag, cfg in configs:

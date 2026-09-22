@@ -2,6 +2,10 @@
 
 ``ssp_flux`` carries a leading [alpha/Fe] axis, (n_afe, n_z, n_age, n_wave); a scalar
 theta["afe"] selects the plane by linear interpolation.  Lines observations are refused.
+
+theta["logzsol"] (or "logzsol_hist") is [Fe/H] on these grids: every [alpha/Fe] plane shares
+one [Fe/H] axis (FSPS AFE_FLAG=1).  The total metallicity [Z/H] = logzsol + f([alpha/Fe]) is
+available as :meth:`CSPBasis_afe.logzsol_total` / ``grid_metadata.logzsol_total``.
 """
 
 import os
@@ -11,7 +15,9 @@ import numpy as np
 import jax.numpy as jnp
 import pprint
 
-from ceridwen.csp.csp import CSPBasis
+from ceridwen.csp.csp import (CSPBasis, LOGZSOL_KEYS, REMOVED_METALLICITY_KEYS,
+                              _default_logzsol, removed_metallicity_key_error)
+from ceridwen.ssps.grid_metadata import logzsol_total as _logzsol_total, refused_cell_bounds
 
 
 class CSPBasis_afe(CSPBasis):
@@ -47,6 +53,7 @@ class CSPBasis_afe(CSPBasis):
         **kwargs,
     ):
         self.verbose = bool(verbose)
+        self.gas_tied = False          # no nebular model on alpha grids
         if kwargs:
             hint = ""
             if "sigma_losvd_kms" in kwargs:
@@ -71,17 +78,17 @@ class CSPBasis_afe(CSPBasis):
                 'lookback_time': _lb,
                 'sfh': jnp.ones(max(_n - 1, 1) if sfh_per_bin else _n),
             }
-            _z_mid = float(jnp.median(jnp.asarray(SSPData.ssp_lgmet)))
+            _lz_mid = _default_logzsol(SSPData)
             if zh_const:
-                theta['Z'] = jnp.array([_z_mid])
+                theta['logzsol'] = jnp.array([_lz_mid])
             else:
-                theta['zh'] = jnp.full((_n,), _z_mid)
+                theta['logzsol_hist'] = jnp.full((_n,), _lz_mid)
         if theta is None:
             raise ValueError(
                 "CSPBasis needs the static SFH grid structure. Pass either\n"
                 "  lookback_time=jnp.linspace(0.0, T_oldest, n_nodes)   "
                 "(shortcut; neutral initial values), or\n"
-                "  theta={'lookback_time': ..., 'sfh': ..., 'Z' or 'zh': ...} "
+                "  theta={'lookback_time': ..., 'sfh': ..., 'logzsol' or 'logzsol_hist': ...} "
                 "(full control).\n"
                 "lookback_time is in Gyr, monotonically increasing, index 0 = "
                 "today, >= 2 nodes."
@@ -123,8 +130,7 @@ class CSPBasis_afe(CSPBasis):
         self._afe_solar_idx = int(np.argmin(np.abs(np.asarray(_afe_in))))
         self.wave      = jnp.array(SSPData.ssp_wave)       # (n_wave,)
         self.ages      = jnp.array(SSPData.ssp_lg_age_gyr) # (n_age,)  log10(Gyr)
-        self.zmet      = jnp.array(SSPData.ssp_lgmet)      # (n_z,) log10 absolute Z
-        self.zlegend   = 10 ** self.zmet                   # linear metallicity
+        self._setup_metallicity(SSPData)                   # self.zmet: logzsol axis
         self.lib_resolution = (
             (np.asarray(SSPData.ssp_wave, dtype=np.float64),
              np.asarray(SSPData.ssp_resolution, dtype=np.float64))
@@ -247,6 +253,7 @@ class CSPBasis_afe(CSPBasis):
         if theta is None:
             theta = self.theta_init
         msgs = super().check_param_ranges(theta, warn=False)
+        self._check_refused_cells_theta(theta)
         if 'afe' in theta and self._n_afe > 1:
             alo = float(self.afe_grid.min())
             ahi = float(self.afe_grid.max())
@@ -262,6 +269,40 @@ class CSPBasis_afe(CSPBasis):
             for m in msgs:
                 warnings.warn(m, stacklevel=2)
         return msgs
+
+    def logzsol_total(self, theta):
+        """[Z/H] = logzsol + f([alpha/Fe]) for this theta (Z/X definition; grid_metadata)."""
+        key = 'logzsol' if self.zh_const else 'logzsol_hist'
+        afe = jnp.ravel(theta['afe'])[0] if 'afe' in theta else self.afe_grid[self._afe_solar_idx]
+        return _logzsol_total(theta[key], afe)
+
+    def refused_cells_logzsol(self):
+        """[(logzsol_lo, logzsol_hi, afe_lo, afe_hi, reason)] of the refused interpolation cells.
+
+        Taken from the GRID (``SSPData.refused_cells``), which is filled from the metadata
+        table, from the file's own ``refused_cells_json`` provenance, or by the duplicate-
+        isochrone detection in ``SSPDataAfe.from_fsps`` -- so a re-saved, converted or freshly
+        built alpha grid keeps its refusals even when its content hash is not a table key."""
+        return refused_cell_bounds(self._refused_cells, self._refused_reason,
+                                   np.asarray(self.zmet), np.asarray(self.afe_grid))
+
+    def _check_refused_cells_theta(self, theta):
+        """Raise when a fixed theta lands in a refused (logzsol, afe) interpolation cell."""
+        cells = self.refused_cells_logzsol()
+        if not cells or self._n_afe == 1:
+            return
+        key = 'logzsol' if self.zh_const else 'logzsol_hist'
+        if key not in theta or 'afe' not in theta:
+            return
+        z = np.asarray(theta[key], dtype=float)
+        a = np.asarray(theta['afe'], dtype=float)
+        for z_lo, z_hi, a_lo, a_hi, reason in cells:
+            if z.size and a.size and np.nanmax(z) > z_lo and np.nanmax(a) > a_lo:
+                raise ValueError(
+                    f"theta['{key}'] = {np.array2string(z, precision=3)} with theta['afe'] = "
+                    f"{np.array2string(a, precision=3)} reaches the refused interpolation cell "
+                    f"logzsol in ({z_lo:+.3f}, {z_hi:+.3f}] x afe in ({a_lo:+.2f}, {a_hi:+.2f}]: "
+                    f"{reason}.  Cap logzsol at {z_lo!r} or afe at {a_lo!r}.")
 
     def _afe_coords(self, theta):
         """``(k, w)`` with the interpolated plane ``(1 - w) * flux[k - 1] + w * flux[k]``; edges clamp like the metallicity interpolation."""
@@ -347,7 +388,11 @@ class CSPBasis_afe(CSPBasis):
             f"Cosmology            : {self.cosmo.describe()}",
             f"n_time               : {self.n_time}",
             f"n_SSP_ages           : {len(self.ages)}",
-            f"n_metallicities      : {len(self.zmet)}",
+            f"n_metallicities      : {len(self.zmet)}   logzsol "
+            f"[{float(self.zmet.min()):+.2f} .. {float(self.zmet.max()):+.2f}]"
+            + ("  = [Fe/H]" if self.axis_meaning == "feh" else ""),
+            f"Z_sun (grid)         : {self.zsun_nominal:.6g}"
+            f"  (log10 Z_sun = {self.log10_zsun:.6f}; {self.zsun_source})",
             f"n_afe                : {self._n_afe}   "
             f"[{_afe.min():+.2f} .. {_afe.max():+.2f}]",
             f"wavelength range     : {float(self.wave.min()):.0f} – {float(self.wave.max()):.0f} Å",

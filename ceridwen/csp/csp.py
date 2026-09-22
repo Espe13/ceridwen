@@ -1,7 +1,8 @@
 """Composite stellar population basis with a dict-valued theta.
 
 theta keys: "sfh" (linear SFR, per node (n_time,) or per bin (n_time-1,)),
-"Z" or "zh" (log10 absolute metallicity on the SSP grid, NOT log10 Z/Zsun),
+"logzsol" or "logzsol_hist" (stellar metallicity log10(Z/Z_sun), Z_sun the SSP grid's own solar
+node; = [Fe/H] on MIST / aMIST grids), "gas_logz" (log10(Z_gas/Z_sun,neb) of the CLOUDY grid),
 dust / nebular parameters, and the runtime scalars logmass, zred, lumdist_mpc,
 igm_factor, eline_scaling, frac_obrun, spectrum_scaling, spectrum_calib.
 """
@@ -74,6 +75,59 @@ def _resolve_isoc_type(recorded, user, *, default=_LEGACY_ISOC_TYPE):
     return user
 
 
+LOGZSOL_KEYS = ("logzsol", "logzsol_hist")
+REMOVED_METALLICITY_KEYS = {"Z": "logzsol", "zh": "logzsol_hist"}
+ABSOLUTE_LOOKING_LOGZSOL = -1.2   # logzsol below this looks like an old absolute log10 Z
+
+
+def _log10_zsun_of(ssp):
+    v = getattr(ssp, "log10_zsun", None)
+    if v is None:
+        raise TypeError(
+            f"{type(ssp).__name__} carries no resolved solar metallicity (log10_zsun); "
+            "build the grid with ceridwen.ssps.SSPData / SSPDataAfe (load, from_fsps), which "
+            "resolve Z_sun from the file's provenance, the metadata table or zsun=")
+    return float(v)
+
+
+def _default_logzsol(ssp) -> float:
+    """Neutral starting metallicity: the median native node converted to logzsol."""
+    return float(np.median(np.asarray(ssp.ssp_lgmet, dtype=np.float64))) - _log10_zsun_of(ssp)
+
+
+def removed_metallicity_key_error(key, value, log10_zsun, axis_meaning=None, where="theta"):
+    """ValueError for the removed absolute-metallicity keys 'Z' / 'zh', with the converted value."""
+    new = REMOVED_METALLICITY_KEYS[key]
+    conv = ""
+    if value is not None:
+        try:
+            v = np.atleast_1d(np.asarray(value, dtype=np.float64))
+            c = v - float(log10_zsun)
+            conv = (f" For this grid, {where}[{key!r}] = {np.array2string(v, precision=4)} "
+                    f"(absolute log10 Z) is {where}[{new!r}] = "
+                    f"{np.array2string(c, precision=4)}.")
+        except (TypeError, ValueError):
+            conv = ""
+    feh = (" On this grid logzsol is [Fe/H]." if axis_meaning == "feh" else "")
+    return ValueError(
+        f"{where}[{key!r}] was removed in v1.0.5: the stellar metallicity is now "
+        f"{where}[{new!r}] = log10(Z/Z_sun), with Z_sun the SSP grid's own solar node "
+        f"(log10 Z_sun = {float(log10_zsun)!r}, so logzsol = log10 Z - ({float(log10_zsun):.6f})), "
+        f"not the absolute log10 Z.{feh}{conv} Nothing is reinterpreted silently: rename the "
+        f"key and convert the value (priors and free_param_init too).")
+
+
+def prior_support(prior):
+    """(lo, hi) floats of a prior's support (vector priors: min of lo, max of hi).
+
+    ``bounds`` is a property on Uniform/TopHat/ClippedNormal but a method on
+    Normal/StudentT/LogNormal (a pre-existing inconsistency in ceridwen.sampler.priors), so
+    both spellings are accepted here."""
+    b = prior.bounds
+    lo, hi = b() if callable(b) else b
+    return float(np.min(np.asarray(lo, dtype=np.float64))), float(np.max(np.asarray(hi, dtype=np.float64)))
+
+
 class CSPBasis:
     """Composite stellar population basis.  ``predict(theta, observations)`` projects the model onto observations.
 
@@ -81,12 +135,19 @@ class CSPBasis:
     ----------
     SSPData : SSPData -- SSP grids (wave, flux, ages, metallicities, optional resolution curve).
     theta : dict -- initial values; must contain "lookback_time" (Gyr, increasing, index 0 = today,
-        >= 2 nodes) and "sfh", plus "Z" (zh_const=True) or "zh" (zh_const=False).  Mutually
-        exclusive with ``lookback_time=``.
+        >= 2 nodes) and "sfh", plus "logzsol" (zh_const=True, shape (1,)) or "logzsol_hist"
+        (zh_const=False, shape (n_time,)), both log10(Z/Z_sun) of the grid.  Mutually exclusive
+        with ``lookback_time=``.
     lookback_time : array -- shortcut for ``theta``: the node grid only, neutral initial values
         (sfh = 1, metallicity = grid median).
     sfh_per_bin : bool -- with ``lookback_time=``, one SFR per bin (n_time-1,) instead of per node.
-    zh_const : bool -- constant metallicity ("Z") or a metallicity history ("zh", one per node).
+    zh_const : bool -- constant metallicity ("logzsol") or a history ("logzsol_hist", one per node).
+    gas_tied : bool -- gas-phase metallicity follows the stellar one, gas_logz := logzsol (or
+        logzsol_hist[0], today's value), as Prospector ties them; "gas_logz" is then not a
+        parameter.  The two are the SAME NUMBER, not the same absolute Z: logzsol uses the SSP
+        grid's Z_sun (e.g. 0.0185 for MIST) and gas_logz the CLOUDY grid's own reference
+        (Byler+2017; its node set is 0.019- or 0.020-based), which is the FSPS/Prospector
+        convention.
     add_neb, add_dust, add_diffuse_dust, add_dust_emission, add_igm : bool -- physics switches.
     sps_home : str -- data directory for the nebular and dust-emission grids; defaults to $SPS_HOME.
     init_neb_params, init_dust_params : dict -- forwarded to NebularModel / Dust.  ``isoc_type`` is
@@ -125,9 +186,14 @@ class CSPBasis:
         sfh_per_bin=False,
         fesc_geometry="runaway_bc",
         cosmo=None,
+        gas_tied=False,
         **kwargs,
     ):
         self.verbose = bool(verbose)
+        self.gas_tied = bool(gas_tied)
+        if self.gas_tied and not add_neb:
+            raise ValueError("gas_tied=True ties the nebular gas metallicity to the stars, "
+                             "but add_neb=False: there is no nebular model to tie")
         if kwargs:
             hint = ""
             if "sigma_losvd_kms" in kwargs:
@@ -152,17 +218,17 @@ class CSPBasis:
                 'lookback_time': _lb,
                 'sfh': jnp.ones(max(_n - 1, 1) if sfh_per_bin else _n),
             }
-            _z_mid = float(jnp.median(jnp.asarray(SSPData.ssp_lgmet)))
+            _lz_mid = _default_logzsol(SSPData)
             if zh_const:
-                theta['Z'] = jnp.array([_z_mid])
+                theta['logzsol'] = jnp.array([_lz_mid])
             else:
-                theta['zh'] = jnp.full((_n,), _z_mid)
+                theta['logzsol_hist'] = jnp.full((_n,), _lz_mid)
         if theta is None:
             raise ValueError(
                 "CSPBasis needs the static SFH grid structure. Pass either\n"
                 "  lookback_time=jnp.linspace(0.0, T_oldest, n_nodes)   "
                 "(shortcut; neutral initial values), or\n"
-                "  theta={'lookback_time': ..., 'sfh': ..., 'Z' or 'zh': ...} "
+                "  theta={'lookback_time': ..., 'sfh': ..., 'logzsol' or 'logzsol_hist': ...} "
                 "(full control).\n"
                 "lookback_time is in Gyr, monotonically increasing, index 0 = "
                 "today, >= 2 nodes."
@@ -175,12 +241,11 @@ class CSPBasis:
         self.flux      = jnp.array(SSPData.ssp_flux, dtype=jnp.float32)  # (n_z, n_age, n_wave)
         self.wave      = jnp.array(SSPData.ssp_wave)       # (n_wave,)
         self.ages      = jnp.array(SSPData.ssp_lg_age_gyr) # (n_age,)  log10(Gyr)
-        self.zmet      = jnp.array(SSPData.ssp_lgmet)      # (n_z,) log10 absolute Z
+        self._setup_metallicity(SSPData)                   # self.zmet: logzsol axis
         self.lib_resolution = (
             (np.asarray(SSPData.ssp_wave, dtype=np.float64),
              np.asarray(SSPData.ssp_resolution, dtype=np.float64))
             if getattr(SSPData, "ssp_resolution", None) is not None else None)
-        self.zlegend   = 10 ** self.zmet                   # linear metallicity
         self.ssp_ages_lgyr = self.ages + 9                 # log10(yr)
 
         self._ssp_isoc_type    = getattr(SSPData, "isoc_type", None)
@@ -286,6 +351,33 @@ class CSPBasis:
         self.check_param_ranges(self.theta_init)
 
 
+    def _setup_metallicity(self, ssp):
+        """The single metallicity conversion: ``self.zmet`` = ssp_lgmet - log10_zsun (float64,
+        the logzsol axis theta is looked up on); native axis and Z_sun kept for display/provenance."""
+        self.log10_zsun   = _log10_zsun_of(ssp)
+        self.zsun_nominal = getattr(ssp, "zsun_nominal", None)
+        self.zsun_source  = getattr(ssp, "zsun_source", None)
+        self.axis_meaning = getattr(ssp, "axis_meaning", None)
+        self.grid_chash   = getattr(ssp, "chash", None)
+        self._refused_cells = tuple(getattr(ssp, "refused_cells", ()) or ())
+        self._refused_reason = getattr(ssp, "refused_reason", None)
+        self.zmet_native  = jnp.asarray(np.asarray(ssp.ssp_lgmet, dtype=np.float64))
+        self.zmet         = self.zmet_native - self.log10_zsun      # (n_z,) logzsol
+        self.zlegend      = 10 ** self.zmet_native                  # native linear Z (FSPS label)
+
+    def _gas_logz(self, theta):
+        """Gas-phase metallicity log10(Z_gas/Z_sun,neb): theta['gas_logz'], or the stellar
+        logzsol (today's value for a history) when ``gas_tied`` (a static branch).
+
+        The tie sets the same NUMBER on two axes with different solar references (the SSP
+        grid's Z_sun and the CLOUDY grid's); that is what FSPS/Prospector mean by tying the
+        gas to the stars, and it is exact only in the sense of "equally solar"."""
+        if not self.gas_tied:
+            return theta["gas_logz"]
+        if self.zh_const:
+            return theta["logzsol"]
+        return jnp.ravel(theta["logzsol_hist"])[0:1]
+
     def initialize_model_structure(self, theta):
         """Validate ``theta`` (grid, sfh shape, metallicity key) and build ``theta_init`` / ``param_names``."""
         if 'lookback_time' not in theta:
@@ -332,7 +424,7 @@ class CSPBasis:
                 "    lookback = T_UNIV - jnp.linspace(eps, T_UNIV, N)\n"
                 "with\n"
                 "    lookback = jnp.linspace(0.0, T_UNIV, N)\n"
-                "and reverse theta['sfh'] (and theta['zh'] if present) to match."
+                "and reverse theta['sfh'] (and theta['logzsol_hist'] if present) to match."
             )
 
         sfh = jnp.atleast_1d(jnp.asarray(theta['sfh'], dtype=float))
@@ -361,45 +453,50 @@ class CSPBasis:
                 stacklevel=3,
             )
 
+        for old in REMOVED_METALLICITY_KEYS:
+            if old in theta:
+                raise removed_metallicity_key_error(old, theta[old], self.log10_zsun,
+                                                    self.axis_meaning)
         if self.zh_const:
-            if 'Z' not in theta:
+            if 'logzsol' not in theta:
                 raise ValueError(
-                    "zh_const=True requires a constant metallicity theta['Z'] "
-                    "(shape-(1,) array, log10 absolute metallicity in ssp_lgmet "
-                    "grid units); none was provided. Either add theta['Z'], or "
-                    "construct with zh_const=False and provide a time-varying "
-                    "theta['zh'] of shape (n_time,)."
+                    "zh_const=True requires a constant metallicity theta['logzsol'] "
+                    "(shape-(1,) array, log10(Z/Z_sun) of the SSP grid, e.g. 0.0 = solar); "
+                    "none was provided. Either add theta['logzsol'], or construct with "
+                    "zh_const=False and provide a history theta['logzsol_hist'] of shape "
+                    "(n_time,)."
                 )
-            if 'zh' in theta:
-                warnings.warn(
-                    "zh_const=True but theta also contains 'zh'; 'zh' is ignored "
-                    "in constant-metallicity mode (only 'Z' is used).",
-                    stacklevel=3,
-                )
+            if 'logzsol_hist' in theta:
+                raise ValueError(
+                    "zh_const=True but theta also contains 'logzsol_hist'; a constant-"
+                    "metallicity basis reads only 'logzsol'. Remove 'logzsol_hist' or "
+                    "construct with zh_const=False.")
         else:
-            if 'zh' not in theta:
+            if 'logzsol_hist' not in theta:
                 raise ValueError(
-                    "zh_const=False requires a time-varying metallicity history "
-                    "theta['zh'] of shape (n_time,) (log10 absolute metallicity "
-                    "in ssp_lgmet grid units, same as theta['Z']); none was "
-                    "provided. Either add theta['zh'], or construct with "
-                    "zh_const=True and provide a scalar theta['Z']."
+                    "zh_const=False requires a metallicity history theta['logzsol_hist'] "
+                    "of shape (n_time,) (log10(Z/Z_sun) of the SSP grid, one per lookback "
+                    "node, index 0 = today); none was provided. Either add it, or "
+                    "construct with zh_const=True and provide theta['logzsol']."
                 )
-            if 'Z' in theta:
-                warnings.warn(
-                    "zh_const=False but theta also contains 'Z'; 'Z' is ignored "
-                    "in time-varying-metallicity mode (only 'zh' is used).",
-                    stacklevel=3,
-                )
+            if 'logzsol' in theta:
+                raise ValueError(
+                    "zh_const=False but theta also contains 'logzsol'; a metallicity-"
+                    "history basis reads only 'logzsol_hist'. Remove 'logzsol' or "
+                    "construct with zh_const=True.")
+        if self.gas_tied and 'gas_logz' in theta:
+            raise ValueError(
+                "gas_tied=True sets gas_logz from the stellar logzsol, but theta also "
+                "gives 'gas_logz'; remove one (a tied gas metallicity is not a parameter).")
 
         self.zh_is_scalar = None
-        if 'zh' in theta:
-            zh = jnp.atleast_1d(jnp.asarray(theta['zh'], dtype=float))
-            assert zh.shape == (self.n_time,), "'zh' must match 'lookback_time' length"
+        if 'logzsol_hist' in theta:
+            zh = jnp.atleast_1d(jnp.asarray(theta['logzsol_hist'], dtype=float))
+            assert zh.shape == (self.n_time,), "'logzsol_hist' must match 'lookback_time' length"
             self.zh_is_scalar = False
-        elif 'Z' in theta:
-            Z = jnp.atleast_1d(jnp.asarray(theta['Z'], dtype=float))
-            assert Z.shape == (1,), "'Z' must be a scalar (wrapped in shape-(1,) array)"
+        elif 'logzsol' in theta:
+            Z = jnp.atleast_1d(jnp.asarray(theta['logzsol'], dtype=float))
+            assert Z.shape == (1,), "'logzsol' must be a scalar (wrapped in shape-(1,) array)"
             self.zh_is_scalar = True
 
 
@@ -415,7 +512,7 @@ class CSPBasis:
         self.param_names = list(self.theta_init.keys())
 
         self._known_theta_keys = set(self.param_names) | {
-            'lookback_time', 'Z', 'zh',
+            'lookback_time', 'logzsol', 'logzsol_hist',
             'logmass', 'zred', 'lumdist_mpc', 'igm_factor', 'eline_scaling',
             'frac_obrun', 'spectrum_scaling', 'spectrum_calib',
         }
@@ -427,6 +524,9 @@ class CSPBasis:
 
     def _warn_unknown_theta_keys(self, theta):
         """Warn on theta keys nothing consumes (static dict keys; runs once at trace time)."""
+        for old in REMOVED_METALLICITY_KEYS:
+            if old in theta:
+                raise removed_metallicity_key_error(old, None, self.log10_zsun, self.axis_meaning)
         unknown = [k for k in theta if k not in self._known_theta_keys]
         if unknown:
             warnings.warn(
@@ -442,18 +542,30 @@ class CSPBasis:
             theta = self.theta_init
         msgs = []
 
+        for old in REMOVED_METALLICITY_KEYS:
+            if old in theta:
+                raise removed_metallicity_key_error(old, theta[old], self.log10_zsun,
+                                                    self.axis_meaning)
         zlo, zhi = float(self.zmet.min()), float(self.zmet.max())
-        for key in ('Z', 'zh'):
+        zs = (f"Z_sun = {self.zsun_nominal:.6g}, log10 Z_sun = {self.log10_zsun:.6f}"
+              if self.zsun_nominal is not None else f"log10 Z_sun = {self.log10_zsun:.6f}")
+        for key in LOGZSOL_KEYS:
             if key in theta:
                 v = np.asarray(theta[key], float)
                 if v.size and (np.nanmin(v) < zlo or np.nanmax(v) > zhi):
                     msgs.append(
-                        f"theta['{key}'] has values outside the SSP metallicity "
-                        f"grid [{zlo:.3f}, {zhi:.3f}]; these are silently clamped "
-                        f"to the nearest grid edge. NOTE: this grid is in the "
-                        f"same units as SSPData.ssp_lgmet (log10 of absolute "
-                        f"metallicity), NOT log10(Z/Zsun) -- so Z=0.0 is out of "
-                        f"range; use a value within the printed bounds."
+                        f"theta['{key}'] = {np.array2string(v, precision=3)} is outside the "
+                        f"SSP metallicity grid, logzsol in [{zlo:+.3f}, {zhi:+.3f}] "
+                        f"({zs}); the interpolation clamps to the edge node there."
+                    )
+                if v.size and np.nanmax(v) < ABSOLUTE_LOOKING_LOGZSOL:
+                    msgs.append(
+                        f"theta['{key}'] = {np.array2string(v, precision=3)} is below "
+                        f"{ABSOLUTE_LOOKING_LOGZSOL} everywhere: is it an OLD absolute log10 Z? "
+                        f"logzsol = log10(Z/Z_sun) is 0 at solar on this grid ({zs}); an "
+                        f"absolute log10 Z = {float(np.nanmax(v)):+.3f} would be logzsol = "
+                        f"{float(np.nanmax(v)) - self.log10_zsun:+.3f}.  Ignore this if a "
+                        "metal-poor population is intended."
                     )
 
         neb = getattr(self, 'neb', None)
@@ -462,6 +574,20 @@ class CSPBasis:
                 ('gas_logz', ('logZ_grid', 'logz_grid', '_logZ', 'nebem_logz')),
                 ('gas_logu', ('logU_grid', 'logu_grid', '_logU', 'nebem_logu')),
             ):
+                if key == 'gas_logz' and self.gas_tied:
+                    src = 'logzsol' if self.zh_const else 'logzsol_hist'
+                    if src not in theta:
+                        continue
+                    g = np.asarray(neb.nebem_logz, float)
+                    v = np.asarray(theta[src], float)
+                    v = v if self.zh_const else v[:1]
+                    if v.size and (np.nanmin(v) < g.min() or np.nanmax(v) > g.max()):
+                        msgs.append(
+                            f"gas_tied=True: the gas metallicity follows theta['{src}'] = "
+                            f"{np.array2string(v, precision=3)}, outside the nebular grid "
+                            f"[{g.min():.3f}, {g.max():.3f}] (log10 Z_gas/Z_sun of the "
+                            "CLOUDY grid); the nebular emission clamps there.")
+                    continue
                 if key in theta:
                     grid = next((getattr(neb, a) for a in attrs if hasattr(neb, a)),
                                 None)
@@ -471,8 +597,11 @@ class CSPBasis:
                         v = np.asarray(theta[key], float)
                         if v.size and (np.nanmin(v) < glo or np.nanmax(v) > ghi):
                             msgs.append(
-                                f"theta['{key}'] outside the nebular grid "
-                                f"[{glo:.3f}, {ghi:.3f}]; silently clamped."
+                                f"theta['{key}'] = {np.array2string(v, precision=3)} outside "
+                                f"the nebular grid [{glo:.3f}, {ghi:.3f}]"
+                                + (" (log10 Z_gas/Z_sun of the CLOUDY grid)"
+                                   if key == 'gas_logz' else "")
+                                + "; the nebular emission clamps there."
                             )
 
         if warn:
@@ -539,6 +668,8 @@ class CSPBasis:
             self.neb = NebularModel(**init_neb_params)
 
             neb_defaults = self.neb.get_default_params()
+            if self.gas_tied:
+                neb_defaults.pop('gas_logz', None)   # follows logzsol; not a parameter
             for k, v in neb_defaults.items():
                 if k not in theta:
                     theta[k] = v
@@ -932,7 +1063,7 @@ class CSPBasis:
         basis) and no ``eline_scaling``.
         """
         W = self.calculate_ssp_weights(theta=theta)          # (n_z, n_age)
-        logZ_gas = theta["gas_logz"]
+        logZ_gas = self._gas_logz(theta)
         logU     = theta["gas_logu"]
         line_lum = self.neb.evaluate_batch_line_lum(
             logZ_gas, logU, self._neb_ages_young, self._neb_logqq_young,
@@ -1055,7 +1186,11 @@ class CSPBasis:
             f"Cosmology            : {self.cosmo.describe()}",
             f"n_time               : {self.n_time}",
             f"n_SSP_ages           : {len(self.ages)}",
-            f"n_metallicities      : {len(self.zmet)}",
+            f"n_metallicities      : {len(self.zmet)}   logzsol "
+            f"[{float(self.zmet.min()):+.2f} .. {float(self.zmet.max()):+.2f}]"
+            + ("  = [Fe/H]" if self.axis_meaning == "feh" else ""),
+            f"Z_sun (grid)         : {self.zsun_nominal:.6g}"
+            f"  (log10 Z_sun = {self.log10_zsun:.6f}; {self.zsun_source})",
             f"wavelength range     : {float(self.wave.min()):.0f} – {float(self.wave.max()):.0f} Å",
             f"SFH integration      : {self.sfh_interp}",
             "Parameters:",
@@ -1180,8 +1315,8 @@ class CSPBasis:
         return jnp.clip(scaled, 0.0, self._age_clip_hi)
 
     def _ssp_weights(self, theta, *, zh_mode, sfh_mode):
-        """(n_z, n_age) SSP weights.  ``zh_mode`` "const" reads theta["Z"], "var" theta["zh"] (both
-        log10 absolute metallicity); ``sfh_mode`` "linear" integrates a piecewise-linear SFH in
+        """(n_z, n_age) SSP weights.  ``zh_mode`` "const" reads theta["logzsol"], "var"
+        theta["logzsol_hist"] (both log10(Z/Z_sun), looked up on the logzsol axis self.zmet); ``sfh_mode`` "linear" integrates a piecewise-linear SFH in
         log age (a per-bin SFH is first mapped to nodes as in ``display_sfh``), "step" a
         piecewise-constant SFH over the SSP Voronoi cells.  Grid precedence:
         theta["lookback_time"] (Gyr), then the zred-tracked grid, then ``self.sfh_times``.
@@ -1259,7 +1394,7 @@ class CSPBasis:
         if zh_mode == "const":
             total_sfh_weights = jnp.maximum(0.0, sfh_weights.sum(axis=0))
 
-            target_Z = theta["Z"]
+            target_Z = theta["logzsol"]
             z_idx = jnp.clip(
                 jnp.searchsorted(self.zmet, target_Z, side='left'),
                 1, self._n_z - 1,
@@ -1273,7 +1408,7 @@ class CSPBasis:
             total_weights = total_weights.at[z_idx    ].add(      w  * total_sfh_weights)
             return total_weights
 
-        zh   = theta["zh"]
+        zh   = theta["logzsol_hist"]
         zbin = 0.5 * (zh[:-1] + zh[1:])
         k    = jnp.clip(jnp.searchsorted(self.zmet, zbin) - 1, 0, self._n_z - 2)
 
@@ -1307,7 +1442,7 @@ class CSPBasis:
 
     def _build_neb_array(self, theta, *, include_lines):
         """Dense (n_z, n_age, n_wave) nebular array (young rows only non-zero); not used by the forward model."""
-        logZ_gas = theta["gas_logz"]
+        logZ_gas = self._gas_logz(theta)
         logU     = theta["gas_logu"]
         cont_young, line_young = self.neb.evaluate_batch(
             logZ_gas, logU, self._neb_ages_young, self._neb_logqq_young,
@@ -1325,7 +1460,7 @@ class CSPBasis:
         the young rows: the metallicity axis is contracted before the wavelength axis.
         """
         base, scale = self.neb.evaluate_batch_factored(
-            theta["gas_logz"], theta["gas_logu"],
+            self._gas_logz(theta), theta["gas_logu"],
             self._neb_ages_young, self._neb_logqq_young,
             include_lines=include_lines,
         )

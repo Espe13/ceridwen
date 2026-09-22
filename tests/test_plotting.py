@@ -17,7 +17,7 @@ def test_figures_on_synthetic_output(tmp_path):
 
     N, n_time, n_wave = 400, 6, 500
     wave = np.linspace(900, 20000, n_wave); z = 3.0
-    theta = {"logmass": rng.normal(9.5, 0.1, N), "logsfr_ratios": rng.normal(0, 0.5, (N, n_time-1)), "Z": rng.normal(-1.5, 0.2, N),
+    theta = {"logmass": rng.normal(9.5, 0.1, N), "logsfr_ratios": rng.normal(0, 0.5, (N, n_time-1)), "logzsol": rng.normal(-0.5, 0.2, N),
              "gas_logu": rng.normal(-2.5, 0.2, N), "frac_obrun": np.clip(rng.normal(0.1, 0.05, N), 0, 1)}
     sfr = np.abs(rng.lognormal(0, 0.5, (N, n_time-1))) * 10
     T = np.tile(np.array([0, 0.01, 0.03, 0.1, 0.3, 1.0]), (N, 1))
@@ -29,7 +29,7 @@ def test_figures_on_synthetic_output(tmp_path):
     class O: pass
     ph = O(); ph._kind="photometry"; ph.name="phot"; ph.wavelength=lam_eff; ph.flux=phot[0]*1.05; ph.uncertainty=phot[0]*0.1; ph.mask=np.ones(7,bool); ph.upper_limit=np.array([1,0,0,0,0,0,0],bool)
     ln = O(); ln._kind="lines"; ln.name="lines"; ln.line_names=["Hb","[OIII]5007","Ha","[NII]"]; ln.wavelength=np.array([4861,5007,6563,6584.]); ln.flux=lines_pred[0]*1.1; ln.uncertainty=lines_pred[0]*0.2; ln.mask=np.ones(4,bool); ln.upper_limit=None
-    model = O(); model.observations=[ph, ln]; model.theta_init={"logmass":np.zeros(1),"logsfr_ratios":np.zeros(5),"Z":np.zeros(1),"gas_logu":np.zeros(1),"frac_obrun":np.zeros(1)}
+    model = O(); model.observations=[ph, ln]; model.theta_init={"logmass":np.zeros(1),"logsfr_ratios":np.zeros(5),"logzsol":np.zeros(1),"gas_logu":np.zeros(1),"frac_obrun":np.zeros(1)}
     model.param_names=list(model.theta_init); model.priors={}
     ib = int(np.argmax(ll))
     out = {"theta": theta, "log_likelihood": ll,

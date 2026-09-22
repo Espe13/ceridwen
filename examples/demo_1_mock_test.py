@@ -49,7 +49,7 @@ FILTERS = ["galex_FUV", "galex_NUV",
 
 TRUTH = {
     "logsfr_ratios":      jnp.array([+0.3, +0.2, -0.1, -0.4, -0.6]),
-    "Z":                  jnp.array([-2.0]),   # log10 ABSOLUTE Z (ssp_lgmet)
+    "logzsol":            jnp.array([-0.2]),   # log10(Z/Z_sun) of the SSP grid
     "logmass":            jnp.array([10.5]),
     "diffuse_tau_kc":     jnp.array([0.5]),
     "diffuse_dust_index": jnp.array([-0.7]),
@@ -82,7 +82,7 @@ def main() -> None:
         return SedModel(
             csp, observations=observations,
             priors={
-                "Z": Uniform(low=-3.9, high=-1.45),
+                "logzsol": Uniform(low=-2.0, high=0.2),
                 "logmass": Uniform(low=9.0, high=12.0),
                 "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0,
                                                 low=0.0, high=4.0),
@@ -121,7 +121,7 @@ def main() -> None:
     # ── Post-process: equal-weight draws, derived quantities, figures ─────
     pp = PostProcess(model, result, n_samples=2000)
     out = pp.run()
-    truths = {p: float(TRUTH[p][0]) for p in ("Z", "logmass", "diffuse_tau_kc", "diffuse_dust_index")}
+    truths = {p: float(TRUTH[p][0]) for p in ("logzsol", "logmass", "diffuse_tau_kc", "diffuse_dust_index")}
     pp.figures("./demo_1_output/figures", title="demo 1: mock photometry", truths=truths)
     pp.save("./demo_1_output/post.npz")
 

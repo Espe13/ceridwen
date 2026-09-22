@@ -101,15 +101,15 @@ def logsfr_to_sfh(free_theta, _t=sfh_times_yr):
 model = SedModel(
     csp, observations=[phot],
     priors={
-        # Z is log10 ABSOLUTE metallicity (solar ~ -1.85); keep inside your
+        # logzsol = log10(Z/Z_sun), 0.0 = solar; keep the prior inside your
         # SSP grid. Print the allowed range with
         #     print(float(csp.zmet.min()), float(csp.zmet.max()))
         # and call csp.check_param_ranges() to warn about out-of-grid values.
-        "Z": ClippedNormal(mean=-2.0, sigma=0.5, low=-4.0, high=-1.4),
+        "logzsol": ClippedNormal(mean=-0.3, sigma=0.5, low=-2.0, high=0.2),
         "logmass": Uniform(low=6.0, high=12.5),
         "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
         "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
-        "gas_logz": Uniform(low=-2.0, high=0.5),
+        "gas_logz": Uniform(low=-1.3, high=0.2),
         "gas_logu": Uniform(low=-4.0, high=-1.0),
         "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=0.3),
     },
