@@ -46,6 +46,13 @@ class Spectrum(Observation):
         (``$SPS_HOME/data/emlines_info.dat``, e.g. ``"[O III] 5007"``).  Default: fit every
         grid line covered by the spectrum; fixed lines keep their CLOUDY flux; ignored
         lines are removed from every observation.
+    polynomial_order : int -- 0 (default): no profiled calibration.  M > 0: the likelihood
+        multiplies the model by ``1 + sum_{m=0}^{M} c_m T_m(x)`` with the coefficients solved
+        by weighted least squares at every call (Prospector's PolyOptCal; Chebyshev over the
+        unmasked wavelength range, weights from the noise model), so no dimension is
+        sampled.  Opt-in; the sampled ``spectrum_scaling`` / ``spectrum_calib`` stay the
+        default route and cannot be combined with it on the same spectrum.
+    polynomial_regularization : float or array (M+1,) -- ridge term reg_m^2 c_m^2 (default 0).
 
     The galaxy's velocity dispersions are not a property of the observation:
     they are set once on the model (``SedModel(kinematics=Kinematics(...))``).
@@ -89,6 +96,8 @@ class Spectrum(Observation):
         elines_to_fit      = None,
         elines_to_fix      = None,
         elines_to_ignore   = None,
+        polynomial_order   = 0,
+        polynomial_regularization = 0.0,
         **kwargs,
     ):
         for k in list(kwargs):
@@ -121,6 +130,18 @@ class Spectrum(Observation):
         self.sky             = (None if sky is None
                                 else jnp.asarray(sky, dtype=float))
         self.noise_floor     = float(noise_floor)
+        if (isinstance(polynomial_order, bool) or not isinstance(polynomial_order, (int, np.integer))
+                or polynomial_order < 0):
+            raise ValueError(f"Spectrum(): polynomial_order must be an integer >= 0 (0 = off), "
+                             f"got {polynomial_order!r}")
+        self.polynomial_order = int(polynomial_order)
+        reg = np.asarray(polynomial_regularization, dtype=float)
+        if reg.ndim > 1 or (reg.ndim == 1 and reg.size != self.polynomial_order + 1) \
+                or np.any(~np.isfinite(reg)) or np.any(reg < 0):
+            raise ValueError("Spectrum(): polynomial_regularization must be a float >= 0 or "
+                             f"one value >= 0 per coefficient ({self.polynomial_order + 1}), "
+                             f"got {polynomial_regularization!r}")
+        self.polynomial_regularization = reg
         self.zred_range      = (None if zred_range is None
                                 else (float(zred_range[0]), float(zred_range[1])))
         self._proj = None
@@ -411,6 +432,8 @@ class Spectrum(Observation):
             f"  calibration   : {'provided' if self.calibration is not None else 'none'}",
             f"  sky           : {'provided' if self.sky is not None else 'none'}",
             f"  noise_floor   : {self.noise_floor:.4f}",
+            f"  calib. poly.  : " + (f"profiled, order {self.polynomial_order} (Chebyshev)"
+                                     if self.polynomial_order else "none (sampled route only)"),
             f"  lines         : " + (("marginalised, " + ("flat prior" if not self.eline_prior_width
                                       else f"prior width {self.eline_prior_width:g} x CLOUDY"))
                                      if self.marginalize_elines else "CLOUDY fluxes"),

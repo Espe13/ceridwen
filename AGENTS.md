@@ -140,7 +140,9 @@ projection → likelihood → sampler.
   fully JAX-traceable; `predict` projects onto the observations (static
   line-to-band basis for fixed-z photometry, painted lines otherwise).
   `csp_afe.py`: `CSPBasis_afe`, the [alpha/Fe] variant without a nebular model.
-  `spectrum_calibration.py`: `spectrum_scaling` / `spectrum_calib` factor.
+  `spectrum_calibration.py`: `spectrum_scaling` / `spectrum_calib` factor (one per
+  spectrum, `spectrum_scaling_<obs.name>` with several). The profiled alternative is
+  `Spectrum(polynomial_order=M)`, solved in the likelihood (`likelihood/poly_calibration.py`).
 - `broadening.py` — `Kinematics` (sigma_gal / sigma_gas, fixed or theta keys),
   `Instrument` (LSF), `SpectralProjector` (continuum FFT kernel + banded
   instrument response + analytic line painting on the observed pixels),
@@ -167,7 +169,8 @@ projection → likelihood → sampler.
 - `likelihood/` — `likelihood.py`: `DiagonalGaussianLikelihood`,
   `MultiObservationLikelihood`, pure-JAX `lnlike_diag_gaussian`, masking,
   `make_lnprobfn()` (the jitted log-posterior factory). `noise_model.py`:
-  `DiagonalNoiseModel` (noise floor, optional jitter + calibration error, optional
+  `DiagonalNoiseModel` (noise floor, optional error scale / jitter / calibration error,
+  named per observation `log_jitter_<kind>[_<obs.name>]` in `fitSED` since v1.0.7, optional
   Prospector-style outlier mixture `f_outlier` / `nsigma_outlier` per observation
   (`f_outlier_spec/_phot/_lines[_<obs.name>]` in `fitSED`, all default 0 = off: switch on
   explicitly), applied by the likelihood kernels `lnlike_diag_outlier[_with_upper_limits]`;

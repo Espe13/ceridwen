@@ -50,9 +50,9 @@ def model():
                     priors={"logzsol": Uniform(low=-0.5, high=0.2),
                             "logmass": Uniform(low=9.5, high=10.5),
                             "sfh": Uniform(low=0.1, high=2.0),
-                            "log_jitter": Uniform(low=-5.0, high=0.0)},
+                            "log_jitter_spec": Uniform(low=-5.0, high=0.0)},
                     free_param_init={"logmass": jnp.array([10.0]),
-                                     "log_jitter": jnp.array([-2.0])}, zred=0.5)
+                                     "log_jitter_spec": jnp.array([-2.0])}, zred=0.5)
 
 
 def _result(model):
@@ -115,7 +115,7 @@ def test_write_read_roundtrip(model, tmp_path):
     nm = s["likelihood"]["noise_model"]
     assert nm["class"] == "DiagonalNoiseModel" and nm["noise_floor"] == 0.02
     assert nm["use_jitter"] is True and nm["f_outlier"] is None
-    assert nm["sampled_parameters"] == ["log_jitter"]
+    assert nm["sampled_parameters"] == ["log_jitter_spec"] and nm["jitter_key"] == "log_jitter_spec"
 
 
 def test_nuts_settings_and_old_files(model, tmp_path):

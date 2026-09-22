@@ -332,6 +332,9 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
         y_phot_o, mu_phot, sig_phot, mask_phot, is_upper_limit=ul_p)
     out["outlier_likelihood"]["lnl_phot_upper_limit"] = np.asarray(lnl_p_ul, dtype=np.float64)
 
+    out["calibration_likelihood"] = _calibration_likelihood_baseline(
+        np.asarray(wave_spec), mu_spec, mask_spec, jax.random.PRNGKey(p["noise_seed"]))
+
     out.update(_logzsol_baselines(p))
     out.update(_stellar_mass_baseline(p))
     out["eline_marginal"] = _eline_marginal_baseline(p, ssp_data)
@@ -394,6 +397,40 @@ def _logzsol_baselines(p) -> dict:
         if is_afe:
             blk["logzsol_total"] = np.asarray(csp.logzsol_total(th), dtype=np.float64)
         out[cat] = blk
+    return out
+
+
+def _calibration_likelihood_baseline(wave, mu, mask, key) -> dict:
+    """v1.0.7: the profiled polynomial calibration (Spectrum(polynomial_order > 0), Prospector's
+    PolyOptCal) and a per-observation noise key.  Data = the "csp_spectrum" prediction times a
+    known response 1 + 0.05 T_1 - 0.03 T_2 + 0.01 T_3, with 5 % Gaussian noise (sigma =
+    0.05 |mu|; the "likelihood" category's 1e-12 error floor would swamp cgs fluxes).  Justified in the commit message: the
+    solve equals Prospector's compute_response on its own reference dump to 1e-15
+    (tests/test_noise_calibration.py), and the profiled ln L equals the maximum over the sampled
+    spectrum_scaling / spectrum_calib (rel 1e-9)."""
+    from ceridwen.likelihood.noise_model import DiagonalNoiseModel
+    from ceridwen.likelihood.likelihood import DiagonalGaussianLikelihood
+    from ceridwen.likelihood.poly_calibration import (PolynomialCalibration,
+                                                      chebyshev_design_matrix)
+    A = chebyshev_design_matrix(wave, np.asarray(mask), 3)
+    sig = 0.05 * jnp.abs(mu)
+    y_cal = (mu * (1.0 + jnp.asarray(A) @ jnp.array([0.0, 0.05, -0.03, 0.01]))
+             + sig * jax.random.normal(key, mu.shape))
+    pc = PolynomialCalibration(A)
+    pc_reg = PolynomialCalibration(A, regularization=[0.0, 30.0, 60.0, 100.0])
+    out = {}
+    for tag, pcal in (("", pc), ("_reg", pc_reg)):
+        c, resp = pcal.solve(y_cal, mu, 1.0 / sig ** 2, mask)
+        lnl, _ = DiagonalGaussianLikelihood(poly_calibration=pcal)(y_cal, mu, sig, mask)
+        out[f"coeffs{tag}"] = np.asarray(c, dtype=np.float64)
+        out[f"response{tag}"] = np.asarray(resp, dtype=np.float64)
+        out[f"lnl{tag}"] = np.asarray(lnl, dtype=np.float64)
+    jit = 0.05 * float(jnp.median(jnp.abs(mu)))
+    th = {"log_jitter_spec": jnp.array([np.log(jit)])}
+    nm = DiagonalNoiseModel(use_jitter=True, jitter_key="log_jitter_spec")
+    lnl_j, _ = DiagonalGaussianLikelihood(noise_model=nm, poly_calibration=pc)(
+        y_cal, mu, sig, mask, th)
+    out["lnl_jitter_spec"] = np.asarray(lnl_j, dtype=np.float64)
     return out
 
 

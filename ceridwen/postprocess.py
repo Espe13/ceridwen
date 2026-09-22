@@ -18,6 +18,8 @@ spectra, the best-fit point and user-defined derived quantities.
     out["extras"]["elines"]["mean"]                  # (N, m) posterior line fluxes [erg/s/cm^2] (Spectrum(marginalize_elines=True) only;
                                                      #        also "sd", "cloudy", "names", "wave_rest"; predictions then carry these lines)
     out["prediction"]["photometry"]["phot"]          # (N, n_bands) maggies
+    out["prediction"]["calibration"]["spec"]         # (N, n_pix)   profiled response (Spectrum(polynomial_order > 0) only;
+                                                     #        spectra["spec"] already includes it)
     out["prediction"]["spectra"]["spec"]             # (N, n_pix)   as the Spectrum observation
     out["prediction"]["spectra_model"]               # (N, n_wave)  rest-frame L_nu [L_sun/Hz] on wave_rest, model resolution (no kinematic broadening)
     out["prediction"]["spectra_observed"]            # (N, n_wave)  observed-frame f_nu [erg/s/cm^2/Hz, cgs] at (1+z) wave_rest
@@ -416,13 +418,46 @@ class PostProcess:
             self._f_spectra = jax.jit(jax.vmap(self._spectra_one))
             self._f_sfh = jax.jit(jax.vmap(self._sfh_one))
 
+    def _poly_likelihoods(self) -> dict:
+        """{obs name: likelihood} of the spectra with a profiled calibration polynomial."""
+        if getattr(self, "_poly_lh", None) is None:
+            from .fit import _likelihood_for
+            model = self.model
+            self._poly_lh = {}
+            for o in model.observations:
+                if int(getattr(o, "polynomial_order", 0) or 0) > 0:
+                    self._poly_lh[o.name] = _likelihood_for(o, model.param_names, model=model)
+        return self._poly_lh
+
+    def _apply_poly(self, pred: dict, th) -> dict:
+        """``pred`` with each profiled spectrum times its response at ``th`` (solved exactly as
+        in the likelihood, on the model times any fixed ``calibration`` vector), plus
+        ``__calib_<name>`` = the response."""
+        from .likelihood.likelihood import observation_data
+        out = dict(pred)
+        for name, lh in self._poly_likelihoods().items():
+            y, sig, mask, calib, _ul = observation_data(self.model.obs_dict[name])
+            mu = pred[name] if calib is None else pred[name] * calib
+            nout = lh.noise_model.compute(sig, mu, mask, th, data=y)
+            _c, resp = lh.poly_calibration.solve(y, mu, nout.inv_var, mask)
+            out[name] = pred[name] * resp.astype(pred[name].dtype)
+            out[f"__calib_{name}"] = resp
+        return out
+
     def _predictor(self):
         """Batched posterior-predictive observations: ``model.predict_vmap``, or, when a
         Spectrum marginalises the emission lines, the predictions with each draw's
-        posterior-mean line fluxes (the likelihood fitSED builds) plus the line posteriors."""
+        posterior-mean line fluxes (the likelihood fitSED builds) plus the line posteriors.
+        Spectra with a profiled calibration polynomial carry each draw's response."""
         es = getattr(self.model, "_eline_system", None)
         if es is None:
-            return self.model.predict_vmap
+            if not self._poly_likelihoods():
+                return self.model.predict_vmap
+            if getattr(self, "_f_poly", None) is None:
+                model = self.model
+                self._f_poly = jax.jit(jax.vmap(
+                    lambda th: self._apply_poly(model.predict(th), th)))
+            return self._f_poly
         if getattr(self, "_f_elines", None) is None:
             from .fit import _likelihood_for
             from .likelihood.likelihood import MultiObservationLikelihood
@@ -439,6 +474,7 @@ class PostProcess:
                 out = dict(pred)
                 for k, A in aux["cols"].items():
                     out[k] = pred[k] + (A @ post["mean"]).astype(pred[k].dtype)
+                out = self._apply_poly(out, th)
                 out["__elines_mean"] = post["mean"]
                 out["__elines_sd"] = post["sd"]
                 out["__elines_cloudy"] = post["cloudy"]
@@ -565,6 +601,10 @@ class PostProcess:
                 if slot is None:
                     continue
                 pred[slot][obs.name] = np.asarray(raw["pred"][obs.name], dtype=float)
+                ck = f"__calib_{obs.name}"
+                if ck in raw["pred"]:
+                    pred.setdefault("calibration", {})[obs.name] = np.asarray(raw["pred"][ck],
+                                                                             dtype=float)
         out["prediction"] = pred
         es = getattr(m, "_eline_system", None)
         if es is not None and raw["pred"]:

@@ -15,7 +15,8 @@ reproduced to machine precision.
 ## The likelihood
 
 Per unmasked datum *i*, with σ_eff,i the uncertainty after **every** noise term
-(`noise_floor`, `log_err_scale`, `log_jitter`, `log_f_calib`, `log_f_data`), χ_i =
+(`noise_floor`, `log_err_scale_*`, `log_jitter_*`, `log_f_calib_*`, `log_f_data_*`, named
+per observation like the outlier fractions since v1.0.7), χ_i =
 (y_i − μ_i)/σ_eff,i and `log_det_i = ½ ln(2π σ_eff,i²)`:
 
 ```

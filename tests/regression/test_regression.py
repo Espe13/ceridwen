@@ -50,6 +50,7 @@ CATEGORIES = [
     "csp_spectrum",
     "likelihood",
     "outlier_likelihood",
+    "calibration_likelihood",
     "eline_marginal",
 ]
 

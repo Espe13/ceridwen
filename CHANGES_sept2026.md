@@ -406,3 +406,45 @@ and the `rng_key`. Per observation: `sky`, `calibration`, `upper_limit` datasets
 `noise_floor`, and `likelihood_json` (kernel class and every `DiagonalNoiseModel` field).
 `read_result_h5` returns them (`["provenance"]`, `["obs"][name]["likelihood"]`);
 `ceridwen.fit.read_provenance(path)`. Older files read as before.
+
+---
+
+## 2026-09-22 — v1.0.7: noise terms and calibration per observation; profiled polynomial
+
+**Per-observation noise terms (renamed; old names refused).** `log_err_scale`,
+`log_jitter`, `log_f_calib` and `log_f_data` were one value shared by every observation
+(`fitSED`); an additive jitter shared between maggies and cgs F_nu was dimensionally
+meaningless. They now follow the outlier-mixture naming (`ceridwen/model/obs_params.py`, one
+helper for both): `log_jitter_<kind>` for the single observation of a kind, or
+`log_jitter_<kind>_<obs.name>` for each of several (kind = phot / spec / lines); the plain
+kind name is ambiguous with several and raises, as do both spellings for one observation and
+names matching no observation. The old shared names raise in `fitSED` with the names to use
+for that model. `DiagonalNoiseModel` gains `err_scale_key` / `jitter_key` / `f_calib_key` /
+`f_data_key` (theta key or fixed float; defaults are the historical names, so a hand-built
+noise model reads the same keys as before). A noise term fixed by a constant transform is now
+used; before, `fitSED` silently ignored it.
+
+**Per-spectrum calibration.** `spectrum_scaling_<obs.name>` / `spectrum_calib_<obs.name>`
+calibrate one spectrum each; the plain names remain for a model with a single `Spectrum` and
+raise in `SedModel` with several (they used to apply one value to every spectrum).
+
+**Profiled polynomial calibration** (`Spectrum(polynomial_order=M,
+polynomial_regularization=...)`, `ceridwen/likelihood/poly_calibration.py`): Prospector's
+`PolyOptCal` inside the sampled likelihood. The response `1 + sum_{m<=M} c_m T_m(x)`
+(Chebyshev over the unmasked wavelength range) is solved by weighted least squares at every
+call, JIT-safe and differentiable, with the noise model's weights (Prospector: raw
+`1/sigma^2`). Opt-in per spectrum (`order = 0` = off, as in Prospector); refused together with
+a sampled calibration of the same spectrum (degenerate) and on the `marginalize_elines`
+spectrum. Applied in `DiagonalGaussianLikelihood[WithUpperLimits].__call__` and their
+`make_lnprobfn`, so `run_sampler`, `MultiObservationLikelihood` and `fitSED` all use it;
+`PostProcess` predictions carry each draw's response (`prediction["calibration"]`); the
+result file records the order and regularisation (`likelihood_json`).
+
+**Verification.** Equal to Prospector's own `compute_response` (prospect 2.0a2.dev42, code
+identical to a78d153) to 1.1e-15 on three reference cases
+(`tests/reference/prospector_polyopt.npz`, `run_prospector_polyopt.py`); recovers a known
+polynomial to 1e-10 noise-free and within 4 sigma with noise; profiled ln L equals the maximum
+over the sampled `spectrum_scaling` / `spectrum_calib` to 1e-9; exact first-order gradients
+(`check_grads`), finite full-model gradients with masked NaN data, vmap equals loop;
+`tests/test_noise_calibration.py`. New regression category `calibration_likelihood`; new T4
+variant `polycal`. With the feature off the change is bit-identical (T4).

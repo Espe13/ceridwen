@@ -143,6 +143,18 @@ prefer `predict`/`get_spectrum_components`.
   with dust and age — always keep the photometry in. Order too high eats real
   features; look at the recovered curve (`legendre_design_matrix` rebuilds it
   from the posterior).
+- **One calibration per spectrum (v1.0.7).** With several spectra use
+  `spectrum_scaling_<obs.name>` / `spectrum_calib_<obs.name>`; the plain names then raise
+  (they used to scale every spectrum with one value). With a single spectrum the plain
+  names still work.
+- **Profiled polynomial (v1.0.7).** `Spectrum(polynomial_order=M)` solves the calibration
+  (Chebyshev c_0..c_M, level included) inside the likelihood instead of sampling it
+  (Prospector's `PolyOptCal`, weights from the noise model). It cannot be combined with a
+  sampled `spectrum_scaling` / `spectrum_calib` of the same spectrum (degenerate: refused),
+  nor with `marginalize_elines` on that spectrum. `polynomial_order=0` is off (as in
+  Prospector), not "a constant". The posterior is conditional on the best-fit polynomial:
+  its uncertainty is not propagated, so do not use it where the calibration uncertainty
+  matters (sample `spectrum_calib` there).
 
 ## 6. Environment & data consistency (not auto-guarded — check yourself)
 
@@ -292,17 +304,20 @@ prefer `predict`/`get_spectrum_components`.
 - `fitSED` honours `noise_floor`, `sky`, `calibration` and `upper_limit` and logs
   them; `logify_spectrum` and a `GaussianProcess` noise model are refused
   (`NotImplementedError`) instead of ignored.
-- Sampled noise terms are switched on by NAME: when the model samples
+- Sampled noise terms are switched on by NAME, **per observation** (v1.0.7):
   `log_err_scale` (sigma^2 x exp(2 log_err_scale), a common rescaling of the
   quoted errors), `log_jitter` (+ exp(log_jitter)^2, data units), `log_f_calib`
-  (+ (exp(log_f_calib) |model|)^2) or `log_f_data` (+ (exp(log_f_data) |data|)^2),
-  `fitSED` builds every observation's `DiagonalNoiseModel` with that term, one
-  value shared by all observations, and logs it. Give them a prior and a
-  `free_param_init`. This is a `fitSED` feature: with `run_sampler` you build the
-  `DiagonalNoiseModel(use_error_scale=True, ...)` yourself, otherwise the
-  parameter is sampled from its prior and never enters the likelihood, with no
-  warning. The outlier mixture (`f_outlier_spec` / `f_outlier_phot`, section 13) is
-  switched on the same way but is **per observation kind**, never shared.
+  (+ (exp(log_f_calib) |model|)^2) and `log_f_data` (+ (exp(log_f_data) |data|)^2) are
+  named like the outlier mixture: `log_jitter_<kind>` for the single observation of a
+  kind (kind = `phot` / `spec` / `lines`) or `log_jitter_<kind>_<obs.name>` for each of
+  several. The old shared `log_jitter` etc. raise with the new names: one additive
+  jitter shared between maggies and cgs F_nu was dimensionally meaningless. A constant
+  transform now fixes a term (before, `fitSED` ignored a transform-fixed noise term).
+  Give them a prior and a `free_param_init`. This is a `fitSED` feature: with
+  `run_sampler` you build the `DiagonalNoiseModel(use_jitter=True,
+  jitter_key="log_jitter_spec", ...)` yourself (the key defaults to the historical
+  `log_jitter`), otherwise the parameter is sampled from its prior and never enters the
+  likelihood, with no warning. The outlier mixture (section 13) uses the same names.
 - `SedModel` raises for a prior on a name that is not sampled and warns for
   sampled parameters without a prior; `free_param_init` is applied without
   transforms too; prior constructors reject unknown/missing arguments.

@@ -210,27 +210,29 @@ def _build_adapter(sampler: str, model, sampler_kwargs: dict, verbose: bool,
         )
 
 
-# Outlier-mixture parameter names.  Prospector's template (prospect/models/templates.py,
-# TemplateLibrary["outlier_model"]) has f_outlier_spec / f_outlier_phot (+ nsigma_outlier_*);
-# Lines follow the same pattern.  Never shared between observations: with several
-# observations of one kind each takes its own ``f_outlier_<kind>_<obs.name>``; the plain name
-# is accepted only when the model has exactly one observation of that kind.
-OUTLIER_KIND_SUFFIX = {"photometry": "phot", "spectrum": "spec", "lines": "lines"}
+# Per-observation parameter names (ceridwen.model.obs_params): the outlier mixture
+# (Prospector's TemplateLibrary["outlier_model"]: f_outlier_spec / f_outlier_phot +
+# nsigma_outlier_*; Lines follow the same pattern) and, since v1.0.7, the noise nuisance terms
+# log_err_scale / log_jitter / log_f_calib / log_f_data.  Never shared between observations:
+# with several observations of one kind each takes its own ``<stem>_<obs.name>``; the plain
+# stem is accepted only when the model has exactly one observation of that kind.
+from .model.obs_params import (KIND_SUFFIX as OUTLIER_KIND_SUFFIX, OUTLIER_FAMILIES,
+                               NOISE_FAMILIES, NOISE_ROOTS, CALIB_FAMILIES, names_for,
+                               resolve_name, check_names)
 
 
 def _outlier_names(obs):
     """``((f, nsigma) plain names, (f, nsigma) per-observation names)`` of ``obs``, or None
     for a kind without an outlier model."""
-    sfx = OUTLIER_KIND_SUFFIX.get(getattr(obs, "kind", None))
-    if sfx is None:
+    nm = [names_for(obs, fam) for fam in OUTLIER_FAMILIES]
+    if nm[0] is None:
         return None
-    return ((f"f_outlier_{sfx}", f"nsigma_outlier_{sfx}"),
-            (f"f_outlier_{sfx}_{obs.name}", f"nsigma_outlier_{sfx}_{obs.name}"))
+    return (nm[0][0], nm[1][0]), (nm[0][1], nm[1][1])
 
 
-def _constant_transform(model, name):
+def _constant_transform(model, name, what="the outlier model"):
     """Value of the transform ``name`` if it is a constant (the fixed-parameter idiom), else
-    raise: an outlier parameter derived from sampled ones is not supported."""
+    raise: a nuisance parameter derived from sampled ones is not supported."""
     fn = model.transforms[name]
     th0 = {k: jnp.asarray(v) for k, v in model.theta_init.items()}
     th1 = {k: v + 0.137 * (1.0 + jnp.abs(v)) for k, v in th0.items()}
@@ -239,72 +241,93 @@ def _constant_transform(model, name):
         raise NotImplementedError(
             f"the transform for {name!r} must be a constant scalar (fix it with "
             f"transforms={{{name!r}: lambda th: jnp.array([value])}}); a value derived from "
-            "sampled parameters is not supported for the outlier model")
+            f"sampled parameters is not supported for {what}")
     return float(v0.ravel()[0])
+
+
+def _given_names(model, param_names=()):
+    transforms = getattr(model, "transforms", {}) if model is not None else {}
+    return set(param_names) | set(transforms), transforms
+
+
+def _resolve(obs, fam, param_names, model, default, what):
+    """theta key (sampled), float (constant transform) or ``default`` for ``obs`` in ``fam``."""
+    given, _t = _given_names(model, param_names)
+    name = resolve_name(obs, fam, given)
+    if name is None:
+        return default
+    return name if name in param_names else _constant_transform(model, name, what)
 
 
 def _outlier_terms(obs, param_names, model=None):
     """``(f_outlier, nsigma_outlier)`` for ``obs``'s DiagonalNoiseModel: a theta key when the
     model samples the name, a float when a constant transform fixes it, else off / 50.  The
     per-observation name ``f_outlier_<kind>_<obs.name>`` is looked up before the plain one."""
-    names = _outlier_names(obs)
-    if names is None:
+    if _outlier_names(obs) is None:
         return None, 50.0
-    transforms = getattr(model, "transforms", {}) if model is not None else {}
-    given = set(param_names) | set(transforms)
-
-    def resolve(i, default):
-        name = next((n[i] for n in (names[1], names[0]) if n[i] in given), None)
-        if name is None:
-            return default
-        return name if name in param_names else _constant_transform(model, name)
-
+    f, ns = OUTLIER_FAMILIES
     # a fixed 0.0 is turned off by DiagonalNoiseModel itself (the ordinary Gaussian)
-    return resolve(0, None), resolve(1, 50.0)
+    return (_resolve(obs, f, param_names, model, None, "the outlier model"),
+            _resolve(obs, ns, param_names, model, 50.0, "the outlier model"))
+
+
+#: DiagonalNoiseModel switch and key field of each noise root
+_NOISE_FIELDS = {"log_err_scale": ("use_error_scale", "err_scale_key"),
+                 "log_jitter": ("use_jitter", "jitter_key"),
+                 "log_f_calib": ("use_fractional", "f_calib_key"),
+                 "log_f_data": ("use_data_fractional", "f_data_key")}
+
+
+def _noise_terms(obs, param_names, model=None) -> dict:
+    """DiagonalNoiseModel kwargs switching on the noise terms of ``obs``: for each root
+    (``log_jitter`` ...) the per-observation name ``<root>_<kind>[_<obs.name>]``, sampled
+    (theta key) or fixed by a constant transform (float)."""
+    kw = {}
+    for root, fam in zip(NOISE_ROOTS, NOISE_FAMILIES):
+        v = _resolve(obs, fam, param_names, model, None, "a noise term")
+        if v is not None:
+            use, key = _NOISE_FIELDS[root]
+            kw[use], kw[key] = True, v
+    return kw
+
+
+def _removed_noise_name_error(model, old) -> ValueError:
+    obs = [o for o in getattr(model, "observations", []) if names_for(o, NOISE_FAMILIES[0])]
+    fam = NOISE_FAMILIES[NOISE_ROOTS.index(old)]
+    by_kind = {}
+    for o in obs:
+        by_kind.setdefault(o.kind, []).append(o)
+    new = [names_for(o, fam)[0] if len(by_kind[o.kind]) == 1 else names_for(o, fam)[1]
+           for o in obs]
+    return ValueError(
+        f"{old!r} was removed in v1.0.7: a noise term is no longer one value shared by every "
+        "observation, it is set per observation like the outlier mixture, "
+        f"'{old}_<kind>' (one observation of that kind) or '{old}_<kind>_<obs.name>', kind = "
+        f"phot / spec / lines.  For this model: {new}.  One shared value was never right: an "
+        "additive log_jitter in maggies and in cgs F_nu is not the same quantity (and "
+        "log_err_scale / log_f_* rescale different instruments).  Rename the key in priors, "
+        "free_param_init and transforms; nothing is reinterpreted silently.")
 
 
 def _check_outlier_setup(model):
     """Setup-time checks of the outlier parameters (fitSED): every f_outlier_* /
     nsigma_outlier_* name must belong to one observation, the plain name only when the
     model has one observation of that kind, nsigma needs its f, priors bounded in range."""
-    given = set(model.param_names) | set(getattr(model, "transforms", {}))
-    wanted = {n for n in given if n.startswith(("f_outlier_", "nsigma_outlier_"))}
+    given, _t = _given_names(model, model.param_names)
+    wanted = {n for n in given if any(f.claims(n) for f in OUTLIER_FAMILIES)}
     if not wanted:
         return
-    by_kind = {}
+    check_names(model.observations, OUTLIER_FAMILIES, given)
     for o in model.observations:
-        if _outlier_names(o) is not None:
-            by_kind.setdefault(o.kind, []).append(o)
-    valid = {}
-    for kind, obs in by_kind.items():
-        for o in obs:
-            plain, own = _outlier_names(o)
-            for i in (0, 1):
-                valid[own[i]] = o
-                if len(obs) == 1:
-                    valid[plain[i]] = o
-            used = [n for n in (*plain, *own) if n in given]
-            if len(obs) > 1 and any(n in given for n in plain):
-                raise ValueError(
-                    f"{[n for n in plain if n in given]} is ambiguous: the model has "
-                    f"{len(obs)} {kind} observations {[x.name for x in obs]}, and each takes its "
-                    f"own fraction; use {[_outlier_names(x)[1][0] for x in obs]}")
-            for i in (0, 1):
-                if plain[i] in given and own[i] in given:
-                    raise ValueError(f"both {plain[i]!r} and {own[i]!r} are set for "
-                                     f"{kind} {o.name!r}; keep one")
-            f_set = plain[0] in given or own[0] in given
-            n_set = plain[1] in given or own[1] in given
-            if n_set and not f_set:
-                raise ValueError(
-                    f"{[n for n in used if n.startswith('nsigma')]} set without an "
-                    f"f_outlier for {kind} {o.name!r}: the outlier width has no effect unless "
-                    "the fraction is sampled or fixed")
-    unknown = sorted(n for n in wanted if n not in valid)
-    if unknown:
-        raise ValueError(
-            f"{unknown} match no observation, so they would be sampled without entering the "
-            f"likelihood; the outlier names of this model are {sorted(valid)}")
+        nm = _outlier_names(o)
+        if nm is None:
+            continue
+        f_set = resolve_name(o, OUTLIER_FAMILIES[0], given) is not None
+        n_name = resolve_name(o, OUTLIER_FAMILIES[1], given)
+        if n_name is not None and not f_set:
+            raise ValueError(
+                f"[{n_name!r}] set without an f_outlier for {o.kind} {o.name!r}: the outlier "
+                "width has no effect unless the fraction is sampled or fixed")
     bounds = _detect_bounds(model)
     for n in sorted(wanted & set(model.param_names)):
         lo, hi = bounds.get(n, (None, None))
@@ -318,15 +341,45 @@ def _check_outlier_setup(model):
                 f"{model.priors.get(n)!r}")
 
 
+def _check_noise_setup(model):
+    """Setup-time checks of the noise-term names (fitSED, v1.0.7): the old shared names are
+    refused with the new ones, and every per-observation name must match one observation."""
+    given, _t = _given_names(model, model.param_names)
+    for old in NOISE_ROOTS:
+        if old in given:
+            raise _removed_noise_name_error(model, old)
+    if any(f.claims(n) for f in NOISE_FAMILIES for n in given):
+        check_names(model.observations, NOISE_FAMILIES, given)
+
+
+def _poly_calibration_for(obs, model):
+    """The PolynomialCalibration of a Spectrum(polynomial_order > 0), else None; refuses a
+    sampled calibration of the same spectrum (the two are degenerate)."""
+    from .likelihood.poly_calibration import PolynomialCalibration
+    order = int(getattr(obs, "polynomial_order", 0) or 0)
+    if getattr(obs, "kind", None) != "spectrum" or order <= 0:
+        return None
+    if model is not None:              # checked before any data is read (setup refusal)
+        given, _t = _given_names(model, model.param_names)
+        clash = [c for c in (resolve_name(obs, fam, given) for fam in CALIB_FAMILIES)
+                 if c is not None]
+        if clash:
+            raise ValueError(
+                f"Spectrum {obs.name!r} profiles its calibration polynomial (polynomial_order="
+                f"{order}, which includes the level T_0) and also samples {clash}: the two "
+                "are degenerate.  Use one route: drop polynomial_order, or drop the sampled "
+                "calibration of this spectrum.")
+    return PolynomialCalibration.for_spectrum(obs)
+
+
 def _likelihood_for(obs, param_names=(), model=None):
-    """Diagonal Gaussian likelihood for ``obs`` (one-sided kernel when it flags upper limits);
-    the noise nuisance terms ``log_jitter`` / ``log_f_calib`` / ``log_f_data`` / ``log_err_scale``
-    are switched on when the model samples them (one value shared by every observation).
-    The outlier mixture is switched on per observation by ``f_outlier_<kind>`` (one
-    observation of that kind) or ``f_outlier_<kind>_<obs.name>``, kind = phot / spec / lines,
-    with ``nsigma_outlier_*`` (default 50), sampled or, given ``model``, fixed by a constant
-    transform.  Every fraction defaults to 0 (off): no name in the model, or a fixed 0, gives
-    the ordinary Gaussian."""
+    """Diagonal Gaussian likelihood for ``obs`` (one-sided kernel when it flags upper limits).
+    The noise nuisance terms ``log_err_scale`` / ``log_jitter`` / ``log_f_calib`` /
+    ``log_f_data`` and the outlier mixture ``f_outlier`` / ``nsigma_outlier`` are set per
+    observation, ``<name>_<kind>`` (one observation of that kind) or
+    ``<name>_<kind>_<obs.name>``, kind = phot / spec / lines; each is sampled, or, given
+    ``model``, fixed by a constant transform.  Everything defaults to off (every outlier
+    fraction to 0).  ``Spectrum(polynomial_order > 0)`` adds the profiled calibration."""
     from .likelihood.likelihood import (
         DiagonalGaussianLikelihood, DiagonalGaussianLikelihoodWithUpperLimits)
     from .likelihood.noise_model import DiagonalNoiseModel
@@ -341,17 +394,18 @@ def _likelihood_for(obs, param_names=(), model=None):
             "diagonal floor")
     if model is not None:
         _check_outlier_setup(model)
+        _check_noise_setup(model)
+    elif any(r in param_names for r in NOISE_ROOTS):
+        raise _removed_noise_name_error(None, next(r for r in NOISE_ROOTS if r in param_names))
     f_out, nsigma_out = _outlier_terms(obs, param_names, model)
     nm = DiagonalNoiseModel(noise_floor=float(getattr(obs, "noise_floor", 0.0) or 0.0),
-                            use_jitter="log_jitter" in param_names,
-                            use_fractional="log_f_calib" in param_names,
-                            use_data_fractional="log_f_data" in param_names,
-                            use_error_scale="log_err_scale" in param_names,
-                            f_outlier=f_out, nsigma_outlier=nsigma_out)
+                            f_outlier=f_out, nsigma_outlier=nsigma_out,
+                            **_noise_terms(obs, param_names, model))
+    pc = _poly_calibration_for(obs, model)
     ul = getattr(obs, "upper_limit", None)
     if ul is not None and bool(jnp.any(ul)):
-        return DiagonalGaussianLikelihoodWithUpperLimits(noise_model=nm)
-    return DiagonalGaussianLikelihood(noise_model=nm)
+        return DiagonalGaussianLikelihoodWithUpperLimits(noise_model=nm, poly_calibration=pc)
+    return DiagonalGaussianLikelihood(noise_model=nm, poly_calibration=pc)
 
 
 def _describe_likelihood(obs, lh) -> str:
@@ -369,6 +423,9 @@ def _describe_likelihood(obs, lh) -> str:
             return f"{v} (sampled)" if isinstance(v, str) else f"{v:g} (fixed)"
         bits.append(f"outlier mixture f = {_v(lh.noise_model.f_outlier)}, "
                     f"nsigma = {_v(lh.noise_model.nsigma_outlier)}")
+    pc = getattr(lh, "poly_calibration", None)
+    if pc is not None:
+        bits.append(f"profiled calibration polynomial, order {pc.order} (Chebyshev)")
     if getattr(obs, "sky", None) is not None:
         bits.append("sky subtracted")
     if getattr(obs, "calibration", None) is not None:
@@ -608,6 +665,9 @@ def _likelihood_config(lh) -> dict:
                 {fld.name: getattr(nm, fld.name) for fld in dataclasses.fields(nm)})
         cfg["noise_model"]["sampled_parameters"] = list(
             getattr(nm, "nuisance_param_names", ())) + list(getattr(nm, "outlier_param_names", ()))
+    pc = getattr(lh, "poly_calibration", None)
+    if pc is not None:
+        cfg["poly_calibration"] = pc.config()
     return cfg
 
 

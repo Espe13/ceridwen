@@ -15,7 +15,7 @@ authors:
     email: aas208@cam.ac.uk
     affiliation: "Kavli Institute for Cosmology, University of Cambridge"
     orcid: "https://orcid.org/0009-0009-5464-3558"
-version: "1.0.6"
+version: "1.0.7"
 date-released: "2026-09-22"
 license: MIT
 repository-code: "https://github.com/Espe13/ceridwen"

@@ -77,6 +77,10 @@ all outlier fractions default to 0, switch the mixture on explicitly
 
 ::: ceridwen.likelihood.outlier_probability
 
+::: ceridwen.likelihood.poly_calibration.PolynomialCalibration
+
+::: ceridwen.model.obs_params.check_names
+
 ## Fitting
 
 ::: ceridwen.fit.fitSED
