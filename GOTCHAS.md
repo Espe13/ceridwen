@@ -314,7 +314,9 @@ prefer `predict`/`get_spectrum_components`.
 - **The 20 % prior assumes star-forming lines.** Its centre and width are the CLOUDY
   flux F_j(θ), so lines inform the SFH, and where the model predicts ~no line (old
   populations) the line is pinned at ~0. In quiescent galaxies use the flat prior.
-- **Not with `CSPBasis_afe`**: it has no nebular model; mask the lines instead.
+- **Without a nebular model** (`add_neb=False`, or `CSPBasis_afe`) the lines come
+  from FSPS's `emlines_info.dat` and the prior must be flat; `eline_prior_width > 0`,
+  `elines_to_fix` and `Lines` observations are refused, `$SPS_HOME` must be set.
 - `model.predict(theta)` still predicts the CLOUDY lines (the forward model);
   the fitted lines are in `/elines`, `PostProcess` `extras["elines"]` and its
   predictions.

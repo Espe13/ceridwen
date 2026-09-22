@@ -215,8 +215,11 @@ matrices, weights and (flat prior) the factorisation when zred, sigma_gas, noise
 calibration are fixed. Isolated A100, W = 100: flat prior 0.99x (R=1000) / 1.00x
 (R=2700) the ordinary likelihood, 20 % prior 1.11x, per-call path 1.22x / 1.25x; in
 whole fits the marginalised runs took 332-349 s against 358 s for masking. Equal to
-the per-call path to 1e-11 in ln L. `CSPBasis_afe` with `marginalize_elines=True` now
-gets a refusal that names the missing nebular model and suggests `mask_lines`.
+the per-call path to 1e-11 in ln L. Without a nebular model (`CSPBasis(add_neb=False)`
+or `CSPBasis_afe`) `marginalize_elines=True` works with a flat prior (2026-09-22): the line list, rest wavelengths and names come
+from `$SPS_HOME/data/emlines_info.dat` and the photometric columns from
+`line_profiles_on_grid` (equal to `NebularModel.line_profiles` to 1e-12);
+`eline_prior_width > 0`, `elines_to_fix` and `Lines` observations are refused there.
 
 **Also:** `Lines` without `line_names` now gets the teaching `ValueError` on a
 wavelength mismatch instead of a `TypeError` (`csp.py` `_neb_cube_rows_for`).

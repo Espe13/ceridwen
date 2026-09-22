@@ -662,7 +662,7 @@ If you use ceridwen in your research, please cite it:
   author       = {Stoffers, Amanda},
   title        = {{CERIDWEN}: Comprehensive {SED} Estimation Routine Involving Data-driven WEight calculatioNs},
   year         = {2026},
-  note         = {Version 1.0.1},
+  note         = {Version 1.0.2},
   howpublished = {\url{https://github.com/Espe13/ceridwen}}
 }
 ```

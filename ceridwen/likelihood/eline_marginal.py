@@ -23,7 +23,10 @@ which is well conditioned and exact also for s_j = 0 (a line pinned at its prior
 from __future__ import annotations
 
 import difflib
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Optional
 
 import numpy as np
@@ -33,7 +36,8 @@ from jax.scipy.linalg import cho_solve, solve_triangular
 
 __all__ = ["ElineSystem", "build_eline_system", "eline_marginal_loglike",
            "eline_marginal_loglike_static",
-           "joint_loglike", "eline_line_fluxes", "LYA_REST_AA", "COND_MAX"]
+           "joint_loglike", "eline_line_fluxes", "line_table_for", "line_profiles_on_grid",
+           "LYA_REST_AA", "COND_MAX"]
 
 _HALF_LOG_2PI = 0.5 * np.log(2.0 * np.pi)
 LYA_REST_AA = 1215.67
@@ -108,6 +112,7 @@ class ElineSystem:
     not_fitted: tuple = ()        # (name, reason) of covered lines left at the CLOUDY flux
     ignored: tuple = ()
     static: Optional[dict] = None  # precomputed design/factorisation (fixed z, width, noise, calib)
+    has_grid: bool = True          # False: no nebular grid (add_neb=False / CSPBasis_afe), flat prior
 
     @property
     def keys(self) -> tuple:
@@ -123,6 +128,8 @@ class ElineSystem:
     def describe(self) -> str:
         prior = ("flat" if self.prior_width == 0.0
                  else f"Gaussian, width {self.prior_width:g} x CLOUDY (Ly-alpha flat)")
+        if not self.has_grid:
+            prior += "; no nebular grid, line list from emlines_info.dat"
         s = (f"{self.m} lines marginalised jointly over {list(self.keys)} ({prior}): "
              + ", ".join(self.names))
         if self.not_fitted:
@@ -164,6 +171,49 @@ def _used_mask(obs, n):
     return m
 
 
+def _is_afe(csp) -> bool:
+    return type(csp).__name__ == "CSPBasis_afe"
+
+
+def line_table_for(csp) -> dict:
+    """``{"wave", "names"}`` of FSPS's emission lines from ``<sps_home>/data/emlines_info.dat``
+    (vacuum rest wavelengths [A]), for a basis without a nebular grid (``add_neb=False`` or
+    ``CSPBasis_afe``)."""
+    sps_home = getattr(csp, "sps_home", None) or os.environ.get("SPS_HOME")
+    path = None if not sps_home else Path(sps_home) / "data" / "emlines_info.dat"
+    if path is None or not path.is_file():
+        raise ValueError(
+            "marginalize_elines=True without a nebular grid reads the emission-line list from "
+            "$SPS_HOME/data/emlines_info.dat, which "
+            + ("was not found at " + str(path) if path else "needs $SPS_HOME")
+            + ": set $SPS_HOME to your FSPS data directory or pass sps_home=... to the basis")
+    wave, names = [], []
+    with open(path) as f:
+        for row in f:
+            parts = row.split(",")
+            if len(parts) >= 2:
+                wave.append(float(parts[0]))
+                names.append(parts[1].strip())
+    return {"wave": np.asarray(wave, dtype=np.float64), "names": names}
+
+
+def line_profiles_on_grid(wave, pos, sigma_kms=0.0, res_floor_factor=2.0):
+    """(n_wave, n_line) f_nu profiles of unit-luminosity lines at ``pos`` on the model grid
+    ``wave``, exactly as ``NebularModel.line_profiles(sigma_kms)`` builds them (default
+    NebularModel settings: smooth_velocity, sigma_smooth = 0): a Gaussian in lambda of width
+    sqrt(floor^2 + (pos sigma/c)^2), floor = res_floor_factor x the local pixel width."""
+    from ..neb.NebularGridModel import CLIGHT_AA_S, SQRT_2PI
+    lam = np.asarray(wave, dtype=np.float64)
+    pos = np.asarray(pos, dtype=np.float64)
+    idx = np.clip(np.searchsorted(lam, pos, side="right") - 1, 1, lam.size - 2)
+    floor = (lam[idx + 1] - lam[idx]) * res_floor_factor
+    base = pos * 0.0 / CLIGHT_AA_S * 1.0e13
+    dl0 = np.maximum(base, floor)
+    dl = np.sqrt(dl0 ** 2 + (pos * float(sigma_kms) / CLIGHT_AA_S * 1.0e13) ** 2)
+    prof = np.exp(-0.5 * ((lam[:, None] - pos[None, :]) / dl[None, :]) ** 2)
+    return prof / (SQRT_2PI * dl[None, :]) * (pos[None, :] ** 2 / CLIGHT_AA_S)
+
+
 def build_eline_system(model) -> Optional[ElineSystem]:
     """Validate the configuration and build the ``ElineSystem`` (None when no Spectrum
     marginalises its lines).  Every refusal happens here, at setup, never in a kernel."""
@@ -182,17 +232,29 @@ def build_eline_system(model) -> Optional[ElineSystem]:
     spec = specs[0]
     csp = model.csp
     neb = getattr(csp, "neb", None)
-    if neb is None and type(csp).__name__ == "CSPBasis_afe":
-        raise ValueError(
-            f"Spectrum {spec.name!r} has marginalize_elines=True, but CSPBasis_afe has no nebular "
-            "model (there are no alpha-enhanced CLOUDY grids), so there is no line list to "
-            "marginalise. With an alpha-enhanced fit use Spectrum.mask_lines(...) for the emission "
-            "lines, or fit a solar-scaled CSPBasis(add_neb=True) with the nebular parameters fixed")
+    has_grid = neb is not None
     if neb is None:
-        raise ValueError(
-            f"Spectrum {spec.name!r} has marginalize_elines=True, but this CSP has no nebular "
-            "model (add_neb=False): the line list, rest wavelengths and nebular continuum come "
-            "from the CLOUDY grid. Build the basis with add_neb=True")
+        # no nebular grid (add_neb=False, or CSPBasis_afe: there are no alpha-enhanced CLOUDY
+        # grids): the line list, rest wavelengths and names come from FSPS's emlines_info.dat
+        # (none of them depends on [alpha/Fe] or Z), the widths from sigma_gas and the
+        # instrument as always; without grid fluxes the prior must be flat
+        what = ("CSPBasis_afe has no nebular grid (there are no alpha-enhanced CLOUDY grids)"
+                if _is_afe(csp) else "this CSP has no nebular model (add_neb=False)")
+        if spec.eline_prior_width > 0.0:
+            raise ValueError(
+                f"Spectrum {spec.name!r}: eline_prior_width={spec.eline_prior_width:g} needs the "
+                f"CLOUDY line fluxes to centre the prior on, and {what}. Use the flat prior, "
+                "eline_prior_width=0 (the default), or build the basis with add_neb=True")
+        if spec.elines_to_fix:
+            raise ValueError(
+                f"Spectrum {spec.name!r}: elines_to_fix={list(spec.elines_to_fix)} keeps lines at "
+                f"their CLOUDY flux, and {what}; fit them, or ignore them (elines_to_ignore)")
+        if any(isinstance(o, Lines) for o in model.observations):
+            raise ValueError(
+                f"a Lines observation needs the nebular grid's line fluxes, and {what}; remove "
+                "the Lines observation or build the basis with add_neb=True")
+        tab = line_table_for(csp)
+        neb = SimpleNamespace(nebem_line_pos=tab["wave"], nebem_line_names=tab["names"])
     fitted_neb = sorted(set(getattr(csp, "neb_param_names", [])) & set(model.param_names))
     if fitted_neb:
         example = ", ".join(f'"{k}": lambda th: jnp.array([...])' for k in fitted_neb)
@@ -290,10 +352,16 @@ def build_eline_system(model) -> Optional[ElineSystem]:
     zfix = float(model.zred)
     phot_cols = {}
     for o in phots:
-        basis = getattr(o, "_line_basis", None)
-        gnb = np.asarray(basis if basis is not None else neb.gaussnebarr, dtype=np.float64)
+        if has_grid:
+            basis = getattr(o, "_line_basis", None)
+            gnb = np.asarray(basis if basis is not None else neb.gaussnebarr,
+                             dtype=np.float64)[:, fit_rows]
+        else:           # the same profiles NebularModel.line_profiles gives (setup_broadening)
+            s_phot = (float(gas) if (model.broaden_photometry and not isinstance(gas, str)
+                                     and float(gas) > 0.0) else 0.0)
+            gnb = line_profiles_on_grid(np.asarray(csp.wave), pos[fit_rows], s_phot)
         T = np.asarray(o._T, dtype=np.float64)
-        phot_cols[o.name] = (1.0 + zfix) * (T @ gnb[:, fit_rows])
+        phot_cols[o.name] = (1.0 + zfix) * (T @ gnb)
     lines_cols = {}
     for o in lines_obs:
         B = csp._neb_blend_matrix_for(o)
@@ -309,7 +377,7 @@ def build_eline_system(model) -> Optional[ElineSystem]:
         names=tuple(name_of(r) for r in fit_rows), wave_rest=wave_rest, is_flat=is_flat,
         prior_width=float(spec.eline_prior_width), keep_grid=keep_grid,
         phot_cols=phot_cols, lines_cols=lines_cols, not_fitted=tuple(not_fitted),
-        ignored=tuple(name_of(r) for r in to_ignore))
+        ignored=tuple(name_of(r) for r in to_ignore), has_grid=has_grid)
     _check_conditioning(es, spec, proj, s_gas, used)
     es.static = _static_precompute(model, es, spec, phots, lines_obs, proj, s_gas, used, gas)
     return es
@@ -475,8 +543,9 @@ def eline_line_fluxes(model, theta, likelihood):
     prior_mean = aux["prior_mean"]
     _, mean, cov = eline_marginal_loglike(blocks, prior_mean, es.prior_sd(prior_mean),
                                           es.is_flat, return_posterior=True)
+    cloudy = prior_mean if es.has_grid else jnp.full_like(prior_mean, jnp.nan)
     return dict(names=es.names, wave_rest=es.wave_rest, mean=mean,
-                sd=jnp.sqrt(jnp.diagonal(cov)), cov=cov, cloudy=prior_mean)
+                sd=jnp.sqrt(jnp.diagonal(cov)), cov=cov, cloudy=cloudy)
 
 
 def _static_data(model, keys):

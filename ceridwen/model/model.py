@@ -188,10 +188,15 @@ class SedModel:
             kind = getattr(obs, "_kind", None)
             if kind == "spectrum":
                 zr = self._spectrum_zred_range(obs) if self.zred_is_free else None
+                lines_rest = None if neb is None else neb.nebem_line_pos
+                if neb is None and getattr(obs, "marginalize_elines", False):
+                    # no nebular grid: the marginalised lines come from FSPS's line list
+                    from ..likelihood.eline_marginal import line_table_for
+                    lines_rest = line_table_for(self.csp)["wave"]
                 obs.setup_for_model(
                     self.wave, zred=(self._spectrum_zred_ref(zr) if zr else self.zred),
                     kinematics=self.kinematics, lib_resolution=lib,
-                    line_wave_rest=(None if neb is None else neb.nebem_line_pos),
+                    line_wave_rest=lines_rest,
                     zred_range=zr)
             elif kind == "photometry":
                 obs.setup_for_model(self.wave, zred=self.zred)

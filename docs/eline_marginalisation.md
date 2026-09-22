@@ -66,10 +66,7 @@ error.
 
 ## Requirements (each refused at construction, with the fix in the message)
 
-- a nebular model (`CSPBasis(..., add_neb=True)`); `CSPBasis_afe` has none (there
-  are no α-enhanced CLOUDY grids), so marginalisation is not available with it; mask
-  the lines there instead;
-- nebular parameters that are **not sampled**: with free line fluxes the lines cannot constrain `gas_logu` /
+- with a nebular model (`add_neb=True`), nebular parameters that are **not sampled**: with free line fluxes the lines cannot constrain `gas_logu` /
   `gas_logz`. Fix them with constant transforms, as above, or tie them to
   another parameter with a transform;
 - an `Instrument` on the spectrum (the line width needs the LSF);
@@ -81,6 +78,24 @@ error.
   a sampled `zred` works for a spectrum-only fit;
 - there is no `eline_sigma`: the width is `Kinematics(sigma_gas=...)`, a
   velocity **dispersion** in km/s.
+
+## Without a nebular model (`add_neb=False`, `CSPBasis_afe`)
+
+The marginalisation does not need a nebular grid when the prior is flat: the line
+list, the rest wavelengths and the names are FSPS's `$SPS_HOME/data/emlines_info.dat`,
+and the widths are √(σ_gas² + σ_inst²) as always; none of them depends on the
+metallicity or [α/Fe]. So with `CSPBasis(..., add_neb=False)` and with
+`CSPBasis_afe` (which has no nebular grid: there are no α-enhanced CLOUDY grids)
+
+- the lines the spectrum covers are fitted with a **flat prior** (the default);
+  `eline_prior_width > 0` and `elines_to_fix` are refused, because both need the
+  CLOUDY fluxes;
+- the model has no nebular continuum and no grid lines, so there are no fixed lines;
+- `$SPS_HOME` (or `sps_home=...` on the basis) must point at the FSPS data, for
+  `emlines_info.dat`;
+- `Photometry` is marginalised jointly as usual; `Lines` observations are refused
+  (they need the grid's line fluxes);
+- the `cloudy` entries of the outputs are NaN.
 
 ## Choosing the prior
 

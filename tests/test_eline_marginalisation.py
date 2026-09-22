@@ -418,10 +418,54 @@ def test_eline_delta_zred_shifts_all_lines(csp):
 # 5. refusals, all at construction
 # ---------------------------------------------------------------------------
 
-def test_needs_a_nebular_model():
+def _noneb_model(csp0, flux=None, phot_flux=None, **spec_kw):
+    """Spectrum + Photometry on a CSPBasis without a nebular model (add_neb=False)."""
+    t = np.array(csp0.sfh_times)
+    unc = None if flux is None else 0.03 * np.median(flux) * np.ones_like(flux)
+    obs = [Spectrum(wavelength=T.WAVE_OBS, flux=flux, uncertainty=unc, name="spec",
+                    instrument=Instrument.R_fwhm(T.R_FWHM), marginalize_elines=True, **spec_kw),
+           Photometry(filters=T.FILTERS, flux=phot_flux, name="phot",
+                      uncertainty=None if phot_flux is None else 0.05 * np.abs(phot_flux))]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return SedModel(csp0, obs, zred=T.ZRED, kinematics=Kinematics(sigma_gal=150.0, sigma_gas=T.SIGMA_GAS),
+                        transforms={"sfh": lambda th, _t=t: logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)},
+                        free_param_init={"logsfr_ratios": jnp.zeros(len(t) - 1), "logmass": jnp.array([9.0])})
+
+
+def test_without_a_nebular_model_lines_come_from_emlines_info():
+    """add_neb=False: the lines come from $SPS_HOME/data/emlines_info.dat with a flat prior,
+    and injected lines are recovered exactly, jointly over Spectrum and Photometry."""
+    from ceridwen.likelihood.eline_marginal import line_table_for
     csp0 = T._csp(add_neb=False)
-    with pytest.raises(ValueError, match="add_neb=True"):
-        _model(csp0, phot=False, lines=False)
+    gen = _noneb_model(csp0)
+    es = gen._eline_system
+    assert not es.has_grid and np.all(es.is_flat)
+    tab = line_table_for(csp0)
+    for n in ("Ba-beta 4861", "[O III] 5007", "Ba-alpha 6563"):
+        assert es.wave_rest[es.names.index(n)] == tab["wave"][tab["names"].index(n)]
+    th = {k: jnp.asarray(v) for k, v in gen.theta_init.items()}
+    th["Z"] = jnp.array([-2.0])
+    pred, aux = gen.predict_with_elines(th)
+    F = np.abs(np.random.default_rng(2).normal(1.0, 0.5, es.m)) * 1e-17
+    y = np.asarray(pred["spec"]) + np.asarray(aux["cols"]["spec"]) @ F
+    yp = np.asarray(pred["phot"], float) + np.asarray(aux["cols"]["phot"]) @ F
+    model = _noneb_model(csp0, y, yp)
+    assert model._eline_system.static is not None
+    lh = MultiObservationLikelihood(keys=tuple(model.obs_dict), likelihoods=tuple(
+        _likelihood_for(o, model.param_names) for o in model.observations))
+    post = eline_line_fluxes(model, th, lh)
+    assert np.all(np.abs(np.asarray(post["mean"]) - F) < 1e-6 * np.asarray(post["sd"]))
+
+
+@pytest.mark.parametrize("kw,match", [
+    (dict(eline_prior_width=0.2), r"no nebular model \(add_neb=False\).*flat prior"),
+    (dict(elines_to_fix=["[O III] 5007"]), "elines_to_fix.*no nebular model"),
+])
+def test_without_a_nebular_model_refuses_what_needs_cloudy_fluxes(kw, match):
+    csp0 = T._csp(add_neb=False)
+    with pytest.raises(ValueError, match=match):
+        _noneb_model(csp0, **kw)
 
 
 def test_refuses_sampled_nebular_parameters(csp):
@@ -582,21 +626,94 @@ def test_static_fast_path_is_off_when_the_weights_depend_on_the_model(csp):
     assert model._eline_system.static is None
 
 
-def test_alpha_enhanced_basis_is_refused_with_a_clear_message():
-    """CSPBasis_afe has no nebular model: the refusal names it and says what to do instead."""
-    grid = T.find_test_grid().parent / "amist_c3k_lr_chab_afe.h5" if T.find_test_grid() else None
+# ---------------------------------------------------------------------------
+# alpha-enhanced basis: no nebular grid, line list from emlines_info.dat, flat prior
+# ---------------------------------------------------------------------------
+
+def _afe_csp():
+    grid = T.find_test_grid()
+    grid = None if grid is None else grid.parent / "amist_c3k_lr_chab_afe.h5"
     if grid is None or not grid.is_file():
         pytest.skip("alpha-enhanced grid (amist_c3k_lr_chab_afe.h5) not found")
+    if not __import__("os").environ.get("SPS_HOME"):
+        pytest.skip("SPS_HOME not set (emlines_info.dat)")
     from ceridwen.csp import CSPBasis_afe
     from ceridwen.ssps import SSPDataAfe
     from ceridwen import Cosmology
-    csp = CSPBasis_afe(SSPDataAfe.load(str(grid)), lookback_time=jnp.linspace(0.0, 12.0, 5),
-                       zh_const=True, sfh_interp="step", add_dust=False, add_diffuse_dust=True,
-                       verbose=False, cosmo=Cosmology.planck18())
-    w = np.linspace(5000.0, 6000.0, 300)
-    spec = Spectrum(wavelength=w, flux=np.ones_like(w), uncertainty=np.ones_like(w), name="spec",
-                    instrument=Instrument.R_fwhm(1000.0), marginalize_elines=True)
+    return CSPBasis_afe(SSPDataAfe.load(str(grid)), lookback_time=jnp.linspace(0.0, 12.0, 5),
+                        zh_const=True, sfh_interp="step", add_dust=False, add_diffuse_dust=True,
+                        verbose=False, cosmo=Cosmology.planck18())
+
+
+AFE_Z = 0.1
+AFE_WAVE = np.exp(np.arange(np.log(4750 * (1 + AFE_Z)), np.log(6800 * (1 + AFE_Z)), 1 / (2.3548 * 500) / 2.5))
+
+
+def _afe_model(csp, flux=None, phot_flux=None, **spec_kw):
+    unc = None if flux is None else 0.02 * np.median(flux) * np.ones_like(flux)
+    obs = [Spectrum(wavelength=AFE_WAVE, flux=flux, uncertainty=unc, name="spec",
+                    instrument=Instrument.R_fwhm(500.0), marginalize_elines=True, **spec_kw),
+           Photometry(filters=["sdss_g0", "sdss_r0", "sdss_i0"], flux=phot_flux,
+                      uncertainty=None if phot_flux is None else 0.03 * np.abs(phot_flux), name="phot")]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        with pytest.raises(ValueError, match="CSPBasis_afe has no nebular model.*mask_lines"):
-            SedModel(csp, [spec], zred=0.1, free_param_init={"logmass": jnp.array([10.0])})
+        return SedModel(csp, obs, zred=AFE_Z, kinematics=Kinematics(sigma_gal=200.0, sigma_gas=150.0),
+                        free_param_init={"logmass": jnp.array([10.5])})
+
+
+def test_afe_photometric_profiles_equal_the_nebular_model(csp):
+    """line_profiles_on_grid (used without a nebular grid) == NebularModel.line_profiles."""
+    from ceridwen.likelihood.eline_marginal import line_profiles_on_grid
+    pos = np.asarray(csp.neb.nebem_line_pos)
+    for s_kms in (0.0, 150.0):
+        np.testing.assert_allclose(line_profiles_on_grid(np.asarray(csp.wave), pos, s_kms),
+                                   csp.neb.line_profiles(s_kms), rtol=1e-12, atol=0.0)
+
+
+def test_afe_marginalisation_recovers_injected_lines():
+    """CSPBasis_afe: the line list comes from emlines_info.dat, the prior is flat, and a
+    noise-free mock (alpha-enhanced continuum + injected lines, spectrum and photometry) is
+    recovered exactly, jointly."""
+    from ceridwen.likelihood.eline_marginal import line_table_for
+    acsp = _afe_csp()
+    gen = _afe_model(acsp)
+    es = gen._eline_system
+    assert not es.has_grid and np.all(es.is_flat)
+    tab = line_table_for(acsp)
+    for n in ("Ba-beta 4861", "[O III] 5007", "Ba-alpha 6563", "[N II] 6584", "[S II] 6716"):
+        assert n in es.names
+        assert es.wave_rest[es.names.index(n)] == tab["wave"][tab["names"].index(n)]
+    th = {k: jnp.asarray(v) for k, v in gen.theta_init.items()}
+    th["afe"] = jnp.array([0.3])
+    pred, aux = gen.predict_with_elines(th)
+    rng = np.random.default_rng(4)
+    F = np.abs(rng.normal(1.0, 0.5, es.m)) * 3e-17
+    y = np.asarray(pred["spec"]) + np.asarray(aux["cols"]["spec"]) @ F
+    yp = np.asarray(pred["phot"], float) + np.asarray(aux["cols"]["phot"]) @ F
+    model = _afe_model(acsp, y, yp)
+    lh = MultiObservationLikelihood(keys=tuple(model.obs_dict), likelihoods=tuple(
+        _likelihood_for(o, model.param_names) for o in model.observations))
+    assert model._eline_system.static is not None      # fast path with data attached
+    post = eline_line_fluxes(model, th, lh)
+    mean, sd = np.asarray(post["mean"]), np.asarray(post["sd"])
+    assert np.all(np.abs(mean - F) < 1e-6 * sd)
+    assert np.all(np.isnan(np.asarray(post["cloudy"])))            # no grid prediction
+    assert np.isfinite(float(lh.make_lnprobfn(model.obs_dict, model, _NoPrior())(th)))
+
+
+@pytest.mark.parametrize("kw,match", [
+    (dict(eline_prior_width=0.2), "CSPBasis_afe has no nebular grid.*flat prior"),
+    (dict(elines_to_fix=["[O III] 5007"]), "elines_to_fix.*no nebular grid"),
+])
+def test_afe_refuses_what_needs_the_cloudy_fluxes(kw, match):
+    acsp = _afe_csp()
+    with pytest.raises(ValueError, match=match):
+        _afe_model(acsp, **kw)
+
+
+def test_afe_line_list_needs_sps_home(monkeypatch):
+    acsp = _afe_csp()
+    monkeypatch.setattr(acsp, "sps_home", None)
+    monkeypatch.delenv("SPS_HOME", raising=False)
+    with pytest.raises(ValueError, match="emlines_info.dat.*SPS_HOME"):
+        _afe_model(acsp)

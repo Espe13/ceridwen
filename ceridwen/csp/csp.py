@@ -780,8 +780,11 @@ class CSPBasis:
                     "prediction paints the lines on the model grid (free-z Photometry, a sampled "
                     "sigma_gas with broaden_photometry, or _force_paint_lines)")
             keep = jnp.asarray(es.keep_grid)
-            prior_mean = _line_fluxes_spec[es.fit_rows]
-            _line_fluxes_spec = _line_fluxes_spec * keep
+            if _line_fluxes_spec is None:          # no nebular grid (CSPBasis_afe): flat prior only
+                prior_mean = jnp.zeros(es.m)
+            else:
+                prior_mean = _line_fluxes_spec[es.fit_rows]
+                _line_fluxes_spec = _line_fluxes_spec * keep
             if _line_fluxes is not None:
                 _line_fluxes = _line_fluxes * keep
             if _line_fluxes_phot is not None:

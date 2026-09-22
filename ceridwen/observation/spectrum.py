@@ -35,8 +35,9 @@ class Spectrum(Observation):
         the finite bounds of the model's ``zred`` prior.
     marginalize_elines : bool -- marginalise analytically over the fluxes of the nebular
         lines in this spectrum (jointly with the model's Photometry and Lines), instead of
-        fixing them at the CLOUDY prediction; needs an ``instrument`` and a CSP with
-        ``add_neb=True`` whose nebular parameters are not sampled.  See
+        fixing them at the CLOUDY prediction; needs an ``instrument``; with a nebular model
+        its parameters must not be sampled, without one (``add_neb=False``, ``CSPBasis_afe``)
+        the lines come from ``$SPS_HOME/data/emlines_info.dat`` and the prior is flat.  See
         ``docs/eline_marginalisation.md``.
     eline_prior_width : float -- 0 (default): flat prior on each fitted line flux;
         > 0: Gaussian prior centred on the CLOUDY flux with this FRACTIONAL width.
