@@ -13,7 +13,7 @@ tfd = tfp.distributions
 Array = jax.Array
 
 __all__ = ["Prior", "Uniform", "TopHat", "Normal", "MultivariateNormalPrior", "ClippedNormal",
-           "LogNormal", "StudentT"]
+           "LogNormal", "LogUniform", "StudentT"]
 
 
 @dataclass(frozen=True)
@@ -310,6 +310,80 @@ class LogNormal(Prior):
 
     def bounds(self, **kwargs):
         return (0, jnp.inf)
+
+
+class LogUniform(Prior):
+    """Log-uniform (reciprocal, Jeffreys) prior on [mini, maxi], 0 < mini < maxi < inf.
+
+    pdf ``1 / (x ln(maxi/mini))`` on ``[mini, maxi]`` (``-inf`` log-density outside),
+    CDF ``ln(x/mini) / ln(maxi/mini)``: uniform in ``log x``, whatever the base.
+    Same parameter names and distribution as Prospector's ``LogUniform(mini, maxi)``
+    (``scipy.stats.reciprocal(mini, maxi)``).  The parameter itself (not its log) is
+    sampled; ``fitSED``'s NUTS path maps it to ``(mini, maxi)`` with a logit.
+
+    ``logpdf``/``cdf``/``ppf``/``sample`` are analytic ``jnp`` (exact, float64,
+    jit/grad/vmap-safe); ``tfp_dist()`` gives the equivalent TFP distribution
+    (``Exp`` of a ``Uniform(ln mini, ln maxi)``) for interoperability.
+    """
+    prior_params = ("mini", "maxi")
+
+    def __init__(self, parnames: Sequence[str] = (), name: str = "", **kwargs: Any):
+        super().__init__(parnames=parnames, name=name, **kwargs)
+        mini = np.asarray(self.params["mini"], dtype=np.float64)
+        maxi = np.asarray(self.params["maxi"], dtype=np.float64)
+        if not (np.all(np.isfinite(mini)) and np.all(np.isfinite(maxi))
+                and np.all(mini > 0.0) and np.all(maxi > mini)):
+            raise ValueError(
+                f"LogUniform needs 0 < mini < maxi < inf (finite, elementwise), got "
+                f"mini={mini.tolist()}, maxi={maxi.tolist()}.  For a parameter that can be "
+                "<= 0 sample its log with a Uniform instead.")
+        object.__setattr__(self, "params", {"mini": jnp.asarray(mini), "maxi": jnp.asarray(maxi)})
+
+    def _log_limits(self):
+        lna = jnp.log(self.params["mini"])
+        lnb = jnp.log(self.params["maxi"])
+        return lna, lnb
+
+    def tfp_dist(self) -> tfd.Distribution:
+        lna, lnb = self._log_limits()
+        return tfd.TransformedDistribution(distribution=tfd.Uniform(low=lna, high=lnb),
+                                           bijector=tfp.bijectors.Exp())
+
+    def logpdf(self, x: Array) -> Array:
+        x = jnp.asarray(x, dtype=jnp.float64)
+        a, b = self.params["mini"], self.params["maxi"]
+        lna, lnb = self._log_limits()
+        inside = (x >= a) & (x <= b)
+        x_safe = jnp.where(inside, x, a)          # no log of <= 0 in the dead branch (grad-safe)
+        return jnp.where(inside, -jnp.log(x_safe) - jnp.log(lnb - lna), -jnp.inf)
+
+    def _cdf(self, x: Array) -> Array:
+        x = jnp.asarray(x, dtype=jnp.float64)
+        a, b = self.params["mini"], self.params["maxi"]
+        lna, lnb = self._log_limits()
+        x_safe = jnp.clip(x, a, b)
+        c = (jnp.log(x_safe) - lna) / (lnb - lna)
+        return jnp.where(x >= b, 1.0, jnp.where(x <= a, 0.0, c))   # exact 0 / 1 at the ends
+
+    def _ppf(self, u: Array) -> Array:
+        u = jnp.asarray(u, dtype=jnp.float64)
+        lna, lnb = self._log_limits()
+        return jnp.exp(lna + u * (lnb - lna))
+
+    def _sample_impl(self, key: Array, shape: Tuple[int, ...] | None) -> Array:
+        if shape is None:
+            shape = ()
+        full = tuple(shape) + tuple(jnp.shape(self.params["mini"] * self.params["maxi"]))
+        u = jax.random.uniform(key, full, dtype=jnp.float64)
+        return self._ppf(u)
+
+    @property
+    def range(self):
+        return self.params["mini"], self.params["maxi"]
+
+    @property
+    def bounds(self):
+        return self.params["mini"], self.params["maxi"]
 
 
 class StudentT(Prior):

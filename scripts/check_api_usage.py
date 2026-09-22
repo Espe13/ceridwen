@@ -36,7 +36,7 @@ CHECKED = {
     "CSPBasis", "CSPBasis_afe", "SedModel", "Spectrum", "Photometry", "Lines", "Kinematics",
     "Instrument", "PostProcess", "fitSED", "NebularModel", "SSPData", "SSPDataAfe",
     "DiagonalNoiseModel", "GaussianProcess", "BlackJAXNestedSamplerAdapter", "BlackJAXNUTSAdapter",
-    "Uniform", "Normal", "ClippedNormal", "LogNormal", "StudentT", "TopHat",
+    "Uniform", "Normal", "ClippedNormal", "LogNormal", "LogUniform", "StudentT", "TopHat",
 }
 
 
@@ -48,8 +48,18 @@ def _sig_of(fn: ast.FunctionDef):
     return set(names), a.kwarg is not None
 
 
+def _prior_params_of(cls: ast.ClassDef):
+    """The string entries of a ``prior_params = (...)`` class attribute, or None."""
+    for item in cls.body:
+        if (isinstance(item, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "prior_params"
+                                                 for t in item.targets)
+                and isinstance(item.value, (ast.Tuple, ast.List))):
+            return {e.value for e in item.value.elts if isinstance(e, ast.Constant)}
+    return None
+
+
 def collect_signatures():
-    sigs, bases = {}, {}
+    sigs, bases, prior_params = {}, {}, {}
     for path in PKG.rglob("*.py"):
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
@@ -58,8 +68,20 @@ def collect_signatures():
                 for item in node.body:
                     if isinstance(item, ast.FunctionDef) and item.name == "__init__":
                         sigs[node.name] = _sig_of(item)
+                pp = _prior_params_of(node)
+                if pp is not None:
+                    prior_params[node.name] = pp
             elif isinstance(node, ast.FunctionDef) and node.name in CHECKED:
                 sigs[node.name] = _sig_of(node)
+    # priors (ceridwen/sampler/priors.py): Prior.__init__(parnames, name, **kwargs) accepts
+    # exactly the class's prior_params (inherited, e.g. TopHat <- Uniform) and rejects the rest
+    for name in CHECKED:
+        cls, pp = name, None
+        while cls is not None and pp is None:
+            pp = prior_params.get(cls)
+            cls = next((b for b in bases.get(cls, []) if b in bases), None)
+        if pp is not None:
+            sigs[name] = (pp | {"parnames", "name"}, False)
     # a constructor that forwards **kwargs accepts its base class's arguments too
     for name, (accepted, has_kwargs) in list(sigs.items()):
         if has_kwargs:
@@ -120,6 +142,8 @@ def check_source(src: str, label: str, sigs, findings):
             name = _call_name(node)
             if name in sigs:
                 accepted, has_kwargs = sigs[name]
+                if any(kw.arg == "parnames" for kw in node.keywords):
+                    has_kwargs = True   # a prior with aliased parameter names: any kwarg may be valid
                 for kw in node.keywords:
                     if kw.arg is None:
                         continue

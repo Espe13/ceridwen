@@ -5,6 +5,7 @@ from .priors import (
     Normal,
     ClippedNormal,
     LogNormal,
+    LogUniform,
     StudentT,
 )
 from .runner import SamplerAdapter, SamplingResult, run_sampler
@@ -21,6 +22,7 @@ __all__ = [
     "Normal",
     "ClippedNormal",
     "LogNormal",
+    "LogUniform",
     "StudentT",
     "SamplerAdapter",
     "SamplingResult",

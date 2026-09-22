@@ -361,3 +361,18 @@ difference, where reading the same number as absolute `log10 Z` is 0.231 and a w
 `Z_sun = 0.0142` is 3e-2 to 9e-2 off), `tests/test_result_metallicity.py`, three new
 regression categories `logzsol_bpass` / `logzsol_mist` / `logzsol_afe`, and 12 new
 `misuse_report` rows (37 rows, 0 SILENT).
+
+## 2026-09-22 — `LogUniform` prior
+
+**What.** `ceridwen.priors.LogUniform(mini, maxi)` (also `ceridwen.sampler`): Prospector's
+`LogUniform` (`scipy.stats.reciprocal`), pdf `1 / (x ln(maxi/mini))` on `[mini, maxi]`.
+Analytic `jnp` logpdf (`-inf` outside), CDF, ppf and sampling; `tfp_dist()` is `Exp` of a
+Uniform in `ln x`. Raises unless `0 < mini < maxi < inf`. `fit._detect_bounds` gives it
+`(mini, maxi)`, so NUTS samples it through the logit map; `SedModel.display()` labels it.
+`scripts/check_api_usage.py` now checks prior keyword arguments against `prior_params`.
+`GOTCHAS.md` section 14 documents it and the `LogNormal` `mode` difference from Prospector
+(`mode_ceridwen = mode_prospector + sigma**2`). No forward-model change.
+
+**Verification.** `tests/test_loguniform_prior.py` (values vs a Prospector golden table and
+scipy, KS, round trips, jit/vmap/grad, `_detect_bounds`, nested-sampling evidence vs the
+analytic value, NUTS, fitSED log-posterior gradient vs finite differences).

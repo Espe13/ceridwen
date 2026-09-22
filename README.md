@@ -633,7 +633,7 @@ two). The high-res grid is rebuilt from the provider's FITS with
 | `ceridwen.neb`          | nebular continuum + emission lines |
 | `ceridwen.observation`  | `Photometry`, `Spectrum`, `Lines` data containers + projection matrices |
 | `ceridwen.broadening`   | `Kinematics` (galaxy sigma_gal / sigma_gas), `Instrument` (LSF), `DEFAULT_KINEMATICS`: the one place spectral widths are set |
-| `ceridwen.priors`       | `Uniform`, `Normal`, `ClippedNormal`, `LogNormal`, `StudentT` |
+| `ceridwen.priors`       | `Uniform`, `Normal`, `ClippedNormal`, `LogNormal`, `LogUniform`, `StudentT` |
 | `ceridwen.likelihood`   | `DiagonalGaussianLikelihood`, `MultiObservationLikelihood` (honours `sky`, `calibration`, `upper_limit`, `noise_floor`; optional per-observation outlier mixture `f_outlier_spec` / `f_outlier_phot` / `f_outlier_lines`, default 0 = off, see `docs/outlier_model.md`) |
 | `ceridwen.model`        | `SedModel` parameter + prediction layer |
 | `ceridwen.sampler`      | priors, nested sampling, NUTS, VI transport maps |

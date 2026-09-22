@@ -392,13 +392,17 @@ def _describe_adapter(adapter, model) -> str:
 
 
 def _detect_bounds(model) -> dict[str, tuple[float, float]]:
-    """(low, high) bounds of Uniform/TopHat/ClippedNormal priors, keyed by parameter name."""
+    """(low, high) bounds of Uniform/TopHat/ClippedNormal/LogUniform priors, keyed by parameter name."""
     bounds = {}
     for name, prior in model.priors.items():
         cls_name = type(prior).__name__
         if cls_name in ("Uniform", "TopHat"):
             lo = float(prior.params["low"])
             hi = float(prior.params["high"])
+            bounds[name] = (lo, hi)
+        elif cls_name == "LogUniform":
+            lo = float(prior.params["mini"])
+            hi = float(prior.params["maxi"])
             bounds[name] = (lo, hi)
         elif cls_name == "ClippedNormal":
             if "low" in prior.params and "high" in prior.params:

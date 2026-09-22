@@ -97,7 +97,7 @@ from ceridwen import (SSPData, CSPBasis, SedModel,
 # Observation containers, priors and samplers live in clear sub-namespaces:
 from ceridwen.observation import Photometry, Spectrum, Lines
 from ceridwen.priors import (Prior, Uniform, TopHat, Normal, ClippedNormal,
-                             LogNormal, StudentT)
+                             LogNormal, LogUniform, StudentT)
 from ceridwen.sampler import run_sampler
 from ceridwen.likelihood import DiagonalGaussianLikelihood, MultiObservationLikelihood
 ```

@@ -393,3 +393,40 @@ Runtime, per-sample value checks (e.g. "this drawn `Z` is out of grid") are
 deliberately **not** placed in the jitted hot path — doing so would either break
 JIT or slow every evaluation. Use the non-jitted `csp.check_param_ranges(theta)`
 on your priors/bounds once before sampling instead.
+
+## 14. Priors ported from Prospector: `LogNormal` and `LogUniform` (2026-09-22)
+
+- **`LogNormal(mode, sigma)` does not mean what Prospector's does.** Same class name, same
+  argument names, different distribution for the same numbers:
+  - CERIDWEN (`ceridwen/sampler/priors.py`, class `LogNormal`) builds
+    `tfd.LogNormal(loc=mode, scale=sigma)`: `ln x ~ N(mode, sigma)`, so `mode` is the
+    **mean (= median) of ln x**; the pdf in x peaks at `exp(mode - sigma**2)`.
+  - Prospector (a78d153, `prospect/models/priors.py:442-480`) is
+    `scipy.stats.lognorm(sigma, loc=0, scale=exp(mode + sigma**2))`:
+    `ln x ~ N(mode + sigma**2, sigma)`, so its `mode` is **ln of the peak** of the pdf in x.
+  - Conversion, same `sigma`: `mode_ceridwen = mode_prospector + sigma**2`
+    (and `mode_prospector = mode_ceridwen - sigma**2`).
+  - Checked (22 Sep 2026, CPU): Prospector `LogNormal(mode=ln 2, sigma=0.5)` vs CERIDWEN
+    `LogNormal(mode=ln 2 + 0.25, sigma=0.5)` on 20001 points in [0.05, 50]: max |d ln p| =
+    1.07e-14; without the conversion 3.81. Prospector's pdf peaks at x = 2.000 = exp(mode);
+    CERIDWEN's `LogNormal(mode=ln 2)` peaks at 1.558 = exp(mode - sigma**2).
+  - `LogNormal.scale` still returns Prospector's `exp(mode + sigma**2)`, which is not the
+    scale of the distribution CERIDWEN samples; nothing in the package reads it.
+- **`LogUniform(mini, maxi)`** is Prospector's `LogUniform` (`scipy.stats.reciprocal`):
+  pdf `1 / (x ln(maxi/mini))` on `[mini, maxi]`, uniform in `log x`. It needs
+  `0 < mini < maxi < inf` (raises at construction otherwise). The parameter `x` itself is
+  sampled and stored in the result file (not `log10 x`, unlike the recipe
+  `examples/recipes/loguniform_prior.py`); NUTS maps it to `(mini, maxi)` with the logit
+  that `fitSED` builds from `_detect_bounds`, nested sampling draws it by its inverse CDF.
+  Its log-density is `-inf` outside the support.
+
+```python
+import math
+from ceridwen.priors import LogNormal, LogUniform
+
+priors = {"diffuse_tau_kc": LogUniform(mini=1e-2, maxi=3.0)}
+m_prosp, sigma = math.log(2.0), 0.5          # Prospector LogNormal(mode=ln 2, sigma=0.5)
+same_as_prospector = LogNormal(mode=m_prosp + sigma**2, sigma=sigma)
+```
+
+---

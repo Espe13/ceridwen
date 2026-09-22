@@ -43,7 +43,7 @@ from ceridwen.broadening import Instrument
 from ceridwen.likelihood import DiagonalNoiseModel, DiagonalGaussianLikelihood
 from ceridwen.likelihood.eline_marginal import refuse_outlier_with_elines
 from ceridwen.fit import _check_outlier_setup
-from ceridwen.priors import Normal, TopHat
+from ceridwen.priors import LogUniform, Normal, TopHat
 from types import SimpleNamespace
 
 from _gridfixture import require_test_grid
@@ -244,6 +244,8 @@ def run_scenarios():
         ("unbounded prior on f_outlier_spec", {"ERROR"},
          lambda: _check_outlier_setup(_outlier_model(["f_outlier_spec"],
                                                      {"f_outlier_spec": Normal(mean=0.1, sigma=0.1)}))),
+        ("LogUniform with mini <= 0 (log of 0)", {"ERROR"},
+         lambda: LogUniform(mini=0.0, maxi=1.0)),
     ]
 
     rows = []

@@ -634,6 +634,9 @@ class SedModel:
                     return rf"$\mathcal{{N}}_c({mu:.3g},\,{sg:.3g})$"
                 if cls == "LogNormal":
                     return r"$\mathrm{LogNorm}$"
+                if cls == "LogUniform":
+                    lo = float(p["mini"]);  hi = float(p["maxi"])
+                    return rf"$\log\mathcal{{U}}({lo:.3g},\,{hi:.3g})$"
                 if cls == "StudentT":
                     return r"$\mathrm{Student}\text{-}t$"
                 if "Multivariate" in cls:
