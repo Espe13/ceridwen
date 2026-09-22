@@ -632,7 +632,7 @@ two). The high-res grid is rebuilt from the provider's FITS with
 | `ceridwen.observation`  | `Photometry`, `Spectrum`, `Lines` data containers + projection matrices |
 | `ceridwen.broadening`   | `Kinematics` (galaxy sigma_gal / sigma_gas), `Instrument` (LSF), `DEFAULT_KINEMATICS`: the one place spectral widths are set |
 | `ceridwen.priors`       | `Uniform`, `Normal`, `ClippedNormal`, `LogNormal`, `StudentT` |
-| `ceridwen.likelihood`   | `DiagonalGaussianLikelihood`, `MultiObservationLikelihood` (honours `sky`, `calibration`, `upper_limit`, `noise_floor`) |
+| `ceridwen.likelihood`   | `DiagonalGaussianLikelihood`, `MultiObservationLikelihood` (honours `sky`, `calibration`, `upper_limit`, `noise_floor`; optional per-observation outlier mixture `f_outlier_spec` / `f_outlier_phot` / `f_outlier_lines`, default 0 = off, see `docs/outlier_model.md`) |
 | `ceridwen.model`        | `SedModel` parameter + prediction layer |
 | `ceridwen.sampler`      | priors, nested sampling, NUTS, VI transport maps |
 | `ceridwen.cosmology`    | `Cosmology` (Planck18/Planck15/WMAP9 presets, `flat`, `from_astropy`), JAX-native distances and ages |
@@ -662,7 +662,7 @@ If you use ceridwen in your research, please cite it:
   author       = {Stoffers, Amanda},
   title        = {{CERIDWEN}: Fast and Flexible {GPU}-Accelerated Stellar Population Inference},
   year         = {2026},
-  note         = {Version 1.0.3},
+  note         = {Version 1.0.4},
   howpublished = {\url{https://github.com/Espe13/ceridwen}}
 }
 ```

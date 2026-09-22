@@ -12,6 +12,7 @@ Needs the test grid (see tests/_gridfixture.py); the nebular block runs only wit
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import pathlib
 import sys
@@ -136,6 +137,54 @@ def _postprocess(model, theta_np, tag, out):
     _flat(f"{tag}/postprocess", o, out)
 
 
+def _likelihood(model, theta_np, tag, out):
+    """fitSED's sampled log-posterior (MultiObservationLikelihood.make_lnprobfn): value and
+    gradient at every draw, plus the SHA-256 of the lowered StableHLO of jit(value_and_grad).  Then
+    the outlier-mixture variant (f_outlier_spec sampled, f_outlier_phot fixed) when the
+    package has it."""
+    from ceridwen.fit import _likelihood_for
+    from ceridwen.likelihood import DiagonalGaussianLikelihood, MultiObservationLikelihood
+    rng = np.random.default_rng(SEED + 2)
+    obs = model.obs_dict
+    keys = tuple(obs)
+    y_fake = {k: np.asarray(model.predict({n: jnp.asarray(v[0]) for n, v in theta_np.items()})[k])
+              for k in keys}
+    saved = {k: (obs[k].flux, obs[k].uncertainty) for k in keys}
+    for k in keys:                      # data = draw 0's prediction + 10 % noise, 3 % outliers
+        o = obs[k]
+        noise = 0.1 * np.abs(y_fake[k]) * rng.standard_normal(y_fake[k].shape)
+        bad = rng.uniform(size=y_fake[k].shape) < 0.03
+        o.flux = jnp.asarray(y_fake[k] + noise + bad * 20.0 * 0.1 * np.abs(y_fake[k]))
+        o.uncertainty = jnp.asarray(0.1 * np.abs(y_fake[k]) + 1e-30)
+    variants = [("gauss", tuple(_likelihood_for(obs[k], model.param_names) for k in keys))]
+    try:
+        from ceridwen.likelihood import DiagonalNoiseModel
+        nm = {"phot": DiagonalNoiseModel(f_outlier=0.05, nsigma_outlier=20.0),
+              "spec": DiagonalNoiseModel(f_outlier="f_outlier_spec"),
+              "lines": DiagonalNoiseModel()}
+        variants.append(("outlier", tuple(DiagonalGaussianLikelihood(nm[k]) for k in keys)))
+    except TypeError:
+        print("  (package has no outlier model: variant skipped)")
+    n = next(iter(theta_np.values())).shape[0]
+    f_draws = rng.uniform(1e-4, 0.3, (n, 1))
+    for vname, lhs in variants:
+        lnprob = MultiObservationLikelihood(keys=keys, likelihoods=lhs).make_lnprobfn(
+            obs, model, model)
+        vg = jax.jit(jax.value_and_grad(lnprob))
+        for i in range(n):
+            one = {k: jnp.asarray(v[i]) for k, v in theta_np.items()}
+            if vname == "outlier":
+                one["f_outlier_spec"] = jnp.asarray(f_draws[i])
+            val, grad = vg(one)
+            out[f"{tag}/lnprob/{vname}/{i}/value"] = np.asarray(val)
+            _flat(f"{tag}/lnprob/{vname}/{i}/grad", grad, out)
+        hlo = vg.lower(one).as_text().encode()            # 0.1-0.4 GB of text: keep a digest
+        out[f"{tag}/lnprob/{vname}/stablehlo_sha256"] = np.frombuffer(
+            hashlib.sha256(hlo).digest(), dtype=np.uint8)
+    for k, (flux, unc) in saved.items():
+        obs[k].flux, obs[k].uncertainty = flux, unc
+
+
 def _nested(model, tag, out):
     from ceridwen import fitSED
     from ceridwen.sampler.priors import Uniform, StudentT
@@ -179,6 +228,7 @@ def collect(args):
         theta = _draws(model, N_THETA, rng)
         _forward(model, theta, tag, out)
         _postprocess(model, theta, tag, out)
+        _likelihood(model, theta, tag, out)
         if args.ns and tag == "plain":
             _nested(model, tag, out)
         print(f"{tag:<12} {len(out)} arrays so far  ({time.perf_counter() - t0:.1f} s)")

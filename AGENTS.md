@@ -156,7 +156,11 @@ projection → likelihood → sampler.
 - `likelihood/` — `likelihood.py`: `DiagonalGaussianLikelihood`,
   `MultiObservationLikelihood`, pure-JAX `lnlike_diag_gaussian`, masking,
   `make_lnprobfn()` (the jitted log-posterior factory). `noise_model.py`:
-  `DiagonalNoiseModel` (noise floor, optional jitter + calibration error).
+  `DiagonalNoiseModel` (noise floor, optional jitter + calibration error, optional
+  Prospector-style outlier mixture `f_outlier` / `nsigma_outlier` per observation
+  (`f_outlier_spec/_phot/_lines[_<obs.name>]` in `fitSED`, all default 0 = off: switch on
+  explicitly), applied by the likelihood kernels `lnlike_diag_outlier[_with_upper_limits]`;
+  `docs/outlier_model.md`).
 - `sampler/` — `priors.py` (TFP-JAX priors with logpdf/sample/unit_transform),
   `nested.py` (BlackJAX nested sampling), `nuts.py` (NUTS, VI-preconditioned),
   `vi.py` (VI transport maps: TriL, IAF/NeuTra), `runner.py` (`SamplerAdapter`

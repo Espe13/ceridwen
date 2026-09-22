@@ -486,6 +486,24 @@ def _check_conditioning(es, spec, proj, s_gas, used):
 # likelihood assembly (used by run_sampler and MultiObservationLikelihood)
 # ---------------------------------------------------------------------------
 
+def refuse_outlier_with_elines(keys, likelihoods, system_keys):
+    """Raise when an observation inside the marginalised system (``system_keys``: the
+    marginalising Spectrum, every Photometry and every Lines observation) carries an outlier
+    mixture: the closed-form Gaussian marginal over the line fluxes is not exact under a
+    mixture.  Observations outside the system keep their mixture."""
+    bad = [k for k, lh in zip(keys, likelihoods)
+           if k in system_keys
+           and getattr(getattr(lh, "noise_model", None), "use_outlier", False)]
+    if bad:
+        raise NotImplementedError(
+            f"the outlier mixture (f_outlier) on {bad} cannot be combined with "
+            "Spectrum(marginalize_elines=True): these observations are marginalised jointly "
+            f"over the line fluxes ({list(system_keys)}), and that marginal assumes a Gaussian "
+            "likelihood.  The mixture is allowed only on observations outside the "
+            "marginalised system; drop the outlier parameters of these, or use mask_lines "
+            "instead of marginalising")
+
+
 def _blocks(model, predictions, aux, static_data, lhood_of, theta):
     es = model._eline_system
     blocks, rest = [], 0.0
@@ -515,6 +533,7 @@ def joint_loglike(model, keys, likelihoods, static_data, theta):
     """Total ln-likelihood of all observations with the fitted line fluxes marginalised:
     the observations in the ElineSystem jointly, the others as usual."""
     es = model._eline_system
+    refuse_outlier_with_elines(keys, likelihoods, es.keys)
     predictions, aux = model.predict_with_elines(theta)
     if es.static is not None:
         rest, r = 0.0, {}
@@ -544,6 +563,7 @@ def eline_line_fluxes(model, theta, likelihood):
     es = model._eline_system
     if es is None:
         raise ValueError("no Spectrum of this model has marginalize_elines=True")
+    refuse_outlier_with_elines(likelihood.keys, likelihood.likelihoods, es.keys)
     static_data = _static_data(model, likelihood.keys)
     predictions, aux = model.predict_with_elines(theta)
     blocks, _ = _blocks(model, predictions, aux, static_data,
@@ -558,15 +578,6 @@ def eline_line_fluxes(model, theta, likelihood):
 
 def _static_data(model, keys):
     """``{key: (y - sky, sigma, mask, calibration, upper_limit)}`` as run_sampler builds it."""
-    out = {}
+    from .likelihood import observation_data
     obs = model.obs_dict
-    for key in keys:
-        o = obs[key]
-        y = o.flux
-        sky = getattr(o, "sky", None)
-        if sky is not None:
-            y = y - sky
-        ul = getattr(o, "upper_limit", None)
-        ul = None if ul is None or not bool(jnp.any(ul)) else jnp.asarray(ul, dtype=bool)
-        out[key] = (y, o.uncertainty, o.mask, getattr(o, "calibration", None), ul)
-    return out
+    return {key: observation_data(obs[key]) for key in keys}

@@ -82,6 +82,9 @@ prefer `predict`/`get_spectrum_components`.
 - `Photometry.predict` before `setup_for_model` raises `RuntimeError` (no
   rest-frame fallback).
 - **All-zero uncertainties** → `ValueError` at construction.
+- **Non-finite flux or non-finite / non-positive uncertainties** are masked at
+  construction, with a warning when your mask did not already exclude them; the
+  likelihood never sees them (not in the value, not in the gradient).
 - **Unknown filter name** → `FileNotFoundError` naming the missing `.par` file.
 - `SedModel` calls `setup_for_model` for every observation at construction, so
   you never call it yourself there. If you replace `model.observations`
@@ -271,7 +274,8 @@ prefer `predict`/`get_spectrum_components`.
   `free_param_init`. This is a `fitSED` feature: with `run_sampler` you build the
   `DiagonalNoiseModel(use_error_scale=True, ...)` yourself, otherwise the
   parameter is sampled from its prior and never enters the likelihood, with no
-  warning.
+  warning. The outlier mixture (`f_outlier_spec` / `f_outlier_phot`, section 13) is
+  switched on the same way but is **per observation kind**, never shared.
 - `SedModel` raises for a prior on a name that is not sampled and warns for
   sampled parameters without a prior; `free_param_init` is applied without
   transforms too; prior constructors reject unknown/missing arguments.
@@ -320,6 +324,36 @@ prefer `predict`/`get_spectrum_components`.
 - `model.predict(theta)` still predicts the CLOUDY lines (the forward model);
   the fitted lines are in `/elines`, `PostProcess` `extras["elines"]` and its
   predictions.
+
+## 13. Outlier mixture likelihood (2026-09-22)
+
+`f_outlier_spec` / `f_outlier_phot` / `f_outlier_lines` (with `nsigma_outlier_*`, default 50)
+switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Lines`
+(`docs/outlier_model.md`).
+
+- **All outlier fractions default to 0; switch the mixture on explicitly** (sample the
+  fraction, or fix it non-zero). Prospector's template (spectrum free, init 0.01) is a
+  reference, not CERIDWEN's default.
+- **Keep `f_outlier_phot` at 0 for small photometric sets.** On a clean 8-band mock with it
+  free, SFR_now widened to 0.592 [-0.344, 0.753] from 0.770 [0.580, 0.965] (Gaussian).
+- **A lower prior bound of 0 is safe for gradients:** d ln L/df is computed exactly (custom
+  JVP) and is finite at f = 0.
+
+- **One fraction per observation.** With two spectra the names are
+  `f_outlier_spec_<obs.name>`; the plain `f_outlier_spec` is then an error (ambiguous).
+- **Prospector's f = 0 value is not a reference.** Its plain branch multiplies chi^2 by
+  ln 2 pi and drops n ln 2 pi (`noise_model.py:90`); CERIDWEN equals Prospector's outlier
+  branch for f > 0 and the correct Gaussian at f = 0.
+- **Fixed means a constant transform**, `transforms={"f_outlier_phot": lambda th:
+  jnp.array([0.05])}`; a transform that depends on sampled parameters raises. Fixed at
+  0.0 = off (the unchanged Gaussian).
+- **Upper limits** keep the one-sided penalty; the mixture acts on the detections.
+- **With `marginalize_elines`** the mixture is refused on the marginalised system (the
+  marginalising spectrum, all photometry, all line fluxes) and allowed outside it.
+- **Refused, loudly:** `nsigma_outlier_*` without its `f_outlier_*`; a name matching no
+  observation; an unbounded prior on `f` or one outside [0, 1].
+- `lnl_pointwise` holds the mixture terms; `chi` stays the inlier (y - mu)/sigma_eff. The
+  per-datum outlier probability comes from `likelihood.outlier_probability(...)`.
 
 ---
 

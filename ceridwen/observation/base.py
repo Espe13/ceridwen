@@ -2,6 +2,7 @@
 and the ``setup_for_model`` / ``predict`` projection interface."""
 
 import json
+import warnings
 import jax.numpy as jnp
 import numpy as np
 
@@ -133,6 +134,15 @@ class Observation:
             raise ValueError(f"{name}: mask shape {self.mask.shape} != flux shape "
                              f"{self.flux.shape}")
 
+        bad = self.mask & ~(jnp.isfinite(self.flux) & jnp.isfinite(self.uncertainty)
+                            & (self.uncertainty > 0))
+        if bool(jnp.any(bad)):
+            idx = np.flatnonzero(np.asarray(bad))
+            warnings.warn(
+                f"{name}: {idx.size} data point(s) with non-finite flux or non-finite / "
+                f"non-positive uncertainty were not in the mask (indices "
+                f"{idx[:10].tolist()}{' ...' if idx.size > 10 else ''}); they are masked now "
+                "and ignored by the likelihood", stacklevel=3)
         self._automask()
         if self.ndof <= 0:
             raise ValueError(f"{name}: no valid unmasked data points after masking")

@@ -78,6 +78,13 @@ class DiagonalNoiseModel(NoiseModelBase):
     use_fractional : bool -- add (exp(params["log_f_calib"]) * |mu|)^2, model-anchored
     use_data_fractional : bool -- add (exp(params["log_f_data"]) * |y|)^2, data-anchored, needs ``data``
     noise_floor : float -- fixed fractional floor on |mu|
+    f_outlier : None, float or str -- outlier mixture (Hogg, Bovy & Lang 2010): the fraction
+        of data drawn from a Gaussian ``nsigma_outlier`` times broader than sigma_eff.  Default
+        None = 0 = off: the mixture is on only when switched on explicitly, with a float in
+        (0, 1) (fixed; 0.0 means off) or a str (the theta key of a sampled fraction).  Applied
+        by the likelihood classes, not by ``compute``.
+    nsigma_outlier : float or str -- width of the outlier Gaussian in units of sigma_eff,
+        fixed (default 50, Prospector's) or a theta key
     """
 
     use_jitter          : bool = False
@@ -85,6 +92,49 @@ class DiagonalNoiseModel(NoiseModelBase):
     use_data_fractional : bool = False
     noise_floor         : float = 0.0
     use_error_scale     : bool = False
+    f_outlier           : Optional[float | str] = None
+    nsigma_outlier      : float | str = 50.0
+
+    def __post_init__(self) -> None:
+        f, ns = self.f_outlier, self.nsigma_outlier
+        if f is not None and not isinstance(f, str):
+            if isinstance(f, bool) or not isinstance(f, (int, float)):
+                raise TypeError(f"f_outlier must be None, a float or a theta key, got {f!r}")
+            if not 0.0 <= float(f) < 1.0:
+                raise ValueError(f"a fixed f_outlier must lie in [0, 1), got {f!r}")
+            # f = 0 is the ordinary Gaussian: switch the mixture off so the graph is unchanged
+            object.__setattr__(self, "f_outlier", None if float(f) == 0.0 else float(f))
+        if isinstance(f, str) and not f:
+            raise ValueError("f_outlier theta key must be a non-empty string")
+        if not isinstance(ns, str):
+            if isinstance(ns, bool) or not isinstance(ns, (int, float)) or not float(ns) > 0.0:
+                raise ValueError(f"a fixed nsigma_outlier must be a positive number, got {ns!r}")
+            object.__setattr__(self, "nsigma_outlier", float(ns))
+        elif not ns:
+            raise ValueError("nsigma_outlier theta key must be a non-empty string")
+
+    @property
+    def use_outlier(self) -> bool:
+        """True when the outlier mixture is on (static: it selects the likelihood kernel)."""
+        return self.f_outlier is not None
+
+    @property
+    def outlier_param_names(self) -> tuple[str, ...]:
+        """theta keys of the sampled outlier parameters (empty when fixed or off)."""
+        if not self.use_outlier:
+            return ()
+        return tuple(v for v in (self.f_outlier, self.nsigma_outlier) if isinstance(v, str))
+
+    def outlier_params(self, params: Optional[dict[str, Array]]) -> tuple[Array, Array]:
+        """``(f, nsigma)`` for the mixture kernel: the fixed values, or looked up in ``params``."""
+        def get(v, what):
+            if not isinstance(v, str):
+                return v
+            if params is None or v not in params:
+                raise KeyError(f"the outlier model reads {what} from theta[{v!r}], which is "
+                               "missing: sample it (with a prior) or give a fixed value")
+            return params[v]
+        return get(self.f_outlier, "f_outlier"), get(self.nsigma_outlier, "nsigma_outlier")
 
     def compute(
         self,
@@ -153,7 +203,10 @@ class DiagonalNoiseModel(NoiseModelBase):
             f"use_fractional={self.use_fractional}, "
             f"use_data_fractional={self.use_data_fractional}, "
             f"noise_floor={self.noise_floor}, "
-            f"use_error_scale={self.use_error_scale})"
+            f"use_error_scale={self.use_error_scale}"
+            + (f", f_outlier={self.f_outlier!r}, nsigma_outlier={self.nsigma_outlier!r}"
+               if self.use_outlier else "")
+            + ")"
         )
 
 
@@ -162,10 +215,10 @@ jax.tree_util.register_pytree_node(
     flatten_func=lambda nm: (
         [],
         (nm.use_jitter, nm.use_fractional, nm.use_data_fractional, nm.noise_floor,
-         nm.use_error_scale),
+         nm.use_error_scale, nm.f_outlier, nm.nsigma_outlier),
     ),
     unflatten_func=lambda aux, _: DiagonalNoiseModel(
         use_jitter=aux[0], use_fractional=aux[1], use_data_fractional=aux[2],
-        noise_floor=aux[3], use_error_scale=aux[4],
+        noise_floor=aux[3], use_error_scale=aux[4], f_outlier=aux[5], nsigma_outlier=aux[6],
     ),
 )

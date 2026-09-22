@@ -71,8 +71,9 @@ error.
   another parameter with a transform;
 - an `Instrument` on the spectrum (the line width needs the LSF);
 - one marginalising spectrum per model;
-- no `logify_spectrum`, no GP `noise`, no upper limits in the jointly fitted
-  observations;
+- no `logify_spectrum`, no GP `noise`, no upper limits and no outlier mixture
+  (`f_outlier_*`, [outlier model](outlier_model.md)) in the jointly fitted observations
+  (a spectrum outside the system may carry one);
 - `Photometry` together with a sampled `zred`, or with a sampled `sigma_gas`
   and `broaden_photometry=True`, is not supported yet (`NotImplementedError`);
   a sampled `zred` works for a spectrum-only fit;

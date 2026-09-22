@@ -57,6 +57,18 @@ treat everything else as internal.
 
 ::: ceridwen.likelihood.MultiObservationLikelihood
 
+The outlier mixture of `DiagonalNoiseModel` is off by default (`f_outlier=None`, i.e. 0);
+all outlier fractions default to 0, switch the mixture on explicitly
+([outlier model](outlier_model.md)).
+
+::: ceridwen.likelihood.DiagonalNoiseModel
+
+::: ceridwen.likelihood.lnlike_diag_outlier
+
+::: ceridwen.likelihood.lnlike_diag_outlier_with_upper_limits
+
+::: ceridwen.likelihood.outlier_probability
+
 ## Fitting
 
 ::: ceridwen.fit.fitSED

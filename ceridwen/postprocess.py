@@ -384,7 +384,8 @@ class PostProcess:
             model = self.model
             lh = MultiObservationLikelihood(
                 keys=tuple(model.obs_dict),
-                likelihoods=tuple(_likelihood_for(o, model.param_names) for o in model.observations))
+                likelihoods=tuple(_likelihood_for(o, model.param_names, model=model)
+                                  for o in model.observations))
 
             def one(th):
                 pred, aux = model.predict_with_elines(th)

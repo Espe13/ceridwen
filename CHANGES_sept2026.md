@@ -242,3 +242,53 @@ line list is read, so a missing `$SPS_HOME` no longer masks them
 The citation title is now "CERIDWEN: Fast and Flexible GPU-Accelerated Stellar Population
 Inference" (`CITATION.cff`, and the BibTeX entries in `README.md` and `docs/index.md`).
 
+---
+
+## 2026-09-22 — v1.0.4: outlier mixture likelihood
+
+**What:** Prospector's per-datum outlier mixture (Hogg, Bovy & Lang 2010) in the sampled
+likelihood. `DiagonalNoiseModel(f_outlier=..., nsigma_outlier=...)` (None/float/theta key;
+nsigma default 50), applied by `likelihood.lnlike_diag_outlier` (and
+`lnlike_diag_outlier_with_upper_limits`) through a static branch in the likelihood classes,
+so `run_sampler`, `MultiObservationLikelihood.make_lnprobfn` and `fitSED` all use it.
+`fitSED` switches it on per observation from `f_outlier_spec` / `f_outlier_phot` /
+`f_outlier_lines` (plain name for a single observation of a kind, `f_outlier_<kind>_<name>`
+for each of several; + `nsigma_outlier_*`), sampled or fixed by a constant transform
+(`fit._outlier_terms`, `fit._check_outlier_setup`); never shared between observations;
+`_describe_likelihood` logs it. Upper limits keep the one-sided penalty, the detections get
+the mixture. With `marginalize_elines` the mixture is refused inside the marginalised system
+(the marginalising spectrum, all Photometry, all Lines) and applied outside it
+(`eline_marginal.refuse_outlier_with_elines`). The derivative in f is the exact
+`(p_bad - p_good)/L` (custom JVP), finite at f = 0. Diagnostic `outlier_probability` (off the
+sampling path). `_likelihood_for` gains `model=` (postprocess passes it).
+
+**Defaults:** every outlier fraction defaults to 0 (off); the mixture is on only when the
+model samples a fraction or fixes it non-zero (Prospector's template, spectrum free with init
+0.01, is a reference only). The fitSED log reports `outlier mixture off` otherwise. For small
+photometric sets keep `f_outlier_phot` at 0: on a clean 8-band mock with it free, SFR_now
+widened to 0.592 [-0.344, 0.753] from 0.770 [0.580, 0.965].
+
+**Deliberate difference from Prospector:** equal to its outlier branch (f > 0); at f = 0
+the correct Gaussian, not Prospector's plain branch, which multiplies chi^2 by ln 2 pi and
+drops n ln 2 pi (`prospect/likelihood/noise_model.py:90`, commit a78d153).
+
+**Non-finite data (all likelihoods):** observations now warn at construction when non-finite
+flux or non-finite / non-positive uncertainties were not in the user's mask (they were, and
+are, masked). The sampled likelihood reads the data through `likelihood.observation_data` /
+`finite_data`, which replace masked non-finite values by 0 (flux) and 1 (uncertainty):
+before, a NaN in a masked slot made every gradient NaN (0 * NaN) — NUTS/VI fits of data with
+NaNs; nested sampling (no gradients) was unaffected. `obs.flux` itself is unchanged. The
+three copies of the static-data code (`runner.py`, `MultiObservationLikelihood`,
+`eline_marginal._static_data`) now share `observation_data`.
+
+**Verification:** equal to a NumPy transcription of Prospector's branch for every noise
+term (rtol 1e-12) and to values written by Prospector 2.0a2.dev42 (rtol 1e-12,
+`tests/reference/prospector_outlier.npz`); nsigma = 1 is the Gaussian; gradients against
+finite differences and the analytic f = 0 value; `tests/test_outlier_model.py`. New
+regression category `outlier_likelihood`. With the mixture off and finite data the change
+is bit-identical (T4). A100 (Tursa): +0.6 % at W = 100; value and gradient at W = 4 (NUTS,
+4 chains) +1.9 % (+49 µs), over the 1 % target, not optimised; recovery test in
+OUTLIER_MODEL_2026-09-22.md section 12 (`scripts/outlier/tursa/`). A100 full suite: the 16
+failures (17 with an upload artefact) fail identically on 9b21fd6 on the same node, i.e.
+pre-existing GPU float32 / FSPS-library (C3K_lr on Tursa vs MILES locally) differences
+against CPU contracts; none new (section 13). Docs: `docs/outlier_model.md`, GOTCHAS sections 5 and 13.

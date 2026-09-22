@@ -52,6 +52,30 @@ jax.tree_util.register_pytree_node(
 )
 
 
+def finite_data(y: Array, sigma: Array) -> tuple[Array, Array]:
+    """``y`` and ``sigma`` with non-finite entries replaced by 0 and 1.  Observations mask
+    those entries at construction, but a NaN left in a masked slot still reaches the
+    gradient as 0 * NaN; every sampled likelihood reads its data through this."""
+    y = jnp.asarray(y)
+    sigma = jnp.asarray(sigma)
+    return (jnp.where(jnp.isfinite(y), y, 0.0),
+            jnp.where(jnp.isfinite(sigma), sigma, 1.0))
+
+
+def observation_data(obs) -> tuple:
+    """``(y - sky, sigma, mask, calibration, upper_limit)`` of ``obs`` as the sampled
+    likelihood uses them (``upper_limit`` None unless some datum is flagged), through
+    :func:`finite_data`."""
+    y = obs.flux
+    sky = getattr(obs, "sky", None)
+    if sky is not None:
+        y = y - sky
+    y, sigma = finite_data(y, obs.uncertainty)
+    ul = getattr(obs, "upper_limit", None)
+    ul = None if ul is None or not bool(jnp.any(ul)) else jnp.asarray(ul, dtype=bool)
+    return (y, sigma, obs.mask, getattr(obs, "calibration", None), ul)
+
+
 def lnlike_diag_gaussian(
     y       : Array,
     mu      : Array,
@@ -81,6 +105,126 @@ def lnlike_diag_gaussian(
         ndof          = ndof,
     )
     return lnl_total, aux
+
+
+@jax.custom_jvp
+def _mixture(f: Array, a: Array, b: Array) -> Array:
+    """``ln[(1 - f) e^a + f e^b]`` evaluated as ``logaddexp(log1p(-f) + a, log(f) + b)``."""
+    return jnp.logaddexp(jnp.log1p(-f) + a, jnp.log(f) + b)
+
+
+@_mixture.defjvp
+def _mixture_jvp(primals, tangents):
+    # Exact derivative.  d/df = (e^b - e^a) / L is finite at f = 0, where differentiating
+    # the log(f) above gives 0 * inf = NaN; the values are those of the primal.
+    f, a, b = primals
+    df, da, db = tangents
+    out = _mixture(f, a, b)
+    w_good = jnp.exp(jnp.log1p(-f) + a - out)
+    w_bad  = jnp.exp(jnp.log(f) + b - out)
+    d_f    = jnp.exp(b - out) - jnp.exp(a - out)
+    return out, d_f * df + w_good * da + w_bad * db
+
+
+def _outlier_terms(y, mu, inv_var, log_det, mask, f, nsigma):
+    """``(resid, chi, lnl_i)`` of the mixture; the residual is zeroed on masked data before
+    any arithmetic, so masked (even non-finite) data give finite gradients."""
+    resid = jnp.where(mask, y - mu, 0.0)
+    chi   = resid * jnp.sqrt(inv_var)
+    chi2  = chi ** 2
+    lnp_good = -0.5 * chi2 - log_det
+    lnp_bad  = -0.5 * chi2 / nsigma ** 2 - log_det - jnp.log(nsigma)
+    return resid, chi, _mixture(f, lnp_good, lnp_bad)
+
+
+def lnlike_diag_outlier(
+    y       : Array,
+    mu      : Array,
+    inv_var : Array,
+    log_det : Array,
+    mask    : Array,
+    f       : Array,
+    nsigma  : Array,
+) -> tuple[Array, LikelihoodOutput]:
+    """Outlier mixture (Hogg, Bovy & Lang 2010), Prospector's ``NoiseModel.lnlike`` branch
+    ``f_outlier > 0``: per datum
+
+        lnl_i = logaddexp(log(1 - f) + lnp_good_i, log(f) + lnp_bad_i)
+        lnp_good_i = -0.5 chi_i^2 - log_det_i
+        lnp_bad_i  = -0.5 chi_i^2 / nsigma^2 - log_det_i - log(nsigma)
+
+    with ``sigma_eff`` (``inv_var``, ``log_det``) from the noise model after every term, as
+    Prospector uses its noise model's ``Sigma``.  As f -> 0 it tends to
+    :func:`lnlike_diag_gaussian`, NOT to Prospector's ``f_outlier == 0`` value, whose
+    ``NoiseModel.lnlikelihood`` multiplies chi^2 by ln(2 pi) and drops n ln(2 pi).
+    ``lnl_pointwise`` holds the mixture terms (summing to ``lnl_total``); ``chi`` and
+    ``residuals`` are those of the inlier Gaussian.  Masked data contribute 0 with finite
+    gradients; the derivative in f is the exact ``(e^b - e^a)/L``, finite at f = 0 unless a
+    datum sits beyond ~38 sigma (nsigma = 50) (then +inf: the likelihood rises that steeply)."""
+    resid, chi, lnl_i = _outlier_terms(y, mu, inv_var, log_det, mask, f, nsigma)
+
+    lnl_masked = jnp.where(mask, lnl_i, 0.0)
+    lnl_total  = jnp.sum(lnl_masked)
+
+    aux = LikelihoodOutput(
+        lnl_total     = lnl_total,
+        lnl_pointwise = lnl_masked,
+        residuals     = resid,
+        chi           = chi,
+        ndof          = jnp.sum(mask),
+    )
+    return lnl_total, aux
+
+
+def lnlike_diag_outlier_with_upper_limits(
+    y               : Array,
+    mu              : Array,
+    inv_var         : Array,
+    log_det         : Array,
+    mask            : Array,
+    is_upper_limit  : Array,
+    f               : Array,
+    nsigma          : Array,
+) -> tuple[Array, LikelihoodOutput]:
+    """:func:`lnlike_diag_outlier` on the detections and the one-sided penalty of
+    :func:`lnlike_diag_gaussian_with_upper_limits` (unchanged, no mixture) on data flagged
+    ``is_upper_limit``.  With no flags it equals :func:`lnlike_diag_outlier`."""
+    resid, chi, lnl_mix = _outlier_terms(y, mu, inv_var, log_det, mask, f, nsigma)
+    lnl_ul = -0.5 * jnp.maximum(-chi, 0.0) ** 2 - log_det
+    lnl_i  = jnp.where(is_upper_limit, lnl_ul, lnl_mix)
+
+    lnl_masked = jnp.where(mask, lnl_i, 0.0)
+    lnl_total  = jnp.sum(lnl_masked)
+
+    aux = LikelihoodOutput(
+        lnl_total     = lnl_total,
+        lnl_pointwise = lnl_masked,
+        residuals     = resid,
+        chi           = chi,
+        ndof          = jnp.sum(mask),
+    )
+    return lnl_total, aux
+
+
+def outlier_probability(
+    y       : Array,
+    mu      : Array,
+    inv_var : Array,
+    log_det : Array,
+    mask    : Array,
+    f       : Array,
+    nsigma  : Array,
+) -> Array:
+    """Per-datum posterior probability of belonging to the outlier component,
+    ``exp(log f + lnp_bad_i - lnl_i)``; 0 for masked data.  A diagnostic: the sampled
+    likelihood never computes it."""
+    resid = jnp.where(mask, y - mu, 0.0)
+    chi2  = (resid * jnp.sqrt(inv_var)) ** 2
+    lnp_good = -0.5 * chi2 - log_det
+    lnp_bad  = -0.5 * chi2 / nsigma ** 2 - log_det - jnp.log(nsigma)
+    a = jnp.log1p(-f) + lnp_good
+    b = jnp.log(f) + lnp_bad
+    return jnp.where(mask, jnp.exp(b - jnp.logaddexp(a, b)), 0.0)
 
 
 def lnlike_diag_gaussian_with_upper_limits(
@@ -148,7 +292,8 @@ class LikelihoodBase(abc.ABC):
 
 @dataclass(frozen=True)
 class DiagonalGaussianLikelihood(LikelihoodBase):
-    """Gaussian log-likelihood with an independent (diagonal) noise model."""
+    """Gaussian log-likelihood with an independent (diagonal) noise model; with
+    ``noise_model.f_outlier`` set, the outlier mixture :func:`lnlike_diag_outlier`."""
 
     noise_model: DiagonalNoiseModel = field(
         default_factory=DiagonalNoiseModel
@@ -166,8 +311,31 @@ class DiagonalGaussianLikelihood(LikelihoodBase):
         noise_out: NoiseModelOutput = self.noise_model.compute(
             sigma_obs, mu, mask, params, data=y
         )
+        if getattr(self.noise_model, "use_outlier", False):
+            f, nsigma = self.noise_model.outlier_params(params)
+            return lnlike_diag_outlier(
+                y, mu, noise_out.inv_var, noise_out.log_det, mask, f, nsigma
+            )
         return lnlike_diag_gaussian(
             y, mu, noise_out.inv_var, noise_out.log_det, mask
+        )
+
+    def outlier_probability(
+        self,
+        y         : Array,
+        mu        : Array,
+        sigma_obs : Array,
+        mask      : Array,
+        params    : Optional[dict[str, Array]] = None,
+    ) -> Array:
+        """Per-datum probability of being an outlier (see :func:`outlier_probability`);
+        raises when the mixture is off."""
+        if not getattr(self.noise_model, "use_outlier", False):
+            raise ValueError("the outlier mixture is off (noise_model.f_outlier is None)")
+        noise_out = self.noise_model.compute(sigma_obs, mu, mask, params, data=y)
+        f, nsigma = self.noise_model.outlier_params(params)
+        return outlier_probability(
+            y, mu, noise_out.inv_var, noise_out.log_det, mask, f, nsigma
         )
 
     def make_lnprobfn(
@@ -177,10 +345,22 @@ class DiagonalGaussianLikelihood(LikelihoodBase):
         prior        : Any,
     ) -> Callable[[dict[str, Array]], Array]:
         """Return a jitted log-posterior for one observation (needs ``.flux``, ``.uncertainty``, ``.mask``)."""
-        y         : Array = observations.flux
-        sigma_obs : Array = observations.uncertainty
+        y, sigma_obs = finite_data(observations.flux, observations.uncertainty)
         mask      : Array = observations.mask
         noise_model       = self.noise_model
+
+        if getattr(noise_model, "use_outlier", False):
+            @jax.jit
+            def lnprobfn_outlier(theta: dict[str, Array]) -> Array:
+                mu = model.predict(theta)
+                noise_out = noise_model.compute(sigma_obs, mu, mask, theta, data=y)
+                f, nsigma = noise_model.outlier_params(theta)
+                lnl, _    = lnlike_diag_outlier(
+                    y, mu, noise_out.inv_var, noise_out.log_det, mask, f, nsigma
+                )
+                return lnl + prior.log_prob(theta)
+
+            return lnprobfn_outlier
 
         @jax.jit
         def lnprobfn(theta: dict[str, Array]) -> Array:
@@ -210,7 +390,9 @@ jax.tree_util.register_pytree_node(
 @dataclass(frozen=True)
 class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
     """Diagonal Gaussian log-likelihood honouring per-datum upper-limit flags
-    (one-sided penalty; reduces to :class:`DiagonalGaussianLikelihood` when no flags are set)."""
+    (one-sided penalty; reduces to :class:`DiagonalGaussianLikelihood` when no flags are set).
+    With ``noise_model.f_outlier`` set, the detections use the outlier mixture and the limits
+    keep the one-sided penalty (:func:`lnlike_diag_outlier_with_upper_limits`)."""
 
     noise_model: DiagonalNoiseModel = field(
         default_factory=DiagonalNoiseModel
@@ -231,6 +413,11 @@ class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
         )
         if is_upper_limit is None:
             is_upper_limit = jnp.zeros_like(mask, dtype=bool)
+        if getattr(self.noise_model, "use_outlier", False):
+            f, nsigma = self.noise_model.outlier_params(params)
+            return lnlike_diag_outlier_with_upper_limits(
+                y, mu, noise_out.inv_var, noise_out.log_det, mask, is_upper_limit, f, nsigma,
+            )
         return lnlike_diag_gaussian_with_upper_limits(
             y, mu, noise_out.inv_var, noise_out.log_det, mask, is_upper_limit,
         )
@@ -242,8 +429,7 @@ class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
         prior        : Any,
     ) -> Callable[[dict[str, Array]], Array]:
         """Return a jitted log-posterior using ``observations.upper_limit`` (all-False if absent)."""
-        y         : Array = observations.flux
-        sigma_obs : Array = observations.uncertainty
+        y, sigma_obs = finite_data(observations.flux, observations.uncertainty)
         mask      : Array = observations.mask
         is_ul = getattr(observations, "upper_limit", None)
         if is_ul is None:
@@ -251,6 +437,19 @@ class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
         else:
             is_ul = jnp.asarray(is_ul, dtype=bool)
         noise_model = self.noise_model
+
+        if getattr(noise_model, "use_outlier", False):
+            @jax.jit
+            def lnprobfn_outlier(theta: dict[str, Array]) -> Array:
+                mu = model.predict(theta)
+                noise_out = noise_model.compute(sigma_obs, mu, mask, theta, data=y)
+                f, nsigma = noise_model.outlier_params(theta)
+                lnl, _    = lnlike_diag_outlier_with_upper_limits(
+                    y, mu, noise_out.inv_var, noise_out.log_det, mask, is_ul, f, nsigma,
+                )
+                return lnl + prior.log_prob(theta)
+
+            return lnprobfn_outlier
 
         @jax.jit
         def lnprobfn(theta: dict[str, Array]) -> Array:
@@ -326,16 +525,7 @@ class MultiObservationLikelihood(LikelihoodBase):
         """Return a jitted log-posterior; ``observations`` and ``model.predict(theta)`` are dicts keyed
         like ``self.keys``.  Each observation's ``sky``, ``calibration`` and ``upper_limit`` are honoured
         as in ``ceridwen.sampler.runner.run_sampler``."""
-        static_data = {}
-        for key in self.keys:
-            obs = observations[key]
-            y = obs.flux
-            sky = getattr(obs, "sky", None)
-            if sky is not None:
-                y = y - sky
-            ul = getattr(obs, "upper_limit", None)
-            ul = None if ul is None or not bool(jnp.any(ul)) else jnp.asarray(ul, dtype=bool)
-            static_data[key] = (y, obs.uncertainty, obs.mask, getattr(obs, "calibration", None), ul)
+        static_data = {key: observation_data(observations[key]) for key in self.keys}
         keys        = self.keys
         likelihoods = self.likelihoods
 

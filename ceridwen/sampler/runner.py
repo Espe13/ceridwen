@@ -132,16 +132,8 @@ def run_sampler(
     _obs_dict    = model.obs_dict
     _keys        = tuple(likelihood.keys)
     _likelihoods = tuple(likelihood.likelihoods)
-    _static_data = {}
-    for key in _keys:
-        obs = _obs_dict[key]
-        y = obs.flux
-        sky = getattr(obs, "sky", None)
-        if sky is not None:
-            y = y - sky
-        ul = getattr(obs, "upper_limit", None)
-        ul = None if ul is None or not bool(jnp.any(ul)) else jnp.asarray(ul, dtype=bool)
-        _static_data[key] = (y, obs.uncertainty, obs.mask, getattr(obs, "calibration", None), ul)
+    from ..likelihood.likelihood import observation_data
+    _static_data = {key: observation_data(_obs_dict[key]) for key in _keys}
 
     if getattr(model, "_eline_system", None) is not None:
         from ..likelihood.eline_marginal import joint_loglike

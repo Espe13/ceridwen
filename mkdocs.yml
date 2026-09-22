@@ -61,5 +61,6 @@ nav:
   - 'Tutorial: joint fit': tutorial.md
   - Conventions & gotchas: conventions.md
   - Emission-line marginalisation: eline_marginalisation.md
+  - Outlier mixture likelihood: outlier_model.md
   - Post-processing: postprocessing.md
   - API reference: api.md

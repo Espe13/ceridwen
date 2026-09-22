@@ -295,6 +295,38 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
         "lnl_total": np.asarray(lnl_phot + lnl_spec, dtype=np.float64),
     }
 
+    # ----- Outlier mixture (Prospector's NoiseModel.lnlike, f_outlier > 0) --------------
+    # Same data as "likelihood" with deterministic +/-20 sigma outliers (every 37th spectral
+    # pixel, alternating sign; the third band +10 sigma).  Validated against a NumPy
+    # transcription of Prospector's outlier branch and the real Prospector
+    # (tests/test_outlier_model.py).
+    idx = jnp.arange(mu_spec.size)
+    kick = jnp.where(idx % 37 == 0, jnp.where((idx // 37) % 2 == 0, 20.0, -20.0), 0.0)
+    y_spec_o = y_spec + kick * sig_spec
+    y_phot_o = y_phot.at[2].add(10.0 * sig_phot[2])
+    lik_s = DiagonalGaussianLikelihood(noise_model=DiagonalNoiseModel(f_outlier=0.01))
+    lik_p = DiagonalGaussianLikelihood(noise_model=DiagonalNoiseModel(
+        f_outlier=0.05, nsigma_outlier=20.0, noise_floor=0.02))
+    lnl_s, aux_s = lik_s(y_spec_o, mu_spec, sig_spec, mask_spec)
+    lnl_p, aux_p = lik_p(y_phot_o, mu_phot, sig_phot, mask_phot)
+    lnl_s_gauss, _ = lik(y_spec_o, mu_spec, sig_spec, mask_spec)
+    out["outlier_likelihood"] = {
+        "lnl_spec": np.asarray(lnl_s, dtype=np.float64),
+        "lnl_phot": np.asarray(lnl_p, dtype=np.float64),
+        "lnl_spec_gaussian": np.asarray(lnl_s_gauss, dtype=np.float64),
+        "lnl_pointwise_spec": np.asarray(aux_s.lnl_pointwise, dtype=np.float64),
+        "p_outlier_spec": np.asarray(lik_s.outlier_probability(
+            y_spec_o, mu_spec, sig_spec, mask_spec), dtype=np.float64),
+        "p_outlier_phot": np.asarray(lik_p.outlier_probability(
+            y_phot_o, mu_phot, sig_phot, mask_phot), dtype=np.float64),
+    }
+    # upper limit on the last band: mixture on the detections, one-sided penalty on the limit
+    from ceridwen.likelihood.likelihood import DiagonalGaussianLikelihoodWithUpperLimits
+    ul_p = jnp.zeros(mu_phot.shape, dtype=bool).at[-1].set(True)
+    lnl_p_ul, _ = DiagonalGaussianLikelihoodWithUpperLimits(noise_model=lik_p.noise_model)(
+        y_phot_o, mu_phot, sig_phot, mask_phot, is_upper_limit=ul_p)
+    out["outlier_likelihood"]["lnl_phot_upper_limit"] = np.asarray(lnl_p_ul, dtype=np.float64)
+
     out["eline_marginal"] = _eline_marginal_baseline(p, ssp_data)
     return out
 

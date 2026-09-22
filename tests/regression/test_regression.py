@@ -49,6 +49,7 @@ CATEGORIES = [
     "nebular",
     "csp_spectrum",
     "likelihood",
+    "outlier_likelihood",
     "eline_marginal",
 ]
 

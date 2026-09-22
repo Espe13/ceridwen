@@ -40,6 +40,11 @@ from ceridwen.cosmology import Cosmology
 from ceridwen.observation.observation import Photometry, Spectrum, Lines
 from ceridwen.model.model import SedModel
 from ceridwen.broadening import Instrument
+from ceridwen.likelihood import DiagonalNoiseModel, DiagonalGaussianLikelihood
+from ceridwen.likelihood.eline_marginal import refuse_outlier_with_elines
+from ceridwen.fit import _check_outlier_setup
+from ceridwen.priors import Normal, TopHat
+from types import SimpleNamespace
 
 from _gridfixture import require_test_grid
 
@@ -76,6 +81,14 @@ def _run(fn):
 def _good_csp():
     return CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr, "Z": jnp.array([-1.85])},
                     **_kw())
+
+
+def _outlier_model(names, priors, n_spec=1):
+    """The attributes fit._check_outlier_setup reads, for a spectrum-only model."""
+    return SimpleNamespace(observations=[SimpleNamespace(kind="spectrum", name=f"s{i}")
+                                         for i in range(n_spec)],
+                           param_names=list(names), transforms={}, priors=priors,
+                           theta_init={n: jnp.array([0.1]) for n in names})
 
 
 def run_scenarios():
@@ -136,6 +149,33 @@ def run_scenarios():
         ("marginalize_elines without instrument", {"ERROR"},
          lambda: Spectrum(wavelength=jnp.linspace(4000, 7000, 40), name="s",
                           marginalize_elines=True)),
+        ("fixed f_outlier outside [0, 1)", {"ERROR"},
+         lambda: DiagonalNoiseModel(f_outlier=1.5)),
+        ("outlier mixture inside marginalize_elines", {"ERROR"},
+         lambda: refuse_outlier_with_elines(("s",), (DiagonalGaussianLikelihood(
+             DiagonalNoiseModel(f_outlier=0.1)),), ("s",))),
+        ("sampled f_outlier missing from theta", {"ERROR"},
+         lambda: DiagonalGaussianLikelihood(DiagonalNoiseModel(f_outlier="f_outlier_spec"))(
+             jnp.ones(3), jnp.ones(3), jnp.ones(3), jnp.ones(3, bool), {})),
+        ("f_outlier_spec with two spectra", {"ERROR"},
+         lambda: _check_outlier_setup(_outlier_model(["f_outlier_spec"],
+                                                     {"f_outlier_spec": TopHat(low=1e-5, high=0.5)},
+                                                     n_spec=2))),
+        ("f_outlier_spec_<unknown obs name>", {"ERROR"},
+         lambda: _check_outlier_setup(_outlier_model(["f_outlier_spec_nope"],
+                                                     {"f_outlier_spec_nope": TopHat(low=1e-5, high=0.5)}))),
+        ("NaN flux not in the mask", {"WARN"},
+         lambda: Photometry(filters=["sdss_g0", "sdss_r0"], flux=[1.0, float("nan")],
+                            uncertainty=[0.1, 0.1], name="p")),
+        ("nsigma_outlier without f_outlier", {"ERROR"},
+         lambda: _check_outlier_setup(_outlier_model(["nsigma_outlier_spec"],
+                                                     {"nsigma_outlier_spec": TopHat(low=2.0, high=80.0)}))),
+        ("f_outlier_phot without Photometry", {"ERROR"},
+         lambda: _check_outlier_setup(_outlier_model(["f_outlier_phot"],
+                                                     {"f_outlier_phot": TopHat(low=0.0, high=0.5)}))),
+        ("unbounded prior on f_outlier_spec", {"ERROR"},
+         lambda: _check_outlier_setup(_outlier_model(["f_outlier_spec"],
+                                                     {"f_outlier_spec": Normal(mean=0.1, sigma=0.1)}))),
     ]
 
     rows = []
