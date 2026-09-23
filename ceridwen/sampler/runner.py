@@ -48,7 +48,7 @@ class SamplingResult:
         except ImportError as exc:
             raise ImportError(
                 "anesthetic is required for to_anesthetic(). "
-                "Install: pip install git+https://github.com/handley-lab/anesthetic"
+                "Install: pip install 'anesthetic>=2.8'"
             ) from exc
 
         import numpy as np

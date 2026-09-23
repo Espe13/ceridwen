@@ -143,7 +143,7 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         except ImportError as exc:
             raise ImportError(
                 "BlackJAX is required for NUTS sampling.\n"
-                "Install: pip install git+https://github.com/blackjax-devs/blackjax"
+                "Install: pip install -U 'blackjax>=1.6'"
             ) from exc
 
         if self.vi is not None:
@@ -208,7 +208,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             logposterior_flat,
             target_acceptance_rate=self.target_acceptance,
             initial_step_size=self.initial_step_size,
-            progress_bar=self.verbose,
             is_mass_matrix_diagonal=not self.dense_mass,
             max_num_doublings=self.max_num_doublings,
         )
@@ -537,7 +536,6 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             blackjax.nuts, logpost_z,
             target_acceptance_rate=self.target_acceptance,
             initial_step_size=self.initial_step_size,
-            progress_bar=self.verbose,
             is_mass_matrix_diagonal=not self.dense_mass,
             max_num_doublings=self.max_num_doublings,
         )

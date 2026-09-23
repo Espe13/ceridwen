@@ -800,7 +800,7 @@ def Lbol(wave, spec, wave_min=90.0, wave_max=1e6):
     wave_sel = wave[mask]
     spec_sel = spec[..., mask]
 
-    return jnp.trapz(spec_sel, wave_sel, axis=-1)
+    return jnp.trapezoid(spec_sel, wave_sel, axis=-1)
 
 def air2vac(air):
     """
