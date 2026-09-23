@@ -278,8 +278,8 @@ def _build_adapter(sampler: str, model, sampler_kwargs: dict, verbose: bool,
 # with several observations of one kind each takes its own ``<stem>_<obs.name>``; the plain
 # stem is accepted only when the model has exactly one observation of that kind.
 from .model.obs_params import (KIND_SUFFIX as OUTLIER_KIND_SUFFIX, OUTLIER_FAMILIES,
-                               NOISE_FAMILIES, NOISE_ROOTS, CALIB_FAMILIES, names_for,
-                               resolve_name, check_names)
+                               NOISE_FAMILIES, NOISE_ROOTS, CALIB_FAMILIES, GP_FAMILIES,
+                               names_for, resolve_name, check_names)
 
 
 def _outlier_names(obs):
@@ -413,6 +413,97 @@ def _check_noise_setup(model):
         check_names(model.observations, NOISE_FAMILIES, given)
 
 
+#: above this many pixels fitSED warns that the GP likelihood is expensive (dense Cholesky,
+#: O(n^3) per call and O(n^2) memory per vmap lane); see docs/gp_likelihood.md for the timings
+GP_WARN_NPIX = 2000
+
+
+def _check_gp_setup(model):
+    """Setup-time checks of the GP names (fitSED): every log_gp_amp_* / log_gp_length_* name
+    must belong to one Spectrum, the plain name only when the model has one Spectrum."""
+    given, _t = _given_names(model, model.param_names)
+    if any(f.claims(n) for f in GP_FAMILIES for n in given):
+        check_names(model.observations, GP_FAMILIES, given, what=" (spectrum GP)")
+
+
+def _gp_terms(obs, param_names, model=None):
+    """``(ln a, ln l, eps)`` of the GP likelihood of ``obs``, or None when it has none.
+
+    The GP is on for a Spectrum when (i) ``Spectrum(noise=GaussianProcess(a, l))``: fixed
+    values ln a, ln l and its jitter; or (ii) both ``log_gp_amp_spec[_<obs.name>]`` and
+    ``log_gp_length_spec[_<obs.name>]`` are sampled or fixed by constant transforms (eps =
+    ``GP_JITTER``).  Both routes for one spectrum, or only one of the two names, raise."""
+    from .likelihood.gp_likelihood import GP_JITTER
+    from .observation.gp import GaussianProcess
+    noise = getattr(obs, "noise", None)
+    kind = getattr(obs, "kind", None)
+    if noise is not None and not isinstance(noise, GaussianProcess):
+        raise TypeError(
+            f"{type(obs).__name__} {obs.name!r}: noise= takes a "
+            f"ceridwen.observation.GaussianProcess, got {type(noise).__name__}.  The diagonal "
+            "noise terms are switched on by sampled names (log_jitter_<kind>, "
+            "log_err_scale_<kind>, ...), not by a noise object")
+    if noise is not None and kind != "spectrum":
+        raise NotImplementedError(
+            f"{type(obs).__name__} {obs.name!r}: the GaussianProcess noise model is a "
+            "correlation in wavelength between spectral pixels; only a Spectrum takes it")
+    if kind != "spectrum":
+        return None
+    given, _t = _given_names(model, param_names)
+    names = [resolve_name(obs, fam, given) for fam in GP_FAMILIES]
+    if noise is not None:
+        clash = [n for n in names if n is not None]
+        if clash:
+            raise ValueError(
+                f"Spectrum {obs.name!r} has noise={noise!r} (fixed hyperparameters) and the "
+                f"model also sets {clash}: the GP of one spectrum is either fixed by the "
+                "GaussianProcess object or set by the names, not both.  To sample it, drop "
+                "noise= and sample log_gp_amp_spec / log_gp_length_spec; to fix it, keep "
+                "noise= and remove the names from the parameters and transforms.")
+        if not (noise.amplitude > 0.0 and noise.length_scale > 0.0):
+            raise ValueError(
+                f"Spectrum {obs.name!r}: GaussianProcess amplitude and length_scale must be "
+                f"> 0 in a fit, got {noise!r}; drop noise= to switch the GP off")
+        return float(np.log(noise.amplitude)), float(np.log(noise.length_scale)), noise.jitter
+    if names[0] is None and names[1] is None:
+        return None
+    if names[0] is None or names[1] is None:
+        have = names[0] or names[1]
+        want = names_for(obs, GP_FAMILIES[0] if names[0] is None else GP_FAMILIES[1])
+        raise ValueError(
+            f"Spectrum {obs.name!r}: {have!r} is set but not its partner ({want[0]!r} or "
+            f"{want[1]!r}); the GP needs both ln a (log_gp_amp_spec) and ln l "
+            "(log_gp_length_spec), each sampled or fixed by a constant transform")
+    amp = _resolve(obs, GP_FAMILIES[0], param_names, model, None, "the GP likelihood")
+    ln_l = _resolve(obs, GP_FAMILIES[1], param_names, model, None, "the GP likelihood")
+    return amp, ln_l, GP_JITTER
+
+
+def _gp_refusals(obs, nm, model):
+    """Setup-time refusals of the combinations the GP likelihood does not support."""
+    what = f"the GP likelihood of Spectrum {obs.name!r}"
+    if nm.use_outlier:
+        raise NotImplementedError(
+            f"{what} cannot be combined with the outlier mixture (f_outlier_spec...): the "
+            "mixture treats each pixel as independent, the GP couples them.  Drop one of them "
+            "for this spectrum")
+    ul = getattr(obs, "upper_limit", None)
+    if ul is not None and bool(jnp.any(ul)):
+        raise NotImplementedError(
+            f"{what} cannot be combined with upper limits on the spectrum: the one-sided "
+            "penalty is per pixel.  Mask those pixels instead")
+    if getattr(obs, "marginalize_elines", False):
+        raise NotImplementedError(
+            f"{what} cannot be combined with marginalize_elines=True: the line marginal "
+            "assumes independent pixel noise.  Use mask_lines, or drop the GP")
+    if int(getattr(obs, "polynomial_order", 0) or 0) > 0:
+        raise NotImplementedError(
+            f"{what} cannot be combined with the profiled calibration polynomial "
+            "(polynomial_order > 0): its weighted least squares assumes independent pixels.  "
+            "Sample the calibration instead (spectrum_scaling / spectrum_calib), which "
+            "combines with the GP")
+
+
 def _poly_calibration_for(obs, model):
     """The PolynomialCalibration of a Spectrum(polynomial_order > 0), else None; refuses a
     sampled calibration of the same spectrum (the two are degenerate)."""
@@ -440,7 +531,9 @@ def _likelihood_for(obs, param_names=(), model=None):
     observation, ``<name>_<kind>`` (one observation of that kind) or
     ``<name>_<kind>_<obs.name>``, kind = phot / spec / lines; each is sampled, or, given
     ``model``, fixed by a constant transform.  Everything defaults to off (every outlier
-    fraction to 0).  ``Spectrum(polynomial_order > 0)`` adds the profiled calibration."""
+    fraction to 0).  ``Spectrum(polynomial_order > 0)`` adds the profiled calibration.
+    A Spectrum with a GP (``_gp_terms``: ``noise=GaussianProcess(...)`` or the names
+    ``log_gp_amp_spec`` / ``log_gp_length_spec``) gets a ``GPGaussianLikelihood``."""
     from .likelihood.likelihood import (
         DiagonalGaussianLikelihood, DiagonalGaussianLikelihoodWithUpperLimits)
     from .likelihood.noise_model import DiagonalNoiseModel
@@ -448,20 +541,31 @@ def _likelihood_for(obs, param_names=(), model=None):
         raise NotImplementedError(
             f"Spectrum {obs.name!r}: logify_spectrum=True is not available in the "
             "sampled likelihood")
-    if getattr(obs, "noise", None) is not None:
-        raise NotImplementedError(
-            f"Spectrum {obs.name!r}: a GaussianProcess noise model is not available "
-            "in the sampled likelihood (host-side Cholesky); use noise_floor= for a "
-            "diagonal floor")
     if model is not None:
         _check_outlier_setup(model)
         _check_noise_setup(model)
+        _check_gp_setup(model)
     elif any(r in param_names for r in NOISE_ROOTS):
         raise _removed_noise_name_error(None, next(r for r in NOISE_ROOTS if r in param_names))
     f_out, nsigma_out = _outlier_terms(obs, param_names, model)
     nm = DiagonalNoiseModel(noise_floor=float(getattr(obs, "noise_floor", 0.0) or 0.0),
                             f_outlier=f_out, nsigma_outlier=nsigma_out,
                             **_noise_terms(obs, param_names, model))
+    gp = _gp_terms(obs, param_names, model)
+    if gp is not None:
+        from .likelihood.gp_likelihood import GPGaussianLikelihood, gp_sqdist
+        _gp_refusals(obs, nm, model)
+        n_pix = int(np.size(obs.wavelength))
+        if n_pix > GP_WARN_NPIX:
+            import warnings
+            warnings.warn(
+                f"Spectrum {obs.name!r}: the GP likelihood factorises a dense "
+                f"{n_pix} x {n_pix} matrix at every likelihood call (O(n^3) time, O(n^2) "
+                f"memory per vmap lane); above {GP_WARN_NPIX} pixels this dominates the fit.  "
+                "See docs/gp_likelihood.md for the timings; consider binning or fitting "
+                "a wavelength window", stacklevel=2)
+        return GPGaussianLikelihood(noise_model=nm, sqdist=gp_sqdist(obs.wavelength),
+                                    log_amp=gp[0], log_len=gp[1], eps=gp[2])
     pc = _poly_calibration_for(obs, model)
     ul = getattr(obs, "upper_limit", None)
     if ul is not None and bool(jnp.any(ul)):
@@ -487,6 +591,12 @@ def _describe_likelihood(obs, lh) -> str:
     pc = getattr(lh, "poly_calibration", None)
     if pc is not None:
         bits.append(f"profiled calibration polynomial, order {pc.order} (Chebyshev)")
+    if hasattr(lh, "gp_param_names"):
+        def _g(v, unit):
+            return (f"exp(theta[{v!r}]) (sampled)" if isinstance(v, str)
+                    else f"{float(np.exp(v)):g}{unit} (fixed)")
+        bits.append(f"GP (squared exponential, {lh.n_pix} pixels) a = {_g(lh.log_amp, '')}, "
+                    f"l = {_g(lh.log_len, ' A')}")
     if getattr(obs, "sky", None) is not None:
         bits.append("sky subtracted")
     if getattr(obs, "calibration", None) is not None:
@@ -783,6 +893,9 @@ def _likelihood_config(lh) -> dict:
     pc = getattr(lh, "poly_calibration", None)
     if pc is not None:
         cfg["poly_calibration"] = pc.config()
+    if hasattr(lh, "gp_param_names"):
+        cfg["gp"] = lh.config()
+        cfg["noise_model"]["sampled_parameters"] += list(lh.gp_param_names)
     return cfg
 
 
