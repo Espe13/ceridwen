@@ -54,7 +54,16 @@ class Spectrum(Observation):
         unmasked wavelength range, weights from the noise model), so no dimension is
         sampled.  Opt-in; the sampled ``spectrum_scaling`` / ``spectrum_calib`` stay the
         default route and cannot be combined with it on the same spectrum.
-    polynomial_regularization : float or array (M+1,) -- ridge term reg_m^2 c_m^2 (default 0).
+    polynomial_regularization : float or array (M+1,) -- ridge term reg_m^2 c_m^2 (default 0);
+        profile mode only.
+    polynomial_mode : "profile" (default) or "marginalize" -- how the polynomial of
+        ``polynomial_order > 0`` enters the likelihood: profiled (solved, as above) or
+        integrated out analytically under the Gaussian prior ``c_m ~ N(0, s_m^2)``
+        (``ceridwen/likelihood/poly_marginal.py``; exact marginal likelihood, conditional
+        coefficients reported per draw by ``PostProcess``).  T_0 is then a grey scale with
+        prior width s_0, degenerate with the mass unless photometry anchors the level.
+    polynomial_prior_sigma : float or array (M+1,) -- the prior widths s (finite, >= 0; 0 pins
+        a coefficient at 0); required with ``polynomial_mode="marginalize"``, refused otherwise.
 
     The galaxy's velocity dispersions are not a property of the observation:
     they are set once on the model (``SedModel(kinematics=Kinematics(...))``).
@@ -100,6 +109,8 @@ class Spectrum(Observation):
         elines_to_ignore   = None,
         polynomial_order   = 0,
         polynomial_regularization = 0.0,
+        polynomial_mode    = "profile",
+        polynomial_prior_sigma = None,
         **kwargs,
     ):
         for k in list(kwargs):
@@ -144,11 +155,14 @@ class Spectrum(Observation):
                              f"one value >= 0 per coefficient ({self.polynomial_order + 1}), "
                              f"got {polynomial_regularization!r}")
         self.polynomial_regularization = reg
+        self._set_polynomial_mode(polynomial_mode, polynomial_prior_sigma)
         self.zred_range      = (None if zred_range is None
                                 else (float(zred_range[0]), float(zred_range[1])))
         self._proj = None
         self._set_eline_options(marginalize_elines, eline_prior_width,
                                 elines_to_fit, elines_to_fix, elines_to_ignore, noise)
+        if self.polynomial_mode == "marginalize":
+            self._check_marginal_polynomial(noise)
 
         super().__init__(
             flux        = flux,
@@ -158,6 +172,68 @@ class Spectrum(Observation):
             name        = name,
             **kwargs,
         )
+
+    def _set_polynomial_mode(self, mode, prior_sigma):
+        """Validate ``polynomial_mode`` / ``polynomial_prior_sigma`` (construction time)."""
+        if mode not in ("profile", "marginalize"):
+            raise ValueError(f"Spectrum(): polynomial_mode must be 'profile' or 'marginalize', "
+                             f"got {mode!r}")
+        self.polynomial_mode = mode
+        k = self.polynomial_order + 1
+        if mode == "profile":
+            if prior_sigma is not None:
+                raise ValueError(
+                    "Spectrum(polynomial_prior_sigma=...) only acts with "
+                    "polynomial_mode='marginalize'; the profiled polynomial takes "
+                    "polynomial_regularization (reg_m = 1/s_m gives the same best polynomial)")
+            self.polynomial_prior_sigma = None
+            return
+        if self.polynomial_order == 0:
+            raise ValueError(
+                "Spectrum(polynomial_mode='marginalize') needs polynomial_order >= 1 "
+                "(order 0 means no polynomial)")
+        if np.any(self.polynomial_regularization != 0.0):
+            raise ValueError(
+                "Spectrum(polynomial_regularization=...) belongs to the profiled polynomial; "
+                "with polynomial_mode='marginalize' the Gaussian prior width takes its place: "
+                "polynomial_prior_sigma = 1 / polynomial_regularization gives the same best "
+                "polynomial (the conditional mean)")
+        if prior_sigma is None:
+            raise ValueError(
+                "Spectrum(polynomial_mode='marginalize') needs polynomial_prior_sigma: the "
+                "prior width of the coefficients (a float, or one value per coefficient, "
+                f"{k} here), in units of the fractional response 1 + sum c_m T_m.  A flat prior "
+                "is not allowed (the marginal likelihood would be undefined)")
+        sig = np.asarray(prior_sigma, dtype=float)
+        if sig.ndim > 1 or (sig.ndim == 1 and sig.size != k):
+            raise ValueError(f"Spectrum(): polynomial_prior_sigma must be a float or {k} values "
+                             f"(one per coefficient T_0..T_{k - 1}), got shape {sig.shape}")
+        if np.any(np.isinf(sig)):
+            raise ValueError(
+                "Spectrum(): polynomial_prior_sigma=inf is a flat prior, under which the "
+                "marginal likelihood (and the evidence) is undefined; use a finite width, or "
+                "polynomial_mode='profile' for the unregularised best-fit polynomial")
+        if np.any(~np.isfinite(sig)) or np.any(sig < 0.0):
+            raise ValueError(f"Spectrum(): polynomial_prior_sigma must be finite and >= 0, "
+                             f"got {prior_sigma!r}")
+        self.polynomial_prior_sigma = np.broadcast_to(sig, (k,)).copy()
+
+    def _check_marginal_polynomial(self, noise):
+        """Refusals of polynomial_mode='marginalize' known at construction."""
+        if self.logify_spectrum:
+            raise ValueError("polynomial_mode='marginalize' is linear in the calibration "
+                             "coefficients and cannot be combined with logify_spectrum=True")
+        if noise is not None:
+            raise ValueError("polynomial_mode='marginalize' assumes independent Gaussian pixel "
+                             "noise; a GaussianProcess noise model is not supported with it")
+        if self.marginalize_elines:
+            raise ValueError(
+                "polynomial_mode='marginalize' and marginalize_elines=True on the same spectrum: "
+                "the polynomial also scales the lines, so the model (1 + A c)(mu + A_lines "
+                "alpha) is bilinear in the two sets of coefficients and has no closed-form "
+                "joint marginal.  Marginalise one of them, and sample (spectrum_calib) or "
+                "profile (polynomial_mode='profile' on a spectrum without marginalize_elines) "
+                "the other")
 
     def _set_eline_options(self, marginalize, width, to_fit, to_fix, to_ignore, noise):
         """Validate the emission-line marginalisation options (construction time)."""
@@ -442,7 +518,10 @@ class Spectrum(Observation):
             f"  calibration   : {'provided' if self.calibration is not None else 'none'}",
             f"  sky           : {'provided' if self.sky is not None else 'none'}",
             f"  noise_floor   : {self.noise_floor:.4f}",
-            f"  calib. poly.  : " + (f"profiled, order {self.polynomial_order} (Chebyshev)"
+            f"  calib. poly.  : " + ((f"marginalised, order {self.polynomial_order} (Chebyshev), "
+                                      f"prior sigma {self.polynomial_prior_sigma.tolist()}"
+                                      if self.polynomial_mode == "marginalize" else
+                                      f"profiled, order {self.polynomial_order} (Chebyshev)")
                                      if self.polynomial_order else "none (sampled route only)"),
             f"  lines         : " + (("marginalised, " + ("flat prior" if not self.eline_prior_width
                                       else f"prior width {self.eline_prior_width:g} x CLOUDY"))

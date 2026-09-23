@@ -18,6 +18,8 @@ from .likelihood import (
     make_lnprobfn,
 )
 
+from .poly_marginal import PolyMarginalGaussianLikelihood
+
 __all__ = [
     "NoiseModelOutput",
     "NoiseModelBase",
@@ -33,4 +35,5 @@ __all__ = [
     "DiagonalGaussianLikelihoodWithUpperLimits",
     "MultiObservationLikelihood",
     "make_lnprobfn",
+    "PolyMarginalGaussianLikelihood",
 ]

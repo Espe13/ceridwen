@@ -418,7 +418,8 @@ def _poly_calibration_for(obs, model):
     sampled calibration of the same spectrum (the two are degenerate)."""
     from .likelihood.poly_calibration import PolynomialCalibration
     order = int(getattr(obs, "polynomial_order", 0) or 0)
-    if getattr(obs, "kind", None) != "spectrum" or order <= 0:
+    if (getattr(obs, "kind", None) != "spectrum" or order <= 0
+            or getattr(obs, "polynomial_mode", "profile") != "profile"):
         return None
     if model is not None:              # checked before any data is read (setup refusal)
         given, _t = _given_names(model, model.param_names)
@@ -433,6 +434,50 @@ def _poly_calibration_for(obs, model):
     return PolynomialCalibration.for_spectrum(obs)
 
 
+def _poly_marginal_for(obs, model, noise_model):
+    """The PolynomialMarginal of a Spectrum(polynomial_mode="marginalize"), else None.  Setup
+    refusals: the outlier mixture and upper limits on that spectrum (the closed-form marginal
+    needs a Gaussian likelihood), a sampled ``spectrum_calib`` (two polynomials), and a sampled
+    ``spectrum_scaling`` unless ``polynomial_prior_sigma`` pins T_0 (s_0 = 0)."""
+    from .likelihood.poly_marginal import PolynomialMarginal
+    order = int(getattr(obs, "polynomial_order", 0) or 0)
+    if (getattr(obs, "kind", None) != "spectrum" or order <= 0
+            or getattr(obs, "polynomial_mode", "profile") != "marginalize"):
+        return None
+    if getattr(noise_model, "use_outlier", False):
+        raise NotImplementedError(
+            f"Spectrum {obs.name!r} marginalises its calibration polynomial "
+            "(polynomial_mode='marginalize'), which needs a Gaussian likelihood; the outlier "
+            "mixture on it is not Gaussian.  Drop the f_outlier parameter of this spectrum, or "
+            "profile the polynomial (polynomial_mode='profile')")
+    ul = getattr(obs, "upper_limit", None)
+    if ul is not None and bool(np.any(np.asarray(ul))):
+        raise NotImplementedError(
+            f"Spectrum {obs.name!r} marginalises its calibration polynomial, which needs a "
+            "Gaussian likelihood on every pixel; one-sided upper limits are not supported")
+    if model is not None:
+        given, _t = _given_names(model, model.param_names)
+        fam_calib, fam_scale = CALIB_FAMILIES[1], CALIB_FAMILIES[0]
+        shape = resolve_name(obs, fam_calib, given)
+        if shape is not None:
+            raise ValueError(
+                f"Spectrum {obs.name!r} marginalises its calibration polynomial (order {order}) "
+                f"and also samples {shape!r}, a second polynomial with the same job: they are "
+                "degenerate.  Use one route: drop the sampled calibration of this spectrum, or "
+                "drop polynomial_mode='marginalize'")
+        level = resolve_name(obs, fam_scale, given)
+        s0 = float(np.asarray(obs.polynomial_prior_sigma)[0])
+        if level is not None and s0 != 0.0:
+            raise ValueError(
+                f"Spectrum {obs.name!r} marginalises its calibration polynomial including the "
+                f"grey level T_0 (polynomial_prior_sigma[0] = {s0:g}) and also samples "
+                f"{level!r}: the likelihood depends on the two only through their product, a "
+                "ridge that only the prior on c_0 breaks.  Either drop the sampled scaling, or "
+                "pin T_0 with polynomial_prior_sigma=[0.0, s_1, ..., s_M]: the sampled scaling "
+                "is then the grey level and the polynomial the shape")
+    return PolynomialMarginal.for_spectrum(obs)
+
+
 def _likelihood_for(obs, param_names=(), model=None):
     """Diagonal Gaussian likelihood for ``obs`` (one-sided kernel when it flags upper limits).
     The noise nuisance terms ``log_err_scale`` / ``log_jitter`` / ``log_f_calib`` /
@@ -440,7 +485,8 @@ def _likelihood_for(obs, param_names=(), model=None):
     observation, ``<name>_<kind>`` (one observation of that kind) or
     ``<name>_<kind>_<obs.name>``, kind = phot / spec / lines; each is sampled, or, given
     ``model``, fixed by a constant transform.  Everything defaults to off (every outlier
-    fraction to 0).  ``Spectrum(polynomial_order > 0)`` adds the profiled calibration."""
+    fraction to 0).  ``Spectrum(polynomial_order > 0)`` adds the profiled calibration, or,
+    with ``polynomial_mode="marginalize"``, marginalises it (PolyMarginalGaussianLikelihood)."""
     from .likelihood.likelihood import (
         DiagonalGaussianLikelihood, DiagonalGaussianLikelihoodWithUpperLimits)
     from .likelihood.noise_model import DiagonalNoiseModel
@@ -462,6 +508,10 @@ def _likelihood_for(obs, param_names=(), model=None):
     nm = DiagonalNoiseModel(noise_floor=float(getattr(obs, "noise_floor", 0.0) or 0.0),
                             f_outlier=f_out, nsigma_outlier=nsigma_out,
                             **_noise_terms(obs, param_names, model))
+    pm = _poly_marginal_for(obs, model, nm)
+    if pm is not None:
+        from .likelihood.poly_marginal import PolyMarginalGaussianLikelihood
+        return PolyMarginalGaussianLikelihood(noise_model=nm, poly_marginal=pm)
     pc = _poly_calibration_for(obs, model)
     ul = getattr(obs, "upper_limit", None)
     if ul is not None and bool(jnp.any(ul)):
@@ -487,6 +537,10 @@ def _describe_likelihood(obs, lh) -> str:
     pc = getattr(lh, "poly_calibration", None)
     if pc is not None:
         bits.append(f"profiled calibration polynomial, order {pc.order} (Chebyshev)")
+    pm = getattr(lh, "poly_marginal", None)
+    if pm is not None:
+        bits.append(f"marginalised calibration polynomial, order {pm.order} (Chebyshev), "
+                    f"prior sigma {pm.sigma.tolist()}")
     if getattr(obs, "sky", None) is not None:
         bits.append("sky subtracted")
     if getattr(obs, "calibration", None) is not None:
@@ -783,6 +837,9 @@ def _likelihood_config(lh) -> dict:
     pc = getattr(lh, "poly_calibration", None)
     if pc is not None:
         cfg["poly_calibration"] = pc.config()
+    pm = getattr(lh, "poly_marginal", None)
+    if pm is not None:
+        cfg["poly_calibration"] = pm.config()
     return cfg
 
 

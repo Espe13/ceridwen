@@ -57,9 +57,11 @@ class PolynomialCalibration:
 
     @classmethod
     def for_spectrum(cls, obs):
-        """From ``Spectrum(polynomial_order=..., polynomial_regularization=...)``; None when off."""
+        """From ``Spectrum(polynomial_order=..., polynomial_regularization=...)``; None when off
+        or when the polynomial is marginalised (``polynomial_mode="marginalize"``, see
+        :class:`~ceridwen.likelihood.poly_marginal.PolynomialMarginal`)."""
         order = int(getattr(obs, "polynomial_order", 0) or 0)
-        if order <= 0:
+        if order <= 0 or getattr(obs, "polynomial_mode", "profile") != "profile":
             return None
         return cls(chebyshev_design_matrix(obs.wavelength, obs.mask, order),
                    getattr(obs, "polynomial_regularization", 0.0))
@@ -79,7 +81,7 @@ class PolynomialCalibration:
                 f"regularization={self.reg.tolist()})")
 
     def config(self) -> dict:
-        return {"order": self.order, "regularization": self.reg.tolist(),
+        return {"mode": "profile", "order": self.order, "regularization": self.reg.tolist(),
                 "basis": "Chebyshev T_0..T_order over the unmasked wavelength range"}
 
     def solve(self, y, mu, inv_var, mask):
