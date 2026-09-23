@@ -124,35 +124,45 @@ solar-scaled fits with emission keep using the FSPS data files as before.
 
 ## Installing FSPS and setting `$SPS_HOME`
 
-CERIDWEN uses [FSPS](https://github.com/cconroy20/fsps) (via the
-[`python-fsps`](https://dfm.io/python-fsps) wrapper) to build the SSP cache. The
-FSPS **data files** also supply the CLOUDY nebular grids and Draine & Li
-dust-emission templates: when `add_neb=True` or `add_dust_emission=True`,
-CERIDWEN reads those files directly from `$SPS_HOME` (FSPS itself is not run at
-fit time; it just provides the data).
+[FSPS](https://github.com/cconroy20/fsps) enters CERIDWEN in two separate ways,
+with very different costs.
 
-FSPS is not a pure-Python wheel: it needs a Fortran compiler and a clone of the
-FSPS data files.
+### The data files — needed for nebular and dust emission
+
+The FSPS repository ships the CLOUDY nebular lookup tables (`nebular/`) and the
+Draine & Li dust-emission spectra (`dust/`) as data. When `add_neb=True` or
+`add_dust_emission=True`, CERIDWEN reads those files directly from `$SPS_HOME`;
+FSPS is never executed at a fit. This step is therefore a clone and an
+environment variable — **no Fortran compiler, no `pip install fsps`**:
 
 ```bash
-# 1. A Fortran compiler (pick one for your system):
+export SPS_HOME="$HOME/fsps"           # <- any path: $HOME, a data disk, scratch
+git clone https://github.com/cconroy20/fsps.git "$SPS_HOME"
+```
+
+`git clone` writes to the absolute `$SPS_HOME` path, so it does not matter which
+directory you run it from.
+
+### The `python-fsps` wrapper — only to build your own SSP grid
+
+[`python-fsps`](https://dfm.io/python-fsps) compiles Fortran against
+`$SPS_HOME`, which is why it cannot be a pip dependency of CERIDWEN. You need it
+only for `SSPData.from_fsps(...)` — when the published grids above do not have
+the IMF, isochrones or spectral library you want:
+
+```bash
+# A Fortran compiler (pick one for your system):
 brew install gcc                       # macOS (Homebrew)
 sudo apt-get install gfortran          # Debian/Ubuntu
 conda install -c conda-forge gfortran  # any OS, inside your conda env
 
-# 2. Pick where the FSPS data should live (ANY path: $HOME, a data disk, cluster
-#    scratch, ...). git clone writes to the absolute $SPS_HOME path, so it does
-#    not matter which directory you run it from.
-export SPS_HOME="$HOME/fsps"           # <- edit to your chosen location
-git clone https://github.com/cconroy20/fsps.git "$SPS_HOME"
-
-# 3. Install the Python wrapper (it compiles against $SPS_HOME):
-python -m pip install "fsps>=0.4.4"
+python -m pip install "fsps>=0.4.4"    # compiles against $SPS_HOME
 ```
 
 !!! tip "Make `$SPS_HOME` permanent"
-    `python-fsps` needs `$SPS_HOME` in every shell session and fails to import
-    without it. Add it to your shell startup file (use the same path as above):
+    CERIDWEN needs `$SPS_HOME` in every session that uses nebular or dust
+    emission, and `python-fsps` fails to import without it. Add it to your shell
+    startup file (use the same path as above):
 
     ```bash
     echo 'export SPS_HOME="$HOME/fsps"' >> ~/.zshrc   # zsh (macOS default)

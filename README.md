@@ -11,18 +11,22 @@
 
 Documentation: [www.amanda-stoffers.de/ceridwen](https://www.amanda-stoffers.de/ceridwen/)
 
-**In three commands** (from a clone, Python 3.11+, no FSPS needed for this path):
+**Try it in four commands** (Python 3.11+, no clone and no FSPS needed for
+this path):
 
 ```bash
-pip install .                    # GPU wheels on Linux, CPU elsewhere
+pip install ceridwen             # GPU wheels on Linux, CPU elsewhere
 python -m ceridwen.check         # environment self-check, each problem with its fix
+curl -LO https://raw.githubusercontent.com/Espe13/ceridwen/v1.0.8/examples/quickstart.py
 SSP_FILE=$(python -c "from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_miles_chab'))") \
-    python examples/quickstart.py   # mock fit; prints a recovered-vs-true table
+    python quickstart.py         # mock fit; prints a recovered-vs-true table
 ```
 
-The third line downloads the published MIST + MILES grid once (67 MB,
+The last line downloads the published MIST + MILES grid once (67 MB,
 SHA-256 verified, cached in `~/.ceridwen/grids`) and fits mock photometry with
-it. [Installation](#installation), the [quick start](#quick-start) and
+it. That path never touches FSPS. **Fitting real galaxies with nebular
+emission does need the FSPS data files** — a `git clone`, no compiler; see
+[Installation](#installation). The [quick start](#quick-start) and
 [how the code is verified](#verification) follow.
 
 ---
@@ -50,7 +54,9 @@ Everything is written against `jax.numpy` with `@jit` and `vmap`/`pmap` in mind:
 ## Installation
 
 **Requires Python 3.11 or newer** (`blackjax` >= 1.6 and `jax` >= 0.9 insist
-on it):
+on it). There are three steps, and only the first is always needed.
+
+### 1. The package
 
 ```bash
 conda create -n ceridwen python=3.11 -y
@@ -59,14 +65,9 @@ conda activate ceridwen
 pip install ceridwen
 ```
 
-To run the examples or the test suite, or to develop, install from a clone
-instead:
-
-```bash
-git clone https://github.com/Espe13/ceridwen.git
-cd ceridwen
-pip install .                    # or `pip install -e .` for development
-```
+That is the whole Python install: JAX, the samplers, the vendored filter curves
+and attenuation laws, posterior plotting and the test runner. There are no
+extras to choose.
 
 **GPU is the default.** On Linux this installs the CUDA 12 JAX wheels (the
 CUDA libraries are bundled; the only system requirement is a recent enough
@@ -83,44 +84,91 @@ ceridwen.fitSED
   Device      : GPU  (CudaDevice(id=0))
 ```
 
-The one thing you install separately is **FSPS** (it compiles
-Fortran, so it can't be a pip dependency); see
-[Installing FSPS](#installing-fsps-and-setting-sps_home) below.
+### 2. The FSPS data files — needed for nebular and dust emission
+
+CERIDWEN reads the CLOUDY nebular grids and the Draine & Li / THEMIS
+dust-emission templates **directly out of an FSPS data directory** whenever
+`add_neb=True` or `add_dust_emission=True`, which is to say in essentially
+every fit to a real galaxy. FSPS itself is never run at fit time — it only
+supplies the tables — so this step is a download, **not a compile**:
+
+```bash
+export SPS_HOME="$HOME/fsps"        # <- any path you like: $HOME, a data disk, scratch
+git clone https://github.com/cconroy20/fsps.git "$SPS_HOME"
+```
+
+`git clone` writes to that absolute path, so it does not matter which directory
+you run it from. Make the variable permanent (see
+[Installing FSPS](#installing-fsps-and-setting-sps_home) below), then
+`python -m ceridwen.check` will report `$SPS_HOME` as OK.
+
+### 3. An SSP grid
+
+The forward model consumes an HDF5 cache of SSP spectra. Download a published
+one — one line, no FSPS:
+
+```python
+from ceridwen import SSPData
+from ceridwen.ssps import fetch_grid
+ssp = SSPData.load(fetch_grid("mist_miles_chab"))   # 67 MB, cached, SHA-256 verified
+```
+
+Building your own (a different IMF, isochrones or spectral library) is the only
+thing that needs the compiled `python-fsps` wrapper and therefore a Fortran
+compiler; see [Step 0](#step-0-the-ssp-grid) and
+[Installing FSPS](#installing-fsps-and-setting-sps_home).
+
+### From a clone
+
+To run the bundled examples or the test suite, or to develop:
+
+```bash
+git clone https://github.com/Espe13/ceridwen.git
+cd ceridwen
+pip install -e .                 # or `pip install .`
+```
+
+**Check the whole setup at any time** with `python -m ceridwen.check`: it
+reports each dependency, whether `$SPS_HOME` is set and holds its `nebular/`
+tables, whether float64 is on, and whether nested sampling is available — each
+problem with its fix.
 
 ### Installing FSPS and setting `$SPS_HOME`
 
-CERIDWEN uses [FSPS](https://github.com/cconroy20/fsps) in two ways. The
-[`python-fsps`](https://dfm.io/python-fsps) wrapper builds the SSP cache (Step
-0). Separately, the FSPS **data files** supply the CLOUDY nebular grids and
-Draine & Li dust-emission templates: when `add_neb=True` or
-`add_dust_emission=True`, **CERIDWEN reads those files directly from
-`$SPS_HOME`**; FSPS itself is not run at fit time, it just provides the data.
+CERIDWEN uses [FSPS](https://github.com/cconroy20/fsps) in two separate ways,
+and they have very different costs.
 
-FSPS is **not** a pure-Python wheel: it needs a Fortran compiler and a clone of
-the FSPS data files, and `python-fsps` reads the `$SPS_HOME` environment
-variable (it fails to import if that is unset or wrong).
+**The data files (step 2 above) — needed for nebular and dust emission.** The
+FSPS repository ships the CLOUDY nebular lookup tables (`nebular/`) and the
+Draine & Li dust-emission spectra (`dust/`) as data. When `add_neb=True` or
+`add_dust_emission=True`, **CERIDWEN reads those files directly from
+`$SPS_HOME`** — FSPS is never executed at a fit. So this is a `git clone` and
+an environment variable. **No Fortran compiler, no `pip install fsps`.**
 
 ```bash
-# 1. A Fortran compiler (pick one for your system):
+export SPS_HOME="$HOME/fsps"        # <- any path: $HOME, a data disk, scratch
+git clone https://github.com/cconroy20/fsps.git "$SPS_HOME"
+```
+
+**The `python-fsps` wrapper — needed only to build your own SSP grid.**
+[`python-fsps`](https://dfm.io/python-fsps) compiles Fortran against
+`$SPS_HOME`, so it cannot be a pip dependency of CERIDWEN. You need it only for
+`SSPData.from_fsps(...)`, i.e. when the [published grids](#step-0-the-ssp-grid)
+do not have the IMF, isochrones or spectral library you want:
+
+```bash
+# A Fortran compiler (pick one for your system):
 brew install gcc                       # macOS (Homebrew)
 sudo apt-get install gfortran          # Debian/Ubuntu
 conda install -c conda-forge gfortran  # any OS, inside your conda env
 
-# 2. Pick where the FSPS data should live and point $SPS_HOME at it. This can
-#    be ANY path -- $HOME, a data disk, cluster scratch, etc. `git clone` writes
-#    to that absolute path, so it does NOT matter which directory you run it from
-#    (no `cd` needed). Just change the path below to wherever you want it.
-export SPS_HOME="$HOME/fsps"        # <- edit this to your chosen location
-git clone https://github.com/cconroy20/fsps.git "$SPS_HOME"
-
-# 3. Install the Python wrapper (it compiles against $SPS_HOME):
-python -m pip install "fsps>=0.4.4"
+python -m pip install "fsps>=0.4.4"    # compiles against $SPS_HOME
 ```
 
-**Make `$SPS_HOME` permanent.** Step 2 above only sets it for the current
-terminal; `python-fsps` needs it in *every* session. Add it to your shell
-startup file so it persists (use the **same path you chose in step 2**; the
-`$HOME/fsps` below is just the example default):
+**Make `$SPS_HOME` permanent.** The `export` above only sets it for the current
+terminal, and CERIDWEN needs it in *every* session that uses nebular or dust
+emission. Add it to your shell startup file so it persists (use the **same path
+you chose above**; the `$HOME/fsps` below is just the example default):
 
 ```bash
 # zsh (the macOS default shell):
@@ -140,22 +188,41 @@ it's blank, the line went into the wrong file (check which shell you use with
 python -m ceridwen.check
 ```
 
-With FSPS set up, next stop:
+It prints one line per dependency and flags an unset `$SPS_HOME`, or one whose
+`nebular/` subdirectory is missing. Next stop:
 [`examples/quickstart.py`](examples/quickstart.py), a complete runnable fit.
 
 ---
 
 ## Quick start
 
-### Step 0: build the SSP grid (once per FSPS configuration)
+### Step 0: the SSP grid
 
-Ceridwen's forward model consumes an HDF5 cache of SSP spectra precomputed
-with FSPS. You build it yourself, so you control the isochrones, spectral
-library, and IMF. It takes a few minutes on CPU (about one coffee) and then
-serves every fit that shares those choices.
+CERIDWEN's forward model consumes an HDF5 cache of SSP spectra precomputed with
+FSPS. You have two ways to get one.
+
+**Download a published grid (no FSPS).** These are the grids CERIDWEN is tested
+and released with, on Zenodo
+([doi:10.5281/zenodo.21977508](https://doi.org/10.5281/zenodo.21977508)) and
+registered by name. The file is downloaded once into `~/.ceridwen/grids` (or
+`$CERIDWEN_GRID_DIR`) and its SHA-256 is checked on every call:
+
+```python
+from ceridwen import SSPData
+from ceridwen.ssps import fetch_grid, available_grids
+
+print(available_grids(published_only=True))          # names and what each grid is
+ssp = SSPData.load(fetch_grid("mist_miles_chab"))    # MIST + MILES, Chabrier, 67 MB
+ssp.display()                                        # library / IMF / grid coverage
+```
+
+**Or build your own**, so you control the isochrones, spectral library and IMF.
+This is the one step that needs the compiled `python-fsps` and `$SPS_HOME`. It
+takes a few minutes on CPU (about one coffee) and then serves every fit that
+shares those choices.
 
 This block is safe to rerun: it loads the cached grid if one exists at
-`SSP_FILE` and only builds (which needs FSPS and `$SPS_HOME`) when it doesn't:
+`SSP_FILE` and only builds when it doesn't:
 
 ```python
 import pathlib
@@ -185,26 +252,12 @@ FSPS version, build kwargs) in the HDF5 file, and `CSPBasis` reads the
 isochrone library back automatically: **you never set `isoc_type` by hand**,
 and the nebular CLOUDY grid always matches the SSP isochrones.
 
-**No FSPS? Fetch a published grid instead.** The grids ceridwen is tested and
-released with are on Zenodo
-([doi:10.5281/zenodo.21977508](https://doi.org/10.5281/zenodo.21977508)) and
-registered by name, so Step 0 can be one line. The file is downloaded once into
-`~/.ceridwen/grids` (or `$CERIDWEN_GRID_DIR`) and its SHA-256 is checked on
-every call:
-
-```python
-from ceridwen import SSPData
-from ceridwen.ssps import fetch_grid, available_grids
-
-print(available_grids(published_only=True))          # names and what each grid is
-ssp = SSPData.load(fetch_grid("mist_miles_chab"))    # MIST + MILES, Chabrier, 67 MB
-ssp.display()
-```
-
-With a fetched grid and `add_neb=False`, `add_dust_emission=False` (as in
-Step 1 below), nothing is read from `$SPS_HOME` and FSPS does not need to be
-installed at all. Nebular emission and dust emission still need the FSPS data
-files (see [Installing FSPS](#installing-fsps-and-setting-sps_home)).
+**What each route needs.** With a fetched grid and `add_neb=False`,
+`add_dust_emission=False` (as in Step 1 below), nothing is read from
+`$SPS_HOME` and FSPS need not be installed at all. Switch nebular or dust
+emission on and the FSPS **data files** are required — the clone, not the
+compiler. Only `SSPData.from_fsps` needs `python-fsps` itself. See
+[Installing FSPS](#installing-fsps-and-setting-sps_home).
 
 ### Step 1: fit a galaxy end-to-end
 
@@ -469,6 +522,15 @@ corner and sampling-diagnostic figures to `examples/quickstart_figures/`:
 
 ```bash
 python examples/quickstart.py
+```
+
+Without a clone, fetch that one file and run it anywhere — it imports only from
+the installed package:
+
+```bash
+curl -LO https://raw.githubusercontent.com/Espe13/ceridwen/v1.0.8/examples/quickstart.py
+SSP_FILE=$(python -c "from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_miles_chab'))") \
+    python quickstart.py
 ```
 
 If it prints a recovered-vs-true table, your setup works. `logmass` recovers the
