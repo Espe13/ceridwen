@@ -56,8 +56,23 @@ for W in WIDTHS:
             gg = jax.jit(jax.vmap(jax.value_and_grad(f, argnums=(0, 1))))
             rows.append(("kernel+grad", W, M, mode, bench(gg, (s, c))))
 
+def table(rows):
+    print(f"# backend {jax.default_backend()} {jax.devices()}")
+    print("| what | W | M | profile [us] | marginalize [us] | sampled [us] |")
+    print("|---|---|---|---|---|---|")
+    keys = sorted({(r[0], r[1], r[2]) for r in rows}, key=lambda k: (k[0], k[1], k[2]))
+    for k in keys:
+        v = {r[3]: r[4] for r in rows if (r[0], r[1], r[2]) == k}
+        print(f"| {k[0]} | {k[1]} | {k[2]} | {v['profile']:.0f} | {v['marginalize']:.0f} | "
+              f"{v['sampled']:.0f} |", flush=True)
+
+
+table(rows)
+rows = []
 if "--full" in sys.argv:
-    sys.path.insert(0, "tests")
+    import os, pathlib
+    sys.path.insert(0, os.environ.get("CERIDWEN_TESTS_DIR",
+                                      str(pathlib.Path(__file__).resolve().parents[1] / "tests")))
     from _gridfixture import require_test_grid
     from ceridwen import SSPData, CSPBasis, SedModel, Cosmology
     from ceridwen.broadening import Instrument
@@ -98,11 +113,5 @@ if "--full" in sys.argv:
                 gg = jax.jit(jax.vmap(jax.value_and_grad(f)))
                 rows.append(("full+grad", W, M, mode, bench(lambda t: gg(t), (tb,), reps=10)))
 
-print(f"# backend {jax.default_backend()} {jax.devices()}")
-print("| what | W | M | profile [us] | marginalize [us] | sampled [us] |")
-print("|---|---|---|---|---|---|")
-keys = sorted({(r[0], r[1], r[2]) for r in rows}, key=lambda k: (k[0], k[1], k[2]))
-for k in keys:
-    v = {r[3]: r[4] for r in rows if (r[0], r[1], r[2]) == k}
-    print(f"| {k[0]} | {k[1]} | {k[2]} | {v['profile']:.0f} | {v['marginalize']:.0f} | "
-          f"{v['sampled']:.0f} |")
+if rows:
+    table(rows)
