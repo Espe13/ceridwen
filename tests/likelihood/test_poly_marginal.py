@@ -415,7 +415,9 @@ def fits(csp, tmp_path_factory):
     ms = _model(csp, {}, data=data,
                 init={"spectrum_scaling": jnp.array([1.0]), "spectrum_calib": jnp.zeros(3)},
                 priors={"spectrum_scaling": Uniform(low=0.7, high=1.3),
-                        "spectrum_calib": Uniform(low=-0.3 * np.ones(3), high=0.3 * np.ones(3))})
+                        # scalar bounds broadcast over the vector (per-element bounds cannot be
+                        # serialised into the result file: FINDINGS G2-001)
+                        "spectrum_calib": Uniform(low=-0.3, high=0.3)})
     d = tmp_path_factory.mktemp("samp")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
