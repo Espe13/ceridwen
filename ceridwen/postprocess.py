@@ -160,6 +160,45 @@ def _formed_mass(T_yr, bar, nodes, interp):
     return float(_trapz(nodes, T_yr))
 
 
+def model_theta(model, free_theta):
+    """Transformed theta for one draw with the model's fixed zred / lumdist injected."""
+    t = model.apply_transforms(free_theta)
+    if t is free_theta:
+        t = dict(t)
+    if model._zred_fixed is not None and "zred" not in t:
+        t["zred"] = model._zred_fixed
+    if getattr(model, "_lumdist_fixed", None) is not None and "lumdist_mpc" not in t:
+        t["lumdist_mpc"] = model._lumdist_fixed
+    return t
+
+
+def surviving_mass_fractions(model, samples, *, chunk: int = 1024) -> np.ndarray:
+    """mfrac of every draw in ``samples`` ({param: (n, ...)}), shape (n,): the CSP's
+    ``surviving_mass_fraction`` (SFH weights and the grid's mass table, no spectrum) at the
+    transformed theta, under ``jax.vmap`` in chunks.  ValueError when the grid has no table."""
+    csp = model.csp
+    if getattr(csp, "ssp_stellar_mass", None) is None:
+        from .ssps.ssp_data import missing_stellar_mass_message
+        raise ValueError(missing_stellar_mass_message("the model's SSP grid"))
+    names = list(model.param_names)
+    n = int(np.asarray(samples[names[0]]).shape[0])
+    theta = {p: jnp.asarray(np.asarray(samples[p]).reshape(
+        (n,) + tuple(np.shape(model.theta_init[p])))) for p in names}
+    f = jax.jit(jax.vmap(lambda th: csp.surviving_mass_fraction(model_theta(model, th))))
+    parts = [np.asarray(f({p: v[i:i + chunk] for p, v in theta.items()}))
+             for i in range(0, n, chunk)]
+    return np.concatenate(parts).astype(np.float64).reshape(n)
+
+
+def mfrac_attrs(csp) -> dict:
+    """Attributes recorded with a stored mfrac: which table and SFH scheme produced it."""
+    return {"stellar_mass_source": str(getattr(csp, "stellar_mass_source", None)
+                                       or "not recorded"),
+            "grid_chash": str(getattr(csp, "grid_chash", None)),
+            "sfh_interp": str(getattr(csp, "sfh_interp", None)),
+            "units": "M_surviving / M_formed (stars + remnants), dimensionless"}
+
+
 class PostProcess:
     """Posterior post-processing of a fit.
 
@@ -172,8 +211,11 @@ class PostProcess:
     derived : dict[str, callable] -- ``name -> f(SpectrumSample) -> float or 1-D array``, evaluated per draw
     batch_size : int -- draws per compiled batch through the forward model
     mfrac : bool or None -- surviving-mass block (``mfrac``, ``mass_surviving``,
-        ``ssfrW_surviving``): None computes it when the grid has a mass table and warns when it
-        has not; True requires the table (ValueError otherwise); False skips it
+        ``ssfrW_surviving``): None reports it when it is available and warns when it is not;
+        True requires it (ValueError otherwise); False skips it.  It is read from the result
+        file's ``/derived/mfrac`` (written by ``fitSED``) when there is one, which is refused
+        when its ``grid_chash`` or ``sfh_interp`` differ from the model's; otherwise it is
+        computed from the grid's surviving-mass table
     """
 
     def __init__(self, model, result, *, n_samples: Optional[int] = None,
@@ -211,12 +253,18 @@ class PostProcess:
         self.output: Optional[dict] = None
 
     def _resolve_mfrac(self, mfrac) -> bool:
-        """Whether to compute the surviving-mass block (see the ``mfrac`` parameter)."""
+        """Whether to report the surviving-mass block (see the ``mfrac`` parameter): from the
+        result file's ``/derived/mfrac`` when it has one, else computed from the grid's table."""
         if mfrac is not None and not isinstance(mfrac, bool):
             raise TypeError(f"mfrac must be None, True or False, got {mfrac!r}")
-        has_table = getattr(self.csp, "ssp_stellar_mass", None) is not None
-        if has_table or mfrac is False:
-            return bool(has_table and mfrac is not False)
+        self._mfrac_stored = None
+        if mfrac is False:
+            return False
+        if self._file_mfrac is not None:
+            self._mfrac_stored = self._checked_stored_mfrac(*self._file_mfrac)
+            return True
+        if getattr(self.csp, "ssp_stellar_mass", None) is not None:
+            return True
         from .ssps.ssp_data import missing_stellar_mass_message
         msg = missing_stellar_mass_message("the model's SSP grid")
         if mfrac:
@@ -226,10 +274,31 @@ class PostProcess:
                           "this).", UserWarning, stacklevel=3)
         return False
 
+    def _checked_stored_mfrac(self, values, attrs) -> np.ndarray:
+        """The file's mfrac, refused when it was computed on another grid or SFH scheme."""
+        csp = self.csp
+        for key, mine in (("grid_chash", getattr(csp, "grid_chash", None)),
+                          ("sfh_interp", getattr(csp, "sfh_interp", None))):
+            if key in attrs and str(attrs[key]) != str(mine):
+                raise ValueError(
+                    f"the result file's /derived/mfrac was computed with {key} = "
+                    f"{attrs[key]} but the model has {mine}: it does not describe this model.  "
+                    "Rebuild the model with the grid and SFH scheme of the fit, or pass "
+                    "mfrac=False.")
+        n = int(np.asarray(self.result.log_likelihoods).shape[0])
+        if values.shape != (n,):
+            raise ValueError(f"/derived/mfrac has shape {values.shape}, the file has {n} samples")
+        return values
+
     def _load_result(self, result):
+        self._file_mfrac = None
         if isinstance(result, (str, Path)):
-            from .fit import load_result_h5
+            from .fit import load_result_h5, read_derived_h5
             self._check_file_against_model(result)
+            d = read_derived_h5(result)
+            if "mfrac" in d:
+                self._file_mfrac = (np.asarray(d["mfrac"], dtype=np.float64),
+                                    d.get("mfrac_attrs", {}))
             return load_result_h5(result)
         for attr in ("samples", "log_weights", "log_likelihoods", "param_names"):
             if not hasattr(result, attr):
@@ -368,15 +437,7 @@ class PostProcess:
 
     def _model_theta(self, free_theta):
         """Transformed theta for one draw with fixed zred / lumdist injected."""
-        m = self.model
-        t = m.apply_transforms(free_theta)
-        if t is free_theta:
-            t = dict(t)
-        if m._zred_fixed is not None and "zred" not in t:
-            t["zred"] = m._zred_fixed
-        if getattr(m, "_lumdist_fixed", None) is not None and "lumdist_mpc" not in t:
-            t["lumdist_mpc"] = m._lumdist_fixed
-        return t
+        return model_theta(self.model, free_theta)
 
     def _spectra_one(self, free_theta):
         """(full, intrinsic, dustfree) rest-frame L_nu x 10**logmass for one draw."""
@@ -409,9 +470,15 @@ class PostProcess:
         else:
             T = csp.sfh_times
         out = {"T_yr": T, "sfh": jnp.ravel(jnp.asarray(t["sfh"], dtype=float))}
-        if self.want["mfrac"]:
+        if self.want["mfrac"] and self._mfrac_stored is None:
             out["mfrac"] = csp.surviving_mass_fraction(t)
         return out
+
+    def _with_stored_mfrac(self, raw: dict, idx) -> dict:
+        """``raw`` with the file's mfrac of draws ``idx`` in place of a recomputation."""
+        if self.want["mfrac"] and self._mfrac_stored is not None:
+            raw["sfh"]["mfrac"] = self._mfrac_stored[np.asarray(idx)]
+        return raw
 
     def _compile(self):
         if getattr(self, "_f_spectra", None) is None:
@@ -663,7 +730,7 @@ class PostProcess:
         self._compile()
         idx = self._draw_indices()
         theta_batch = self._theta_batch(idx)
-        raw = self._run_batches(theta_batch)
+        raw = self._with_stored_mfrac(self._run_batches(theta_batch), idx)
         out = self._derive(theta_batch, raw)
         out["theta"] = {k: np.asarray(v).reshape((v.shape[0], -1)).squeeze(axis=-1)
                         if np.asarray(v).shape[1:] == (1,) else np.asarray(v)
@@ -674,7 +741,7 @@ class PostProcess:
         ll = np.asarray(self.result.log_likelihoods, dtype=float)
         ibest = int(np.nanargmax(ll))
         tb = self._theta_batch(np.array([ibest]))
-        rb = self._run_batches(tb)
+        rb = self._with_stored_mfrac(self._run_batches(tb), [ibest])
         best = self._derive(tb, rb)
         best["theta"] = {k: np.asarray(v)[0] for k, v in tb.items()}
         best["index"] = ibest
@@ -694,8 +761,10 @@ class PostProcess:
             "observations": [(o.name, getattr(o, "_kind", "")) for o in self.model.observations],
             "sfh_interp": self.csp.sfh_interp, "sfh_per_bin": bool(getattr(self.csp, "sfh_per_bin", False)),
             "metallicity": self._metallicity_meta(),
-            "mfrac": ("computed from the SSP grid's surviving-mass table"
-                      if self.want["mfrac"] else "not computed"),
+            "mfrac": ("not computed" if not self.want["mfrac"]
+                      else "read from the result file's /derived/mfrac"
+                      if self._mfrac_stored is not None
+                      else "computed from the SSP grid's surviving-mass table"),
         }
         self.output = out
         return out

@@ -410,6 +410,11 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
   `python scripts/attach_stellar_mass.py <grid.h5>` writes a copy with the table (FSPS
   compiled with the grid's isochrones; `--fsps-python` for another environment). It never
   writes the original file and refuses an FSPS whose isochrones or nodes differ.
+- `fitSED` writes `mfrac` of every sample to `/derived/mfrac` when the grid has the table
+  (`fitSED(mfrac=False)` skips it), so `mfrac * 10**logmass` per sample is the surviving mass
+  without post-processing. `PostProcess` given the file path uses that array and refuses it
+  when its recorded `grid_chash` or `sfh_interp` differ from the model's; given a
+  `SamplingResult` it recomputes from the table.
 - The table is FSPS's `stellar_mass` as it is: on MIST it exceeds 1 M_sun per M_sun formed
   below 10^6.45 yr (up to 4.6 at 10^5 yr), so a population dominated by < 3 Myr stars can
   have `mfrac > 1`. BPASS stays <= 1.

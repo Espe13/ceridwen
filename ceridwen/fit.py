@@ -36,6 +36,7 @@ def fitSED(
     verbose: bool = True,
     optimize: bool = False,
     optimize_kwargs: dict[str, Any] | None = None,
+    mfrac: bool | None = None,
 ):
     """Fit ``model`` to ``observations`` with ``sampler`` ("nested" or "nuts") and return the
     ``SamplingResult``; writes ``output_dir/filename`` (HDF5) and a ``.log`` with the same stem.
@@ -51,6 +52,10 @@ def fitSED(
         the prior, so there the MAP is only recorded.  Stored under ``/map`` in the result file.
     optimize_kwargs : dict -- forwarded to ``map_fit`` (``n_starts``, ``rng_key``, ...); the
         default ``rng_key`` is ``fold_in(rng_key, 1)``, so the sampler's own key is unchanged
+    mfrac : bool or None -- write ``/derived/mfrac`` (surviving / formed mass of every stored
+        sample, from the grid's surviving-mass table; ``PostProcess`` reads it): None writes it
+        when the grid has the table and logs one line when it has not; True requires the table
+        (ValueError before sampling); False skips it.  The same switch as ``PostProcess(mfrac=)``.
 
     Noise terms and the outlier mixture are switched on by the names the model samples (see
     ``_likelihood_for``); all outlier fractions default to 0 (off).
@@ -79,6 +84,8 @@ def fitSED(
 
     if not model.observations:
         raise ValueError("No observations attached to model.")
+
+    want_mfrac = _resolve_fit_mfrac(model, mfrac)
 
     _t0_likelihood = time.perf_counter()
     obs_dict = model.obs_dict
@@ -168,19 +175,35 @@ def fitSED(
 
         logger.info(f"\n{result.summary()}")
 
+        derived = None
+        _t_derived = 0.0
+        if want_mfrac:
+            from .postprocess import surviving_mass_fractions, mfrac_attrs
+            _t0_derived = time.perf_counter()
+            derived = {"mfrac": (surviving_mass_fractions(model, result.samples),
+                                 mfrac_attrs(model.csp))}
+            _t_derived = time.perf_counter() - _t0_derived
+            logger.info(f"  Derived mfrac: {derived['mfrac'][0].size} samples, "
+                        f"{_t_derived:.3f} s")
+        elif mfrac is None:
+            logger.info("  Derived mfrac: not written (the SSP grid has no surviving-mass "
+                        "table; PostProcess reports mass_formed only)")
+
         _t0_h5 = time.perf_counter()
         write_result_h5(output_path, model, result, verbose=verbose,
                         likelihood=multi_likelihood, adapter=adapter, rng_key=rng_key,
-                        map_result=map_result)
+                        map_result=map_result, derived=derived)
         _t_h5 = time.perf_counter() - _t0_h5
 
-        _t_total = _t_likelihood + _t_adapter + _t_map + _t_sampler + _t_h5
+        _t_total = _t_likelihood + _t_adapter + _t_map + _t_sampler + _t_derived + _t_h5
         logger.info(f"\n  fitSED timing breakdown:")
         logger.info(f"    Likelihood build : {_t_likelihood:>8.3f} s")
         logger.info(f"    Adapter build    : {_t_adapter:>8.3f} s")
         if optimize:
             logger.info(f"    MAP optimisation : {_t_map:>8.1f} s")
         logger.info(f"    Sampler run      : {_t_sampler:>8.1f} s")
+        if want_mfrac:
+            logger.info(f"    Derived mfrac    : {_t_derived:>8.3f} s")
         logger.info(f"    HDF5 write       : {_t_h5:>8.3f} s")
         logger.info(f"    Total fitSED     : {_t_total:>8.1f} s")
 
@@ -188,6 +211,17 @@ def fitSED(
     finally:
         logger.removeHandler(_file_handler)
         _file_handler.close()
+
+
+def _resolve_fit_mfrac(model, mfrac) -> bool:
+    """Whether fitSED writes ``/derived/mfrac``; validated before sampling."""
+    if mfrac is not None and not isinstance(mfrac, bool):
+        raise TypeError(f"mfrac must be None, True or False, got {mfrac!r}")
+    has_table = getattr(model.csp, "ssp_stellar_mass", None) is not None
+    if mfrac and not has_table:
+        from .ssps.ssp_data import missing_stellar_mass_message
+        raise ValueError(missing_stellar_mass_message("the model's SSP grid"))
+    return bool(has_table and mfrac is not False)
 
 
 def _build_adapter(sampler: str, model, sampler_kwargs: dict, verbose: bool,
@@ -504,6 +538,7 @@ def write_result_h5(
     adapter=None,
     rng_key=None,
     map_result=None,
+    derived=None,
 ):
     """Write ``result`` and the model/observation metadata to HDF5 ``path``::
 
@@ -548,6 +583,16 @@ def write_result_h5(
         /map/               (only with ``map_result``, fitSED(optimize=True))
             theta/<param_name>, lnp_starts (n,), n_steps (n,)
             attrs: lnp, best_start, wall_time_s
+
+        /derived/           (only with ``derived``: fitSED, grid with a surviving-mass table)
+            mfrac          (n_samples,)  M_surviving / M_formed of each sample, aligned with
+                           /samples; attrs: stellar_mass_source, grid_chash, sfh_interp, units
+
+    ``derived`` maps a name to ``(values (n_samples, ...), attrs)``.  The rule for what goes in
+    ``/derived``: only quantities that are a pure function of theta and the model, cheap to
+    evaluate for every sample, and exactly reproducible from the file plus the model.  mfrac
+    qualifies (SFH weights times the grid's table, no spectrum); spectra, SFR windows and UV /
+    ionising quantities do not, and stay in ``PostProcess``.
     """
     import h5py
 
@@ -624,9 +669,9 @@ def write_result_h5(
 
         if model.transforms:
             tx_names = []
-            for derived, fn in model.transforms.items():
+            for tx_key, fn in model.transforms.items():
                 fn_name = getattr(fn, "__name__", repr(fn))
-                tx_names.append(f"{derived} <- {fn_name}")
+                tx_names.append(f"{tx_key} <- {fn_name}")
             mod_grp.attrs["transforms"] = json.dumps(tx_names)
 
         mod_grp.attrs["zred"] = float(getattr(model, "zred", 0.0))
@@ -703,6 +748,19 @@ def write_result_h5(
             g.attrs["lnp"] = float(map_result.lnp)
             g.attrs["best_start"] = int(map_result.best_start)
             g.attrs["wall_time_s"] = float(map_result.wall_time)
+
+    if derived:
+        n = int(np.asarray(result.log_likelihoods).shape[0])
+        with h5py.File(path, "a") as f:
+            g = f.create_group("derived")
+            for name, (values, attrs) in derived.items():
+                values = np.asarray(values)
+                if values.shape[:1] != (n,):
+                    raise ValueError(f"derived[{name!r}] has shape {values.shape}; "
+                                     f"expected one value per sample ({n})")
+                d = g.create_dataset(name, data=values, compression="gzip")
+                for k, v in (attrs or {}).items():
+                    d.attrs[k] = v
 
     if verbose:
         size_mb = path.stat().st_size / 1024**2
@@ -1104,11 +1162,26 @@ def result_cosmology(path: str | Path):
     return Cosmology.from_dict(attrs)
 
 
+def read_derived_h5(path: str | Path) -> dict:
+    """The ``/derived`` group of a result file: ``{name: array, name + '_attrs': dict}``;
+    empty when the file has none."""
+    import h5py
+    out = {}
+    with h5py.File(Path(path), "r") as f:
+        if "derived" in f:
+            for name, d in f["derived"].items():
+                out[name] = np.array(d)
+                out[f"{name}_attrs"] = {k: (v.decode() if isinstance(v, bytes) else v)
+                                        for k, v in d.attrs.items()}
+    return out
+
+
 def read_result_h5(path: str | Path) -> dict:
     """Read a result HDF5 file into a nested dict with keys ``'obs'``, ``'model'``,
     ``'samples'``, ``'provenance'`` (files written by fitSED since v1.0.6), ``'elines'``
-    (when the fit marginalised the emission lines) and ``'map'`` (when it ran with
-    ``optimize=True``)."""
+    (when the fit marginalised the emission lines), ``'map'`` (when it ran with
+    ``optimize=True``) and ``'derived'`` (``read_derived_h5``; when fitSED wrote
+    ``/derived/mfrac``)."""
     import h5py
 
     out = {"obs": {}, "model": {}, "samples": {}}
@@ -1170,4 +1243,7 @@ def read_result_h5(path: str | Path) -> dict:
                           "lnp_starts": np.array(g["lnp_starts"]),
                           "n_steps": np.array(g["n_steps"]), **dict(g.attrs)}
 
+    derived = read_derived_h5(path)
+    if derived:
+        out["derived"] = derived
     return out

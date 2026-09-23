@@ -57,7 +57,7 @@ unless you reassigned `model.observations` without calling
 | `out['prediction']['spectra_dustfree']` | `(N, n_wave)` | stars + nebular continuum + lines, no dust |
 | `out['derived'][name]` | `(N,)` or `(N, k)` | your functions (below) |
 | `out['bestfit']` | same tree, one draw | the highest-likelihood raw sample, with all of the above |
-| `out['meta']` | | `n_samples`, `n_raw`, `seed`, `resampled`, `windows_myr`, `param_names`, `zred_fixed`, `cosmology`, `sampler`, `weights` (source), `log_evidence`, `log_evidence_err`, `observations`, `sfh_interp`, `sfh_per_bin`, `metallicity` (convention and grid Z_sun), `mfrac` (computed or not) |
+| `out['meta']` | | `n_samples`, `n_raw`, `seed`, `resampled`, `windows_myr`, `param_names`, `zred_fixed`, `cosmology`, `sampler`, `weights` (source), `log_evidence`, `log_evidence_err`, `observations`, `sfh_interp`, `sfh_per_bin`, `metallicity` (convention and grid Z_sun), `mfrac` (read from the file's `/derived/mfrac`, computed from the grid's table, or not computed) |
 
 Blocks can be switched off: `PostProcess(..., sfr=False, ssfr=False,
 uv=False, ionizing=False, predictions=False, mfrac=False)`.
@@ -103,6 +103,31 @@ and reports `mass_formed` only (`mfrac=True` makes the missing table an error,
 SFH integration, not FSPS's `csp_gen`: against python-fsps for constant and rising
 SFHs of 0.1-10 Gyr it agrees to 4.2e-4 (step) and 6.3e-3 (linear, young populations on
 MIST, whose youngest node is 10^5 yr); GOTCHAS section 14.
+
+**`mfrac` in the result file (2026-09-23).** When the grid has the table, `fitSED` evaluates
+`mfrac` for every stored sample (SFH weights times the table, no spectrum; well under a
+second for thousands of samples) and writes it as `/derived/mfrac`, aligned with
+`/samples`, with the attributes `stellar_mass_source`, `grid_chash` and `sfh_interp` that
+say which table and SFH scheme produced it. So a stellar mass needs no post-processing:
+
+```python
+from ceridwen import read_result_h5
+r = read_result_h5("out/ceridwen_result.h5")
+mass_surviving = r["derived"]["mfrac"] * 10 ** r["samples"]["logmass"].ravel()   # per sample, M_sun
+```
+
+(weight the samples with `r["samples"]["log_weights"]`, or use `PostProcess`, which does the
+resampling). `PostProcess(model, "out/ceridwen_result.h5")` reads the stored array instead
+of recomputing it, so it no longer needs the table, and raises when the recorded
+`grid_chash` or `sfh_interp` differ from the model's. Without a file (a `SamplingResult`),
+or for a file without `/derived`, it computes `mfrac` from the table as before.
+`fitSED(mfrac=False)` skips the group; `mfrac=True` refuses a grid without a table before
+sampling; the default writes it when it can and otherwise logs one line.
+
+The rule for `/derived`: it holds only quantities that are a pure function of theta and the
+model, cheap for every sample, and exactly reproducible from the file plus the model.
+`mfrac` qualifies. Spectra, SFR windows and UV / ionising quantities do not, and stay in
+`PostProcess`.
 
 **Model-grid spectra** are rest-frame luminosity densities: no distance, no
 (1+z), no IGM. To compare with an observation use the per-observation

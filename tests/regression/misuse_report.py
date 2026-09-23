@@ -42,7 +42,8 @@ from ceridwen.model.model import SedModel
 from ceridwen.broadening import Instrument
 from ceridwen.likelihood import DiagonalNoiseModel, DiagonalGaussianLikelihood
 from ceridwen.likelihood.eline_marginal import refuse_outlier_with_elines
-from ceridwen.fit import _check_outlier_setup, _check_noise_setup, _poly_calibration_for
+from ceridwen.fit import (_check_outlier_setup, _check_noise_setup, _poly_calibration_for,
+                          _resolve_fit_mfrac)
 from ceridwen.model.obs_params import check_names, CALIB_FAMILIES
 from ceridwen.priors import LogUniform, Normal, TopHat
 from types import SimpleNamespace
@@ -263,6 +264,10 @@ def run_scenarios():
                                                      {"f_outlier_phot": TopHat(low=0.0, high=0.5)}))),
         ("mfrac on a grid without a surviving-mass table", {"ERROR"},
          lambda: csp.surviving_mass_fraction(th)),
+        ("fitSED(mfrac=True) on a grid without a surviving-mass table", {"ERROR"},
+         lambda: _resolve_fit_mfrac(SimpleNamespace(csp=csp), True)),
+        ("fitSED(mfrac='yes') (not a bool)", {"ERROR"},
+         lambda: _resolve_fit_mfrac(SimpleNamespace(csp=csp), "yes")),
         ("surviving-mass table of the wrong shape", {"ERROR"},
          lambda: _ssp.with_stellar_mass(np.ones((2, 2)), source="misuse")),
         ("old shared noise name log_jitter (v1.0.7)", {"ERROR"},

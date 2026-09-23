@@ -194,7 +194,9 @@ projection → likelihood → sampler.
   (obs incl. sky / calibration / upper limits and each likelihood's noise model,
   model/priors as JSON, kinematics, cosmology, samples, log-weights, log-evidence,
   `csp_config` + `sfh_times_yr`, `/provenance`: version, git state, sampler settings,
-  rng key; `read_provenance`).
+  rng key; `read_provenance`; `/derived/mfrac` per sample when the grid has a mass table,
+  `fitSED(mfrac=)`, `read_derived_h5`). `/derived` holds only pure, cheap, exactly
+  reproducible functions of theta and the model; everything else stays in `PostProcess`.
 - `resultfile.py` — `rebuild_model` / `check_model_against_result` / `priors_from_result`:
   rebuild a `SedModel` from a result file given the CSP, observations and transform callables
   (not stored), and name every difference between a model and the file.
@@ -202,7 +204,8 @@ projection → likelihood → sampler.
   draws; `.theta` is a `free_param_init`), `laplace_sigma`; `fitSED(optimize=True)` starts NUTS
   there and writes `/map`.
 - `postprocess.py` — `PostProcess` (equal-weight draws, SFH averages, formed and
-  surviving mass (`mfrac`, grids with a mass table), UV and ionising properties,
+  surviving mass (`mfrac`: the file's `/derived/mfrac`, else the grid's mass table), UV and
+  ionising properties,
   posterior predictions); `plotting.py` — summary, corner
   and diagnostic figures.
 

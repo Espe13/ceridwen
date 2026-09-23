@@ -658,3 +658,36 @@ their floors (jax 0.9.0, blackjax 1.6; every other package at its current releas
 jax 0.10.2 + blackjax 1.6.2, and T3 from the wheel at both.
 At jax 0.9.0 NUTS samples differ from jax 0.10.2 by <= 3.2e-14 (jax, not blackjax): the
 validated environment stays jax 0.10.2.
+
+## 2026-09-23 — `fitSED` writes `/derived/mfrac` (`fit.py`, `postprocess.py`)
+
+**What.** When the SSP grid carries the surviving-mass table, `fitSED` evaluates `mfrac`
+(M_surviving / M_formed) for every stored sample after the sampler returns: the CSP's
+`surviving_mass_fraction` at the transformed theta, SFH weights times the table, no spectrum,
+under `jax.vmap` in chunks (`postprocess.surviving_mass_fractions`, shared with `PostProcess`
+through `postprocess.model_theta`). It is written as `/derived/mfrac` (aligned with
+`/samples`) with attrs `stellar_mass_source`, `grid_chash`, `sfh_interp`, `units`, timed and
+logged like the other stages. `read_result_h5` returns it under `'derived'`
+(`read_derived_h5`); `load_result_h5` is unchanged. `fitSED(mfrac=None|True|False)` is the
+same switch as `PostProcess(mfrac=)`: default writes it when the table exists and otherwise
+logs one line; `True` refuses a grid without a table before sampling; `False` skips it.
+`PostProcess` given a result file uses the stored array (so it no longer needs the table)
+and raises when the recorded `grid_chash` or `sfh_interp` differ from the model's; given a
+`SamplingResult`, or a file without `/derived`, it recomputes from the table as before.
+`CSPBasis` / `CSPBasis_afe` now keep the grid's `stellar_mass_source`.
+
+The rule for `/derived`, in the `write_result_h5` docstring and `docs/postprocessing.md`:
+only quantities that are a pure function of theta and the model, cheap for every sample and
+exactly reproducible. mfrac qualifies; spectra, SFR windows and UV quantities stay in
+`PostProcess`.
+
+**Verification.** `tests/test_derived_mfrac.py` (6 tests; each fails under a planted bug:
+scaled mfrac, stored array ignored, chash check off, wrong draw index): a nested fit of the
+quickstart-style mock on the BPASS test grid with its FSPS table writes 258 values, equal to
+`PostProcess`'s recomputation to 1e-12, `mfrac * 10**logmass` = `mass_surviving` to 1e-12;
+0.108 s for the mfrac stage including compilation. T4 against `53c5f6e` (clean archive,
+`--ns`): 6058/6059 arrays byte-identical; the one difference is `plain/ns/logZ` element 1, the
+random anesthetic error estimate (element 0, the evidence, byte-equal). T1 596 passed,
+1 failed (`test_picket_factored`, fails identically on `53c5f6e` with `$SPS_HOME` set),
+2 skipped, 1 xfailed; T2 21 passed; T3 7 passed; `check_api_usage` 0 findings; misuse report
+0 SILENT, two new rows (`fitSED(mfrac=True)` without a table, `mfrac='yes'`).
