@@ -1,6 +1,6 @@
 """Per-observation parameter names (v1.0.7): one naming rule for every parameter that belongs
-to a single observation -- the outlier mixture, the noise nuisance terms and the spectrum
-calibration.
+to a single observation -- the outlier mixture, the noise nuisance terms, the spectrum
+calibration and the spectrum GP likelihood.
 
 A family has a *stem* per observation kind (``f_outlier_spec``, ``log_jitter_phot``,
 ``spectrum_scaling``).  Observation ``obs`` answers to ``<stem>_<obs.name>`` always, and to
@@ -110,3 +110,10 @@ NOISE_FAMILIES = tuple(family(f"noise term {r}", r) for r in NOISE_ROOTS)
 CALIB_ROOTS = ("spectrum_scaling", "spectrum_calib")
 CALIB_FAMILIES = tuple(family(f"calibration {r}", r, kinds=("spectrum",), per_kind=False)
                        for r in CALIB_ROOTS)
+
+#: the Gaussian-process likelihood of a spectrum, one per Spectrum:
+#: log_gp_amp_spec[_<obs>] (ln a, a in units of sigma_eff), log_gp_length_spec[_<obs>]
+#: (ln l, l in observed-frame Angstrom)
+GP_ROOTS = ("log_gp_amp", "log_gp_length")
+GP_FAMILIES = (family("GP amplitude log_gp_amp", "log_gp_amp", kinds=("spectrum",)),
+               family("GP length scale log_gp_length", "log_gp_length", kinds=("spectrum",)))

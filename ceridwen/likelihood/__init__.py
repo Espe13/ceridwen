@@ -18,6 +18,14 @@ from .likelihood import (
     make_lnprobfn,
 )
 
+from .gp_likelihood import (
+    GP_JITTER,
+    gp_sqdist,
+    lnlike_gp_gaussian,
+    gp_conditional_mean,
+    GPGaussianLikelihood,
+)
+
 __all__ = [
     "NoiseModelOutput",
     "NoiseModelBase",
@@ -33,4 +41,9 @@ __all__ = [
     "DiagonalGaussianLikelihoodWithUpperLimits",
     "MultiObservationLikelihood",
     "make_lnprobfn",
+    "GP_JITTER",
+    "gp_sqdist",
+    "lnlike_gp_gaussian",
+    "gp_conditional_mean",
+    "GPGaussianLikelihood",
 ]
