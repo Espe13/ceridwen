@@ -65,13 +65,13 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
   vendored from `sedpy-jax` (MIT), with the 293 filter `.par` files and the two
   reference spectra under `ceridwen/data/`. There is no `sedpy` dependency; do
   not reintroduce one.
-- **Nested sampling needs `blackjax.nss`/`blackjax.ns`**, now merged into the
-  official blackjax (blackjax-devs) but not yet in a tagged PyPI release.
-  `pyproject.toml` pins blackjax's `main` branch via direct git reference, so
-  `pip install` pulls it automatically. Consequence: ceridwen is git/source-
-  installed, not PyPI, until a blackjax release ships NSS — then swap the pin for
-  `blackjax>=X.Y` (requires-python stays >=3.11). Don't "simplify" this to a
-  stock released `blackjax` pin yet; the released versions still lack NSS.
+- **Nested sampling needs `blackjax.nss`/`blackjax.ns`**, released in blackjax
+  1.6; `pyproject.toml` requires `blackjax>=1.6` (which forces `jax>=0.9` and
+  Python >= 3.11). Every dependency is a normal PyPI requirement: never add a
+  direct git/URL reference, PyPI refuses to publish a package that has one.
+  blackjax >= 1.6 removed `window_adaptation(progress_bar=)`; don't pass it. Its signature
+  now ends in `**extra_parameters`, which are forwarded to the kernel, so an unknown kwarg
+  is not rejected there -- it fails later inside `blackjax.nuts`, or silently does nothing.
 
 ## Staying JAX-correct when editing the package
 

@@ -16,8 +16,7 @@ jobs:
   # Importing ceridwen.sampler also exercises the tfp / blackjax dependency
   # pins, so a bad pin fails here rather than at a user's first fit.
   #
-  # Python 3.11+ : nested sampling pins official blackjax (main), which requires
-  # >=3.11. (The git dependency means installs build blackjax from source.)
+  # Python 3.11+ : blackjax >= 1.6 (nested sampling) and jax >= 0.9 require it.
   # ----------------------------------------------------------------------
   smoke:
     name: smoke (import) py${{ matrix.python-version }}
@@ -58,9 +57,60 @@ jobs:
           PY
 
   # ----------------------------------------------------------------------
+  # Wheel: build the sdist + wheel and install the WHEEL (not the checkout)
+  # into a clean venv, the way `pip install ceridwen` will. Fails on a direct
+  # URL dependency (PyPI refuses those), on missing package data (filters,
+  # reference spectra), and on anything `twine check --strict` rejects.
+  # ----------------------------------------------------------------------
+  wheel:
+    name: wheel (build + clean install) py${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build --outdir dist
+          twine check --strict dist/*
+
+      - name: No direct-URL requirement in the wheel metadata
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          whl = glob.glob("dist/*.whl")[0]
+          z = zipfile.ZipFile(whl)
+          meta = z.read(next(n for n in z.namelist() if n.endswith(".dist-info/METADATA"))).decode()
+          bad = [l for l in meta.splitlines() if l.startswith("Requires-Dist:") and " @ " in l]
+          assert not bad, f"direct references (PyPI rejects these): {bad}"
+          names = z.namelist()
+          assert sum(n.endswith(".par") for n in names) > 200, "filter curves missing from the wheel"
+          assert not any("test_data" in n for n in names), "test grids leaked into the wheel"
+          stamp = [n for n in names if n.endswith("_buildstamp.py")]
+          assert not stamp, f"stale build stamp in the wheel (build from a clean checkout): {stamp}"
+          print(whl, "metadata OK")
+          PY
+
+      - name: Install the wheel into a clean venv (outside the checkout)
+        run: |
+          python -m venv /tmp/wheelenv
+          /tmp/wheelenv/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/wheelenv/bin/python -c "import ceridwen, blackjax.ns; print('ceridwen', ceridwen.__version__, ceridwen.__file__)"
+          /tmp/wheelenv/bin/python -m ceridwen.check
+
+  # ----------------------------------------------------------------------
   # Test suite (FSPS-free subset). Fixtures live in tests/fixtures/*.h5 via
   # git-lfs, so checkout must pull LFS. FSPS- and GPU-only tests are skipped
-  # by marker. Python 3.11 (matches the blackjax NSS requirement).
+  # by marker. Python 3.11 (the lowest supported version).
   #
   # The suite's main test grid is NOT in the repository (tests/_gridfixture.py):
   # without it 56 grid-dependent tests skipped (run 34826046295, 2026-09-14:

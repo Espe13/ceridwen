@@ -284,8 +284,8 @@ prefer `predict`/`get_spectrum_components`.
   file; `PostProcess` recomputes the weights from `log_likelihoods_birth`
   (stored in every NSS file) and warns when the stored ones differ.
 - `result.log_evidence` and its error bar come from anesthetic's
-  `NestedSamples.logZ()` when anesthetic is installed (it is, with
-  `pip install .`); without it, `log_evidence = logsumexp(log_weights)` and the
+  `NestedSamples.logZ()` when anesthetic is installed (it is a core
+  dependency); without it, `log_evidence = logsumexp(log_weights)` and the
   error is NaN. Either way `log_weights` are the aligned per-point weights.
 
 ## 11. Behaviour changes of the 2026-09-04 optimisation pass

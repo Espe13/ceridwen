@@ -23,7 +23,7 @@ mkdir -p logs
 
 # --- environment: copy the working block from your v2-campaign scripts ---
 # module load <cuda/...> <gcc/...>
-# source /path/to/ceridwen-venv/bin/activate     # blackjax pin f73e12956
+# source /path/to/ceridwen-venv/bin/activate     # needs blackjax>=1.6
 export SPS_HOME=${SPS_HOME:-/path/to/fsps-v4.0}  # only for provenance; FSPS
                                                  # itself is NOT needed at fit time
 

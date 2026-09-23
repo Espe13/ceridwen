@@ -626,3 +626,35 @@ possible (they are not stored).
 samples, ln L, birth ln L, weights, ln Z and call count byte-identical; foreign / old
 checkpoints refused), `tests/test_resultfile.py` (round trip; each kind of difference named;
 priors of every class rebuilt exactly).
+
+## 2026-09-23 — v1.0.8: pip-installable, blackjax from PyPI (`pyproject.toml`, `sampler/nuts.py`)
+
+**What.** The direct git reference `blackjax @ git+...@f73e12956` (which PyPI refuses to
+publish) is replaced by `blackjax>=1.6`, the first release with nested sampling. Its
+`blackjax/ns/` is byte-identical to the pinned commit; `blackjax.nss` takes the same arguments,
+`ns.utils.finalise` the same `update_info`. blackjax 1.6 forces the other floors: `jax`/`jaxlib`
+>= 0.9.0 and `optax` >= 0.2.3, and jax 0.9 itself forces `numpy` >= 2.0 and `scipy` >= 1.13.
+Because numpy 2 is now mandatory, the floors that predate it were raised to the versions of the
+validated environment (`astropy` >= 8.0, `h5py` >= 3.16, `tensorflow-probability` >= 0.25,
+`anesthetic` >= 2.14, `matplotlib` >= 3.9); only jax and blackjax were actually exercised AT
+their floor, the rest are declared as known-good-at-or-above. `fastprogress`
+is dropped: no blackjax release imports it. blackjax >= 1.6 also removed
+`window_adaptation(progress_bar=)`, which NUTS passed, so NUTS and NUTS+VI raised `TypeError`
+on every released blackjax; the argument is no longer passed (the warmup progress bar is gone;
+timing prints unchanged). Install hints in `check.py`, `nested.py`, `nuts.py`, `runner.py` and
+the install docs now point at PyPI. CI gains a `wheel` job: build, `twine check --strict`, no
+direct-URL `Requires-Dist`, install the wheel into a clean venv, `ceridwen.check`.
+
+Also fixed: `observation.filters.Lbol` called `jnp.trapz`, which jax removed, and raised
+`AttributeError`; it now uses `jnp.trapezoid` (same integral).
+
+**Verification** (CPU, macOS arm64, against HEAD `f813417` on the pinned stack, jax 0.10.2):
+T4 on blackjax 1.6.2 + jax 0.10.2: 6048 arrays (6059 with `--ns`) byte-identical except the two
+items that also differ old-vs-old (1-ulp `postprocess/.../spec`, the random `ns/logZ` error
+estimate). NUTS toy (dense, diagonal, VI; 9 arrays) byte-identical on blackjax 1.6 and 1.6.2.
+T3 7 passed, T2 21 passed, `check_api_usage` 0 findings, misuse report unchanged (0 SILENT).
+The built wheel, installed into clean venvs, passes the FSPS-free suite with jax and blackjax at
+their floors (jax 0.9.0, blackjax 1.6; every other package at its current release) and at
+jax 0.10.2 + blackjax 1.6.2, and T3 from the wheel at both.
+At jax 0.9.0 NUTS samples differ from jax 0.10.2 by <= 3.2e-14 (jax, not blackjax): the
+validated environment stays jax 0.10.2.

@@ -33,8 +33,8 @@ def check_environment(verbose: bool = True) -> bool:
         record(
             _FAIL,
             f"Python {py.major}.{py.minor}",
-            "CERIDWEN requires Python >= 3.11 (official blackjax nested sampling "
-            "needs it). Create a 3.11+ environment and reinstall.",
+            "CERIDWEN requires Python >= 3.11 (blackjax >= 1.6 and jax >= 0.9 "
+            "need it). Create a 3.11+ environment and reinstall.",
         )
         required_ok = False
 
@@ -43,7 +43,8 @@ def check_environment(verbose: bool = True) -> bool:
         m, err = _try_import(mod)
         if m is None:
             required_ok = False
-            record(_FAIL, mod, f"not importable ({err}); run `pip install .`")
+            record(_FAIL, mod, f"not importable ({err}); reinstall ceridwen "
+                               "(`pip install ceridwen`, or `pip install .` in a clone)")
         else:
             record(_OK, mod, getattr(m, "__version__", ""))
 
@@ -86,7 +87,7 @@ def check_environment(verbose: bool = True) -> bool:
     bj, err = _try_import("blackjax")
     if bj is None:
         required_ok = False
-        record(_FAIL, "blackjax", f"not importable ({err})")
+        record(_FAIL, "blackjax", f"not importable ({err}); pip install 'blackjax>=1.6'")
     else:
         record(_OK, "blackjax", getattr(bj, "__version__", ""))
         ns, _ = _try_import("blackjax.ns")
@@ -94,9 +95,8 @@ def check_environment(verbose: bool = True) -> bool:
             record(_OK, "blackjax.ns", "nested sampling available")
         else:
             record(_WARN, "blackjax.ns",
-                   "missing -> nested sampling unavailable. Install blackjax "
-                   "with NSS: pip install "
-                   "'git+https://github.com/blackjax-devs/blackjax@f73e12956'")
+                   "missing -> nested sampling unavailable (this blackjax is "
+                   "older than 1.6). Upgrade: pip install -U 'blackjax>=1.6'")
 
     fsps, _ = _try_import("fsps")
     if fsps is None:

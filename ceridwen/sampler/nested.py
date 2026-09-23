@@ -211,7 +211,7 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         except ImportError as exc:
             raise ImportError(
                 "BlackJAX with nested sampling (blackjax.ns) is required.\n"
-                "Install: pip install 'git+https://github.com/blackjax-devs/blackjax@f73e12956'"
+                "Install: pip install -U 'blackjax>=1.6'"
             ) from exc
 
         import tqdm

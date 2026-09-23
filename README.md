@@ -49,21 +49,29 @@ Everything is written against `jax.numpy` with `@jit` and `vmap`/`pmap` in mind:
 
 ## Installation
 
-**Requires Python 3.11 or newer.** The pinned `blackjax` (nested sampling)
-insists on it:
+**Requires Python 3.11 or newer** (`blackjax` >= 1.6 and `jax` >= 0.9 insist
+on it):
 
 ```bash
 conda create -n ceridwen python=3.11 -y
 conda activate ceridwen
 
+pip install ceridwen
+```
+
+To run the examples or the test suite, or to develop, install from a clone
+instead:
+
+```bash
 git clone https://github.com/Espe13/ceridwen.git
 cd ceridwen
-pip install .
+pip install .                    # or `pip install -e .` for development
 ```
 
 **GPU is the default.** On Linux this installs the CUDA 12 JAX wheels (the
-CUDA libraries are bundled; the only system requirement is an NVIDIA driver
-\>= 525, no toolkit install), and JAX uses the GPU automatically. No flags,
+CUDA libraries are bundled; the only system requirement is a recent enough
+NVIDIA driver -- see [jax's install page](https://docs.jax.dev/en/latest/installation.html)
+for the current minimum -- no toolkit install), and JAX uses the GPU automatically. No flags,
 no separate install. A machine without a usable NVIDIA GPU gets the same
 install and falls back to CPU at import time: one warning, identical
 results, more patience. macOS and native Windows have no CUDA wheels and
@@ -78,10 +86,6 @@ ceridwen.fitSED
 The one thing you install separately is **FSPS** (it compiles
 Fortran, so it can't be a pip dependency); see
 [Installing FSPS](#installing-fsps-and-setting-sps_home) below.
-
-> **blackjax** is pinned to a fixed commit (`f73e12956`) because its nested
-> sampler (`blackjax.nss`) is not in a PyPI release yet, so CERIDWEN installs it
-> from GitHub. This becomes a normal version pin once that release ships.
 
 ### Installing FSPS and setting `$SPS_HOME`
 
@@ -648,8 +652,8 @@ two). The high-res grid is rebuilt from the provider's FITS with
 - **Run `python -m ceridwen.check` first.** It reports missing dependencies,
   whether the bundled filter curves and attenuation laws are present, an unset
   or wrong `$SPS_HOME`, whether float64 is enabled, and whether nested sampling is available, each with the fix.
-- **Install needs Python 3.11+** (see Installation); the pinned `blackjax`
-  requires it.
+- **Install needs Python 3.11+** (see Installation); `blackjax` >= 1.6
+  and `jax` >= 0.9 require it.
 - **Common scientific pitfalls** (metallicity conventions, silently-ignored
   `theta` typos, the lookback-time convention) are documented in
   [`GOTCHAS.md`](GOTCHAS.md). If you're letting an AI assistant help you use
@@ -699,7 +703,7 @@ If you use ceridwen in your research, please cite it:
   author       = {Stoffers, Amanda},
   title        = {{CERIDWEN}: Fast and Flexible {GPU}-Accelerated Stellar Population Inference},
   year         = {2026},
-  note         = {Version 1.0.7},
+  note         = {Version 1.0.8},
   howpublished = {\url{https://github.com/Espe13/ceridwen}}
 }
 ```

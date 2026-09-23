@@ -1,7 +1,7 @@
 # Installation
 
 !!! warning "Requires Python 3.11+"
-    Nested sampling depends on the official `blackjax` (its merged NSS), which
+    Nested sampling uses `blackjax` >= 1.6, which (like `jax` >= 0.9)
     requires Python 3.11 or newer. The examples below use 3.11.
 
 A fresh conda environment is the easy route:
@@ -10,31 +10,33 @@ A fresh conda environment is the easy route:
 conda create -n ceridwen python=3.11 -y
 conda activate ceridwen
 
+pip install ceridwen
+```
+
+To run the examples or the test suite, or to develop, install from a clone:
+
+```bash
 git clone https://github.com/Espe13/ceridwen.git
 cd ceridwen
-pip install .
+pip install .          # or `pip install -e .` for development
 ```
 
 This pulls everything needed to import CERIDWEN, build the forward model, and run
 NUTS / VI / nested sampling **including posterior plotting**: `jax`, `jaxlib`,
 `numpy`, `scipy`, `matplotlib`, `h5py`, `astropy`,
-`tensorflow-probability`, `blackjax`, `tqdm`, `fastprogress`, `optax`,
+`tensorflow-probability`, `blackjax`, `tqdm`, `optax`,
 `anesthetic`, and `pytest`. The only
 thing not installed automatically is FSPS (see below).
 
-There are no extras to choose. `pip install .` includes VI, nested-sampling
+There are no extras to choose. `pip install ceridwen` includes VI, nested-sampling
 plotting, and the test runner. FSPS is installed separately (see below), because
 it compiles Fortran and cannot be a normal Python dependency. Building this
 documentation site needs `pip install ".[docs]"` (maintainers only).
 
 !!! note "blackjax"
-    Nested sampling uses `blackjax.nss`, which is merged into the official
-    blackjax but not yet in a tagged PyPI release. CERIDWEN therefore pins a
-    fixed blackjax commit (`f73e12956`) and installs it from GitHub, so every
-    install gets the same validated state. The pin is also why CERIDWEN itself
-    is installed from a clone rather than PyPI (PyPI refuses packages with
-    direct-URL dependencies). Both revert to normal version pins once a
-    blackjax release ships NSS.
+    Nested sampling uses `blackjax.nss`, released in blackjax 1.6; CERIDWEN
+    requires `blackjax>=1.6` from PyPI. An older blackjax has no `blackjax.ns`,
+    and `python -m ceridwen.check` then says to upgrade.
 
 ## Getting the SSP grid
 
