@@ -188,8 +188,10 @@ def main() -> int:
 
     mass, report = fsps_mass_table(grid, is_afe, args.flux_rtol, args.fsps_python)
     grid.with_stellar_mass(mass, source="validation")     # shape / finiteness / positivity
-    source = fsps_stellar_mass_source(report["python_fsps"]) + (
-        f"; libraries {report['libraries']}; attached by scripts/attach_stellar_mass.py")
+    # provenance only: no local path, no repository file name (the file is published)
+    source = (fsps_stellar_mass_source(report["python_fsps"])
+              + f"; libraries {report['libraries']}; attached to the existing grid "
+                "without rebuilding its spectra")
     print(f"  python-fsps    : {report['python_fsps']}  libraries {report['libraries']}")
     print(f"  flux check     : {report['flux_check']}")
     print(f"  stellar mass   : shape {mass.shape}, [{mass.min():.6g}, {mass.max():.6g}] "
@@ -206,6 +208,14 @@ def main() -> int:
             {k: v for k, v in report.items() if k != "fsps_kwargs"} | {
                 "fsps_kwargs": {k: (v if isinstance(v, (int, float, str, bool)) else str(v))
                                 for k, v in report["fsps_kwargs"].items()}})
+        # self-describing: the grid's resolved Z_sun, axis and identity, so the file does not
+        # depend on the package's chash table to be read in the right units
+        f.attrs["log10_zsun"] = float(grid.log10_zsun)
+        f.attrs["zsun_nominal"] = float(grid.zsun_nominal)
+        if grid.axis_meaning is not None:
+            f.attrs["axis_meaning"] = str(grid.axis_meaning)
+        f.attrs["units_lgmet"] = grid._units_lgmet()
+        f.attrs["chash"] = str(grid.chash)
         prev = _dec(f.attrs.get("schema_version"))
         f.attrs["schema_version_before_stellar_mass"] = str(prev)
         f.attrs["schema_version"] = SSP_AFE_SCHEMA_VERSION if is_afe else SSP_SCHEMA_VERSION
@@ -225,6 +235,15 @@ def main() -> int:
     ok &= same_id
     print(f"  chash            {'unchanged' if same_id else 'CHANGED!'} ({back.chash})")
     print(f"  schema_version   {back.schema_version}")
+    same_z = (back.log10_zsun == grid.log10_zsun and back.axis_meaning == grid.axis_meaning
+              and "provenance" in back.zsun_source)
+    ok &= same_z
+    print(f"  Z_sun            {'recorded in the file' if same_z else 'MISMATCH!'} "
+          f"(log10 Z_sun = {back.log10_zsun!r}; source: {back.zsun_source})")
+    local = [k for k, v in h5py.File(tmp, "r").attrs.items()
+             if any(t in str(v) for t in (os.path.expanduser("~"), "SPS_HOME", "scripts/"))]
+    ok &= not local
+    print(f"  local paths      {'none' if not local else 'FOUND in ' + str(local)}")
     if not ok:
         tmp.unlink()
         sys.exit("VERIFICATION FAILED — nothing written")

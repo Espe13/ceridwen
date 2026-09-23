@@ -107,15 +107,13 @@ The current deposit ships one α grid: `amist_c3k_hr_krou_afe`
 (high-resolution C3K, Kroupa IMF, 612 MB, schema 2.1 — loads as downloaded,
 shown above). The low-resolution Chabrier grid behind the methods-paper mock
 suite, `amist_c3k_lr_chab_afe`, lives only in an older version of the deposit
-and predates schema 2; if you need it to reproduce the paper,
-`fetch_grid("amist_c3k_lr_chab_afe")` still downloads it, then upgrade it once
-with
+that predates schema 2.0: `fetch_grid("amist_c3k_lr_chab_afe")` downloads it, but
+`SSPDataAfe.load` refuses it. Use `amist_c3k_hr_krou_afe`, which has the same node grid.
 
-```bash
-python scripts/convert_grids_schema2.py ~/.ceridwen/grids/amist_c3k_lr_chab_afe.h5
-```
-
-and load the `amist_c3k_lr_chab_afe_schema2.h5` it writes alongside.
+The published grids carry the surviving-mass table that `PostProcess` and `fitSED` use for
+`mfrac` (SSP schema 3), and `SSPData.from_fsps` records it in any grid you build. A copy
+fetched before the table was added reports `mfrac` as unavailable; `fetch_grid(<name>,
+force=True)` replaces it with the current one.
 
 `CSPBasis_afe` accepts only α-aware (4-D) grids; passing a solar-scaled 3-D
 grid raises a `TypeError` pointing you back to `CSPBasis`. Conversely the

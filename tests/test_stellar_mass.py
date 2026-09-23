@@ -8,11 +8,12 @@
 * The FSPS reference ``examples/recipes/reference_mfrac.json``: the SSP table reproduces its
   single-burst values; the composite values differ by the documented SFH-integration
   difference between CERIDWEN and FSPS (bounded here at the measured size).
-* ``PostProcess``: mfrac / mass_surviving / ssfrW_surviving, and the message naming
-  ``scripts/attach_stellar_mass.py`` for a grid without the table.
+* ``PostProcess``: mfrac / mass_surviving / ssfrW_surviving, and the messages for a grid
+  without the table: fetch the current copy of a published grid, rebuild one's own grid,
+  never a repository script.
 
 The FSPS masses of the test grids are stored in ``tests/reference/ssp_stellar_mass.npz``
-(written by ``scripts/attach_stellar_mass.py``; each keyed by the grid's chash), so only the
+(FSPS ``stellar_mass`` on the grids' nodes; each keyed by the grid's chash), so only the
 last test needs FSPS.
 """
 from __future__ import annotations
@@ -88,9 +89,10 @@ def test_schema2_file_loads_without_table(tmp_path):
         assert "ssp_stellar_mass" not in f
     back = SSPData.load(p)
     assert back.ssp_stellar_mass is None and back.schema_version == "2.0"
-    assert "attach_stellar_mass.py" in back.display(return_str=True)
-    with pytest.raises(ValueError, match="attach_stellar_mass.py"):
-        back.require_stellar_mass()
+    assert "not in this grid" in back.display(return_str=True)
+    with pytest.raises(ValueError, match="from_fsps records the surviving-mass table") as e:
+        back.require_stellar_mass()                   # not a published grid: rebuild it
+    assert "scripts/" not in str(e.value)
 
 
 @pytest.mark.parametrize("bad, match", [
@@ -237,9 +239,14 @@ def test_mfrac_without_table_raises():
     path = find_test_grid()
     if path is None:
         pytest.skip("no test grid")
-    csp, th = _csp(SSPData.load(str(path)), np.linspace(0.0, 1.0, 3), np.ones(3), "step")
-    with pytest.raises(ValueError, match="attach_stellar_mass.py"):
+    grid = SSPData.load(str(path))
+    csp, th = _csp(grid, np.linspace(0.0, 1.0, 3), np.ones(3), "step")
+    from ceridwen.ssps.ssp_data import published_grid_name
+    name = published_grid_name(grid.chash)
+    want = (f"fetch_grid\\('{name}', force=True\\)" if name else "from_fsps records")
+    with pytest.raises(ValueError, match=want) as e:
         csp.surviving_mass_fraction(th)
+    assert "scripts/" not in str(e.value)
 
 
 # --------------------------------------------------- the FSPS reference (recipe json) --
@@ -371,11 +378,13 @@ def test_postprocess_surviving_mass(pp_models):
 def test_postprocess_without_table(pp_models):
     model = pp_models["plain"]
     res = _result(model)
-    with pytest.warns(UserWarning, match="attach_stellar_mass.py"):
+    with pytest.warns(UserWarning, match="mfrac unavailable: .* no surviving-mass table") as w:
         pp = PostProcess(model, res, uv=False, ionizing=False, predictions=False)
+    assert all("scripts/" not in str(x.message) and "fetch_grid" not in str(x.message)
+               for x in w)                           # one line, no command
     blk = pp.run()["extras"]["sfh"]
     assert "mfrac" not in blk and "mass_surviving" not in blk and "mass_formed" in blk
-    with pytest.raises(ValueError, match="attach_stellar_mass.py"):
+    with pytest.raises(ValueError, match="surviving stellar-mass table"):
         PostProcess(model, res, mfrac=True)
     with warnings.catch_warnings():
         warnings.simplefilter("error")

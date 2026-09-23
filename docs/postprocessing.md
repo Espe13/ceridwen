@@ -91,15 +91,11 @@ stars and remnants: the SSP grid's surviving-mass table (`ssp_stellar_mass`, FSP
 `stellar_mass` per SSP, SSP schema 3) weighted by the draw's SSP weights, the same
 weights that make its spectrum. `mass_surviving = mfrac * mass_formed` and
 `ssfrW_surviving = sfrW / mass_surviving` are the Prospector-style stellar mass and
-sSFR. A grid written before schema 3 has no table: `PostProcess` then warns, names
-the script that adds one to a copy of the file,
-
-```bash
-python scripts/attach_stellar_mass.py ssp_data.h5          # writes ssp_data_schema3.h5
-```
-
-and reports `mass_formed` only (`mfrac=True` makes the missing table an error,
-`mfrac=False` skips the block silently). The composite `mfrac` follows CERIDWEN's
+sSFR. The published grids carry the table and `SSPData.from_fsps` records it in every
+grid it builds. An older copy has none: `PostProcess` then warns once that `mfrac` is
+unavailable and reports `mass_formed` only (`mfrac=True` makes the missing table an error
+that says how to get a current grid: `fetch_grid(<name>, force=True)` for a published grid,
+a rebuild with `from_fsps` for your own; `mfrac=False` skips the block silently). The composite `mfrac` follows CERIDWEN's
 SFH integration, not FSPS's `csp_gen`: against python-fsps for constant and rising
 SFHs of 0.1-10 Gyr it agrees to 4.2e-4 (step) and 6.3e-3 (linear, young populations on
 MIST, whose youngest node is 10^5 yr); GOTCHAS section 14.

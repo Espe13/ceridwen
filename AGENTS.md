@@ -133,8 +133,9 @@ projection → likelihood → sampler.
 
 - `ssps/` — `ssp_data.py`: `SSPData` (frozen dataclass, HDF5 I/O, ionising-photon
   rate derived internally; HDF5 caches the SSP spectral grid; schema 3.0 adds the optional
-  surviving-mass table `ssp_stellar_mass`, added to an existing file by
-  `scripts/attach_stellar_mass.py`, used only by `PostProcess` for `mfrac`). `ssp_basis.py`:
+  surviving-mass table `ssp_stellar_mass`, carried by the published grids and recorded by
+  `from_fsps`, used only for `mfrac` (`fitSED`'s `/derived/mfrac`, `PostProcess`); an older
+  grid loads without it and its messages say to fetch the current copy or rebuild). `ssp_basis.py`:
   `SSPBasis`, `FastStepBasis` (thin FSPS wrappers + tabular SFH binning).
 - `csp/` — `csp.py`: `CSPBasis`, the core forward model. Holds the `get_spectrum_*`
   variants (stellar ± dust attenuation ± dust emission ± nebular), step/linear

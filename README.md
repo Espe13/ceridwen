@@ -698,10 +698,8 @@ current Zenodo deposit: **high-resolution** C3K (10992 λ points, R up to
 Its **low-resolution** twin `amist_c3k_lr_chab_afe` (1936 λ points, Chabrier
 IMF, 108 MB), built from `AFE_FLAG=1` python-fsps and used for the
 method-paper mock suite, lives only in an older version of the deposit and
-predates schema 2: `fetch_grid("amist_c3k_lr_chab_afe")` still downloads it,
-but the strict loader wants a one-time upgrade
-(`python scripts/convert_grids_schema2.py ~/.ceridwen/grids/amist_c3k_lr_chab_afe.h5`,
-then load the `_schema2.h5` it writes). Both share the *same* `(afe, [Fe/H], age)` node grid and
+predates schema 2.0: `fetch_grid("amist_c3k_lr_chab_afe")` downloads it, but the
+strict loader refuses it. Both share the *same* `(afe, [Fe/H], age)` node grid and
 the same native axis (the FSPS label log10 Z = [Fe/H] + log10(0.0185), i.e. logzsol =
 [Fe/H]), so they are drop-in
 interchangeable — only the spectral resolution and the IMF differ (mind the

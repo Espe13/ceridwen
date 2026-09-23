@@ -1470,10 +1470,11 @@ class CSPBasis:
         """mfrac = M_surviving / M_formed of the population ``theta`` describes: the grid's
         surviving-mass table weighted by the same SSP weights as the spectrum,
         sum(W m) / sum(W).  Post-processing only (``PostProcess``); needs a grid with
-        ``ssp_stellar_mass`` (SSP schema 3), else ValueError naming the attach script."""
+        ``ssp_stellar_mass`` (SSP schema 3), else ValueError."""
         if self.ssp_stellar_mass is None:
             from ceridwen.ssps.ssp_data import missing_stellar_mass_message
-            raise ValueError(missing_stellar_mass_message("the SSP grid of this CSPBasis"))
+            raise ValueError(missing_stellar_mass_message("the SSP grid of this CSPBasis",
+                                                          chash=self.grid_chash))
         W = self.calculate_ssp_weights(theta)
         m = self._stellar_mass_at(theta)
         return jnp.sum(W * m) / jnp.maximum(jnp.sum(W), 1e-300)

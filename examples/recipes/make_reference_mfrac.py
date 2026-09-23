@@ -90,12 +90,11 @@ def run(lib, py):
 def main():
     if not os.environ.get("SPS_HOME"):
         sys.exit("SPS_HOME not set: FSPS unavailable, reference not made")
-    sps_home = os.environ["SPS_HOME"]
     out = {
         "description": "Surviving-mass fraction mfrac = M_surviving/M_formed "
                        "(stars + remnants, FSPS stellar_mass / formed_mass).",
         "made_by": "examples/recipes/make_reference_mfrac.py",
-        "SPS_HOME": sps_home,
+        "SPS_HOME": "$SPS_HOME (an FSPS checkout; local path not recorded)",
         "ages_gyr": AGES_GYR,
         "logzsol": 0.0,
         "sfh_definitions": {

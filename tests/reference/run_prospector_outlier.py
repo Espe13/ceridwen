@@ -4,7 +4,7 @@
 Run in the Prospector environment, NOT with ceridwen (neither package imports the other):
 
     conda activate prospector
-    SPS_HOME=/Users/amanda/Prospector/fsps python tests/reference/run_prospector_outlier.py
+    SPS_HOME=/path/to/fsps python tests/reference/run_prospector_outlier.py
 
 Writes ``tests/reference/prospector_outlier.npz``.  For every case a real
 ``prospect.observation.Spectrum`` / ``Photometry`` gets a real

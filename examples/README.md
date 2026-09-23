@@ -72,10 +72,8 @@ anchors the absolute level). Self-contained: it injects a known `spectrum_scalin
 into a mock and recovers it alongside `afe` with the nested slice sampler.
 Needs an alpha-enhanced grid: `amist_c3k_lr_chab_afe.h5` next to the script or
 under `ceridwen/data/test_data/` (not shipped), or the script falls back to
-`fetch_grid("amist_c3k_lr_chab_afe")`; that published copy predates schema 2,
-so convert it once with `python scripts/convert_grids_schema2.py
-~/.ceridwen/grids/amist_c3k_lr_chab_afe.h5` and use the `_schema2.h5` it writes
-(or use the schema-2.1 `amist_c3k_hr_krou_afe` grid).
+`fetch_grid("amist_c3k_lr_chab_afe")`; that published copy predates schema 2.0 and does
+not load, so without a local copy use the `amist_c3k_hr_krou_afe` grid (same node grid).
 
 ```bash
 python examples/demo_afe_quiescent.py

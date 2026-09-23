@@ -48,8 +48,10 @@ Conventions
 * ``mfrac`` = M_surviving / M_formed (stars + remnants) of each draw: the SSP grid's
   surviving-mass table (``ssp_stellar_mass``, SSP schema 3) weighted by the draw's SSP
   weights, the same weights as its spectrum.  ``mass_surviving = mfrac * mass_formed`` and
-  ``ssfrW_surviving = sfrW / mass_surviving``.  A grid without the table gives no ``mfrac``
-  block and a warning naming ``scripts/attach_stellar_mass.py`` (``mfrac=True`` raises).
+  ``ssfrW_surviving = sfrW / mass_surviving``.  A result file written by ``fitSED`` carries
+  it as ``/derived/mfrac``, used as it is.  Without that array and without the table (a grid
+  from before SSP schema 3.0) there is no ``mfrac`` block and one warning saying so
+  (``mfrac=True`` raises).
 * Model-grid spectra are rest-frame L_nu [L_sun/Hz] times ``10**logmass``, no
   distance, (1+z) or IGM.  ``spectra_model``: the fitted model; ``spectra_intrinsic``:
   stellar continuum only (ionising continuum included); ``spectra_dustfree``: stars
@@ -179,7 +181,8 @@ def surviving_mass_fractions(model, samples, *, chunk: int = 1024) -> np.ndarray
     csp = model.csp
     if getattr(csp, "ssp_stellar_mass", None) is None:
         from .ssps.ssp_data import missing_stellar_mass_message
-        raise ValueError(missing_stellar_mass_message("the model's SSP grid"))
+        raise ValueError(missing_stellar_mass_message(
+            "the model's SSP grid", chash=getattr(csp, "grid_chash", None)))
     names = list(model.param_names)
     n = int(np.asarray(samples[names[0]]).shape[0])
     theta = {p: jnp.asarray(np.asarray(samples[p]).reshape(
@@ -265,13 +268,14 @@ class PostProcess:
             return True
         if getattr(self.csp, "ssp_stellar_mass", None) is not None:
             return True
-        from .ssps.ssp_data import missing_stellar_mass_message
-        msg = missing_stellar_mass_message("the model's SSP grid")
         if mfrac:
-            raise ValueError(msg)
+            from .ssps.ssp_data import missing_stellar_mass_message
+            raise ValueError(missing_stellar_mass_message(
+                "the model's SSP grid", chash=getattr(self.csp, "grid_chash", None)))
         if self.want["sfr"]:
-            warnings.warn(msg + "  PostProcess reports mass_formed only (mfrac=False silences "
-                          "this).", UserWarning, stacklevel=3)
+            warnings.warn("mfrac unavailable: the model's SSP grid has no surviving-mass table "
+                          "(it predates SSP schema 3.0), so PostProcess reports mass_formed only "
+                          "(mfrac=False silences this).", UserWarning, stacklevel=3)
         return False
 
     def _checked_stored_mfrac(self, values, attrs) -> np.ndarray:

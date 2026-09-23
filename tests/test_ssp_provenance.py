@@ -161,7 +161,7 @@ def test_load_schema1_file_raises_with_converter_pointer(tmp_path):
         f.create_dataset("ssp_lg_age_gyr", data=np.asarray(tiny.ssp_lg_age_gyr))
         f.create_dataset("ssp_wave",       data=np.asarray(tiny.ssp_wave))
         f.create_dataset("ssp_flux",       data=np.asarray(tiny.ssp_flux))
-    with pytest.raises(ValueError, match="convert_grids_schema2"):
+    with pytest.raises(ValueError, match=r"predates SSP schema 2\.0.*from_fsps records the library resolution curve"):
         SSPData.load(path)
 
 
@@ -266,7 +266,7 @@ def test_afe_load_without_resolution_raises_with_converter_pointer(tmp_path):
         f.create_dataset("ssp_lg_age_gyr", data=np.asarray(tiny.ssp_lg_age_gyr))
         f.create_dataset("ssp_wave",       data=np.asarray(tiny.ssp_wave))
         f.create_dataset("ssp_flux",       data=np.asarray(tiny.ssp_flux))
-    with pytest.raises(ValueError, match="convert_grids_schema2"):
+    with pytest.raises(ValueError, match=r"predates SSP schema 2\.0.*from_fsps records the library resolution curve"):
         SSPDataAfe.load(path)
 
 

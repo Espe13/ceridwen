@@ -43,10 +43,9 @@ REGISTRY: dict[str, dict] = {
                  "aMIST + C3K_LR, Chabrier IMF, [alpha/Fe] = "
                  "{-0.2, 0.0, +0.2, +0.4, +0.6}. For CSPBasis_afe "
                  "(no nebular; no FSPS needed at fit time).  NB: this "
-                 "published copy predates schema 2.x (no ssp_resolution); "
-                 "after download, convert it once with "
-                 "scripts/convert_grids_schema2.py, or use "
-                 "'amist_c3k_hr_krou_afe' (schema 2.1, published in v5).",
+                 "published copy predates SSP schema 2.0 (no ssp_resolution) "
+                 "and SSPDataAfe.load refuses it; use 'amist_c3k_hr_krou_afe' "
+                 "(same node grid, high resolution, Kroupa IMF).",
     },
     "amist_c3k_hr_krou_afe": {
         "url": "https://zenodo.org/records/21977508/files/"
@@ -102,9 +101,7 @@ def fetch_grid(name: str, *, force: bool = False, quiet: bool = False) -> Path:
     if entry["url"] is None:
         raise RuntimeError(
             f"Grid {name!r} is defined but not yet published (no URL in the "
-            f"registry). Build it locally with scripts_afe/build_afe_grid.py, "
-            f"or publish it with scripts_afe/publish_grid_zenodo.py and "
-            f"paste the printed REGISTRY entry. Notes: {entry['notes']}"
+            f"registry). Notes: {entry['notes']}"
         )
 
     dest = grid_cache_dir() / f"{name}.h5"

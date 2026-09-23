@@ -232,6 +232,16 @@ def main() -> int:
         lo, med, hi = np.percentile(out["theta"][p], [16, 50, 84])
         print(f"  {p:<20}{t:+7.3f}   {med:+7.3f}  (-{med - lo:.3f} / +{hi - med:.3f})")
 
+    # logmass is the mass FORMED; the stellar mass (stars + remnants) is mfrac times it,
+    # from the grid's surviving-mass table (published grids carry it)
+    sfh = out["extras"]["sfh"]
+    rows = [("log mass_formed", np.log10(sfh["mass_formed"]))]
+    if "mfrac" in sfh:
+        rows += [("mfrac", sfh["mfrac"]), ("log mass_surviving", np.log10(sfh["mass_surviving"]))]
+    for name, v in rows:
+        lo, med, hi = np.percentile(v, [16, 50, 84])
+        print(f"  {name:<20}{'':7s}   {med:+7.3f}  (-{med - lo:.3f} / +{hi - med:.3f})")
+
     figdir = HERE / "quickstart_figures"
     paths = pp.figures(figdir, title="CERIDWEN quickstart (green = injected truth)", truths=TRUTH)
     for name, path in paths.items():

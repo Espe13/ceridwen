@@ -691,3 +691,45 @@ random anesthetic error estimate (element 0, the evidence, byte-equal). T1 596 p
 1 failed (`test_picket_factored`, fails identically on `53c5f6e` with `$SPS_HOME` set),
 2 skipped, 1 xfailed; T2 21 passed; T3 7 passed; `check_api_usage` 0 findings; misuse report
 0 SILENT, two new rows (`fitSED(mfrac=True)` without a table, `mfrac='yes'`).
+
+## 2026-09-23 — no repository script on the user path; no local paths in published files
+
+**What.** `scripts/attach_stellar_mass.py` and `scripts/convert_grids_schema2.py` are
+maintainer tools (not in the wheel) and are no longer named by any message or user doc.
+`STELLAR_MASS_SCRIPT` is deleted. The messages now say how to get a current grid:
+`ssp_data.current_grid_advice(chash, what)` recognises a published grid by its content hash
+(`published_grid_name`: `grid_metadata.CHASH_TABLE` name with a `grid_fetch.REGISTRY` URL)
+and says `fetch_grid(<name>, force=True)`; any other grid is told that `SSPData.from_fsps`
+records the table (or the resolution curve) and to rebuild. Used by
+`missing_stellar_mass_message` (now takes `chash=`; `require_stellar_mass`,
+`CSPBasis.surviving_mass_fraction`, `fitSED(mfrac=True)`, `PostProcess(mfrac=True)`) and by
+the schema-1 refusal in `SSPData._read_h5`. `PostProcess` without a table warns in one line
+that mfrac is unavailable and why, with no command. `grid_fetch`: the
+`amist_c3k_lr_chab_afe` note no longer describes a conversion (the published copy predates
+schema 2.0 and does not load; use `amist_c3k_hr_krou_afe`), and an unpublished registry name
+no longer names `scripts_afe/` scripts. Docs updated: `docs/postprocessing.md`,
+`docs/installation.md`, `examples/README.md`, `README.md`, `AGENTS.md`, `GOTCHAS.md` (section
+14). `tests/test_no_script_paths.py` fails on any string literal in `ceridwen/**/*.py` naming
+`scripts/` or `scripts_<x>/` (the `evidence=` provenance of a `grid_metadata` entry exempt).
+The quickstart prints `log mass_formed`, `mfrac` and `log mass_surviving`.
+
+No local path in anything published: `fsps_stellar_mass_source` no longer records
+`SPS_HOME=<path>` (so `from_fsps` builds are clean). The attach script writes path-free
+provenance, records the grid's resolved `log10_zsun`, `zsun_nominal`, `axis_meaning`, `chash`
+and `units_lgmet` so the file reads correctly without the package's chash table, and refuses
+to keep a file whose attributes contain the home directory, `SPS_HOME` or `scripts/`. The
+same path was scrubbed from tracked files: `tests/reference/ssp_stellar_mass.npz` (the two
+`source` strings only; the other 13 arrays byte-identical), `examples/recipes/
+reference_mfrac.json` and its generator, `tests/reference/run_prospector_{elines,outlier}.py`
+usage lines, `docs/dev/eline_marginalisation_design.md`. (Git history keeps the old text.)
+
+Transitional until the next Zenodo deposit (registry patch): the registry still points at
+the table-less copies, so `fetch_grid(<name>, force=True)` returns the same old file for now.
+
+**Verification.** T1 599 passed, 1 failed (`test_picket_factored`, pre-existing with
+`$SPS_HOME`), 2 skipped, 1 xfailed; the changed test files without `$SPS_HOME`
+(`-m "not fsps and not gpu"`): 63 passed, 1 xfailed. T2 21 passed, T3 7 passed,
+`check_api_usage` 0 findings, misuse report 0 SILENT. Wheel (`python -m build`) installed in
+a fresh venv: `python -m ceridwen.check` all required components present; 56 `.py` files,
+none named attach; the only `scripts*/` string in the installed package is the exempt
+`grid_metadata` provenance citation; no `/Users` path anywhere in it.

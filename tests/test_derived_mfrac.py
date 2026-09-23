@@ -186,7 +186,7 @@ def test_grid_without_table(tmp_path, caplog):
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         PostProcess(model, path, predictions=False)
-    assert len([x for x in w if "surviving stellar-mass table" in str(x.message)]) == 1
+    assert len([x for x in w if "no surviving-mass table" in str(x.message)]) == 1
 
 
 def test_mfrac_false_skips(tmp_path):

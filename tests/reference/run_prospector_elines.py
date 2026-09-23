@@ -4,7 +4,7 @@
 Run in the Prospector environment, NOT with ceridwen (neither package imports the other):
 
     conda activate prospector
-    SPS_HOME=/Users/amanda/Prospector/fsps python tests/reference/run_prospector_elines.py
+    SPS_HOME=/path/to/fsps python tests/reference/run_prospector_elines.py
 
 Writes ``tests/reference/prospector_elines.npz``.  For every case a ``SpecModel`` gets its
 cached attributes set directly (``_outwave``, ``_zred``, ``_ewave_obs``, ``_eline_lum``,

@@ -25,8 +25,7 @@ SSP_SCHEMA_VERSION = "3.0"
 
 # Schema history: 2.0 added the library resolution curve ``ssp_resolution`` (required);
 # 3.0 adds the optional surviving stellar-mass table ``ssp_stellar_mass`` (grid shape minus
-# the wavelength axis), which a schema-2 file lacks and scripts/attach_stellar_mass.py adds.
-STELLAR_MASS_SCRIPT = "scripts/attach_stellar_mass.py"
+# the wavelength axis), which from_fsps records and a schema-2 file lacks (it still loads).
 
 
 _IMF_KWARGS = frozenset({
@@ -148,7 +147,7 @@ class SSPData:
     ssp_resolution : ndarray (n_wave,), km/s -- library sigma_v(lambda) on ssp_wave, NaN where unknown; optional in memory, required by save()/load()
     ssp_stellar_mass : ndarray (n_met, n_ages) or None -- surviving mass (stars + remnants) per
         M_sun formed of each SSP, FSPS ``stellar_mass`` (schema 3.0, optional); None when the
-        grid carries no table (``scripts/attach_stellar_mass.py`` adds one to an existing file)
+        grid carries no table (a file written before schema 3.0)
     stellar_mass_source : str or None -- provenance of ``ssp_stellar_mass``
     zsun : float, init-only -- the grid's solar metallicity (mass fraction) when it is neither
         recorded (``log10_zsun``) nor in ``grid_metadata.CHASH_TABLE``; must match a node
@@ -255,9 +254,9 @@ class SSPData:
         return SSP_SCHEMA_VERSION
 
     def require_stellar_mass(self) -> np.ndarray:
-        """The surviving stellar-mass table; ValueError naming the attach script when absent."""
+        """The surviving stellar-mass table; ValueError saying how to get a grid with one."""
         if self.ssp_stellar_mass is None:
-            raise ValueError(missing_stellar_mass_message(type(self).__name__))
+            raise ValueError(missing_stellar_mass_message(type(self).__name__, chash=self.chash))
         return self.ssp_stellar_mass
 
     def _grid_arrays_for_chash(self):
@@ -425,8 +424,8 @@ class SSPData:
             if self.resolution_source:
                 lines += [f"  resolution source        : {self.resolution_source}"]
         if self.ssp_stellar_mass is None:
-            lines += [f"  surviving stellar mass   : not in this grid (add it with "
-                      f"{STELLAR_MASS_SCRIPT})"]
+            lines += ["  surviving stellar mass   : not in this grid (written before SSP "
+                      "schema 3.0; mfrac unavailable)"]
         else:
             m = self.ssp_stellar_mass
             lines += [f"  surviving stellar mass   : [{m.min():.4g}, {m.max():.4g}] M_sun per "
@@ -517,13 +516,13 @@ class SSPData:
 
         with h5py.File(filename, 'r') as f:
             if 'ssp_resolution' not in f:
+                from .grid_metadata import chash_arrays
+                old = chash_arrays(f['ssp_wave'][:], f['ssp_lg_age_gyr'][:], f['ssp_lgmet'][:],
+                                   f['ssp_flux'][:], f['ssp_afe'][:] if 'ssp_afe' in f else None)
                 raise ValueError(
-                    f"{filename}: no 'ssp_resolution' dataset — this grid "
-                    f"predates {cls._schema_label}.  Convert it (no FSPS rebuild "
-                    f"needed) with scripts/convert_grids_schema2.py, which "
-                    f"copies the existing arrays and attaches the library "
-                    f"resolution curve."
-                )
+                    f"{filename}: no 'ssp_resolution' dataset — this grid predates SSP schema "
+                    f"2.0 and cannot be loaded.  "
+                    f"{current_grid_advice(old, 'the library resolution curve')}")
             from .grid_metadata import cached_chash, remember_chash, chash_arrays
             raw = {k: f[k][:] for k in ('ssp_lgmet', 'ssp_lg_age_gyr', 'ssp_wave', 'ssp_flux')}
             raw_extra = {name: (f[name][:] if name in f else None)
@@ -701,19 +700,36 @@ def _read_fsps_provenance(ssp, kwargs: dict, ssp_wave, ssp_lgmet) -> dict:
     }
 
 
-def missing_stellar_mass_message(what="this grid") -> str:
+def published_grid_name(chash) -> Optional[str]:
+    """The ``grid_fetch.REGISTRY`` name of the published grid with content hash ``chash``, else None."""
+    from .grid_metadata import CHASH_TABLE
+    from .grid_fetch import REGISTRY
+    meta = CHASH_TABLE.get(chash) if chash else None
+    if meta is not None and REGISTRY.get(meta.name, {}).get("url"):
+        return meta.name
+    return None
+
+
+def current_grid_advice(chash, what: str) -> str:
+    """How to get a grid that has ``what``: fetch the current published copy, or rebuild."""
+    name = published_grid_name(chash)
+    if name is not None:
+        return (f"This is an old copy of the published grid {name!r}, without {what}; fetch "
+                f"the current one with ceridwen.ssps.grid_fetch (fetch_grid({name!r}, "
+                f"force=True)).")
+    return (f"SSPData.from_fsps records {what} automatically; rebuild the grid with it.")
+
+
+def missing_stellar_mass_message(what="this grid", chash=None) -> str:
     return (f"{what} carries no surviving stellar-mass table (ssp_stellar_mass, SSP schema "
-            f"3.0), so mfrac and the surviving mass cannot be computed.  Add it to a COPY of the "
-            f"grid file, without rebuilding the spectra, with\n"
-            f"    python {STELLAR_MASS_SCRIPT} <grid.h5>\n"
-            f"(needs python-fsps compiled with the grid's isochrones and $SPS_HOME).")
+            f"3.0), so mfrac and the surviving mass cannot be computed.  "
+            + current_grid_advice(chash, "the surviving-mass table"))
 
 
 def fsps_stellar_mass_source(fsps_version) -> str:
-    """Provenance string of a stellar-mass table read from FSPS."""
-    import os
+    """Provenance string of a stellar-mass table read from FSPS (no local paths: grids are published)."""
     return (f"FSPS StellarPopulation.stellar_mass (sfh=0, tage=0; stars + remnants per M_sun "
-            f"formed), python-fsps {fsps_version}, SPS_HOME={os.environ.get('SPS_HOME')}")
+            f"formed), python-fsps {fsps_version}")
 
 
 def collect_ssp_data(**kwargs) -> typing.Tuple[jnp.ndarray, jnp.ndarray,

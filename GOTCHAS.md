@@ -406,10 +406,10 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
   The Prospector-style stellar mass is `mass_surviving = mfrac * mass_formed` (stars +
   remnants), with `ssfrW_surviving`. Say which one you quote: they differ by 20-40 %.
 - `mfrac` needs a grid with the surviving-mass table (SSP schema 3.0, `ssp_stellar_mass`).
-  Older grids load as before and `PostProcess` warns and skips the block;
-  `python scripts/attach_stellar_mass.py <grid.h5>` writes a copy with the table (FSPS
-  compiled with the grid's isochrones; `--fsps-python` for another environment). It never
-  writes the original file and refuses an FSPS whose isochrones or nodes differ.
+  The published grids carry it and `SSPData.from_fsps` records it. An older copy loads as
+  before; `fitSED` then writes no `/derived` group (one log line) and `PostProcess` warns once
+  and skips the block. `fetch_grid(<name>, force=True)` replaces an old copy of a published
+  grid; a grid you built is rebuilt with `from_fsps`.
 - `fitSED` writes `mfrac` of every sample to `/derived/mfrac` when the grid has the table
   (`fitSED(mfrac=False)` skips it), so `mfrac * 10**logmass` per sample is the surviving mass
   without post-processing. `PostProcess` given the file path uses that array and refuses it

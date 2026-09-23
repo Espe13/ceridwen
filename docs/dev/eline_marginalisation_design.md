@@ -11,7 +11,7 @@ overrides (Prospector profile, 5-sigma windows, a Prospector penalty mode), 5.1
 is what was built.*
 
 Reference implementation: Prospector `2.0a2.dev42+gff8d5e4`, installed at
-`/Users/amanda/opt/anaconda3/envs/prospector/lib/python3.10/site-packages/prospect`
+`<conda env prospector>/lib/python3.10/site-packages/prospect`
 (conda env `prospector`, Python 3.10). All Prospector line numbers below refer
 to that install.
 
@@ -121,7 +121,7 @@ first one's ᾱ as its prior mean (`_eline_lum` was overwritten), but the
   which calls a bool and raises `TypeError`.
 
 **P8. FSPS does not initialise in the `prospector` env with
-`SPS_HOME=/Users/amanda/Prospector/fsps`.** `CSPSpecBasis(zcontinuous=1)` aborts
+`SPS_HOME` pointing at the local FSPS checkout.** `CSPSpecBasis(zcontinuous=1)` aborts
 with `Fortran runtime error: End of file` at `sps_setup.f90:265` (unit 91).
 python-fsps is 0.4.7, and the FSPS checkout is at `cbcd0ee`. The end-to-end
 comparison (test 2b) cannot run until this is fixed (**D12**).
@@ -379,7 +379,7 @@ Each item has a recommendation, but none will be implemented until you answer.
   check at the reference θ that raises above 1e10 and suggests `elines_to_fix`
   for one of the pair, with no silent jitter.*
 - **D12. Reference environment.** FSPS aborts in the `prospector` env with
-  `SPS_HOME=/Users/amanda/Prospector/fsps` (P8). Test 2(a) needs no FSPS and can
+  `SPS_HOME` pointing at the local FSPS checkout (P8). Test 2(a) needs no FSPS and can
   run now. Test 2(b) needs either a working `SPS_HOME` for python-fsps 0.4.7
   (which path?), or the continuum taken from somewhere else. Also: may the
   reference script **monkeypatch** Prospector at runtime (initialise `_speccal`
