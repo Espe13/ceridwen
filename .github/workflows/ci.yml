@@ -115,7 +115,7 @@ jobs:
   # The suite's main test grid is NOT in the repository (tests/_gridfixture.py):
   # without it 56 grid-dependent tests skipped (run 34826046295, 2026-09-14:
   # 130 passed, 65 skipped) and a green run proves little. It
-  # is the published BPASS grid (Zenodo doi:10.5281/zenodo.21977508), so it is
+  # is the published BPASS grid (Zenodo doi:10.5281/zenodo.22921057), so it is
   # fetched by name with ceridwen's own fetch_grid (SHA-256 verified on every
   # call) and handed to the tests through $CERIDWEN_TEST_SSP / $SSP_FILE.
   # Tests that need the CLOUDY data under $SPS_HOME still skip here; the -ra
@@ -145,7 +145,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ceridwen/grids
-          key: ceridwen-grid-mist_bpass_v2-64c93ea7
+          key: ceridwen-grid-mist_bpass_v2-c119d19e
 
       - name: Fetch the test SSP grid (Zenodo, checksummed)
         run: |

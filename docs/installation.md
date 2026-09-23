@@ -52,10 +52,10 @@ in the repository).
    anyway for nebular and dust emission, which read the CLOUDY and Draine & Li
    data from `$SPS_HOME`.
 2. **Download from Zenodo (no FSPS needed):**
-   [doi:10.5281/zenodo.21977508](https://doi.org/10.5281/zenodo.21977508).
+   [doi:10.5281/zenodo.22921057](https://doi.org/10.5281/zenodo.22921057).
    The canonical grids are registered in `ceridwen.ssps.grid_fetch`
    (`mist_miles_chab` for MIST+MILES with a Chabrier IMF, `mist_bpass_v2`
-   for BPASS binary populations, plus the α-enhanced grids below), so the
+   for BPASS binary populations, plus the α-enhanced grid below), so the
    easiest route is by name — downloaded once into `~/.ceridwen/grids`
    (override with `$CERIDWEN_GRID_DIR`) and verified against a pinned
    SHA-256 on every fetch:
@@ -71,7 +71,7 @@ in the repository).
 
     ```bash
     curl -L -o examples/ssp_data.h5 \
-        "https://zenodo.org/records/21977508/files/ssp_data_mist_miles.h5?download=1"
+        "https://zenodo.org/records/22921057/files/ssp_data_mist_miles.h5?download=1"
     ```
 
 ## α-enhanced grids: download, don't build {#alpha-enhanced-grids}

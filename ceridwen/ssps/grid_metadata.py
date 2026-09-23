@@ -118,7 +118,8 @@ _register("chash-v1:6049a6ea0487a96eba1e293f8cdf8a8de448aa3fc055be8307b12d3fcae4
     evidence="python-fsps 0.5.0 MIST+MILES: axis = log10(float32(0.0185) 10^[Fe/H]), "
              "[Fe/H] = -2.5..+0.5 in 0.25; node[10]",
     file_sha256=("d52f1940e4cfcf739a50e8afaea0389871bec9404653a7e023faa53f86382f31",
-                 "56142e9cc9ec6362d927d1401e14af11980b1e9fd3d82ce43a45df1d7a8cfcd7")))
+                 "56142e9cc9ec6362d927d1401e14af11980b1e9fd3d82ce43a45df1d7a8cfcd7",
+                 "2f6777a848f211b7b93a50ff206466a3c2faab073e8acab09d4c0e2dcea378fb")))
 
 _register("chash-v1:39200b1bbccb1144cfd3ce43d0ddc1fdf921c7f7a5434f674a60dbaa009ec114", GridMeta(
     name="mist_c3k_lr_chab", log10_zsun=-1.73282826600002, zsun_nominal=0.0185,
@@ -137,7 +138,8 @@ _register("chash-v1:f1bab2d130c2b99bd7222ac72d09398d5639f614093a2d09d0fc381ed94b
     file_sha256=("64c93ea751133cf3d34f4f33222af767d029a69b9ac3549059568055a489b9e9",
                  "017d3311c2abf0f9fa8331fb4131ebb9a9b16bc7405a84585b6f8c41025a2f58",
                  "294bfbfdc5c6b04239fc508049c18ad530cc83ba7d60aac9727e9635ac508944",
-                 "5034b12a1d92cd09896a99def7f60601186807429ab02b52a817302341fc808f")))
+                 "5034b12a1d92cd09896a99def7f60601186807429ab02b52a817302341fc808f",
+                 "c119d19e6ade6f1de72ebf0a887e70e88330a1d36c6323b4d314d8baa952d151")))
 
 _register("chash-v1:c5db3f9772f63ebe303df0553189efaa7556c48a6016693b8358d0d97492bfe0", GridMeta(
     name="bpass_agb_dust", log10_zsun=-1.6989700043360185, zsun_nominal=0.020,

@@ -17,30 +17,32 @@ from pathlib import Path
 REGISTRY: dict[str, dict] = {
     "mist_miles_chab": {
         "stellar_mass_table": True,
-        "url": "https://zenodo.org/records/21977508/files/"
+        "url": "https://zenodo.org/records/22921057/files/"
                "ssp_data_mist_miles.h5?download=1",
-        "sha256": "d52f1940e4cfcf739a50e8afaea03898"
-                  "71bec9404653a7e023faa53f86382f31",
+        "sha256": "2f6777a848f211b7b93a50ff206466a3"
+                  "c2faab073e8acab09d4c0e2dcea378fb",
         "size_mb": 67,
         "notes": "python-fsps 0.5.0, MIST + MILES, Chabrier IMF "
-                 "(imf_type=1).  Schema 2.0: ssp_resolution = sampling "
-                 "floor max MILES LSF (FWHM 2.54 A, Falcon-Barroso+2011). "
+                 "(imf_type=1).  Schema 3.0: ssp_resolution = sampling "
+                 "floor max MILES LSF (FWHM 2.54 A, Falcon-Barroso+2011); "
+                 "surviving-mass table (FSPS stellar_mass) for mfrac. "
                  "Nebular-capable via CSPBasis.",
     },
     "mist_bpass_v2": {
         "stellar_mass_table": True,
-        "url": "https://zenodo.org/records/21977508/files/"
+        "url": "https://zenodo.org/records/22921057/files/"
                "ssp_data_bpass.h5?download=1",
-        "sha256": "64c93ea751133cf3d34f4f33222af767"
-                  "d029a69b9ac3549059568055a489b9e9",
+        "sha256": "c119d19e6ade6f1de72ebf0a887e70e8"
+                  "8330a1d36c6323b4d314d8baa952d151",
         "size_mb": 62,
         "notes": "python-fsps 0.5.0, BPASS v2 binary SSPs, Chabrier IMF. "
-                 "Schema 2.0: ssp_resolution = grid sampling-floor curve "
-                 "(no documented LSF broader than the tabulation).",
+                 "Schema 3.0: ssp_resolution = grid sampling-floor curve "
+                 "(no documented LSF broader than the tabulation); "
+                 "surviving-mass table (FSPS stellar_mass) for mfrac.",
     },
     "amist_c3k_hr_krou_afe": {
         "stellar_mass_table": False,
-        "url": "https://zenodo.org/records/21977508/files/"
+        "url": "https://zenodo.org/records/22921057/files/"
                "amist_c3k_hr_krou_afe.h5?download=1",
         "sha256": "f6af03d813569f5982891d969f030d93"
                   "45278a60de907b90b2a910d56af32a16",

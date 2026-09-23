@@ -30,7 +30,7 @@ or by hand to the quickstart location:
 
 ```bash
 curl -L -o examples/ssp_data.h5 \
-    "https://zenodo.org/records/21977508/files/ssp_data_mist_miles.h5?download=1"
+    "https://zenodo.org/records/22921057/files/ssp_data_mist_miles.h5?download=1"
 ```
 
 The script resolves the grid in this order: `$SSP_FILE` →

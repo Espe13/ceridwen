@@ -761,3 +761,18 @@ HEAD. Four parameter descriptions in `dust/attenuation_laws.py` used an invalid 
 `test_no_script_paths`, `test_dust_laws`, `test_ssp_provenance`, `test_logzsol_convention`
 132 passed; `test_result_provenance` 4 passed (new: versions recorded; a foreign repository
 gives no git_head); every attenuation-law module value identical before/after the escape fix.
+
+## 2026-09-23 — v1.0.9: grids with the surviving-mass table on Zenodo
+
+**What.** The registry points at Zenodo record 22921057
+(doi:10.5281/zenodo.22921057): `mist_miles_chab` and `mist_bpass_v2` are new files with the
+surviving-mass table (SSP schema 3.0; sha256 `2f6777a8…`, `c119d19e…`; same chash as before,
+so every earlier fit's grid identity holds), `amist_c3k_hr_krou_afe` is the same file (no
+table yet). The new file hashes are added to `grid_metadata`'s aliases; the old ones stay so
+an old local copy is still recognised (and told to fetch the current one). README,
+`docs/installation.md`, `examples/README.md` and the CI grid cache key follow. Version 1.0.9
+(pyproject, `_version.py`, CITATION.cff, README / docs BibTeX and quickstart URL).
+
+**Verification.** Zenodo API md5 of all three files equals the local files. Each registry
+grid fetched into an empty `$CERIDWEN_GRID_DIR`: checksum verified, loads; MILES (13, 107)
+and BPASS (12, 43) tables, HR schema 2.1 without a table.
