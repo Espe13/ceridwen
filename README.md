@@ -17,7 +17,7 @@ this path):
 ```bash
 pip install ceridwen             # GPU wheels on Linux, CPU elsewhere
 python -m ceridwen.check         # environment self-check, each problem with its fix
-curl -LO https://raw.githubusercontent.com/Espe13/ceridwen/v1.0.9/examples/quickstart.py
+curl -LO https://raw.githubusercontent.com/Espe13/ceridwen/v1.0.10/examples/quickstart.py
 SSP_FILE=$(python -c "from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_miles_chab'))") \
     python quickstart.py         # mock fit; prints a recovered-vs-true table
 ```
@@ -528,7 +528,7 @@ Without a clone, fetch that one file and run it anywhere — it imports only fro
 the installed package:
 
 ```bash
-curl -LO https://raw.githubusercontent.com/Espe13/ceridwen/v1.0.9/examples/quickstart.py
+curl -LO https://raw.githubusercontent.com/Espe13/ceridwen/v1.0.10/examples/quickstart.py
 SSP_FILE=$(python -c "from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_miles_chab'))") \
     python quickstart.py
 ```
@@ -754,7 +754,7 @@ If you use ceridwen in your research, please cite it:
   author       = {Stoffers, Amanda},
   title        = {{CERIDWEN}: Fast and Flexible {GPU}-Accelerated Stellar Population Inference},
   year         = {2026},
-  note         = {Version 1.0.9},
+  note         = {Version 1.0.10},
   howpublished = {\url{https://github.com/Espe13/ceridwen}}
 }
 ```

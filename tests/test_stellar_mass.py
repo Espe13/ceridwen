@@ -33,7 +33,7 @@ import jax.numpy as jnp
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from _gridfixture import find_test_grid, TEST_DATA_DIR, REPO_ROOT          # noqa: E402
+from _gridfixture import find_test_grid, without_table, TEST_DATA_DIR, REPO_ROOT          # noqa: E402
 
 from ceridwen import SSPData, CSPBasis, SedModel, Cosmology                 # noqa: E402
 from ceridwen.ssps import SSPDataAfe                                        # noqa: E402
@@ -239,7 +239,7 @@ def test_mfrac_without_table_raises():
     path = find_test_grid()
     if path is None:
         pytest.skip("no test grid")
-    grid = SSPData.load(str(path))
+    grid = without_table(SSPData.load(str(path)))
     csp, th = _csp(grid, np.linspace(0.0, 1.0, 3), np.ones(3), "step")
     from ceridwen.ssps.ssp_data import published_grid_name
     name = published_grid_name(grid.chash)
@@ -325,7 +325,7 @@ def pp_models():
     path = find_test_grid()
     if path is None:
         pytest.skip("no test grid")
-    plain = SSPData.load(str(path))
+    plain = without_table(SSPData.load(str(path)))
     _tag, m, src = _ref_table(plain)
     withm = plain.with_stellar_mass(m, source=src)
     cosmo = Cosmology.planck18()

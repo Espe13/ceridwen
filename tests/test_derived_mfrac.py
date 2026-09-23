@@ -26,7 +26,7 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from _gridfixture import find_test_grid, REPO_ROOT                          # noqa: E402
+from _gridfixture import find_test_grid, without_table, REPO_ROOT                          # noqa: E402
 
 from ceridwen import SSPData, CSPBasis, SedModel, Cosmology, fitSED, read_result_h5  # noqa: E402
 from ceridwen.fit import read_derived_h5, load_result_h5                    # noqa: E402
@@ -45,7 +45,7 @@ def _grids():
     path = find_test_grid()
     if path is None:
         pytest.skip("no test grid")
-    plain = SSPData.load(str(path))
+    plain = without_table(SSPData.load(str(path)))
     if not REF_TABLES.is_file():
         pytest.skip("tests/reference/ssp_stellar_mass.npz missing")
     with np.load(REF_TABLES) as z:

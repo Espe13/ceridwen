@@ -80,6 +80,14 @@ def _run(fn):
             return ("ERROR", f"{type(e).__name__}: {str(e)[:80]}")
 
 
+def _without_table(csp):
+    """A copy of ``csp`` without the grid's surviving-mass table (the published grids carry one)."""
+    import copy
+    c = copy.copy(csp)
+    c.ssp_stellar_mass = None
+    return c
+
+
 def _good_csp():
     return CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr, "logzsol": jnp.array([-0.15])},
                     **_kw())
@@ -263,9 +271,9 @@ def run_scenarios():
          lambda: _check_outlier_setup(_outlier_model(["f_outlier_phot"],
                                                      {"f_outlier_phot": TopHat(low=0.0, high=0.5)}))),
         ("mfrac on a grid without a surviving-mass table", {"ERROR"},
-         lambda: csp.surviving_mass_fraction(th)),
+         lambda: _without_table(csp).surviving_mass_fraction(th)),
         ("fitSED(mfrac=True) on a grid without a surviving-mass table", {"ERROR"},
-         lambda: _resolve_fit_mfrac(SimpleNamespace(csp=csp), True)),
+         lambda: _resolve_fit_mfrac(SimpleNamespace(csp=_without_table(csp)), True)),
         ("fitSED(mfrac='yes') (not a bool)", {"ERROR"},
          lambda: _resolve_fit_mfrac(SimpleNamespace(csp=csp), "yes")),
         ("surviving-mass table of the wrong shape", {"ERROR"},

@@ -7,10 +7,12 @@ $CERIDWEN_GRID_DIR, default ~/.ceridwen/grids; SHA-256 verified on every fetch).
 from __future__ import annotations
 
 import hashlib
+import http.client
 import os
 import shutil
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -76,6 +78,47 @@ def _sha256(path: Path, chunk: int = 1 << 20) -> str:
     return h.hexdigest()
 
 
+def _download(url: str, path: Path, *, attempts: int = 8) -> None:
+    """Download ``url`` to ``path`` completely.  A server may close the connection before
+    ``Content-Length`` bytes arrive (Zenodo does, intermittently), and a chunked read then
+    ends as if the file were complete; so the size is checked and a short transfer is
+    resumed with an HTTP Range request, up to ``attempts`` times."""
+    total = None
+    with open(path, "wb"):
+        pass
+    for _ in range(attempts):
+        have = path.stat().st_size
+        if total is not None and have >= total:
+            break
+        req = urllib.request.Request(url)
+        if have:
+            req.add_header("Range", f"bytes={have}-")
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                if have and r.status != 206:          # server ignored the range: start over
+                    have = 0
+                    mode = "wb"
+                else:
+                    mode = "ab"
+                if total is None or not have:
+                    cl = r.headers.get("Content-Length")
+                    total = (int(cl) + have) if cl is not None else None
+                with open(path, mode) as f:
+                    shutil.copyfileobj(r, f, length=1 << 20)
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500:
+                raise                                 # wrong URL / access: retrying cannot help
+            continue                                  # 5xx: retry
+        except (OSError, http.client.HTTPException):
+            continue                                  # retried from the bytes already written
+        if total is None:
+            break                                     # no length to check: the sha256 decides
+    if total is not None and path.stat().st_size != total:
+        raise RuntimeError(
+            f"the download of {url} stopped at {path.stat().st_size} of {total} bytes after "
+            f"{attempts} attempts; the connection keeps dropping.  Try again later.")
+
+
 def fetch_grid(name: str, *, force: bool = False, quiet: bool = False) -> Path:
     """Return a local, checksum-verified path to the registry grid ``name``,
     downloading into :func:`grid_cache_dir` on first use (``force`` re-downloads)."""
@@ -111,8 +154,7 @@ def fetch_grid(name: str, *, force: bool = False, quiet: bool = False) -> Path:
     os.close(fd)
     tmp = Path(tmp)
     try:
-        with urllib.request.urlopen(entry["url"]) as r, open(tmp, "wb") as f:
-            shutil.copyfileobj(r, f, length=1 << 20)
+        _download(entry["url"], tmp)
         got = _sha256(tmp)
         if entry["sha256"] and got != entry["sha256"]:
             raise RuntimeError(

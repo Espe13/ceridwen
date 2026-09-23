@@ -3,10 +3,10 @@
 The suite's canonical test grid is the local BPASS grid at
 ``ceridwen/data/test_data/ssp_data_bpass.h5`` (NOT committed — the
 ``data/`` rule in .gitignore excludes it).  On a machine without it,
-either set ``$CERIDWEN_TEST_SSP`` to any schema-2.x SSP grid, or download
-the BPASS release grid from Zenodo (doi:10.5281/zenodo.21221634; convert
-with ``scripts/convert_grids_schema2.py`` if it predates schema 2.0) and
-place it at that path.  When no grid is found, the grid-dependent tests
+either set ``$CERIDWEN_TEST_SSP`` to any schema-2.x SSP grid, or fetch the
+published BPASS grid (``ceridwen.ssps.fetch_grid("mist_bpass_v2")``, what CI does)
+and point ``$CERIDWEN_TEST_SSP`` at it.  The published grid carries the surviving-mass
+table; a test that needs a grid without one uses :func:`without_table`.  When no grid is found, the grid-dependent tests
 skip cleanly rather than erroring.
 
 Named fixtures (e.g. ``ssp_data_bpass_agb_dust.h5``, used by the
@@ -64,11 +64,16 @@ def require_test_grid(name: str = DEFAULT_GRID) -> pathlib.Path:
     g = find_test_grid(name)
     if g is None:
         pytest.skip(
-            f"test SSP grid {name!r} not found; place a schema-2.x grid at "
-            f"ceridwen/data/test_data/{DEFAULT_GRID} (build with "
-            "SSPData.from_fsps, or download from Zenodo "
-            "doi:10.5281/zenodo.21221634 and convert with "
-            "scripts/convert_grids_schema2.py), or set $CERIDWEN_TEST_SSP",
+            f"test SSP grid {name!r} not found; set $CERIDWEN_TEST_SSP to "
+            "ceridwen.ssps.fetch_grid('mist_bpass_v2'), or place a grid at "
+            f"ceridwen/data/test_data/{DEFAULT_GRID}",
             allow_module_level=True,
         )
     return g
+
+
+def without_table(grid):
+    """``grid`` without its surviving-mass table: the published grids carry one, so a test
+    of the no-table path must remove it rather than assume the test grid lacks it."""
+    import dataclasses
+    return dataclasses.replace(grid, ssp_stellar_mass=None, stellar_mass_source=None)

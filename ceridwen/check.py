@@ -101,22 +101,27 @@ def check_environment(verbose: bool = True) -> bool:
     fsps, _ = _try_import("fsps")
     if fsps is None:
         record(_WARN, "python-fsps",
-               "not importable. Needed to build SSP grids and (with nebular / "
-               "dust emission) at runtime. See README Installation.")
+               "not importable. Only needed to build your own SSP grid "
+               "(SSPData.from_fsps); the published grids need no FSPS "
+               "(ceridwen.ssps.fetch_grid).")
     else:
         record(_OK, "python-fsps", "")
 
     sps_home = os.environ.get("SPS_HOME")
+    sps_ok = False
     if not sps_home:
         record(_WARN, "$SPS_HOME",
-               "unset. Required for nebular / dust-emission models. "
-               "`export SPS_HOME=/path/to/fsps`")
+               "unset: nebular emission (add_neb) and dust emission "
+               "(add_dust_emission) read FSPS's data files from it. No "
+               "compiling needed: `git clone https://github.com/cconroy20/fsps` "
+               "and `export SPS_HOME=/path/to/fsps`")
     elif not os.path.isdir(sps_home):
         record(_WARN, "$SPS_HOME", f"set to {sps_home!r} but that directory does not exist")
     else:
         neb = os.path.join(sps_home, "nebular")
         if os.path.isdir(neb):
             record(_OK, "$SPS_HOME", sps_home)
+            sps_ok = True
         else:
             record(_WARN, "$SPS_HOME",
                    f"{sps_home} exists but has no nebular/ subdir; nebular "
@@ -128,9 +133,12 @@ def check_environment(verbose: bool = True) -> bool:
         print("=" * len(header))
         print("\n".join(lines))
         print()
-        if required_ok:
-            print("All required components present."
-                  " (warnings above are optional features / FSPS setup.)")
+        if required_ok and sps_ok:
+            print("All components present: every model component is available.")
+        elif required_ok:
+            print("Core installation OK: fits of stellar populations with the published "
+                  "grids work.\nNOT yet available: nebular emission and dust emission "
+                  "(need $SPS_HOME, see above).")
         else:
             print("Some REQUIRED components are missing -- see FAIL lines above.")
     return required_ok

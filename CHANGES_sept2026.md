@@ -776,3 +776,31 @@ an old local copy is still recognised (and told to fetch the current one). READM
 **Verification.** Zenodo API md5 of all three files equals the local files. Each registry
 grid fetched into an empty `$CERIDWEN_GRID_DIR`: checksum verified, loads; MILES (13, 107)
 and BPASS (12, 43) tables, HR schema 2.1 without a table.
+
+## 2026-09-23 — v1.0.10: complete grid downloads; CI with the new grids; honest `check`
+
+**Download.** Zenodo intermittently closes the connection before `Content-Length` bytes are
+sent (reproduced: 62,427,980 of 66,823,560 bytes), and a chunked read then ends as if the file
+were complete, so `fetch_grid` stored a truncated file and refused it on checksum: a new user
+of 1.0.9 could not get a grid. `grid_fetch._download` now checks the size and resumes a short
+transfer with an HTTP Range request (Zenodo answers 206), restarts if a server ignores the
+range, retries transient errors (5xx, dropped connections) up to 8 times, fails at once on a
+4xx, and raises a clear error if the file never completes. The sha256 check is unchanged.
+`tests/test_grid_fetch_resume.py` (local server that cuts the first 0/1/3 responses short, a
+server ignoring Range, give-up, 404); three rounds of real fetches of both new grids into
+empty caches all complete.
+
+**CI.** The published BPASS grid now carries the mass table, so the four tests of the no-table
+path (`test_stellar_mass` x2, `test_derived_mfrac::test_grid_without_table`, the two misuse
+rows) remove it explicitly (`_gridfixture.without_table`) instead of assuming the test grid
+lacks one. `test_logzsol_convention` resolves the BPASS grid through `$CERIDWEN_TEST_SSP`
+(it hard-coded a local path and failed in CI since before 1.0.8). The CI-equivalent run
+locally (`env -u SPS_HOME`, `$CERIDWEN_TEST_SSP` = the new BPASS grid,
+`-m "not fsps and not gpu"`): 494 passed, 77 skipped, 0 failed.
+
+**`python -m ceridwen.check`.** It said python-fsps was needed "with nebular / dust emission at
+runtime" and ended "All required components present" without FSPS. Nebular and dust emission
+read only FSPS's data files (`$SPS_HOME`, a git clone, no compiling); python-fsps only builds
+grids. The messages now say so, and without `$SPS_HOME` the summary is "Core installation OK
+... NOT yet available: nebular emission and dust emission (need $SPS_HOME)". Exit code
+unchanged.

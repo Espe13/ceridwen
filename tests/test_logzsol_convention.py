@@ -40,12 +40,27 @@ GRIDS = {
 }
 
 
-def _load(name):
-    rel, is_afe = GRIDS[name]
+def _path(name):
+    """The grid file of ``name``: its repo path, or for the published BPASS grid the suite's
+    test grid ($CERIDWEN_TEST_SSP, as CI provides it); skip when neither exists."""
+    rel, _ = GRIDS[name]
     path = REPO / rel
+    if not path.is_file() and name == "mist_bpass_v2":
+        import sys
+        sys.path.insert(0, str(REPO / "tests"))
+        from _gridfixture import find_test_grid
+        found = find_test_grid()
+        if found is not None and SSPData.load(str(found)).chash == next(
+                c for c, m in GM.CHASH_TABLE.items() if m.name == name):
+            path = found
     if not path.is_file():
         pytest.skip(f"{name}: {rel} is not present")
-    return (SSPDataAfe if is_afe else SSPData).load(str(path)), is_afe
+    return path
+
+
+def _load(name):
+    _, is_afe = GRIDS[name]
+    return (SSPDataAfe if is_afe else SSPData).load(str(_path(name))), is_afe
 
 
 def _csp(ssp, is_afe, **over):
@@ -104,7 +119,7 @@ def test_flipped_byte_is_not_matched(tmp_path):
     """A modified grid no longer matches its table entry (chash) and must raise."""
     import h5py
     import shutil
-    src = REPO / GRIDS["mist_bpass_v2"][0]
+    src = _path("mist_bpass_v2")
     dst = tmp_path / "tampered.h5"
     shutil.copyfile(src, dst)
     with h5py.File(dst, "r+") as f:
