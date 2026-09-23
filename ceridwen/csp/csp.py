@@ -4,7 +4,8 @@ theta keys: "sfh" (linear SFR, per node (n_time,) or per bin (n_time-1,)),
 "logzsol" or "logzsol_hist" (stellar metallicity log10(Z/Z_sun), Z_sun the SSP grid's own solar
 node; = [Fe/H] on MIST / aMIST grids), "gas_logz" (log10(Z_gas/Z_sun,neb) of the CLOUDY grid),
 dust / nebular parameters, and the runtime scalars logmass, zred, lumdist_mpc,
-igm_factor, eline_scaling, frac_obrun, spectrum_scaling, spectrum_calib.
+igm_factor, eline_scaling, frac_obrun, spectrum_scaling, spectrum_calib, plus the IGM model's
+own keys (``IGMModel.param_names``; x_HI, logN_HI, z_dla for MadauDampingDLA).
 """
 
 import math
@@ -128,6 +129,17 @@ def prior_support(prior):
     return float(np.min(np.asarray(lo, dtype=np.float64))), float(np.max(np.asarray(hi, dtype=np.float64)))
 
 
+def _check_duste_model(duste_model, add_dust_emission):
+    """``duste_model`` validated at construction: 'DL07' or 'THEMIS', and only meaningful with
+    ``add_dust_emission=True`` (a non-default choice without it would silently do nothing)."""
+    if duste_model not in ("DL07", "THEMIS"):
+        raise ValueError(f"duste_model must be 'DL07' or 'THEMIS', got {duste_model!r}")
+    if duste_model != "DL07" and not add_dust_emission:
+        raise ValueError(f"duste_model={duste_model!r} selects dust-emission templates, but "
+                         "add_dust_emission=False; set add_dust_emission=True or drop duste_model")
+    return duste_model
+
+
 class CSPBasis:
     """Composite stellar population basis.  ``predict(theta, observations)`` projects the model onto observations.
 
@@ -149,6 +161,10 @@ class CSPBasis:
         (Byler+2017; its node set is 0.019- or 0.020-based), which is the FSPS/Prospector
         convention.
     add_neb, add_dust, add_diffuse_dust, add_dust_emission, add_igm : bool -- physics switches.
+    duste_model : {'DL07', 'THEMIS'} -- dust-emission templates with ``add_dust_emission``:
+        Draine & Li (2007) or THEMIS (Jones et al. 2013, 2017), both from $SPS_HOME/dust/dustem
+        with FSPS's (qPAH, Umin) axes.  THEMIS's ``duste_qpah`` axis spans 0.91-18.2 (the FSPS
+        mass-fraction nodes x 100/2.2), DL07's 0.47-4.58.
     sps_home : str -- data directory for the nebular and dust-emission grids; defaults to $SPS_HOME.
     init_neb_params, init_dust_params : dict -- forwarded to NebularModel / Dust.  ``isoc_type`` is
         taken from the SSP grid's provenance when recorded.
@@ -185,6 +201,7 @@ class CSPBasis:
         lookback_time=None,
         sfh_per_bin=False,
         fesc_geometry="runaway_bc",
+        duste_model="DL07",
         cosmo=None,
         gas_tied=False,
         **kwargs,
@@ -292,6 +309,7 @@ class CSPBasis:
                 "(your FSPS data directory) or pass sps_home=... explicitly."
             )
         self.sps_home   = sps_home
+        self.duste_model = _check_duste_model(duste_model, add_dust_emission)
         from ..cosmology import Cosmology as _Cosmology
         if cosmo is None:
             raise TypeError(
@@ -307,12 +325,7 @@ class CSPBasis:
         self.track_zred_age = bool(track_zred_age)
         self.nebemlineinspec = bool(nebemlineinspec)
 
-        if add_igm:
-            from ..igm import make_igm_model
-            self.igm = make_igm_model(igm_model)
-        else:
-            self.igm = None
-        self.igm_factor = float(igm_factor)
+        self._setup_igm(add_igm, igm_model, igm_factor)
 
         if add_diffuse_dust or add_dust:
             self.set_attenuation_function(add_diffuse_dust, add_dust)
@@ -354,6 +367,31 @@ class CSPBasis:
 
         self.check_param_ranges(self.theta_init)
 
+
+    def _setup_igm(self, add_igm, igm_model, igm_factor):
+        """``self.igm`` (an ``IGMModel`` or None) and the default ``igm_factor``; a model that takes
+        a cosmology (``bind_cosmology``) is given the CSP's, so the two cannot disagree."""
+        if add_igm:
+            from ..igm import make_igm_model
+            self.igm = make_igm_model(igm_model)
+            if hasattr(self.igm, "bind_cosmology"):
+                self.igm.bind_cosmology(self._cosmo)
+        else:
+            self.igm = None
+        self.igm_factor = float(igm_factor)
+
+    def _igm_transmission(self, z_scalar, theta):
+        """IGM transmission on ``self.wave`` at ``z_scalar``: ``igm_factor`` from theta or the
+        constructor, plus the model's own theta keys (``IGMModel.param_names``) when it has any."""
+        if "igm_factor" in theta:
+            ig_factor = jnp.ravel(theta["igm_factor"])[0]
+        else:
+            ig_factor = jnp.float32(self.igm_factor)
+        names = getattr(self.igm, "param_names", ())
+        if not names:
+            return self.igm.attenuation(self.wave, z_scalar, factor=ig_factor)
+        params = {k: jnp.ravel(theta[k])[0] for k in names if k in theta}
+        return self.igm.attenuation(self.wave, z_scalar, factor=ig_factor, params=params)
 
     def _setup_metallicity(self, ssp):
         """The single metallicity conversion: ``self.zmet`` = ssp_lgmet - log10_zsun (float64,
@@ -519,7 +557,7 @@ class CSPBasis:
             'lookback_time', 'logzsol', 'logzsol_hist',
             'logmass', 'zred', 'lumdist_mpc', 'igm_factor', 'eline_scaling',
             'frac_obrun', 'spectrum_scaling', 'spectrum_calib',
-        }
+        } | set(getattr(getattr(self, "igm", None), "param_names", ()))
 
 
     def register_known_theta_keys(self, keys):
@@ -726,7 +764,8 @@ class CSPBasis:
         if add_dust_emission:
             if self.verbose:
                 print("Initializing DustEmission model...")
-            self.dust_emi = DustEmission(spec_lambda=self.wave, dust_file=sps_home)
+            self.dust_emi = DustEmission(duste_model=getattr(self, "duste_model", "DL07"),
+                                         spec_lambda=self.wave, dust_file=sps_home)
 
             emi_defaults = self.dust_emi.get_default_params()
             for k, v in emi_defaults.items():
@@ -863,13 +902,8 @@ class CSPBasis:
             spectrum_phot = spectrum_phot * ff
             spectrum_slit = spectrum_slit * ff
             if self.igm is not None:
-                if "igm_factor" in theta:
-                    ig_factor = jnp.ravel(theta["igm_factor"])[0]
-                else:
-                    ig_factor = jnp.float32(self.igm_factor)
-                transmission = self.igm.attenuation(
-                    self.wave, z_scalar, factor=ig_factor,
-                ).astype(spectrum_phot.dtype)
+                transmission = self._igm_transmission(
+                    z_scalar, theta).astype(spectrum_phot.dtype)
                 spectrum_phot = spectrum_phot * transmission
                 spectrum_slit = spectrum_slit * transmission
 
@@ -983,12 +1017,7 @@ class CSPBasis:
                        else self.neb.gaussnebarr).astype(obs._T.dtype)
                 if self.igm is not None and z_in_theta:
                     z_scalar = jnp.ravel(theta["zred"])[0]
-                    ig_factor = (jnp.ravel(theta["igm_factor"])[0]
-                                 if "igm_factor" in theta
-                                 else jnp.float32(self.igm_factor))
-                    trans = self.igm.attenuation(
-                        self.wave, z_scalar, factor=ig_factor,
-                    ).astype(obs._T.dtype)
+                    trans = self._igm_transmission(z_scalar, theta).astype(obs._T.dtype)
                     G = (obs._T * trans[None, :]) @ gnb
                 else:
                     G = obs._T @ gnb
@@ -1111,12 +1140,7 @@ class CSPBasis:
             ff = self._flux_factor(theta)
             F = F * (ff if for_photometry else ff / (1.0 + z_scalar))
             if self.igm is not None and not for_photometry:
-                if "igm_factor" in theta:
-                    ig_factor = jnp.ravel(theta["igm_factor"])[0]
-                else:
-                    ig_factor = jnp.float32(self.igm_factor)
-                trans = self.igm.attenuation(self.wave, z_scalar,
-                                             factor=ig_factor)
+                trans = self._igm_transmission(z_scalar, theta)
                 F = F * ((1.0 - lf) * trans[li] + lf * trans[li + 1])
         if not for_photometry and not for_spectrum and "eline_scaling" in theta:
             F = F * jnp.ravel(theta["eline_scaling"])[0]
@@ -1138,13 +1162,7 @@ class CSPBasis:
             z_scalar = jnp.ravel(theta["zred"])[0]
             line_only = line_only * jnp.float32(self._flux_factor(theta))
             if self.igm is not None:
-                if "igm_factor" in theta:
-                    ig_factor = jnp.ravel(theta["igm_factor"])[0]
-                else:
-                    ig_factor = jnp.float32(self.igm_factor)
-                transmission = self.igm.attenuation(
-                    self.wave, z_scalar, factor=ig_factor,
-                )
+                transmission = self._igm_transmission(z_scalar, theta)
                 line_only = line_only * transmission.astype(line_only.dtype)
         if "eline_scaling" in theta:
             line_only = line_only * jnp.ravel(theta["eline_scaling"])[0]

@@ -52,6 +52,9 @@ CATEGORIES = [
     "outlier_likelihood",
     "calibration_likelihood",
     "eline_marginal",
+    "igm_damping_dla",
+    "dust_laws",
+    "dust_emission_themis",
 ]
 
 #: v1.0.5 metallicity baselines, one per grid family; each is skipped where its grid is absent;

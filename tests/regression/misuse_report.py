@@ -138,6 +138,25 @@ def _afe_refused_cell():
                                "afe": TopHat(low=-0.2, high=0.6)}, csp_obj=c)
 
 
+def _dla_csp(igm, **over):
+    from ceridwen.igm import MadauDampingDLA  # noqa: F401
+    return _short_csp(add_igm=True, igm_model=igm, **over)
+
+
+def _sampled_x_hi_without_ob0():
+    c = _dla_csp("madau1995_damping_dla")
+    th = dict(c.theta_init, zred=jnp.array([0.5]), x_HI=jnp.array([0.5]))
+    ph = Photometry(filters=["sdss_g0", "sdss_r0"], name="p")
+    ph.setup_for_model(c.wave, zred=0.5)
+    return c.predict(th, [ph])
+
+
+def _noll_old_bump_name():
+    c = _short_csp(add_dust=True, init_dust_params={"bin_edges": [(-jnp.inf, -1.97)],
+                                                    "laws": ["noll"]})
+    return c.get_spectrum_components(dict(c.theta_init, E_bump=jnp.array([2.0])))
+
+
 def run_scenarios():
     csp = _good_csp()
     th = dict(csp.theta_init)
@@ -265,6 +284,15 @@ def run_scenarios():
         ("unbounded prior on f_outlier_spec", {"ERROR"},
          lambda: _check_outlier_setup(_outlier_model(["f_outlier_spec"],
                                                      {"f_outlier_spec": Normal(mean=0.1, sigma=0.1)}))),
+        ("IGM damping wing (x_HI > 0) without Ob0", {"ERROR"},
+         lambda: __import__("ceridwen.igm", fromlist=["x"]).MadauDampingDLA(x_HI=0.5)),
+        ("sampled x_HI on a DLA model without Ob0", {"ERROR"}, _sampled_x_hi_without_ob0),
+        ("IGM model cosmology != CSP cosmology", {"ERROR"},
+         lambda: _dla_csp(__import__("ceridwen.igm", fromlist=["x"]).MadauDampingDLA(
+             Ob0=0.05, cosmo=Cosmology.wmap9()))),
+        ("duste_model='THEMIS' without dust emission", {"ERROR"},
+         lambda: _short_csp(duste_model="THEMIS")),
+        ("noll bump under its old name E_bump", {"WARN"}, _noll_old_bump_name),
     ]
 
     rows = []

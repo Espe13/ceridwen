@@ -448,3 +448,106 @@ over the sampled `spectrum_scaling` / `spectrum_calib` to 1e-9; exact first-orde
 (`check_grads`), finite full-model gradients with masked NaN data, vmap equals loop;
 `tests/test_noise_calibration.py`. New regression category `calibration_likelihood`; new T4
 variant `polycal`. With the feature off the change is bit-identical (T4).
+
+## 2026-09-22 — IGM damping wing and DLA (`igm.py`, `csp/csp.py`)
+
+**What.** `ceridwen.igm.MadauDampingDLA` (registry name `"madau1995_damping_dla"`), promoted
+from `examples/recipes/igm_damping_dla.py`: Madau (1995) × IGM damping wing × damped Ly-α
+absorber, `exp(-(igm_factor tau_Madau + tau_damp(x_HI) + tau_DLA(logN_HI, z_dla)))`. The
+kernels are Prospector's (`sedmodel.py` @ a78d153, `:1192-1245` and `:1261-1333`), made
+JIT-safe (masked `jnp.where`, `x = 0` singularity of the Voigt approximation moved to
+`|x| = 1e-3`).
+
+`x_HI`, `logN_HI`, `z_dla` are **theta keys**, like `igm_factor`: fixed by the constructor,
+by theta, or sampled through `SedModel(free_param_init=..., priors=...)`. Mechanism:
+`IGMModel.param_names` (new class attribute, empty by default) lists a model's keys;
+`CSPBasis._igm_transmission` (new, used at all four IGM call sites, previously four copies of
+the same code) passes `attenuation(..., params={key: scalar})` only to models that declare
+keys, so a user subclass with the three-argument `attenuation` still works, and adds the keys
+to the known theta keys. A model with `bind_cosmology` gets the CSP's cosmology (`h`, `Om0`);
+`Ob0` is a required constructor argument for the wing (the `Cosmology` has none).
+`igm_factor` is **not** reused as `x_HI` (Prospector does, `sedmodel.py:824`).
+
+**Behaviour change.** None for existing models: `Madau1995` and `NoIGM` are untouched and the
+refactored call sites are byte-identical (T4). `MadauDampingDLA()` with no damping/DLA
+switched on, `x_HI = 0` and `logN_HI = -inf` all equal `Madau1995` byte for byte.
+
+**Verification.** `examples/recipes/tests/check_igm_damping_dla.py` now runs against the
+package code: 63/63 (damping wing vs Prospector ≤ 1.0e-12 in transmission, DLA 1.1e-16).
+`tests/test_igm_damping_dla.py` (theta = constructor bit for bit, Madau limits bit for bit
+through `csp.predict` and `SedModel.predict`, finite non-zero gradients in all three keys,
+guards). New regression category `igm_damping_dla` (each row ≤ 9.4e-14 from Prospector's
+own `tau_damping` / `voigt_profile`); new `igm_dla` configuration in
+`scripts/bit_identity_check.py` (sampled `x_HI`, `logN_HI`).
+
+**Not done.** `fit.py` does not record the IGM model or its fixed arguments in
+`ceridwen_result.h5` (it records no IGM information at all, for any model); sampled keys are
+stored like any other parameter.
+
+## 2026-09-22 — Gordon+03 SMC bar and Reddy+15 attenuation laws (`dust/attenuation_laws.py`)
+
+**What.** Two new registered laws, promoted from `examples/recipes/extra_dust_laws.py`:
+`gordon03_smcbar` (parameter `tau_g03smc`, FSPS dust_type=5, tau(5500 Å) = `tau_g03smc`
+exactly) and `reddy15` (parameter `tau_reddy`, FSPS dust_type=6 / Prospector `fake_fsps`,
+tau(5500 Å) = 0.997113 `tau_reddy`, i.e. FSPS `dust2`). Registry parameter names equal the
+signature names. `examples/recipes/extra_dust_laws.py` is now a re-export, and its `register()`
+is kept for old scripts.
+
+**Verification.** `check_extra_dust_laws.py` against the package: 14 passed, 0 failed,
+0 skipped (Gordon vs the FSPS table and Fortran 0.0 / 1.1e-16; Reddy vs Prospector 1.1e-15 on
+2901 node-aligned pixels, and vs the FSPS Fortran with its single-precision literals 4.4e-16).
+New regression category `dust_laws`.
+
+## 2026-09-22 — attenuation-law registry bugs (`dust/attenuation_laws.py`)
+
+`Dust` passes a law only the parameters that are both in its signature and in its registry
+`params` (`DustModel.py:107-113`). Three registry entries were wrong. **Each fix changes
+results for anyone who used that law as described below.** `tests/test_dust_laws.py` fails on
+`main` for each of them (6 failures) and passes after (22/22); it also checks every built-in
+law for signature/registry agreement and that every registered parameter reaches the curve.
+
+- **`noll`: bump strength never reached an age-bin `Dust`.** Registry `params` said
+  `E_bump`, the signature and `defaults` say `Ebump`. In an age-bin `Dust` (and each renamed
+  copy `Ebump1`, `Ebump2`, ... when the law is used in several bins) the bump was dropped, so
+  the curve was always the `Ebump = 0` curve; `get_param_names()` advertised `E_bump`, which
+  was then warned as unknown. Measured: at 2175 Å with `tau_noll = 1`, `Ebump = 3`, the curve
+  was 2.0946 and is now 2.8351 (= a direct `noll(...)` call). `DiffuseDust("noll")` read
+  `diffuse_Ebump` correctly before and is unchanged. **Who is affected:** fits with `noll` in
+  `init_dust_params["laws"]` and a non-zero `Ebump`: their bump was ignored; results move.
+- **`drude`: registered with a function that takes inverse microns.** `Dust` feeds Å, so
+  `Dust(laws=["drude"])` returned 1.7e-7 at 2175 Å instead of 0.9997. The registry now points
+  at `drude_law(wave, x0, gamma)`, which evaluates `drude(1e4 / wave)` (peak 1 at
+  x0 = 4.59 µm⁻¹, 2178.6 Å). `drude` itself (used by `noll`) is unchanged. **Who is affected:**
+  any use of the `drude` law (it attenuated nothing before). It still has no amplitude
+  parameter: as a bin law it is a fixed bump of peak optical depth 1.
+- **`smc` / `lmc`: registry text.** The entries said "Optical depth at 1500 Å" and credited
+  Gordon et al. (2003); the functions are Pei (1992) curves normalised at 5500 Å
+  (tau(5500 Å) = `tau_smc` exactly, measured). Text only, the numbers are unchanged. **Who is
+  affected:** anyone who read `tau_smc` / `tau_lmc` as a 1500 Å optical depth: it is the
+  5500 Å depth, and the 1500 Å depth is 4.59× (SMC) / 3.45× (LMC) the parameter (measured).
+  Also anyone who cited Gordon et al. (2003) for these laws. The Gordon SMC bar curve is now
+  `gordon03_smcbar`.
+
+Golden coverage: regression category `dust_laws` holds the age-bin and diffuse curves of all
+six laws (noll with `Ebump = 2`, drude) and two CSP spectra with multi-bin
+(`noll`/`gordon03_smcbar`/`lmc` + diffuse `reddy15`; `drude`/`smc` + diffuse `noll`)
+configurations: any of the three bugs would have moved them.
+
+## 2026-09-22 — THEMIS dust emission is selectable (`csp/csp.py`, `csp/csp_afe.py`)
+
+**What.** `CSPBasis(..., duste_model="THEMIS")` (and `CSPBasis_afe`). `DustEmission` has read
+the THEMIS templates (Jones et al. 2013, 2017; `$SPS_HOME/dust/dustem/THEMIS_MW3.1_*.dat`) all
+along, but `CSPBasis` always built it with its `"DL07"` default (`csp.py:716` before this
+change), so THEMIS was unreachable. Default unchanged (`"DL07"`, byte-identical, T4
+`neb_duste`). A value other than `"DL07"`/`"THEMIS"`, or `"THEMIS"` without
+`add_dust_emission=True`, raises at construction. Note the THEMIS `duste_qpah` axis is FSPS's
+mass-fraction nodes × 100/2.2, i.e. 0.91-18.2, against 0.47-4.58 for DL07; the same
+`duste_qpah` number therefore means a different PAH abundance in the two models.
+
+**Verification.** FSPS selects THEMIS only at compile time (`src/sps_vars.f90:551-560`), and
+the installed python-fsps is built with DL07, so there is no FSPS THEMIS spectrum to compare
+with. Instead, `tests/test_dust_emission_themis.py`: the (qPAH, Umin) axes equal FSPS's own
+(parsed from `$SPS_HOME/src/sps_vars.f90`); a template column equals a direct read of the file;
+energy balance (emitted = absorbed, no self-absorption) to 1e-10; the CSP spectrum equals DL07
+blueward of 0.9 µm and differs by > 5 % in the mid-IR; `jax.grad` in `duste_qpah` finite.
+New regression category `dust_emission_themis`.

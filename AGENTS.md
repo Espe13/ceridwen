@@ -149,7 +149,8 @@ projection → likelihood → sampler.
   `PhotometricBroadener`. The only place spectral widths are set.
 - `dust/` — `DustModel.py`: `Dust`/`DiffuseDust`, age-binned attenuation with
   multiple switchable laws per bin via `lax.switch` (params are plain dicts).
-  `DustEmission.py`: DL07 + THEMIS grids, bilinear interp in (qPAH, Umin), dust
+  `DustEmission.py`: DL07 + THEMIS grids (`CSPBasis(duste_model=...)`, default DL07),
+  bilinear interp in (qPAH, Umin), dust
   mass. `AGBDustShell.py`: optional AGB circumstellar dust.
 - `neb/` — `NebularGridModel.py`: `NebularModel` (CLOUDY grids, each cube
   interpolated against its own gas_logz/gas_logu/age axes, line profiles at
@@ -180,7 +181,10 @@ projection → likelihood → sampler.
   `vi.py` (VI transport maps: TriL, IAF/NeuTra), `runner.py` (`SamplerAdapter`
   protocol, `SamplingResult`, `run_sampler`, `to_anesthetic`).
 - `cosmology.py` — JAX-native flat ΛCDM (Planck 18) with an astropy fallback.
-- `igm.py` — IGM attenuation (`Madau1995`), extensible via the `IGMModel` ABC.
+- `igm.py` — IGM attenuation (`Madau1995`; `MadauDampingDLA` = Madau × damping wing × DLA,
+  with theta keys `x_HI` / `logN_HI` / `z_dla` declared in `IGMModel.param_names` and passed
+  as `attenuation(..., params=)` by `CSPBasis._igm_transmission`), extensible via the
+  `IGMModel` ABC. `igm_factor` scales the Madau forest only; it is NOT `x_HI`.
 - `fit.py` — `fitSED` (top-level convenience wrapper) + `read_result_h5` /
   `load_result_h5` / `result_cosmology`; writes `<output_dir>/ceridwen_result.h5`
   (obs incl. sky / calibration / upper limits and each likelihood's noise model,

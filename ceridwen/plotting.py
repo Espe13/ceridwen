@@ -33,6 +33,8 @@ _LABELS = {
     "frac_obrun": r"$f_\mathrm{esc}$", "eline_scaling": r"$s_\mathrm{line}$",
     "spectrum_scaling": r"$s_\mathrm{spec}$", "sigma_gal": r"$\sigma_\star$ [km/s]", "sigma_gas": r"$\sigma_\mathrm{gas}$ [km/s]",
     "igm_factor": r"$f_\mathrm{IGM}$", "afe": r"[$\alpha$/Fe]",
+    "x_HI": r"$x_\mathrm{HI}$", "logN_HI": r"$\log N_\mathrm{HI}$ [cm$^{-2}$]",
+    "z_dla": r"$z_\mathrm{DLA}$",
 }
 
 
