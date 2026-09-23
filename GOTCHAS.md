@@ -154,7 +154,18 @@ prefer `predict`/`get_spectrum_components`.
   nor with `marginalize_elines` on that spectrum. `polynomial_order=0` is off (as in
   Prospector), not "a constant". The posterior is conditional on the best-fit polynomial:
   its uncertainty is not propagated, so do not use it where the calibration uncertainty
-  matters (sample `spectrum_calib` there).
+  matters (marginalise it, below, or sample `spectrum_calib` there).
+- **Marginalised polynomial.** `Spectrum(polynomial_order=M, polynomial_mode="marginalize",
+  polynomial_prior_sigma=s)` integrates the coefficients out analytically under
+  `c_m ~ N(0, s_m^2)` (exact marginal likelihood; the calibration uncertainty reaches the
+  posterior and the evidence). `s` is in units of the fractional response. `T_0` is a grey
+  scale of prior width `s_0`, so without photometry the level is degenerate with the mass
+  within `s_0`. `polynomial_regularization` is refused in this mode (use `s = 1/reg`),
+  `polynomial_prior_sigma` is refused in the profile mode (it would be ignored), and a flat
+  prior (`inf`) is refused. A sampled `spectrum_scaling` is allowed only with `T_0` pinned
+  (`s_0 = 0`); `spectrum_calib`, the outlier mixture, upper limits, `logify_spectrum`, a GP
+  `noise` and `marginalize_elines` on the same spectrum are refused. `PostProcess` reports the
+  conditional-mean response per draw, not a sampled one.
 
 ## 6. Environment & data consistency (not auto-guarded — check yourself)
 

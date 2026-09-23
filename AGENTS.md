@@ -146,7 +146,9 @@ projection → likelihood → sampler.
   `csp_afe.py`: `CSPBasis_afe`, the [alpha/Fe] variant without a nebular model.
   `spectrum_calibration.py`: `spectrum_scaling` / `spectrum_calib` factor (one per
   spectrum, `spectrum_scaling_<obs.name>` with several). The profiled alternative is
-  `Spectrum(polynomial_order=M)`, solved in the likelihood (`likelihood/poly_calibration.py`).
+  `Spectrum(polynomial_order=M)`, solved in the likelihood (`likelihood/poly_calibration.py`),
+  or marginalised analytically with `polynomial_mode="marginalize"`
+  (`likelihood/poly_marginal.py`, `PolyMarginalGaussianLikelihood`).
 - `broadening.py` — `Kinematics` (sigma_gal / sigma_gas, fixed or theta keys),
   `Instrument` (LSF; `scale=` multiplies its width, a float or a sampled theta key with a
   bounded prior), `SpectralProjector` (continuum FFT kernel + banded
@@ -180,7 +182,10 @@ projection → likelihood → sampler.
   Prospector-style outlier mixture `f_outlier` / `nsigma_outlier` per observation
   (`f_outlier_spec/_phot/_lines[_<obs.name>]` in `fitSED`, all default 0 = off: switch on
   explicitly), applied by the likelihood kernels `lnlike_diag_outlier[_with_upper_limits]`;
-  `docs/outlier_model.md`).
+  `docs/outlier_model.md`). `poly_calibration.py`: the profiled calibration polynomial;
+  `poly_marginal.py`: `PolyMarginalGaussianLikelihood`, the polynomial integrated out under a
+  Gaussian prior (`Spectrum(polynomial_mode="marginalize")`); `eline_marginal.py`: the
+  emission-line flux marginalisation.
 - `sampler/` — `priors.py` (TFP-JAX priors with logpdf/sample/unit_transform),
   `nested.py` (BlackJAX nested sampling; periodic checkpoints carry the sampler state, and
   `resume_from=` continues a killed run bit for bit), `nuts.py` (NUTS, VI-preconditioned),
