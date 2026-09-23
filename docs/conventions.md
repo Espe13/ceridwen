@@ -153,6 +153,40 @@ detector* (from arc lines), so it already contains the pixel width and the
 model profiles are sampled at pixel centres, not integrated over the pixel a
 second time.
 
+#### A free LSF scale: `Instrument(..., scale=...)`
+
+When the quoted LSF is uncertain, every constructor takes `scale=`: the width in
+force is `s · σ_inst(λ)`, in the continuum kernel *and* in the line widths
+(`σ_cont² = σ_gal² + s² σ_inst² − σ_lib²`, `σ_line² = σ_gas² + s² σ_inst²`).
+
+```python
+from ceridwen import Instrument
+from ceridwen.priors import Uniform
+
+Instrument.R_fwhm(2700)                        # scale=1.0: the nominal LSF, the unscaled code path
+Instrument.R_fwhm(2700, scale=1.1)             # fixed: identical to Instrument.R_fwhm(2700 / 1.1)
+Instrument.R_fwhm(2700, scale="lsf_scale")     # sampled: needs free_param_init and a BOUNDED prior
+priors = {"lsf_scale": Uniform(low=0.8, high=1.3)}
+Instrument.R_fwhm(2700, scale="lsf_scale", scale_range=(0.8, 1.3))  # range given explicitly
+```
+
+A fixed scale is folded into the static response at setup (no runtime cost). A
+sampled scale recomputes the response weights per call on a band sized for the top
+of its range: exact for any wavelength dependence of `σ_inst`, and differentiable.
+The range comes from the prior's finite bounds (or `scale_range=`, required when the
+key is a transform); it must satisfy `0 < lo < hi`, a prior reaching beyond an
+explicit `scale_range` is refused, and a sampled value outside it is clipped. The
+instrument-below-library warning is evaluated at the lower end of the range, and a
+second warning names the pixels whose continuum kernel crosses half a log-grid pixel
+inside the range, where the response switches from linear interpolation to a
+Gaussian and the prediction takes a small step in `s`. Photometry and `Lines` never
+see the instrument, so neither depends on the scale.
+
+Prospector's `resolution_jitter_parameter` (`prospect/models/sedmodel.py:289-295`)
+multiplies the resolution too, but only the continuum's (the line widths are cached
+from the unscaled resolution just before, `sedmodel.py:283`), by overwriting
+`obs.padded_resolution` on every call, and without validation.
+
 ### The library: subtracted automatically
 
 The SSP library's own resolution curve is subtracted in quadrature from the

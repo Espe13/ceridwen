@@ -4,7 +4,8 @@
     lines:      sigma_line_i^2 = sigma_gas^2 + sigma_inst_i^2
 
 sigma_gal, sigma_gas  galaxy stars / gas [km/s], ``Kinematics``, fixed or theta keys
-sigma_inst            instrument LSF at the observed pixel [km/s], ``Instrument``
+sigma_inst            instrument LSF at the observed pixel [km/s], ``Instrument``, times its
+                      ``scale`` s (default 1; fixed, or a theta key) in BOTH lines above
 sigma_lib             SSP library resolution at the rest pixel [km/s], ``SSPData.ssp_resolution``
 
 All sigma are dispersions.  Kernels are Gaussians in ln(lambda) acting on f_nu.
@@ -14,7 +15,8 @@ profiles are sampled at pixel centres.
 Runtime path (Spectrum):  spec_rest --gather+interp--> log grid (dv = finest model
 pixel; read at the sampled redshift when z is free) --FFT sigma_gal--> --static banded
 response (sigma_inst - sigma_lib, resampling to observed pixels)--> + analytic lines
-(sigma_gas, sigma_inst).
+(sigma_gas, sigma_inst).  With a sampled instrument scale the response weights are
+recomputed per call on the static band (``ScaledResponse``); nothing else changes.
 Runtime path (Photometry): the FFT stage only, scattered back into spec_rest.
 """
 from __future__ import annotations
@@ -30,6 +32,7 @@ __all__ = [
     "CKMS", "C_AA_S", "FWHM_TO_SIGMA", "BAND_NSIGMA",
     "Instrument", "Kinematics", "TIED", "DEFAULT_KINEMATICS",
     "LogGrid", "WindowSmoother", "make_gaussian_fft", "build_response", "apply_response",
+    "ScaledResponse", "check_scale_range",
     "make_line_painter_free_z",
     "make_line_painter", "SpectralProjector", "PhotometricBroadener",
 ]
@@ -38,6 +41,20 @@ CKMS = 2.99792458e5
 C_AA_S = 2.99792458e18
 FWHM_TO_SIGMA = 1.0 / (2.0 * np.sqrt(2.0 * np.log(2.0)))
 BAND_NSIGMA = 5.0
+
+
+def check_scale_range(rng, what="scale_range") -> tuple:
+    """(lo, hi) of a sampled LSF scale as floats; finite, 0 < lo < hi, else ValueError."""
+    try:
+        lo, hi = (float(np.ravel(np.asarray(v, dtype=float))[0]) for v in rng)
+    except (TypeError, ValueError, IndexError):
+        raise ValueError(f"{what} must be a pair (lo, hi), got {rng!r}") from None
+    if not (np.isfinite(lo) and np.isfinite(hi)):
+        raise ValueError(f"{what} must be finite (a bounded prior), got ({lo}, {hi})")
+    if not (0.0 < lo < hi):
+        raise ValueError(f"{what} must satisfy 0 < lo < hi (the LSF scale multiplies a "
+                         f"dispersion), got ({lo}, {hi})")
+    return (lo, hi)
 
 
 @dataclass(frozen=True, eq=False)
@@ -51,16 +68,49 @@ class Instrument:
         Instrument.sigma_kms(47.0)               sigma [km/s]
         Instrument.fwhm_kms(111.0)               FWHM [km/s]
         Instrument.<any>(array, wave=obs_wave)   per-pixel value on observed wavelengths
+
+    LSF scale (every constructor takes ``scale=`` and ``scale_range=``): the instrumental
+    dispersion in force is ``s * sigma_inst(lambda)``, in the continuum kernel
+    (sigma_cont^2 = sigma_gal^2 + s^2 sigma_inst^2 - sigma_lib^2) and in the line width
+    (sigma_line^2 = sigma_gas^2 + s^2 sigma_inst^2) alike.
+
+        scale=1.0 (default)     the nominal LSF; the code path is the one without a scale
+        scale=1.1 (float > 0)   fixed: identical to building the Instrument with the width x 1.1
+                                (folded into the static response at setup, no runtime cost)
+        scale="lsf_scale"       sampled theta key (give it a prior and a free_param_init); the
+                                continuum response weights are recomputed per call from the
+                                static band geometry, exactly, for any wavelength dependence of
+                                sigma_inst; values are clipped to the supported range
+        scale_range=(lo, hi)    the range the compiled kernel supports for a sampled scale,
+                                0 < lo < hi; default: the finite bounds of the key's prior.
+                                Needed when the key is a transform.
+
+    Prospector's ``resolution_jitter_parameter`` (``prospect/models/sedmodel.py:289-295``,
+    a78d153) multiplies ``obs.resolution`` by the parameter too, but differs: (1) it rescales
+    the continuum only: the line widths are cached from the unscaled ``obs.resolution`` just
+    before (``cache_eline_parameters``, sedmodel.py:283, 575-583), so a jittered LSF broadens
+    the absorption features but not the emission lines; here both.  (2) It overwrites
+    ``obs.padded_resolution`` in place on every call (state that outlives the call); here the
+    Instrument is immutable and the scale is a pure function argument (jit / vmap / grad).
+    (3) No validation: a value <= 0, or one that takes the instrument below the library,
+    fails an ``assert`` inside the likelihood call (``observation.py:454``); here a
+    non-positive scale, an unbounded or non-positive prior, or a prior beyond ``scale_range``
+    raises at construction, and instrument-below-library pixels follow the usual rule (the
+    continuum stays at library resolution there, with the setup warning evaluated at the
+    lower end of the range).
     """
     kind: str
     value: np.ndarray
     wave: Optional[np.ndarray] = None
+    scale: Union[float, str] = 1.0
+    scale_range: Optional[tuple] = None
 
     _KINDS = ("R_fwhm", "R_sigma", "fwhm_aa", "sigma_aa", "sigma_kms", "fwhm_kms")
 
     def __post_init__(self):
         if self.kind not in self._KINDS:
             raise ValueError(f"Instrument.kind must be one of {self._KINDS}")
+        self._check_scale()
         v = np.asarray(self.value, dtype=np.float64)
         object.__setattr__(self, "value", v)
         if not np.all(np.isfinite(v)) or np.any(v <= 0.0):
@@ -80,32 +130,66 @@ class Instrument:
         elif self.wave is not None:
             raise ValueError("wave= is only meaningful with an array width")
 
-    @classmethod
-    def R_fwhm(cls, R, wave=None):
-        return cls("R_fwhm", R, wave)
+    def _check_scale(self):
+        sc, rng = self.scale, self.scale_range
+        if isinstance(sc, bool):
+            raise TypeError("Instrument scale must be a float (fixed) or a str (theta key)")
+        if isinstance(sc, str):
+            if not sc.strip():
+                raise ValueError("Instrument scale: empty theta key")
+        elif isinstance(sc, (int, float, np.floating, np.integer)):
+            sc = float(sc)
+            if not (np.isfinite(sc) and sc > 0.0):
+                raise ValueError(f"Instrument scale must be finite and > 0, got {sc}")
+            object.__setattr__(self, "scale", sc)
+        else:
+            raise TypeError("Instrument scale must be a float (fixed) or a str (theta key), "
+                            f"got {type(sc).__name__}")
+        if rng is not None:
+            if not isinstance(sc, str):
+                raise ValueError("scale_range= is only meaningful with a sampled scale "
+                                 "(scale='<theta key>')")
+            object.__setattr__(self, "scale_range", check_scale_range(rng, "scale_range"))
+
+    @property
+    def free_keys(self) -> tuple:
+        """Theta keys this instrument reads (the sampled LSF scale), or ()."""
+        return (self.scale,) if isinstance(self.scale, str) else ()
 
     @classmethod
-    def R_sigma(cls, R, wave=None):
-        return cls("R_sigma", R, wave)
+    def R_fwhm(cls, R, wave=None, scale=1.0, scale_range=None):
+        return cls("R_fwhm", R, wave, scale, scale_range)
 
     @classmethod
-    def fwhm_aa(cls, fwhm, wave=None):
-        return cls("fwhm_aa", fwhm, wave)
+    def R_sigma(cls, R, wave=None, scale=1.0, scale_range=None):
+        return cls("R_sigma", R, wave, scale, scale_range)
 
     @classmethod
-    def sigma_aa(cls, sigma, wave=None):
-        return cls("sigma_aa", sigma, wave)
+    def fwhm_aa(cls, fwhm, wave=None, scale=1.0, scale_range=None):
+        return cls("fwhm_aa", fwhm, wave, scale, scale_range)
 
     @classmethod
-    def sigma_kms(cls, sigma, wave=None):
-        return cls("sigma_kms", sigma, wave)
+    def sigma_aa(cls, sigma, wave=None, scale=1.0, scale_range=None):
+        return cls("sigma_aa", sigma, wave, scale, scale_range)
 
     @classmethod
-    def fwhm_kms(cls, fwhm, wave=None):
-        return cls("fwhm_kms", fwhm, wave)
+    def sigma_kms(cls, sigma, wave=None, scale=1.0, scale_range=None):
+        return cls("sigma_kms", sigma, wave, scale, scale_range)
+
+    @classmethod
+    def fwhm_kms(cls, fwhm, wave=None, scale=1.0, scale_range=None):
+        return cls("fwhm_kms", fwhm, wave, scale, scale_range)
 
     def sigma_kms_at(self, wave_obs) -> np.ndarray:
-        """sigma [km/s] at each observed wavelength (NumPy, setup only)."""
+        """sigma [km/s] at each observed wavelength (NumPy, setup only): the width in force
+        for a fixed ``scale`` (nominal x scale), the nominal width (scale 1) for a sampled
+        one, which the projector multiplies by ``theta[scale]`` per call."""
+        v = self._nominal_sigma_kms_at(wave_obs)
+        if isinstance(self.scale, str) or self.scale == 1.0:
+            return v
+        return v * self.scale
+
+    def _nominal_sigma_kms_at(self, wave_obs) -> np.ndarray:
         wave_obs = np.asarray(wave_obs, dtype=np.float64)
         if self.value.ndim == 1:
             if wave_obs.min() < self.wave[0] or wave_obs.max() > self.wave[-1]:
@@ -371,12 +455,96 @@ def apply_response(J, W, spec_log):
     return jnp.sum(W * spec_log[J], axis=1)
 
 
+class ScaledResponse:
+    """The continuum response of :func:`build_response` for a SAMPLED LSF scale ``s``.
+
+    The gather indices ``J`` and the offsets ``D = J - x`` are static, with the band sized
+    for ``scale_max``; the weights are recomputed per call with row width
+    ``sigma_fix_i(s) = sqrt(max(s^2 sigma_inst_i^2 - sigma_lib_i^2, 0))`` by the same
+    formula as ``build_response`` (Gaussian rows from half a log pixel up, linear
+    interpolation below, row-normalised).  Exact for any wavelength dependence of
+    sigma_inst.  At ``s = scale_max`` the band equals the one ``build_response`` builds for
+    ``sigma_fix(scale_max)``; at smaller ``s`` it is wider, i.e. the Gaussian is truncated
+    further out than in the fixed-scale response (the fixed one drops a tail of relative
+    mass < erfc(5 / sqrt 2) = 5.7e-7 per row, this one less).
+    """
+
+    def __init__(self, grid: LogGrid, lnw_obs_rest, sigma_inst_kms, sigma_lib_kms,
+                 scale_max, band_nsigma=BAND_NSIGMA):
+        lnw_obs_rest = np.asarray(lnw_obs_rest, dtype=np.float64)
+        s_inst = np.asarray(sigma_inst_kms, dtype=np.float64)
+        s_lib = np.asarray(sigma_lib_kms, dtype=np.float64)
+        n = grid.n
+        dln = grid.dv / CKMS
+        if np.any(lnw_obs_rest < grid.lnw[0]) or np.any(lnw_obs_rest > grid.lnw[-1]):
+            raise ValueError("observed pixels fall outside the LogGrid window")
+        s_px_max = np.sqrt(np.clip((float(scale_max) * s_inst) ** 2 - s_lib ** 2,
+                                   0.0, None)) / grid.dv
+        x = (lnw_obs_rest - grid.lnw[0]) / dln
+        j0 = np.floor(x).astype(np.int64)
+        h = int(np.ceil(band_nsigma * max(float(s_px_max.max()), 0.5))) + 1
+        J = j0[:, None] + np.arange(-h, h + 2)[None, :]
+        inside = (J >= 0) & (J < n)
+        Jc = np.clip(J, 0, n - 1)
+        d = Jc - x[:, None]
+        lin = np.where(inside, np.clip(1.0 - np.abs(d), 0.0, 1.0), 0.0)
+        if np.any(lin.sum(axis=1) <= 0.0):
+            raise RuntimeError("empty response row: observed pixel not covered")
+        self.dv = float(grid.dv)
+        self.scale_max = float(scale_max)
+        self.J_np, self.D_np, self.inside_np, self.lin_np = Jc.astype(np.int32), d, inside, lin
+        self.sigma_inst_kms, self.sigma_lib_kms = s_inst, s_lib
+        self.J = jnp.asarray(self.J_np)
+        self._D = jnp.asarray(d)
+        self._inside = jnp.asarray(inside)
+        self._lin = jnp.asarray(lin)
+        self._s_inst = jnp.asarray(s_inst)
+        self._s_lib2 = jnp.asarray(s_lib ** 2)
+
+    @property
+    def n_band(self) -> int:
+        return int(self.J_np.shape[1])
+
+    def weights_np(self, scale) -> np.ndarray:
+        """NumPy weights at a fixed ``scale`` (setup / reference)."""
+        s_fix = np.sqrt(np.clip((self.sigma_inst_kms * float(scale)) ** 2
+                                - self.sigma_lib_kms ** 2, 0.0, None))
+        s_px = s_fix / self.dv
+        gauss_rows = s_px >= 0.5
+        sg = np.where(gauss_rows, s_px, 1.0)[:, None]
+        W = np.where(gauss_rows[:, None], np.exp(-0.5 * (self.D_np / sg) ** 2), self.lin_np)
+        W = np.where(self.inside_np, W, 0.0)
+        return W / W.sum(axis=1, keepdims=True)
+
+    def weights(self, scale):
+        """(n_obs, n_band) weights at a traced scalar ``scale``; the square root is guarded
+        so pixels with the instrument below the library (and the linear-interpolation rows)
+        give a zero, not a NaN, gradient."""
+        s_fix2 = (self._s_inst * scale) ** 2 - self._s_lib2
+        pos = s_fix2 > 0.0
+        s_fix = jnp.where(pos, jnp.sqrt(jnp.where(pos, s_fix2, 1.0)), 0.0)
+        s_px = s_fix / self.dv
+        gauss_rows = s_px >= 0.5
+        sg = jnp.where(gauss_rows, s_px, 1.0)[:, None]
+        W = jnp.where(gauss_rows[:, None], jnp.exp(-0.5 * (self._D / sg) ** 2), self._lin)
+        W = jnp.where(self._inside, W, 0.0)
+        return W / jnp.sum(W, axis=1, keepdims=True)
+
+    def n_rows_switching(self, lo, hi) -> int:
+        """Rows whose width crosses half a log pixel (linear <-> Gaussian) inside [lo, hi]:
+        the continuum is discontinuous in s there (a step of ~1 % of the row weight)."""
+        def px(s):
+            return np.sqrt(np.clip((self.sigma_inst_kms * s) ** 2 - self.sigma_lib_kms ** 2,
+                                   0.0, None)) / self.dv
+        return int(np.sum((px(lo) < 0.5) & (px(hi) >= 0.5)))
+
+
 def make_line_painter(wave_obs, line_wave_obs, sigma_inst_lines_kms) -> Callable:
-    """paint(line_flux, sigma_gas_kms) -> f_nu on wave_obs.
+    """paint(line_flux, sigma_gas_kms, inst_scale=None) -> f_nu on wave_obs.
 
     line_flux: observed-frame integrated flux [spectrum unit x Hz].
     f_nu = F phi(ln lambda) lambda / c_AA, phi unit-area in ln lambda with
-    sigma = sqrt(sigma_gas^2 + sigma_inst^2) / c.
+    sigma = sqrt(sigma_gas^2 + (inst_scale sigma_inst)^2) / c (inst_scale None = 1).
     """
     wave_obs = np.asarray(wave_obs, dtype=np.float64)
     lnw = jnp.asarray(np.log(wave_obs))
@@ -384,8 +552,9 @@ def make_line_painter(wave_obs, line_wave_obs, sigma_inst_lines_kms) -> Callable
     s_inst = jnp.asarray(np.asarray(sigma_inst_lines_kms, dtype=np.float64))
     lam_over_c = jnp.asarray(wave_obs / C_AA_S)
 
-    def paint(line_flux, sigma_gas_kms):
-        s = jnp.sqrt(sigma_gas_kms ** 2 + s_inst ** 2) / CKMS
+    def paint(line_flux, sigma_gas_kms, inst_scale=None):
+        si = s_inst if inst_scale is None else s_inst * inst_scale
+        s = jnp.sqrt(sigma_gas_kms ** 2 + si ** 2) / CKMS
         x = (lnw[:, None] - lnl[None, :]) / s[None, :]
         phi = jnp.exp(-0.5 * x * x) / (jnp.sqrt(2.0 * jnp.pi) * s[None, :])
         return (phi @ line_flux) * lam_over_c
@@ -394,9 +563,10 @@ def make_line_painter(wave_obs, line_wave_obs, sigma_inst_lines_kms) -> Callable
 
 
 def make_line_painter_free_z(wave_obs, line_wave_rest, sigma_inst_table_kms) -> Callable:
-    """paint(line_flux, sigma_gas_kms, opz) -> f_nu on wave_obs for a traced 1 + z:
-    lines at line_wave_rest * opz, instrument width interpolated from the per-pixel
-    table ``sigma_inst_table_kms`` (on wave_obs) at those positions."""
+    """paint(line_flux, sigma_gas_kms, opz, inst_scale=None) -> f_nu on wave_obs for a
+    traced 1 + z: lines at line_wave_rest * opz, instrument width interpolated from the
+    per-pixel table ``sigma_inst_table_kms`` (on wave_obs) at those positions, times
+    ``inst_scale`` when given."""
     wave_obs = np.asarray(wave_obs, dtype=np.float64)
     lnw = jnp.asarray(np.log(wave_obs))
     wo = jnp.asarray(wave_obs)
@@ -405,9 +575,11 @@ def make_line_painter_free_z(wave_obs, line_wave_rest, sigma_inst_table_kms) -> 
     s_tab = jnp.asarray(np.asarray(sigma_inst_table_kms, dtype=np.float64))
     lam_over_c = jnp.asarray(wave_obs / C_AA_S)
 
-    def paint(line_flux, sigma_gas_kms, opz):
+    def paint(line_flux, sigma_gas_kms, opz, inst_scale=None):
         lnl = lnl_rest + jnp.log(opz)
         s_inst = jnp.interp(lam_rest * opz, wo, s_tab)
+        if inst_scale is not None:
+            s_inst = s_inst * inst_scale
         s = jnp.sqrt(sigma_gas_kms ** 2 + s_inst ** 2) / CKMS
         x = (lnw[:, None] - lnl[None, :]) / s[None, :]
         phi = jnp.exp(-0.5 * x * x) / (jnp.sqrt(2.0 * jnp.pi) * s[None, :])
@@ -426,6 +598,13 @@ class SpectralProjector:
     is read at ``wave_log * opz_ref / opz`` per call (the sigma_gal kernel commutes with
     the shift); the lines are painted at ``line_wave_rest * opz``.  The library width in
     the fixed kernel is the one at ``opz_ref``.
+
+    With a sampled instrument scale (``Instrument(scale="<key>")``, ``inst_scale_key``) the
+    continuum weights come from ``scaled`` (a :class:`ScaledResponse`, band sized for the top
+    of ``inst_scale_range``) per call, the lines are painted with ``s * sigma_inst``, and
+    ``sigma_inst_kms`` / ``line_sigma_table_kms`` hold the NOMINAL (s = 1) widths; ``W`` and
+    ``sigma_fix_kms`` are then the values at the reference scale (1 clipped into the range).
+    A fixed scale is folded into ``sigma_inst_kms`` by ``Instrument.sigma_kms_at``.
     """
     kinematics: Kinematics
     instrument: Optional[Instrument]
@@ -443,6 +622,9 @@ class SpectralProjector:
     wave_obs: Optional[np.ndarray] = None
     line_wave_rest: Optional[np.ndarray] = None
     line_sigma_table_kms: Optional[np.ndarray] = None
+    inst_scale_key: Optional[str] = None
+    inst_scale_range: Optional[tuple] = None
+    scaled: Optional[ScaledResponse] = None
     _line_idx_j: jnp.ndarray = field(init=False)
 
     def __post_init__(self):
@@ -456,10 +638,27 @@ class SpectralProjector:
     def free_z(self) -> bool:
         return self.zred_range is not None
 
+    @property
+    def free_inst_scale(self) -> bool:
+        return self.inst_scale_key is not None
+
+    def inst_scale(self, theta):
+        """The sampled LSF scale from ``theta`` clipped to ``inst_scale_range`` (a JAX
+        scalar), or None when the scale is fixed (the static response is used)."""
+        if self.inst_scale_key is None:
+            return None
+        k = self.inst_scale_key
+        if k not in theta:
+            raise KeyError(f"the Spectrum's Instrument samples its LSF scale as theta['{k}'], "
+                           "which is not in theta")
+        lo, hi = self.inst_scale_range
+        return jnp.clip(jnp.ravel(jnp.asarray(theta[k]))[0], lo, hi)
+
     @classmethod
     def build(cls, kinematics: Kinematics, instrument: Optional[Instrument],
               wave_model, wave_obs, zred, lib_sigma_kms=None,
-              line_wave_rest=None, subtract_library=True, zred_range=None):
+              line_wave_rest=None, subtract_library=True, zred_range=None,
+              inst_scale_range=None):
         """
         wave_model      rest-frame model grid [A]
         wave_obs        observed pixel centres [A]
@@ -467,6 +666,9 @@ class SpectralProjector:
         lib_sigma_kms   SSPData.ssp_resolution on wave_model, NaN = unknown (or None)
         line_wave_rest  rest wavelengths of all model lines, in predict_line_fluxes order (or None)
         zred_range      (z_min, z_max) of a SAMPLED redshift (None: fixed at ``zred``)
+        inst_scale_range (lo, hi) of a SAMPLED instrument scale when the Instrument carries no
+                        ``scale_range`` (SedModel passes the prior bounds); the kernel band
+                        and window margins are sized for ``hi``
         """
         b = kinematics
         if instrument is not None and not isinstance(instrument, Instrument):
@@ -489,11 +691,26 @@ class SpectralProjector:
         else:
             opz_lo = opz_hi = opz
 
+        scale_key = scale_rng = None
+        if instrument is not None and isinstance(instrument.scale, str):
+            scale_key = instrument.scale
+            scale_rng = instrument.scale_range
+            if scale_rng is None:
+                if inst_scale_range is None:
+                    raise ValueError(
+                        f"the Instrument samples its LSF scale as theta['{scale_key}'] but no "
+                        "range is known for it: give its prior finite bounds (Uniform / "
+                        "ClippedNormal, lower bound > 0) or pass Instrument(..., "
+                        "scale_range=(lo, hi))")
+                scale_rng = check_scale_range(inst_scale_range, f"prior on '{scale_key}'")
         if instrument is None:
             s_inst = np.zeros_like(wave_obs)
             subtract_library = False
         else:
             s_inst = instrument.sigma_kms_at(wave_obs)
+        # the narrowest (diagnostics) and widest (kernel sizing) instrument in force
+        s_inst_lo = s_inst if scale_key is None else scale_rng[0] * s_inst
+        s_inst_hi = s_inst if scale_key is None else scale_rng[1] * s_inst
         if subtract_library and lib_sigma_kms is not None:
             lib = np.asarray(lib_sigma_kms, dtype=np.float64)
             if lib.shape != wave_model.shape:
@@ -503,11 +720,13 @@ class SpectralProjector:
         else:
             lib = None
             s_lib = np.zeros_like(wave_obs)
-        s_fix2 = s_inst ** 2 - s_lib ** 2
+        s_fix2 = s_inst_lo ** 2 - s_lib ** 2
         n_bad = int(np.sum(s_fix2 < 0.0))
         if n_bad:
             warnings.warn(
-                f"instrument narrower than the SSP library at {n_bad} of "
+                ("" if scale_key is None else
+                 f"at the lower end of the '{scale_key}' range ({scale_rng[0]:g}): ")
+                + f"instrument narrower than the SSP library at {n_bad} of "
                 f"{wave_obs.size} pixels ({100 * n_bad / wave_obs.size:.1f} %, "
                 f"{wave_obs[s_fix2 < 0].min():.0f}-{wave_obs[s_fix2 < 0].max():.0f} A): "
                 "the continuum is delivered at library resolution there, which is "
@@ -517,7 +736,7 @@ class SpectralProjector:
         if zred_range is not None and lib is not None:
             worst = 0.0
             for o in (opz_lo, opz_hi):
-                s_end = np.sqrt(np.clip(s_inst ** 2 - np.interp(wave_obs / o, wave_model, lib) ** 2,
+                s_end = np.sqrt(np.clip(s_inst_lo ** 2 - np.interp(wave_obs / o, wave_model, lib) ** 2,
                                         0.0, None))
                 worst = max(worst, float(np.max(np.abs(s_end - s_fix) / np.maximum(s_fix, 1e-3))))
             if worst > 0.1:
@@ -526,7 +745,9 @@ class SpectralProjector:
                     f"zred_range it changes the kernel by up to {100 * worst:.0f} % at some "
                     "pixel. Narrow the redshift prior or accept the approximation")
 
-        marg = BAND_NSIGMA * (b.sigma_max + float(s_fix.max())) / CKMS
+        s_fix_hi = (s_fix if scale_key is None
+                    else np.sqrt(np.clip(s_inst_hi ** 2 - s_lib ** 2, 0.0, None)))
+        marg = BAND_NSIGMA * (b.sigma_max + float(s_fix_hi.max())) / CKMS
         wmin_ref = wave_obs[0] / opz * np.exp(-marg)
         wmax_ref = wave_obs[-1] / opz * np.exp(+marg)
         wmin = wave_obs[0] / opz_hi * np.exp(-marg)
@@ -541,13 +762,30 @@ class SpectralProjector:
         window = WindowSmoother(LogGrid.build(
             wave_model, wmin_ref, wmax_ref, b.sigma_max,
             extend_to=None if zred_range is None else (wmin, wmax)))
-        J, W = build_response(window.grid, np.log(wave_obs) - np.log(opz), s_fix)
+        scaled = None
+        if scale_key is None:
+            J, W = build_response(window.grid, np.log(wave_obs) - np.log(opz), s_fix)
+        else:
+            scaled = ScaledResponse(window.grid, np.log(wave_obs) - np.log(opz), s_inst,
+                                    s_lib, scale_rng[1])
+            s_ref = float(np.clip(1.0, *scale_rng))
+            J, W = scaled.J_np, scaled.weights_np(s_ref)
+            s_fix = np.sqrt(np.clip((s_ref * s_inst) ** 2 - s_lib ** 2, 0.0, None))
+            n_sw = scaled.n_rows_switching(*scale_rng)
+            if n_sw:
+                warnings.warn(
+                    f"over the '{scale_key}' range {scale_rng} the continuum kernel of {n_sw} "
+                    f"of {wave_obs.size} pixels crosses half a log-grid pixel "
+                    f"({0.5 * window.grid.dv:.1f} km/s), where the response switches between "
+                    "linear interpolation and a Gaussian: the prediction steps slightly in the "
+                    "scale there (instrument close to the library resolution). Narrow the "
+                    "range, or check the Instrument / subtract_library")
 
         paint, line_idx = None, np.zeros(0, dtype=np.int64)
         lw_kept = s_table = None
         if line_wave_rest is not None:
             lwr = np.asarray(line_wave_rest, dtype=np.float64)
-            marg_l = BAND_NSIGMA * (b.sigma_max + float(s_inst.max())) / CKMS
+            marg_l = BAND_NSIGMA * (b.sigma_max + float(s_inst_hi.max())) / CKMS
             keep = ((lwr * opz_hi > wave_obs[0] * np.exp(-marg_l))
                     & (lwr * opz_lo < wave_obs[-1] * np.exp(marg_l)))
             line_idx = np.flatnonzero(keep)
@@ -570,21 +808,29 @@ class SpectralProjector:
                    line_idx=line_idx, sigma_inst_kms=s_inst,
                    sigma_lib_kms=s_lib, sigma_fix_kms=s_fix,
                    zred_range=zred_range, opz_ref=opz, wave_obs=wave_obs,
-                   line_wave_rest=lw_kept, line_sigma_table_kms=s_table)
+                   line_wave_rest=lw_kept, line_sigma_table_kms=s_table,
+                   inst_scale_key=scale_key, inst_scale_range=scale_rng, scaled=scaled)
 
-    def continuum(self, spec_rest, sigma_gal_kms, opz=None):
-        """Continuum on the observed pixels; ``opz`` = 1 + z (traced) when ``free_z``."""
+    def continuum(self, spec_rest, sigma_gal_kms, opz=None, inst_scale=None):
+        """Continuum on the observed pixels; ``opz`` = 1 + z (traced) when ``free_z``,
+        ``inst_scale`` (traced) when the instrument scale is sampled."""
         scale = None if opz is None else self.opz_ref / opz
         spec_log = self.window.smooth(self.window.to_log(spec_rest, scale), sigma_gal_kms)
-        return apply_response(self.J, self.W, spec_log)
+        if inst_scale is None:
+            return apply_response(self.J, self.W, spec_log)
+        return apply_response(self.scaled.J, self.scaled.weights(inst_scale), spec_log)
 
-    def lines(self, line_flux_obs_all, sigma_gas_kms, opz=None):
+    def lines(self, line_flux_obs_all, sigma_gas_kms, opz=None, inst_scale=None):
         if self.paint is None:
             return 0.0
         flux = line_flux_obs_all[self._line_idx_j]
         if self.free_z:
-            return self.paint(flux, sigma_gas_kms, opz)
-        return self.paint(flux, sigma_gas_kms)
+            if inst_scale is None:
+                return self.paint(flux, sigma_gas_kms, opz)
+            return self.paint(flux, sigma_gas_kms, opz, inst_scale)
+        if inst_scale is None:
+            return self.paint(flux, sigma_gas_kms)
+        return self.paint(flux, sigma_gas_kms, inst_scale)
 
     def predict(self, spec_rest, line_flux_obs_all, theta):
         s_gal, s_gas = self.kinematics.resolve(theta)
@@ -593,20 +839,24 @@ class SpectralProjector:
             if "zred" not in theta:
                 raise KeyError("projector built with zred_range needs theta['zred']")
             opz = 1.0 + jnp.ravel(jnp.asarray(theta["zred"]))[0]
-        out = self.continuum(spec_rest, s_gal, opz)
+        s_ins = self.inst_scale(theta)
+        out = self.continuum(spec_rest, s_gal, opz, s_ins)
         if self.paint is not None and line_flux_obs_all is not None:
-            out = out + self.lines(line_flux_obs_all, s_gas, opz)
+            out = out + self.lines(line_flux_obs_all, s_gas, opz, s_ins)
         return out
 
-    def line_basis(self, sigma_gas_kms, opz_line):
+    def line_basis(self, sigma_gas_kms, opz_line, inst_scale=None):
         """(n_pix, n_kept) f_nu of UNIT-flux lines on the observed pixels, centred at
         ``line_wave_rest * opz_line`` (traced), width sqrt(sigma_gas^2 + sigma_inst^2) with the
-        instrument width interpolated at the line; the painter's profile, one column per line."""
+        instrument width interpolated at the line (times ``inst_scale`` when given); the
+        painter's profile, one column per line."""
         wo = np.asarray(self.wave_obs, dtype=np.float64)
         lam = jnp.asarray(np.asarray(self.line_wave_rest, dtype=np.float64))
         lnl = jnp.log(lam) + jnp.log(opz_line)
         s_inst = jnp.interp(lam * opz_line, jnp.asarray(wo),
                             jnp.asarray(np.asarray(self.line_sigma_table_kms, dtype=np.float64)))
+        if inst_scale is not None:
+            s_inst = s_inst * inst_scale
         s = jnp.sqrt(sigma_gas_kms ** 2 + s_inst ** 2) / CKMS
         x = (jnp.asarray(np.log(wo))[:, None] - lnl[None, :]) / s[None, :]
         phi = jnp.exp(-0.5 * x * x) / (jnp.sqrt(2.0 * jnp.pi) * s[None, :])
@@ -624,14 +874,15 @@ class SpectralProjector:
             if "zred" not in theta:
                 raise KeyError("projector built with zred_range needs theta['zred']")
             opz = 1.0 + jnp.ravel(jnp.asarray(theta["zred"]))[0]
-        out = self.continuum(spec_rest, s_gal, opz)
+        s_ins = self.inst_scale(theta)
+        out = self.continuum(spec_rest, s_gal, opz, s_ins)
         if self.line_wave_rest is None or self.line_idx.size == 0:
             return out, None
-        if basis is None:           # a precomputed basis is only passed for fixed z, width, dz = 0
+        if basis is None:   # a precomputed basis is only passed for fixed z, widths, dz = 0
             opz_line = self.opz_ref if opz is None else opz
             if "eline_delta_zred" in theta:
                 opz_line = opz_line + jnp.ravel(jnp.asarray(theta["eline_delta_zred"]))[0]
-            basis = self.line_basis(s_gas, opz_line)
+            basis = self.line_basis(s_gas, opz_line, s_ins)
         else:
             basis = jnp.asarray(basis)
         if line_flux_obs_all is not None:
@@ -646,7 +897,11 @@ class SpectralProjector:
             f"Kinematics: sigma_gal={b.sigma_gal!r}  sigma_gas={b.effective_sigma_gas!r}  "
             f"sigma_max={b.sigma_max} km/s",
             f"  instrument : {self.instrument.kind if self.instrument else 'none'}  "
-            f"sigma_inst [{si.min():.1f}, {si.max():.1f}] km/s",
+            f"sigma_inst [{si.min():.1f}, {si.max():.1f}] km/s"
+            + (f" x theta[{self.inst_scale_key!r}] in [{self.inst_scale_range[0]:g}, "
+               f"{self.inst_scale_range[1]:g}]" if self.free_inst_scale else
+               (f" (scale {self.instrument.scale:g} included)"
+                if self.instrument is not None and self.instrument.scale != 1.0 else "")),
             f"  library    : subtract={self.subtract_library}  "
             f"sigma_lib [{sl.min():.1f}, {sl.max():.1f}] km/s",
             f"  continuum kernel (fixed part) [{sf.min():.1f}, {sf.max():.1f}] km/s",

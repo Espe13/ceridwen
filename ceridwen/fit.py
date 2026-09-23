@@ -34,6 +34,8 @@ def fitSED(
     filename: str = "ceridwen_result.h5",
     overwrite: bool = True,
     verbose: bool = True,
+    optimize: bool = False,
+    optimize_kwargs: dict[str, Any] | None = None,
 ):
     """Fit ``model`` to ``observations`` with ``sampler`` ("nested" or "nuts") and return the
     ``SamplingResult``; writes ``output_dir/filename`` (HDF5) and a ``.log`` with the same stem.
@@ -44,6 +46,11 @@ def fitSED(
     sampler_kwargs : dict -- forwarded to the sampler adapter constructor
     vi : None, 'tril', 'iaf', or a VI map -- NUTS-only variational preconditioning
     vi_kwargs : dict -- forwarded to VI training / map constructor
+    optimize : bool -- first find the MAP with ``ceridwen.optimize.map_fit`` (L-BFGS from prior
+        draws); NUTS then starts its chains there.  Nested sampling draws its live points from
+        the prior, so there the MAP is only recorded.  Stored under ``/map`` in the result file.
+    optimize_kwargs : dict -- forwarded to ``map_fit`` (``n_starts``, ``rng_key``, ...); the
+        default ``rng_key`` is ``fold_in(rng_key, 1)``, so the sampler's own key is unchanged
 
     Noise terms and the outlier mixture are switched on by the names the model samples (see
     ``_likelihood_for``); all outlier fractions default to 0 (off).
@@ -139,21 +146,40 @@ def fitSED(
         logger.info(f"  Adapter build:    {_t_adapter:.3f} s")
         logger.info(f"  Sampler settings: {_describe_adapter(adapter, model)}")
 
+        map_result = None
+        _t_map = 0.0
+        if optimize:
+            from .optimize import map_fit
+            _okw = dict(optimize_kwargs or {})
+            _okw.setdefault("rng_key", jax.random.fold_in(rng_key, 1))
+            _t0_map = time.perf_counter()
+            map_result = map_fit(model, **_okw)
+            _t_map = time.perf_counter() - _t0_map
+            logger.info(map_result.summary())
+            if type(adapter).__name__ == "BlackJAXNestedSamplerAdapter":
+                logger.info("  (nested sampling draws its live points from the prior: the MAP "
+                            "is recorded, not used as a start)")
+
         _t0_sampler = time.perf_counter()
-        result = run_sampler(model, multi_likelihood, adapter, rng_key)
+        result = run_sampler(model, multi_likelihood, adapter, rng_key,
+                             theta_init=None if map_result is None
+                             else map_result.free_param_init)
         _t_sampler = time.perf_counter() - _t0_sampler
 
         logger.info(f"\n{result.summary()}")
 
         _t0_h5 = time.perf_counter()
         write_result_h5(output_path, model, result, verbose=verbose,
-                        likelihood=multi_likelihood, adapter=adapter, rng_key=rng_key)
+                        likelihood=multi_likelihood, adapter=adapter, rng_key=rng_key,
+                        map_result=map_result)
         _t_h5 = time.perf_counter() - _t0_h5
 
-        _t_total = _t_likelihood + _t_adapter + _t_sampler + _t_h5
+        _t_total = _t_likelihood + _t_adapter + _t_map + _t_sampler + _t_h5
         logger.info(f"\n  fitSED timing breakdown:")
         logger.info(f"    Likelihood build : {_t_likelihood:>8.3f} s")
         logger.info(f"    Adapter build    : {_t_adapter:>8.3f} s")
+        if optimize:
+            logger.info(f"    MAP optimisation : {_t_map:>8.1f} s")
         logger.info(f"    Sampler run      : {_t_sampler:>8.1f} s")
         logger.info(f"    HDF5 write       : {_t_h5:>8.3f} s")
         logger.info(f"    Total fitSED     : {_t_total:>8.1f} s")
@@ -449,13 +475,17 @@ def _describe_adapter(adapter, model) -> str:
 
 
 def _detect_bounds(model) -> dict[str, tuple[float, float]]:
-    """(low, high) bounds of Uniform/TopHat/ClippedNormal priors, keyed by parameter name."""
+    """(low, high) bounds of Uniform/TopHat/ClippedNormal/LogUniform priors, keyed by parameter name."""
     bounds = {}
     for name, prior in model.priors.items():
         cls_name = type(prior).__name__
         if cls_name in ("Uniform", "TopHat"):
             lo = float(prior.params["low"])
             hi = float(prior.params["high"])
+            bounds[name] = (lo, hi)
+        elif cls_name == "LogUniform":
+            lo = float(prior.params["mini"])
+            hi = float(prior.params["maxi"])
             bounds[name] = (lo, hi)
         elif cls_name == "ClippedNormal":
             if "low" in prior.params and "high" in prior.params:
@@ -473,6 +503,7 @@ def write_result_h5(
     likelihood=None,
     adapter=None,
     rng_key=None,
+    map_result=None,
 ):
     """Write ``result`` and the model/observation metadata to HDF5 ``path``::
 
@@ -482,7 +513,8 @@ def write_result_h5(
             wavelength     (n_data,)
             mask           (n_data,)  bool
             sky, calibration, upper_limit   (n_data,)  when the observation has them
-            attrs: type, name, noise_floor, [instrument_kind, subtract_library, filternames, ...],
+            attrs: type, name, noise_floor, [instrument_kind, instrument_scale,
+                   instrument_scale_range, subtract_library, filternames, ...],
                    likelihood_json (with ``likelihood``: kernel class and noise-model settings)
 
         /provenance/        attrs: ceridwen_version, ceridwen_githash (build stamp),
@@ -495,7 +527,9 @@ def write_result_h5(
             wave           (n_wave,)
             theta_init/<param_name>    (shape,)
             priors/  attrs: <param_name> -> JSON string
-            attrs: zred, kinematics_*, broaden_photometry, cosmo_*, transforms (JSON list of "derived <- fn")
+            sfh_times_yr   (n_time,)  the CSP's construction lookback grid [yr]
+            attrs: zred, kinematics_*, broaden_photometry, cosmo_*, transforms (JSON list of "derived <- fn"),
+                   csp_config (JSON: CSP class, spectrum model, SFH / metallicity / IGM options, SSP library)
 
         /samples/
             <param_name>       (n_samples, *shape)
@@ -510,6 +544,10 @@ def write_result_h5(
             mean, sd       (n_samples, m)  posterior line fluxes per draw [erg s^-1 cm^-2]
             cloudy         (n_samples, m)  the CLOUDY (grid) fluxes per draw
             attrs: spectrum, observations (JSON), prior_width, not_fitted, ignored (JSON)
+
+        /map/               (only with ``map_result``, fitSED(optimize=True))
+            theta/<param_name>, lnp_starts (n,), n_steps (n,)
+            attrs: lnp, best_start, wall_time_s
     """
     import h5py
 
@@ -542,6 +580,11 @@ def write_result_h5(
                     og.create_dataset("instrument_wave", data=np.asarray(ins.wave))
                 og.attrs["subtract_library"] = bool(obs.subtract_library)
                 proj = getattr(obs, "_proj", None)
+                sc = getattr(ins, "scale", 1.0)
+                og.attrs["instrument_scale"] = sc if isinstance(sc, str) else float(sc)
+                if proj is not None and getattr(proj, "free_inst_scale", False):
+                    og.attrs["instrument_scale_range"] = np.asarray(proj.inst_scale_range,
+                                                                    dtype=float)
                 if proj is not None and proj.free_z:
                     og.attrs["zred_range"] = np.asarray(proj.zred_range, dtype=float)
                     og.attrs["zred_ref"] = float(proj.opz_ref - 1.0)
@@ -602,6 +645,7 @@ def write_result_h5(
         mod_grp.attrs["n_ssp_ages"] = int(model.csp.ages.shape[0]) if hasattr(model.csp, "ages") else -1
         mod_grp.attrs["n_metallicities"] = int(model.csp.zmet.shape[0]) if hasattr(model.csp, "zmet") else -1
         _write_metallicity_provenance(mod_grp, model)
+        _write_csp_config(mod_grp, model)
 
         _write_run_provenance(f, adapter, rng_key, model)
 
@@ -647,6 +691,18 @@ def write_result_h5(
 
     if likelihood is not None and getattr(model, "_eline_system", None) is not None:
         _write_eline_group(path, model, result, likelihood)
+
+    if map_result is not None:
+        with h5py.File(path, "a") as f:
+            g = f.create_group("map")
+            tg = g.create_group("theta")
+            for name, val in map_result.theta.items():
+                tg.create_dataset(name, data=np.asarray(val))
+            g.create_dataset("lnp_starts", data=np.asarray(map_result.lnp_starts))
+            g.create_dataset("n_steps", data=np.asarray(map_result.n_steps))
+            g.attrs["lnp"] = float(map_result.lnp)
+            g.attrs["best_start"] = int(map_result.best_start)
+            g.attrs["wall_time_s"] = float(map_result.wall_time)
 
     if verbose:
         size_mb = path.stat().st_size / 1024**2
@@ -757,6 +813,26 @@ def _provenance_from_group(g) -> dict:
     for k in g:
         out[k] = np.array(g[k])
     return out
+
+
+def _write_csp_config(mod_grp, model) -> None:
+    """The CSP choices a rebuilt model is checked against (``ceridwen.resultfile``)."""
+    csp = model.csp
+    igm = getattr(csp, "igm", None)
+    cfg = {"class": type(csp).__name__,
+           "spectrum_model": getattr(getattr(csp, "get_spectrum", None), "__name__", None),
+           "sfh_interp": getattr(csp, "sfh_interp", None),
+           "zh_const": getattr(csp, "zh_const", None),
+           "track_zred_age": getattr(csp, "track_zred_age", None),
+           "nebemlineinspec": getattr(csp, "nebemlineinspec", None),
+           "fesc_geometry": getattr(csp, "fesc_geometry", None),
+           "igm": None if igm is None else type(igm).__name__,
+           "igm_factor": getattr(csp, "igm_factor", None),
+           "isoc_type": getattr(csp, "_ssp_isoc_type", None),
+           "spec_library": getattr(csp, "_ssp_spec_library", None)}
+    mod_grp.attrs["csp_config"] = json.dumps(cfg, default=str)
+    if hasattr(csp, "sfh_times"):
+        mod_grp.create_dataset("sfh_times_yr", data=np.asarray(csp.sfh_times))
 
 
 METALLICITY_CONVENTION = "logzsol"
@@ -1029,9 +1105,10 @@ def result_cosmology(path: str | Path):
 
 
 def read_result_h5(path: str | Path) -> dict:
-    """Read a result HDF5 file into a nested dict with keys ``'obs'``, ``'model'``, ``'samples'``,
-    ``'provenance'`` (files written by fitSED since v1.0.6) and ``'elines'`` (when the fit
-    marginalised the emission lines)."""
+    """Read a result HDF5 file into a nested dict with keys ``'obs'``, ``'model'``,
+    ``'samples'``, ``'provenance'`` (files written by fitSED since v1.0.6), ``'elines'``
+    (when the fit marginalised the emission lines) and ``'map'`` (when it ran with
+    ``optimize=True``)."""
     import h5py
 
     out = {"obs": {}, "model": {}, "samples": {}}
@@ -1086,5 +1163,11 @@ def read_result_h5(path: str | Path) -> dict:
                              for k in g}
             for attr_name in g.attrs:
                 out["elines"][attr_name] = g.attrs[attr_name]
+
+        if "map" in f:
+            g = f["map"]
+            out["map"] = {"theta": {k: np.array(v) for k, v in g["theta"].items()},
+                          "lnp_starts": np.array(g["lnp_starts"]),
+                          "n_steps": np.array(g["n_steps"]), **dict(g.attrs)}
 
     return out

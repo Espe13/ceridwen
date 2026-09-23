@@ -57,7 +57,7 @@ def _flat(prefix, obj, out):
         out[prefix] = np.asarray(obj)
 
 
-def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False):
+def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False, lsf=None):
     path = find_test_grid()
     if path is None:
         sys.exit("no test SSP grid found (tests/_gridfixture.py)")
@@ -85,7 +85,11 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
                       uncertainty=[2e-10] * len(FILTERS), name="phot"),
            Spectrum(wavelength=SPEC_WAVE * (1.0 + ZRED), flux=np.full(SPEC_WAVE.size, 1e-9),
                     uncertainty=np.full(SPEC_WAVE.size, 1e-10),
-                    instrument=Instrument.sigma_kms(150.0), name="spec")]
+                    instrument=(Instrument.sigma_kms(150.0) if lsf is None else
+                                # LSF scale: fixed float, or sampled ("lsf_scale") in (0.8, 1.3)
+                                Instrument.sigma_kms(150.0, scale=lsf, scale_range=(
+                                    (0.8, 1.3) if isinstance(lsf, str) else None))),
+                    name="spec")]
     if add_neb:
         obs.append(Lines(line_ind=np.arange(len(LINES)), line_names=list(LINES),
                          wavelength=np.array(list(LINES.values())),
@@ -94,6 +98,8 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
     init = {"logsfr_ratios": jnp.zeros(N_TIME - 1), "logmass": jnp.array([10.0])}
     if igm_dla:
         init.update(x_HI=jnp.array([0.5]), logN_HI=jnp.array([20.5]))
+    if isinstance(lsf, str):
+        init[lsf] = jnp.array([1.1])
     model = SedModel(csp, obs, priors={}, transforms={"sfh": _sfh},
                      free_param_init=init, zred=ZRED,
                      kinematics=Kinematics(sigma_gal=sigma_losvd))
@@ -276,6 +282,12 @@ def collect(args):
         configs.append(("neb_duste", dict(add_neb=True, add_igm=True, sigma_losvd=250.0, dust_emission=True)))
         configs.append(("neb_tied", dict(add_neb=True, add_igm=True, sigma_losvd=250.0,
                                          dust_emission=False, gas_tied=True)))
+        # instrumental LSF scale (Instrument(scale=...)): fixed != 1 and sampled; appended
+        # last so the draws of the configurations above are unchanged
+        configs.append(("neb_lsf_fixed", dict(add_neb=True, add_igm=True, sigma_losvd=250.0,
+                                              dust_emission=False, lsf=1.15)))
+        configs.append(("neb_lsf_sampled", dict(add_neb=True, add_igm=True, sigma_losvd=250.0,
+                                                dust_emission=False, lsf="lsf_scale")))
     else:
         print("SPS_HOME not set: nebular configurations skipped")
     # last, so the shared rng gives the earlier configurations the same draws as before

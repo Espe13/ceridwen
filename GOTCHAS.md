@@ -441,7 +441,73 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
   `gordon03_smcbar`, and Reddy et al. (2015) is `reddy15` (its `tau_reddy` is FSPS's `dust2`,
   so tau(5500 Å) = 0.997 `tau_reddy`).
 
+## 16. Priors ported from Prospector: `LogNormal` and `LogUniform` (2026-09-22)
+
+- **`LogNormal(mode, sigma)` does not mean what Prospector's does.** Same class name, same
+  argument names, different distribution for the same numbers:
+  - CERIDWEN (`ceridwen/sampler/priors.py`, class `LogNormal`) builds
+    `tfd.LogNormal(loc=mode, scale=sigma)`: `ln x ~ N(mode, sigma)`, so `mode` is the
+    **mean (= median) of ln x**; the pdf in x peaks at `exp(mode - sigma**2)`.
+  - Prospector (a78d153, `prospect/models/priors.py:442-480`) is
+    `scipy.stats.lognorm(sigma, loc=0, scale=exp(mode + sigma**2))`:
+    `ln x ~ N(mode + sigma**2, sigma)`, so its `mode` is **ln of the peak** of the pdf in x.
+  - Conversion, same `sigma`: `mode_ceridwen = mode_prospector + sigma**2`
+    (and `mode_prospector = mode_ceridwen - sigma**2`).
+  - Checked (22 Sep 2026, CPU): Prospector `LogNormal(mode=ln 2, sigma=0.5)` vs CERIDWEN
+    `LogNormal(mode=ln 2 + 0.25, sigma=0.5)` on 20001 points in [0.05, 50]: max |d ln p| =
+    1.07e-14; without the conversion 3.81. Prospector's pdf peaks at x = 2.000 = exp(mode);
+    CERIDWEN's `LogNormal(mode=ln 2)` peaks at 1.558 = exp(mode - sigma**2).
+  - `LogNormal.scale` still returns Prospector's `exp(mode + sigma**2)`, which is not the
+    scale of the distribution CERIDWEN samples; nothing in the package reads it.
+- **`LogUniform(mini, maxi)`** is Prospector's `LogUniform` (`scipy.stats.reciprocal`):
+  pdf `1 / (x ln(maxi/mini))` on `[mini, maxi]`, uniform in `log x`. It needs
+  `0 < mini < maxi < inf` (raises at construction otherwise). The parameter `x` itself is
+  sampled and stored in the result file (not `log10 x`, unlike the recipe
+  `examples/recipes/loguniform_prior.py`); NUTS maps it to `(mini, maxi)` with the logit
+  that `fitSED` builds from `_detect_bounds`, nested sampling draws it by its inverse CDF.
+  Its log-density is `-inf` outside the support.
+
+```python
+import math
+from ceridwen.priors import LogNormal, LogUniform
+
+priors = {"diffuse_tau_kc": LogUniform(mini=1e-2, maxi=3.0)}
+m_prosp, sigma = math.log(2.0), 0.5          # Prospector LogNormal(mode=ln 2, sigma=0.5)
+same_as_prospector = LogNormal(mode=m_prosp + sigma**2, sigma=sigma)
+```
+
 ---
+
+## 15. Instrumental LSF scale (2026-09-22)
+
+`Instrument.<unit>(..., scale=...)` multiplies the instrumental dispersion by `s`, in the
+continuum kernel and in the line widths (`docs/conventions.md`).
+
+- **`scale=1.0` is the default and changes nothing** (the unscaled code path, byte-identical).
+  A fixed float is the same model as the Instrument built with the width times `s`.
+- **Degenerate with `sigma_gal` in the continuum.** The continuum sees only
+  `sigma_gal^2 + s^2 sigma_inst^2`, so with both free and no lines to separate them, `s` and
+  `sigma_gal` trade along that circle: expect a curved, correlated posterior, and a
+  `sigma_gal` that is only as good as the prior on `s`. The lines (`sigma_gas^2 +
+  s^2 sigma_inst^2`) break it only when `sigma_gas` is fixed or resolved differently;
+  with `sigma_gas` TIED the degeneracy is the same in both. Keep the prior on `s` as tight as
+  your LSF calibration allows.
+- **A sampled scale needs a finite range**: a bounded prior (`Uniform`, `ClippedNormal`,
+  `LogUniform`) with a lower bound `> 0`, or `Instrument(..., scale_range=(lo, hi))`
+  (required when the key is a transform). An unbounded prior, a bound `<= 0`, a prior reaching
+  beyond an explicit `scale_range`, a missing key, or a non-positive fixed scale raise at
+  construction. Sampled values outside the range are clipped (zero gradient there).
+- **A sampled scale is not bitwise the fixed one.** The log grid of the projector is sized for
+  the top of the range, so `theta["lsf_scale"] = 1.1` and a fixed `scale=1.1` sample the model
+  on slightly different grids; on a coarse grid with pixels wider than the LSF this is a
+  per-cent-level difference (the same happens between two fixed models whose `sigma_max`
+  differ). Compare sampled with sampled.
+- **Warning to read:** "the continuum kernel of N pixels crosses half a log-grid pixel":
+  the instrument is close to the library resolution there, and the response switches between
+  linear interpolation and a Gaussian inside the range, a small step in `s`. Harmless for
+  nested sampling; for NUTS narrow the range or use a finer grid.
+- Photometry and `Lines` never see the instrument; with `marginalize_elines` a sampled scale
+  switches off the static precomputation (the per-call path is used).
 
 ### What is *not* guarded (and why)
 
@@ -449,3 +515,39 @@ Runtime, per-sample value checks (e.g. "this drawn `Z` is out of grid") are
 deliberately **not** placed in the jitted hot path — doing so would either break
 JIT or slow every evaluation. Use the non-jitted `csp.check_param_ranges(theta)`
 on your priors/bounds once before sampling instead.
+
+## 16. MAP optimisation (`map_fit`, `fitSED(optimize=True)`) (2026-09-22)
+
+- **The MAP is the maximum of `ln L + ln prior` in the parameters you sample**, not of the
+  density NUTS explores: NUTS adds the log-Jacobian of its logit map for bounded priors, whose
+  maximum is elsewhere. `map_fit` optimises in the logit coordinates only as a change of
+  variables, without the Jacobian. It is also not the maximum-likelihood point (the prior is
+  included), and it depends on the parametrisation (a `LogUniform` on `x` and a `Uniform` on
+  `log10 x` have different MAPs).
+- **Nested sampling ignores it**: live points are prior draws. `fitSED(optimize=True,
+  sampler="nested")` records `/map` and says so in the log.
+- **Every free parameter needs a prior** (the starts are prior draws); a parameter at a bound
+  of a `Uniform` stays strictly inside it (the logit map never reaches the edge).
+- **Deterministic for a fixed `rng_key`** (checked byte for byte on CPU). The default key in
+  `fitSED` is `fold_in(rng_key, 1)`, so switching `optimize` on does not change the sampler's
+  own key. Several starts reaching the same `ln p` is the sign of a well-defined optimum; a
+  spread in `MAPResult.lnp_starts` means local optima.
+
+## 17. Result files: resuming nested sampling, rebuilding the model (2026-09-22)
+
+- **`resume_from=` needs a periodic checkpoint written by this version**
+  (`ns_checkpoint_<pid>.pkl`, which now carries the live state, dead list, rng key and
+  iteration). A rescue pickle (`ns_raw_dead_*`) or an older checkpoint holds only the finalised
+  dead points: it still loads with `load_checkpoint`, but resuming from it raises.
+- **Resume with the same model, settings and `rng_key`.** `num_live`, `num_delete`,
+  `num_inner_steps` and the parameter names/shapes must match, and the live points' saved
+  `ln L` must equal this model's (rtol 1e-9); anything else raises before sampling. A resumed
+  CPU run is byte-identical to the uninterrupted one. `logZ_tol` may differ (it is only the
+  stopping rule). The checkpoint file is named after the PID, so the resumed run writes a new one.
+- **A result file stores transforms by name only** (`"sfh <- my_function"`), and not the CSP or
+  the observation objects. `rebuild_model` therefore needs them from you, and checks what the
+  file does record (priors, free parameters and shapes, transform names, zred, kinematics,
+  cosmology, grid provenance, `csp_config`, `sfh_times_yr`, every observation's data and
+  instrument). It cannot see a transform whose body changed under the same name, CSP options
+  outside `csp_config`, or observation options not stored (noise floor, upper limits,
+  calibration, sky): `ceridwen.resultfile.NOT_RECORDED` lists them.

@@ -21,6 +21,8 @@ class Spectrum(Observation):
         are the constructor name (``Instrument.R_fwhm(2700)``,
         ``Instrument.fwhm_aa(2.5)``, ``Instrument.sigma_kms(arr, wave=w)``, ...).
         None = no instrumental broadening (and no library subtraction).
+        ``scale=`` on the Instrument multiplies its width (fixed float, or a sampled
+        theta key with a bounded prior), in the continuum and the lines alike.
     subtract_library : bool -- remove the SSP library resolution in quadrature
         from the instrument width (default True; needs the grid's resolution curve).
     calibration : array-like (n_pix,) -- multiplicative model correction
@@ -218,7 +220,7 @@ class Spectrum(Observation):
 
     def setup_for_model(self, wave_model, zred: float = 0.0,
                         kinematics=None, lib_resolution=None,
-                        line_wave_rest=None, zred_range=None):
+                        line_wave_rest=None, zred_range=None, inst_scale_range=None):
         """Build the projector from the rest-frame model grid ``wave_model`` [Å]
         redshifted by (1 + zred) onto ``self.wavelength``; call once, outside JIT.
 
@@ -231,6 +233,9 @@ class Spectrum(Observation):
         zred_range : (z_min, z_max) -- for a SAMPLED redshift (default ``self.zred_range``):
             the projection is then read at ``theta['zred']`` on every call and ``zred``
             is the reference redshift inside the range
+        inst_scale_range : (lo, hi) -- for an Instrument with a SAMPLED scale
+            (``Instrument(..., scale="<key>")``) and no ``scale_range`` of its own: the
+            range the kernel must support (SedModel passes the key's prior bounds)
         """
         if self._wavelength is None:
             raise ValueError(
@@ -258,7 +263,8 @@ class Spectrum(Observation):
         self._proj = SpectralProjector.build(
             kinematics, self.instrument, wave_model, self._wavelength, zred,
             lib_sigma_kms=lib, line_wave_rest=line_wave_rest,
-            subtract_library=self.subtract_library, zred_range=zred_range)
+            subtract_library=self.subtract_library, zred_range=zred_range,
+            inst_scale_range=inst_scale_range)
 
     def predict(self, spectrum, wave_model=None, line_flux=None, theta=None):
         """Model F_nu on the observed pixels (n_pix,): the rest-frame CONTINUUM
@@ -417,6 +423,10 @@ class Spectrum(Observation):
             res_str = f"{ins.kind} = {float(ins.value):g}"
         else:
             res_str = f"{ins.kind} array [{ins.value.min():g}, {ins.value.max():g}]"
+        if ins is not None and isinstance(ins.scale, str):
+            res_str += f" x theta[{ins.scale!r}]"
+        elif ins is not None and ins.scale != 1.0:
+            res_str += f" x {ins.scale:g}"
 
         lines = [
             f"Spectrum ({self.name})",

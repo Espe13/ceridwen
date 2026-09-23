@@ -2,8 +2,11 @@
 
 What it does
 ------------
-CERIDWEN has no ``LogUniform`` prior class. You get the same distribution by
-sampling ``log10(x)`` from a ``Uniform`` and deriving ``x`` with a transform:
+CERIDWEN now has a native ``LogUniform(mini, maxi)`` prior class
+(``from ceridwen.priors import LogUniform``), which samples ``x`` itself; use it
+unless you want the posterior in ``log10 x``. This recipe gets the same
+distribution by sampling ``log10(x)`` from a ``Uniform`` and deriving ``x`` with a
+transform:
 
     log10_<name> ~ Uniform(log10 mini, log10 maxi)       (sampled)
     <name>       = 10 ** log10_<name>                    (derived, via ``transforms``)
@@ -38,7 +41,7 @@ Why each dict is needed (derived from the code, not the docstrings):
   Without it, ``SedModel`` rejects the prior as belonging to an unsampled name
   (``model.py:121-126``).
 * ``priors``: a ``Uniform`` (``ceridwen/sampler/priors.py:127-150``). NUTS's
-  bounded-prior detection, ``fit._detect_bounds`` (``ceridwen/fit.py:394-408``),
+  bounded-prior detection, ``fit._detect_bounds`` (``ceridwen/fit.py:394-412``),
   matches on the class name ``"Uniform"``/``"TopHat"`` and reads
   ``params["low"]``/``["high"]``. So ``log10_<name>`` gets the bounds
   ``(log10 mini, log10 maxi)``, which ``fitSED(sampler="nuts")`` passes to the
@@ -92,10 +95,10 @@ for a scale parameter: Jeffreys H., 1946, Proc. R. Soc. A, 186, 453; see also
 Leja J. et al., 2017, ApJ, 837, 170 (Prospector-alpha priors) and Johnson B. D.
 et al., 2021, ApJS, 254, 22 (Prospector).
 
-Package change this prepares for: a first-class ``LogUniform`` prior
-(``tfd`` TransformedDistribution of a Uniform under ``Exp``) with bounds
-detection in ``fit._detect_bounds``. It must reproduce the check numbers of
-``tests/check_loguniform_prior.py``.
+Package change this prepared for, now landed: ``ceridwen.priors.LogUniform``
+(analytic ``jnp`` logpdf/CDF/ppf, ``tfp_dist()`` = ``Exp`` of a Uniform in ln x),
+with bounds ``(mini, maxi)`` in ``fit._detect_bounds``; ``tests/test_loguniform_prior.py``
+checks it against Prospector and against this recipe (KS).
 """
 from __future__ import annotations
 

@@ -551,3 +551,78 @@ with. Instead, `tests/test_dust_emission_themis.py`: the (qPAH, Umin) axes equal
 energy balance (emitted = absorbed, no self-absorption) to 1e-10; the CSP spectrum equals DL07
 blueward of 0.9 µm and differs by > 5 % in the mid-IR; `jax.grad` in `duste_qpah` finite.
 New regression category `dust_emission_themis`.
+
+## 2026-09-22 — `LogUniform` prior
+
+**What.** `ceridwen.priors.LogUniform(mini, maxi)` (also `ceridwen.sampler`): Prospector's
+`LogUniform` (`scipy.stats.reciprocal`), pdf `1 / (x ln(maxi/mini))` on `[mini, maxi]`.
+Analytic `jnp` logpdf (`-inf` outside), CDF, ppf and sampling; `tfp_dist()` is `Exp` of a
+Uniform in `ln x`. Raises unless `0 < mini < maxi < inf`. `fit._detect_bounds` gives it
+`(mini, maxi)`, so NUTS samples it through the logit map; `SedModel.display()` labels it.
+`scripts/check_api_usage.py` now checks prior keyword arguments against `prior_params`.
+`GOTCHAS.md` section 14 documents it and the `LogNormal` `mode` difference from Prospector
+(`mode_ceridwen = mode_prospector + sigma**2`). No forward-model change.
+
+**Verification.** `tests/test_loguniform_prior.py` (values vs a Prospector golden table and
+scipy, KS, round trips, jit/vmap/grad, `_detect_bounds`, nested-sampling evidence vs the
+analytic value, NUTS, fitSED log-posterior gradient vs finite differences).
+
+## 2026-09-22 — free instrumental LSF scale
+
+**What.** `Instrument.<unit>(..., scale=1.0 | float | "<theta key>", scale_range=None)`
+multiplies the instrumental dispersion by `s` in the continuum kernel
+(`sigma_gal^2 + s^2 sigma_inst^2 - sigma_lib^2`) **and** in the line widths
+(`sigma_gas^2 + s^2 sigma_inst^2`). `scale=1.0` (default) takes the unchanged code path; a fixed
+float is folded into `sigma_kms_at` (the same model as the Instrument built with the width times
+`s`); a sampled key uses static band geometry sized for the top of its range and exact per-call
+Gaussian weights (`broadening.ScaledResponse`), so it is exact for any wavelength dependence of
+the LSF. The range comes from the key's bounded prior or `scale_range`; a missing key, an
+unbounded prior, a bound `<= 0` or a non-positive fixed scale raise at construction.
+Result files record `instrument_scale` / `instrument_scale_range` per spectrum.
+Unlike Prospector (`sedmodel.py:289-295`), the lines are scaled too, nothing is mutated in
+place, and bad values raise at setup rather than failing an `assert` mid-sampling. GOTCHAS 15,
+`docs/conventions.md`.
+
+**Verification.** T4 against pre-change `main`: 2703 arrays compared, the only 2 that differ also
+differ between `main` and its own capture (a 8e-45 denormal in a post-processed spectrum, and
+`[logZ, logZ_err]`, whose error comes from anesthetic's random `logZ(12)` draws); 1178 new arrays from the two new configurations. New regression category `lsf_scale`
+(fixed `s = 1.2` equals `Instrument.R_fwhm(1500/1.2)` at rtol 1e-12; sampled equals fixed at the
+top of the range at 1e-12). `tests/test_lsf_scale.py` (15 tests incl. gradients vs finite
+differences, jit/vmap). CPU cost of a sampled scale ~10 % of the value-only log-posterior
+(W=100 and 500); GPU timing pending (`scripts/bench_lsf_scale.py`).
+
+## 2026-09-22 — MAP optimisation: `ceridwen.optimize.map_fit`, `fitSED(optimize=True)`
+
+**What.** `examples/recipes/map_fit.py` promoted into the package. `map_fit(model, n_starts=16,
+rng_key=...)` maximises fitSED's own log-posterior (`fit._likelihood_for` +
+`MultiObservationLikelihood.make_lnprobfn`) with `optax.lbfgs` from `model.theta_init` plus
+`n_starts` prior draws (Prospector's `nmin`, `fitting.py:223-310`), in the NUTS adapter's logit
+coordinates without a Jacobian; returns `MAPResult` (`.theta` is a `free_param_init`,
+`.lnp_starts`, `.summary()`). `fitSED(optimize=True, optimize_kwargs=...)` runs it, starts NUTS
+(and VI) there through the new `run_sampler(..., theta_init=)`, and writes `/map`
+(read back by `read_result_h5(...)["map"]`). Default off; with it off every array is unchanged.
+
+**Verification.** `tests/test_map_fit.py` on the `examples/make_mock_data.py` mock (test grid):
+ln p(MAP) = 38346.50 vs 36914.37 for the best of 1000 prior draws; two runs at the same key
+byte-identical; `.theta` rebuilds the model at the same ln p; fitSED hands the MAP to the
+sampler and stores it.
+
+## 2026-09-22 — result files: resumable nested sampling, model rebuild and check
+
+**What.** `BlackJAXNestedSamplerAdapter(..., resume_from=<checkpoint>)`: periodic checkpoints now
+also carry the raw sampler state (live `AdaptiveNSState`, dead list, rng key, iteration, calls,
+elapsed time, settings); a run started from one continues where the killed run stopped and is
+byte-identical to the uninterrupted run at the same key (CPU). Settings, parameter shapes and
+the live points' `ln L` are checked first. Works through `fitSED(sampler_kwargs=
+{"resume_from": ...})`. New `ceridwen.resultfile`: `priors_from_result`,
+`kinematics_from_result`, `rebuild_model(path, csp, observations, transforms)` and
+`check_model_against_result(model, path)`, which writes the model's record through
+`write_result_h5` and names every differing attribute/dataset. `write_result_h5` now also
+records `/model@csp_config` (CSP class, spectrum model, SFH/metallicity/IGM options, SSP library)
+and `/model/sfh_times_yr`. A full rebuild without the user's CSP and transform callables is not
+possible (they are not stored).
+
+**Verification.** `tests/test_ns_checkpoint.py` (+2: kill after 3 iterations and resume ->
+samples, ln L, birth ln L, weights, ln Z and call count byte-identical; foreign / old
+checkpoints refused), `tests/test_resultfile.py` (round trip; each kind of difference named;
+priors of every class rebuilt exactly).

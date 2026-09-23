@@ -44,7 +44,7 @@ from ceridwen.likelihood import DiagonalNoiseModel, DiagonalGaussianLikelihood
 from ceridwen.likelihood.eline_marginal import refuse_outlier_with_elines
 from ceridwen.fit import _check_outlier_setup, _check_noise_setup, _poly_calibration_for
 from ceridwen.model.obs_params import check_names, CALIB_FAMILIES
-from ceridwen.priors import Normal, TopHat
+from ceridwen.priors import LogUniform, Normal, TopHat
 from types import SimpleNamespace
 
 from _gridfixture import require_test_grid
@@ -293,6 +293,19 @@ def run_scenarios():
         ("duste_model='THEMIS' without dust emission", {"ERROR"},
          lambda: _short_csp(duste_model="THEMIS")),
         ("noll bump under its old name E_bump", {"WARN"}, _noll_old_bump_name),
+        ("LogUniform with mini <= 0 (log of 0)", {"ERROR"},
+         lambda: LogUniform(mini=0.0, maxi=1.0)),
+        ("Instrument LSF scale <= 0", {"ERROR"},
+         lambda: Instrument.R_fwhm(1000.0, scale=0.0)),
+        ("sampled LSF scale with an unbounded prior", {"ERROR"},
+         lambda: SedModel(csp, [Spectrum(wavelength=jnp.linspace(4000, 7000, 400), name="s",
+                                         instrument=Instrument.R_fwhm(1000.0, scale="lsf_scale"))],
+                          priors={"lsf_scale": Normal(mean=1.0, sigma=0.1)},
+                          free_param_init={"lsf_scale": 1.0}, zred=0.0)),
+        ("sampled LSF scale not in theta", {"ERROR"},
+         lambda: SedModel(csp, [Spectrum(wavelength=jnp.linspace(4000, 7000, 400), name="s",
+                                         instrument=Instrument.R_fwhm(1000.0, scale="lsf_scale"))],
+                          zred=0.0)),
     ]
 
     rows = []

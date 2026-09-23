@@ -126,9 +126,22 @@ def run_sampler(
     likelihood : Any,
     adapter    : SamplerAdapter,
     rng_key    : Array,
+    theta_init : dict[str, Array] | None = None,
 ) -> SamplingResult:
     """Build JIT ``loglike_fn`` (summed over observations, no prior) and
-    ``logprior_fn`` from ``model``/``likelihood`` and delegate to ``adapter.run``."""
+    ``logprior_fn`` from ``model``/``likelihood`` and delegate to ``adapter.run``.
+    ``theta_init`` (default ``model.theta_init``) is the start handed to the adapter, e.g. a
+    MAP from ``ceridwen.optimize.map_fit``; it must have the keys and shapes of
+    ``model.theta_init``."""
+    if theta_init is None:
+        theta_init = model.theta_init
+    else:
+        want = {k: tuple(jnp.shape(v)) for k, v in model.theta_init.items()}
+        got = {k: tuple(jnp.shape(v)) for k, v in theta_init.items()}
+        if want != got:
+            raise ValueError(f"run_sampler: theta_init has keys/shapes {got}, the model's "
+                             f"free parameters are {want}")
+        theta_init = {k: jnp.asarray(theta_init[k]) for k in model.theta_init}
     _obs_dict    = model.obs_dict
     _keys        = tuple(likelihood.keys)
     _likelihoods = tuple(likelihood.likelihoods)
@@ -146,7 +159,7 @@ def run_sampler(
         def logprior_fn(theta: dict[str, Array]) -> Array:
             return model.ln_prior(theta)
 
-        return adapter.run(loglike_fn, logprior_fn, model.theta_init, rng_key)
+        return adapter.run(loglike_fn, logprior_fn, theta_init, rng_key)
 
     @jax.jit
     def loglike_fn(theta: dict[str, Array]) -> Array:
@@ -168,4 +181,4 @@ def run_sampler(
     def logprior_fn(theta: dict[str, Array]) -> Array:
         return model.ln_prior(theta)
 
-    return adapter.run(loglike_fn, logprior_fn, model.theta_init, rng_key)
+    return adapter.run(loglike_fn, logprior_fn, theta_init, rng_key)
