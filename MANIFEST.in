@@ -1,0 +1,3 @@
+# sdist: the package, README, LICENSE and pyproject only.  The test suite needs the repo
+# (fixtures, baselines, grids) and is run from a git checkout, not from the sdist.
+prune tests

@@ -721,9 +721,16 @@ def current_grid_advice(chash, what: str) -> str:
 
 
 def missing_stellar_mass_message(what="this grid", chash=None) -> str:
-    return (f"{what} carries no surviving stellar-mass table (ssp_stellar_mass, SSP schema "
-            f"3.0), so mfrac and the surviving mass cannot be computed.  "
-            + current_grid_advice(chash, "the surviving-mass table"))
+    head = (f"{what} carries no surviving stellar-mass table (ssp_stellar_mass, SSP schema "
+            f"3.0), so mfrac and the surviving mass cannot be computed.  ")
+    name = published_grid_name(chash)
+    if name is not None:
+        from .grid_fetch import REGISTRY
+        if not REGISTRY[name].get("stellar_mass_table", False):
+            return head + (f"The published grid {name!r} does not carry one yet; fit it with "
+                           "mfrac=False (fitSED and PostProcess), which reports the formed "
+                           "mass only.")
+    return head + current_grid_advice(chash, "the surviving-mass table")
 
 
 def fsps_stellar_mass_source(fsps_version) -> str:

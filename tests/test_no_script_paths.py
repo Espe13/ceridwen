@@ -76,3 +76,17 @@ def test_old_published_grid_is_told_to_fetch():
     from ceridwen.ssps.ssp_data import SSPData
     with pytest.raises(ValueError, match=r"fetch_grid\('mist_bpass_v2', force=True\)"):
         SSPData.load(str(old))
+
+
+def test_published_grid_without_table_is_told_mfrac_false():
+    """A published grid whose registry entry has no surviving-mass table (the alpha grid,
+    until its masses exist) is not told to fetch again (that would return the same file)."""
+    from ceridwen.ssps.grid_fetch import REGISTRY
+    from ceridwen.ssps.grid_metadata import CHASH_TABLE
+    from ceridwen.ssps.ssp_data import missing_stellar_mass_message
+    assert all("stellar_mass_table" in e for e in REGISTRY.values())
+    no_table = [n for n, e in REGISTRY.items() if not e["stellar_mass_table"]]
+    assert no_table == ["amist_c3k_hr_krou_afe"]
+    chash = next(c for c, m in CHASH_TABLE.items() if m.name == "amist_c3k_hr_krou_afe")
+    msg = missing_stellar_mass_message("g", chash=chash)
+    assert "does not carry one yet" in msg and "mfrac=False" in msg and "fetch_grid" not in msg

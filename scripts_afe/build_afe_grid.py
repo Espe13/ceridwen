@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the alpha-enhanced SSP grid (Phase A of AFE_MOCK_TEST_DESIGN.md).
+"""Build the alpha-enhanced SSP grid (Phase A of docs/dev/AFE_MOCK_TEST_DESIGN.md).
 
 Run this wherever python-fsps is compiled against FSPS v4.0:
   * with AFE_FLAG=1  -> the 4-D aMIST/C3K alpha grid   (--expect-nafe 5)

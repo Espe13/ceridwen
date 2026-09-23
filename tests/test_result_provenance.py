@@ -150,3 +150,31 @@ def test_fitsed_records_what_it_ran(model, tmp_path):
     assert prov["sampler"]["num_live"] == 20 and prov["sampler"]["num_delete"] == 5
     assert prov["sampler"]["num_inner_steps"] == 3 and prov["sampler"]["logZ_tol"] == -0.5
     np.testing.assert_array_equal(prov["rng_key"], np.asarray(jax.random.PRNGKey(3)))
+
+
+def test_versions_and_foreign_repo(model, tmp_path):
+    """blackjax / numpy versions are recorded; a git repository that does not track the
+    package (a pip install inside a user's project) is not reported as ceridwen's HEAD."""
+    import subprocess
+    import shutil
+    from importlib.metadata import version
+    from ceridwen.fit import _git_state
+    path = tmp_path / "r.h5"
+    write_result_h5(path, model, _result(model), verbose=False)
+    prov = read_result_h5(path)["provenance"]
+    assert prov["blackjax_version"] == version("blackjax")
+    assert prov["numpy_version"] == version("numpy")
+    if shutil.which("git") is None:
+        pytest.skip("git not available")
+    proj = tmp_path / "project"
+    pkg = proj / ".venv" / "site-packages" / "ceridwen"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("")
+    env = {"PATH": "/usr/bin:/bin:/opt/homebrew/bin", "GIT_OPTIONAL_LOCKS": "0",
+           "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@t", "HOME": str(tmp_path)}
+    subprocess.run(["git", "init", "-q", str(proj)], check=True, env=env)
+    (proj / "README").write_text("x")
+    subprocess.run(["git", "-C", str(proj), "add", "README"], check=True, env=env)
+    subprocess.run(["git", "-C", str(proj), "commit", "-qm", "x"], check=True, env=env)
+    assert _git_state(pkg) == (None, None)

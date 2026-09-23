@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Scalar-[alpha/Fe] mock recovery: generate a self-mock on the real
-alpha grid and fit it with NUTS (Phase B of AFE_MOCK_TEST_DESIGN.md).
+alpha grid and fit it with NUTS (Phase B of docs/dev/AFE_MOCK_TEST_DESIGN.md).
 
 Minimal first-light configuration, deliberately matching the validated
 afe_val_05 setup: continuum-only (no dust, no nebular — CSPBasis_afe has

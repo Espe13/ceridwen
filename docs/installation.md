@@ -103,17 +103,15 @@ csp  = CSPBasis_afe(ssp, lookback_time=jnp.linspace(0.0, 12.0, 9),
                     cosmo=Cosmology.planck18(), zh_const=True, verbose=False)
 ```
 
-The current deposit ships one α grid: `amist_c3k_hr_krou_afe`
-(high-resolution C3K, Kroupa IMF, 612 MB, schema 2.1 — loads as downloaded,
-shown above). The low-resolution Chabrier grid behind the methods-paper mock
-suite, `amist_c3k_lr_chab_afe`, lives only in an older version of the deposit
-that predates schema 2.0: `fetch_grid("amist_c3k_lr_chab_afe")` downloads it, but
-`SSPDataAfe.load` refuses it. Use `amist_c3k_hr_krou_afe`, which has the same node grid.
+The deposit ships one α grid: `amist_c3k_hr_krou_afe` (high-resolution C3K, Kroupa IMF,
+612 MB, schema 2.1 — loads as downloaded, shown above).
 
-The published grids carry the surviving-mass table that `PostProcess` and `fitSED` use for
-`mfrac` (SSP schema 3), and `SSPData.from_fsps` records it in any grid you build. A copy
-fetched before the table was added reports `mfrac` as unavailable; `fetch_grid(<name>,
-force=True)` replaces it with the current one.
+The published `mist_miles_chab` and `mist_bpass_v2` grids carry the surviving-mass table that
+`fitSED` and `PostProcess` use for `mfrac` (SSP schema 3), and `SSPData.from_fsps` records it
+in any grid you build. The α grid does not carry one yet: fit it with `mfrac=False` (the
+default only skips it with a notice), which reports the formed mass. A copy of a solar-scaled
+grid fetched before the table was added reports `mfrac` as unavailable;
+`fetch_grid(<name>, force=True)` replaces it with the current one.
 
 `CSPBasis_afe` accepts only α-aware (4-D) grids; passing a solar-scaled 3-D
 grid raises a `TypeError` pointing you back to `CSPBasis`. Conversely the

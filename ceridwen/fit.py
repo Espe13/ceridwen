@@ -554,8 +554,8 @@ def write_result_h5(
                    likelihood_json (with ``likelihood``: kernel class and noise-model settings)
 
         /provenance/        attrs: ceridwen_version, ceridwen_githash (build stamp),
-                            git_head / git_dirty (live, when the package is a git checkout),
-                            jax_version, written_utc, sampler_json (the adapter's settings
+                            git_head / git_dirty (live, when the package is a ceridwen git
+                            checkout), jax_version, blackjax_version, numpy_version, written_utc, sampler_json (the adapter's settings
                             actually used, with ``adapter``); dataset rng_key (with ``rng_key``)
 
         /model/
@@ -787,7 +787,9 @@ def _likelihood_config(lh) -> dict:
 
 
 def _git_state(path) -> tuple:
-    """``(head, dirty)`` of the git checkout containing ``path``, or (None, None)."""
+    """``(head, dirty)`` of the ceridwen git checkout at ``path`` (the package directory), or
+    (None, None).  Only a repository that tracks ``__init__.py`` there counts: a pip install
+    inside some other repository (a project's ``.venv``) must not record that project's HEAD."""
     import os
     import subprocess
     env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
@@ -795,6 +797,11 @@ def _git_state(path) -> tuple:
         head = subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"], env=env,
                               capture_output=True, text=True, timeout=10)
         if head.returncode:
+            return None, None
+        tracked = subprocess.run(["git", "-C", str(path), "ls-files", "--error-unmatch",
+                                  "__init__.py"], env=env, capture_output=True, text=True,
+                                 timeout=10)
+        if tracked.returncode:
             return None, None
         st = subprocess.run(["git", "-C", str(path), "status", "--porcelain",
                              "--untracked-files=no"], env=env,
@@ -848,6 +855,12 @@ def _write_run_provenance(f, adapter, rng_key, model=None) -> None:
     if dirty is not None:
         g.attrs["git_dirty"] = bool(dirty)
     g.attrs["jax_version"] = str(jax.__version__)
+    from importlib.metadata import version, PackageNotFoundError
+    for dist in ("blackjax", "numpy"):
+        try:
+            g.attrs[f"{dist}_version"] = version(dist)
+        except PackageNotFoundError:
+            g.attrs[f"{dist}_version"] = "not installed"
     g.attrs["written_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat(
         timespec="seconds")
     g.attrs["sampler_json"] = json.dumps(adapter_settings(adapter, model))

@@ -1,5 +1,8 @@
 """Download-on-demand registry of published ceridwen SSP grids (cached in
-$CERIDWEN_GRID_DIR, default ~/.ceridwen/grids; SHA-256 verified on every fetch)."""
+$CERIDWEN_GRID_DIR, default ~/.ceridwen/grids; SHA-256 verified on every fetch).
+
+``stellar_mass_table``: whether the published file carries the surviving-mass table
+(``ssp_stellar_mass``) that ``mfrac`` needs."""
 
 from __future__ import annotations
 
@@ -13,6 +16,7 @@ from pathlib import Path
 
 REGISTRY: dict[str, dict] = {
     "mist_miles_chab": {
+        "stellar_mass_table": True,
         "url": "https://zenodo.org/records/21977508/files/"
                "ssp_data_mist_miles.h5?download=1",
         "sha256": "d52f1940e4cfcf739a50e8afaea03898"
@@ -24,6 +28,7 @@ REGISTRY: dict[str, dict] = {
                  "Nebular-capable via CSPBasis.",
     },
     "mist_bpass_v2": {
+        "stellar_mass_table": True,
         "url": "https://zenodo.org/records/21977508/files/"
                "ssp_data_bpass.h5?download=1",
         "sha256": "64c93ea751133cf3d34f4f33222af767"
@@ -33,21 +38,8 @@ REGISTRY: dict[str, dict] = {
                  "Schema 2.0: ssp_resolution = grid sampling-floor curve "
                  "(no documented LSF broader than the tabulation).",
     },
-    "amist_c3k_lr_chab_afe": {
-        "url": "https://zenodo.org/records/21794924/files/"
-               "amist_c3k_lr_chab_afe.h5?download=1",
-        "sha256": "0ae3ca192f1ba3a7825c83d77dd927ec069f4107"
-                  "a52051b2e4484f80d5a47ef7",
-        "size_mb": 108,
-        "notes": "FSPS v4.0 alpha-MC (python-fsps >= 0.4.9.dev, AFE_FLAG=1), "
-                 "aMIST + C3K_LR, Chabrier IMF, [alpha/Fe] = "
-                 "{-0.2, 0.0, +0.2, +0.4, +0.6}. For CSPBasis_afe "
-                 "(no nebular; no FSPS needed at fit time).  NB: this "
-                 "published copy predates SSP schema 2.0 (no ssp_resolution) "
-                 "and SSPDataAfe.load refuses it; use 'amist_c3k_hr_krou_afe' "
-                 "(same node grid, high resolution, Kroupa IMF).",
-    },
     "amist_c3k_hr_krou_afe": {
+        "stellar_mass_table": False,
         "url": "https://zenodo.org/records/21977508/files/"
                "amist_c3k_hr_krou_afe.h5?download=1",
         "sha256": "f6af03d813569f5982891d969f030d93"
@@ -56,17 +48,9 @@ REGISTRY: dict[str, dict] = {
         "notes": "MIST v2.5 (aMIST) + C3K v2.3 high-res, Kroupa IMF, "
                  "[alpha/Fe] = {-0.2, 0.0, +0.2, +0.4, +0.6}, "
                  "[Fe/H] in [-2.5, +0.5], log10(age/yr) in [5.0, 10.3]. "
-                 "High-resolution twin of amist_c3k_lr_chab_afe for "
-                 "CSPBasis_afe (no nebular; no FSPS needed at fit time). "
+                 "For CSPBasis_afe (no nebular; no FSPS needed at fit time). "
+                 "No surviving-mass table yet: mfrac is not available on it. "
                  "Source: M. J. Park alpha-MC SSPs (2025-07-22).",
-    },
-    "mist_c3k_lr_chab_null": {
-        "url": None,
-        "sha256": None,
-        "size_mb": None,
-        "notes": "FSPS v4.0 (AFE_FLAG=0), MIST + C3K_LR, Chabrier IMF, "
-                 "n_afe=1. Null model separating C3K-library effects from "
-                 "alpha effects.",
     },
 }
 

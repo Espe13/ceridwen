@@ -3,8 +3,8 @@
 # Ceridwen
 
 [![CI](https://github.com/Espe13/ceridwen/actions/workflows/ci.yml/badge.svg)](https://github.com/Espe13/ceridwen/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python 3.11 | 3.12](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Espe13/ceridwen/blob/main/LICENSE)
+[![Python 3.11 | 3.12](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](https://github.com/Espe13/ceridwen/blob/main/pyproject.toml)
 [![Docs](https://img.shields.io/badge/docs-amanda--stoffers.de%2Fceridwen-blue.svg)](https://www.amanda-stoffers.de/ceridwen/)
 
 **C**omprehensive **S**ED **E**stimation **R**outine **I**nvolving **D**ata-driven **WE**ight calculatio**N**s: a JAX-native, GPU-capable Bayesian spectral energy distribution (SED) fitting package with nested sampling, variational-inference preconditioned Hamiltonian Monte Carlo and native redshift support.
@@ -38,7 +38,7 @@ emission does need the FSPS data files** — a `git clone`, no compiler; see
 - [x] Dust attenuation (Kriek & Conroy diffuse, power-law birth-cloud, multi-component age-dependent; 12 registered laws incl. Calzetti, Noll, Pei SMC/LMC, Gordon+03 SMC bar `gordon03_smcbar`, Reddy+15 `reddy15`)
 - [x] Dust emission (Draine & Li 2007 grids, or THEMIS with `CSPBasis(duste_model="THEMIS")`)
 - [x] Nebular continuum + emission lines (CLOUDY grids)
-- [x] Analytic marginalisation over emission-line fluxes, jointly across spectrum, photometry and line fluxes (`Spectrum(marginalize_elines=True)`, [docs](docs/eline_marginalisation.md))
+- [x] Analytic marginalisation over emission-line fluxes, jointly across spectrum, photometry and line fluxes (`Spectrum(marginalize_elines=True)`, [docs](https://github.com/Espe13/ceridwen/blob/main/docs/eline_marginalisation.md))
 - [x] Observation input (broadband photometry, emission-line fluxes, spectra)
 - [x] Redshift-aware forward model with cosmological flux normalisation
 - [x] IGM attenuation (Madau 1995), optionally with an IGM damping wing (`x_HI`) and a damped Ly-α absorber (`logN_HI`, `z_dla`) as fixed or sampled parameters (`MadauDampingDLA`); extensible via `IGMModel` ABC
@@ -190,7 +190,7 @@ python -m ceridwen.check
 
 It prints one line per dependency and flags an unset `$SPS_HOME`, or one whose
 `nebular/` subdirectory is missing. Next stop:
-[`examples/quickstart.py`](examples/quickstart.py), a complete runnable fit.
+[`examples/quickstart.py`](https://github.com/Espe13/ceridwen/blob/main/examples/quickstart.py), a complete runnable fit.
 
 ---
 
@@ -506,7 +506,7 @@ factor is applied and predictions are `L_sun/Hz x 10^logmass`. If you replace
 before predicting (`fitSED(model, observations)` does this for you).
 
 For **nebular emission lines** (a `Lines` container, `add_neb=True`, which needs
-the CLOUDY grids at `$SPS_HOME`), see the [tutorial](docs/tutorial.md).
+the CLOUDY grids at `$SPS_HOME`), see the [tutorial](https://github.com/Espe13/ceridwen/blob/main/docs/tutorial.md).
 
 
 ### Run a bundled example
@@ -620,9 +620,9 @@ tool but the checks above, and a few rules that apply to every change,
 whoever or whatever proposes it:
 
 - **Conventions are written down where a tool reads them first.**
-  [`AGENTS.md`](AGENTS.md) holds the conventions that are easy to get wrong
+  [`AGENTS.md`](https://github.com/Espe13/ceridwen/blob/main/AGENTS.md) holds the conventions that are easy to get wrong
   (solar-relative `logzsol` metallicity, lookback-time ordering, units and frames),
-  the hard requirements and the module map; [`GOTCHAS.md`](GOTCHAS.md) is the
+  the hard requirements and the module map; [`GOTCHAS.md`](https://github.com/Espe13/ceridwen/blob/main/GOTCHAS.md) is the
   misuse guide. Both are checked against the code by the static API check.
 - **A change has to say what it is.** A refactor or optimisation must be
   byte-identical on CPU. An intended change to the physics must come with its
@@ -691,21 +691,12 @@ legacy 3-D grid raises a `TypeError` telling you to use `CSPBasis`;
 emission-line observations are rejected (continuum and photometry only)
 until α-enhanced photoionisation grids exist.
 
-The grid used above, `amist_c3k_hr_krou_afe`, is the one shipped in the
-current Zenodo deposit: **high-resolution** C3K (10992 λ points, R up to
-~65000 in the optical, Kroupa IMF), built from the alpha-MC C3K high-res SSPs
-(MIST v2.5 + C3K v2.3) that are too large to ship inside FSPS/python-FSPS.
-Its **low-resolution** twin `amist_c3k_lr_chab_afe` (1936 λ points, Chabrier
-IMF, 108 MB), built from `AFE_FLAG=1` python-fsps and used for the
-method-paper mock suite, lives only in an older version of the deposit and
-predates schema 2.0: `fetch_grid("amist_c3k_lr_chab_afe")` downloads it, but the
-strict loader refuses it. Both share the *same* `(afe, [Fe/H], age)` node grid and
-the same native axis (the FSPS label log10 Z = [Fe/H] + log10(0.0185), i.e. logzsol =
-[Fe/H]), so they are drop-in
-interchangeable — only the spectral resolution and the IMF differ (mind the
-Chabrier↔Kroupa mass-normalisation offset when comparing masses across the
-two). The high-res grid is rebuilt from the provider's FITS with
-[`scripts_afe/build_afe_hr_grid.py`](scripts_afe/build_afe_hr_grid.py).
+The grid used above, `amist_c3k_hr_krou_afe`, is the α grid of the Zenodo deposit:
+**high-resolution** C3K (10992 λ points, R up to ~65000 in the optical, Kroupa IMF), built
+from the alpha-MC C3K high-res SSPs (MIST v2.5 + C3K v2.3) of M. J. Park, which are too large
+to ship inside FSPS/python-FSPS. Its native axis is the FSPS label
+log10 Z = [Fe/H] + log10(0.0185), i.e. logzsol = [Fe/H]. It does not carry a surviving-mass
+table yet, so fit it with `fitSED(..., mfrac=False)` and quote the formed mass.
 
 ## Troubleshooting
 
@@ -716,8 +707,8 @@ two). The high-res grid is rebuilt from the provider's FITS with
   and `jax` >= 0.9 require it.
 - **Common scientific pitfalls** (metallicity conventions, silently-ignored
   `theta` typos, the lookback-time convention) are documented in
-  [`GOTCHAS.md`](GOTCHAS.md). If you're letting an AI assistant help you use
-  ceridwen, point it at [`AGENTS.md`](AGENTS.md).
+  [`GOTCHAS.md`](https://github.com/Espe13/ceridwen/blob/main/GOTCHAS.md). If you're letting an AI assistant help you use
+  ceridwen, point it at [`AGENTS.md`](https://github.com/Espe13/ceridwen/blob/main/AGENTS.md).
 
 ---
 

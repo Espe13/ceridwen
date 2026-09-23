@@ -66,8 +66,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 # [alpha/Fe] in {-0.2, 0.0, +0.2, +0.4, +0.6}). Prefer a local copy; else
 # fall back to the published download helper (Zenodo).
 LOCAL_GRIDS = [
-    HERE / "amist_c3k_lr_chab_afe.h5",
-    HERE.parent / "ceridwen" / "data" / "test_data" / "amist_c3k_lr_chab_afe.h5",
+    HERE / "amist_c3k_hr_krou_afe.h5",
+    HERE.parent / "ceridwen" / "data" / "test_data" / "amist_c3k_hr_krou_afe.h5",
 ]
 
 SEED = 7
@@ -109,7 +109,7 @@ def _load_grid() -> SSPDataAfe:
             return SSPDataAfe.load(str(p))
     # Published-grid fallback (cached download).
     from ceridwen.ssps import fetch_grid
-    return SSPDataAfe.load(str(fetch_grid("amist_c3k_lr_chab_afe")))
+    return SSPDataAfe.load(str(fetch_grid("amist_c3k_hr_krou_afe")))
 
 
 def main() -> None:

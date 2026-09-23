@@ -70,10 +70,9 @@ redshift, plus a fitted spectrophotometric normalisation `spectrum_scaling` that
 rescales the observed spectrum onto the photometric flux scale (photometry
 anchors the absolute level). Self-contained: it injects a known `spectrum_scaling`
 into a mock and recovers it alongside `afe` with the nested slice sampler.
-Needs an alpha-enhanced grid: `amist_c3k_lr_chab_afe.h5` next to the script or
-under `ceridwen/data/test_data/` (not shipped), or the script falls back to
-`fetch_grid("amist_c3k_lr_chab_afe")`; that published copy predates schema 2.0 and does
-not load, so without a local copy use the `amist_c3k_hr_krou_afe` grid (same node grid).
+Needs the alpha-enhanced grid `amist_c3k_hr_krou_afe`: `amist_c3k_hr_krou_afe.h5` next to
+the script, or the script fetches it with `fetch_grid("amist_c3k_hr_krou_afe")` (612 MB,
+cached).
 
 ```bash
 python examples/demo_afe_quiescent.py

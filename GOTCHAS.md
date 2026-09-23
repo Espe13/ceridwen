@@ -406,7 +406,9 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
   The Prospector-style stellar mass is `mass_surviving = mfrac * mass_formed` (stars +
   remnants), with `ssfrW_surviving`. Say which one you quote: they differ by 20-40 %.
 - `mfrac` needs a grid with the surviving-mass table (SSP schema 3.0, `ssp_stellar_mass`).
-  The published grids carry it and `SSPData.from_fsps` records it. An older copy loads as
+  The published `mist_miles_chab` and `mist_bpass_v2` grids carry it and `SSPData.from_fsps`
+  records it; the α grid `amist_c3k_hr_krou_afe` does not yet (fit it with
+  `mfrac=False`). An older copy loads as
   before; `fitSED` then writes no `/derived` group (one log line) and `PostProcess` warns once
   and skips the block. `fetch_grid(<name>, force=True)` replaces an old copy of a published
   grid; a grid you built is rebuilt with `from_fsps`.

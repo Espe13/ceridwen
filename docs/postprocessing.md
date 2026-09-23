@@ -91,8 +91,9 @@ stars and remnants: the SSP grid's surviving-mass table (`ssp_stellar_mass`, FSP
 `stellar_mass` per SSP, SSP schema 3) weighted by the draw's SSP weights, the same
 weights that make its spectrum. `mass_surviving = mfrac * mass_formed` and
 `ssfrW_surviving = sfrW / mass_surviving` are the Prospector-style stellar mass and
-sSFR. The published grids carry the table and `SSPData.from_fsps` records it in every
-grid it builds. An older copy has none: `PostProcess` then warns once that `mfrac` is
+sSFR. The published `mist_miles_chab` and `mist_bpass_v2` grids carry the table (the α grid
+`amist_c3k_hr_krou_afe` not yet: use `mfrac=False` there) and `SSPData.from_fsps` records it
+in every grid it builds. An older copy has none: `PostProcess` then warns once that `mfrac` is
 unavailable and reports `mass_formed` only (`mfrac=True` makes the missing table an error
 that says how to get a current grid: `fetch_grid(<name>, force=True)` for a published grid,
 a rebuild with `from_fsps` for your own; `mfrac=False` skips the block silently). The composite `mfrac` follows CERIDWEN's

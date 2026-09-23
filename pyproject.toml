@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,7 +10,8 @@ readme = "README.md"
 # Python 3.11+ required: blackjax >= 1.6 (nested sampling) and jax >= 0.9 both
 # require it.
 requires-python = ">=3.11"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Amanda Stoffers", email = "aas208@cam.ac.uk" }]
 keywords = ["astronomy", "astrophysics", "SED fitting", "Bayesian inference",
             "nested sampling", "HMC", "JAX", "GPU", "stellar populations"]
@@ -18,7 +19,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Astronomy",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",

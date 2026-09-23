@@ -564,7 +564,7 @@ ATTENUATION_LAWS = {
             "tau_noll": "V-band optical depth",
             "delta": "Deviation from Calzetti slope",
             "c_r": "Constant modifying effective R_v ",
-            "Ebump": "Bump strength (normalized Drude at 2175 \AA)"
+            "Ebump": "Bump strength (normalized Drude at 2175 \\AA)"
         },
         "defaults": {
             "tau_noll": 1.0,
@@ -577,7 +577,7 @@ ATTENUATION_LAWS = {
     "chevallard": {
         "func": chevallard,
         "params": {
-            "tau_chev": "Optical depth at 5500 \AA"
+            "tau_chev": "Optical depth at 5500 \\AA"
         },
          "defaults": {
             "tau_chev": 1.0,
@@ -587,7 +587,7 @@ ATTENUATION_LAWS = {
     "cardelli": {
         "func": cardelli,
         "params": {
-            "tau_card": "Optical depth at 5500 \AA",
+            "tau_card": "Optical depth at 5500 \\AA",
             "R_v_card": "Rv, the total-to-selective extinction ratio",
         },
          "defaults": {
@@ -599,7 +599,7 @@ ATTENUATION_LAWS = {
     "conroy": {
         "func": conroy,
         "params": {
-            "tau_con": "Optical depth at 5500 \AA",
+            "tau_con": "Optical depth at 5500 \\AA",
             "R_v_con": "Rv, the total-to-selective extinction ratio",
             "f_bump": "UV bump strength relative to Cardelli"
         },

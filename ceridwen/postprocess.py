@@ -273,9 +273,9 @@ class PostProcess:
             raise ValueError(missing_stellar_mass_message(
                 "the model's SSP grid", chash=getattr(self.csp, "grid_chash", None)))
         if self.want["sfr"]:
-            warnings.warn("mfrac unavailable: the model's SSP grid has no surviving-mass table "
-                          "(it predates SSP schema 3.0), so PostProcess reports mass_formed only "
-                          "(mfrac=False silences this).", UserWarning, stacklevel=3)
+            warnings.warn("mfrac unavailable: the model's SSP grid has no surviving-mass table, "
+                          "so PostProcess reports mass_formed only (mfrac=False silences "
+                          "this).", UserWarning, stacklevel=3)
         return False
 
     def _checked_stored_mfrac(self, values, attrs) -> np.ndarray:

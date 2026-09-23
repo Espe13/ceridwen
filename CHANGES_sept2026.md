@@ -733,3 +733,31 @@ the table-less copies, so `fetch_grid(<name>, force=True)` returns the same old 
 a fresh venv: `python -m ceridwen.check` all required components present; 56 `.py` files,
 none named attach; the only `scripts*/` string in the installed package is the exempt
 `grid_metadata` provenance citation; no `/Users` path anywhere in it.
+
+## 2026-09-23 — one alpha grid; alpha grid without a mass table; PyPI polish
+
+**Grids.** Only `amist_c3k_hr_krou_afe` is the published alpha grid: the registry entries
+`amist_c3k_lr_chab_afe` (Zenodo 21794924, schema 1, did not load) and the unpublished
+`mist_c3k_lr_chab_null` are removed, and so is every user-facing mention (README,
+`docs/installation.md`, `examples/README.md`; `examples/demo_afe_quiescent.py` now uses the HR
+grid). The LR file stays a developer-local test grid (tests, `grid_metadata` entry for its
+Z_sun, regression baselines unchanged). Each registry entry records `stellar_mass_table`;
+the HR grid has none until its masses exist, so `missing_stellar_mass_message` tells a user of
+that published grid to fit with `mfrac=False` instead of re-fetching (which would return the
+same file). `fitSED`'s default already skips `/derived` there with one log line.
+
+**PyPI.** README links are absolute GitHub URLs (the PyPI page hosts no repo files).
+`pyproject.toml` uses the PEP 639 `license = "MIT"` + `license-files` (build requires
+setuptools >= 77; the `License ::` classifier is dropped), so the PyPI sidebar shows "MIT"
+instead of the whole LICENSE text. `MANIFEST.in` prunes `tests/` from the sdist (39 test files
+shipped without their fixtures and could not run). `/provenance` records `blackjax_version`
+and `numpy_version`; `git_head` is only read from a repository that tracks the package's
+`__init__.py`, so a pip install inside a user's project no longer records that project's
+HEAD. Four parameter descriptions in `dust/attenuation_laws.py` used an invalid escape
+`\AA` (SyntaxWarning on Python 3.12); written `\\AA`, identical strings at runtime.
+`ceridwen/AFE_MOCK_TEST_DESIGN.md` moved to `docs/dev/`.
+
+**Verification.** `check_api_usage` 0 findings; misuse report 0 SILENT;
+`test_no_script_paths`, `test_dust_laws`, `test_ssp_provenance`, `test_logzsol_convention`
+132 passed; `test_result_provenance` 4 passed (new: versions recorded; a foreign repository
+gives no git_head); every attenuation-law module value identical before/after the escape fix.
