@@ -47,3 +47,43 @@ def test_figures_on_synthetic_output(tmp_path):
     plt.close("all")
     for f in ("summary.pdf", "corner.pdf", "diag_ns.pdf", "diag_mcmc.pdf"):
         assert (tmp_path / f).stat().st_size > 1000
+
+
+def test_zred0_photometry_on_the_spectrum_and_data_range(tmp_path):
+    """zred = 0: PostProcess's spectra are L_sun/Hz x 10^logmass and Photometry divides the
+    band-averaged F_nu by 3631 Jy, so the panel must bring the maggies back to the spectrum's
+    units (they were drawn ~2.8e19 too high).  The axes cover the observed wavelengths only,
+    and the SFH panel shows per-bin log10 SFR against lookback time in Gyr."""
+    rng = np.random.default_rng(3)
+    N, n_time = 200, 5
+    wave = np.geomspace(100.0, 1e8, 3000)
+    spec = np.outer(10 ** rng.normal(10.5, 0.05, N), 1e-15 * (wave / 5000.0) ** -0.5)
+    lam_eff = np.array([3500.0, 6200.0, 12000.0, 22000.0])
+    phot = np.array([[np.interp(l, wave, s) for l in lam_eff] for s in spec]) / 3.631e-20
+    ph = O(); ph._kind = "photometry"; ph.name = "phot"; ph.wavelength = lam_eff
+    ph.flux = phot[0]; ph.uncertainty = phot[0] * 0.1; ph.mask = np.ones(4, bool); ph.upper_limit = None
+    model = O(); model.observations = [ph]; model.theta_init = {"logmass": np.zeros(1)}
+    model.param_names = ["logmass"]; model.priors = {}
+    T = np.tile(np.array([0.0, 0.1, 1.0, 5.0, 13.0]), (N, 1))
+    sfr = np.abs(rng.lognormal(0, 0.3, (N, n_time - 1)))
+    theta = {"logmass": rng.normal(10.5, 0.05, N)}
+    out = {"theta": theta, "log_likelihood": rng.normal(size=N),
+           "extras": {"sfh": {"lookback_gyr": T, "sfr": sfr, "sfr_per_bin": sfr}},
+           "prediction": {"wave_rest": wave, "spectra_model": spec, "photometry": {"phot": phot},
+                          "lines": {}, "spectra": {}},
+           "bestfit": {"theta": {"logmass": theta["logmass"][0]}, "extras": {"sfh": {"sfr": sfr[0]}},
+                       "prediction": {"photometry": {"phot": phot[0]}, "lines": {}, "spectra": {}}},
+           "meta": {"zred_fixed": 0.0, "sampler": "x", "log_evidence": 0.0}}
+    fig = P.summary_figure(out, model, prior_draws=0, savepath=tmp_path / "s.pdf")
+    ax_sed, ax_sfh = fig.axes[0], fig.axes[2]
+    x_line, y_line = ax_sed.lines[0].get_data()                  # model median
+    pts = [c for c in ax_sed.containers if len(getattr(c, "lines", ())) and c.lines[0] is not None]
+    xo, yo = pts[0].lines[0].get_data()                          # observed photometry
+    ratio = np.asarray(yo) / np.interp(xo, x_line, y_line)
+    assert np.all((ratio > 0.5) & (ratio < 2.0)), ratio          # on the spectrum, not 1e19 away
+    lo, hi = ax_sed.get_xlim()
+    assert lo > lam_eff.min() / 1e4 / 2 and hi < lam_eff.max() / 1e4 * 2
+    assert x_line.min() >= lo and x_line.max() <= hi
+    assert ax_sfh.get_xscale() == "log" and "Gyr" in ax_sfh.get_xlabel()
+    assert "log" in ax_sfh.get_ylabel() and ax_sfh.get_yscale() == "linear"
+    plt.close("all")

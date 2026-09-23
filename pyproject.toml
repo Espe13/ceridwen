@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ceridwen"
-version = "1.0.10"
+version = "1.0.11"
 description = "JAX-native, GPU-capable Bayesian SED fitting with nested sampling and VI-preconditioned HMC"
 readme = "README.md"
 # Python 3.11+ required: blackjax >= 1.6 (nested sampling) and jax >= 0.9 both

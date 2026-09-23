@@ -24,6 +24,28 @@ COLORS = {
 
 _MAGGIE_TO_NJY = 3.631e12
 _CGS_FNU_TO_NJY = 1e32
+# 1 maggie = 3631 Jy = 3.631e-20 erg s^-1 cm^-2 Hz^-1: Photometry divides the band-averaged
+# F_nu by this, also for a zred = 0 model whose F_nu is in model units (L_sun/Hz x 10^logmass),
+# so the same factor brings such "maggies" back to the spectrum's units.
+_MAGGIE_TO_CGS = 3.631e-20
+
+
+def _visible_blues():
+    """matplotlib's Blues without its near-white end (the lowest weights stay visible)."""
+    import matplotlib
+    from matplotlib.colors import LinearSegmentedColormap
+    base = matplotlib.colormaps["Blues"]
+    return LinearSegmentedColormap.from_list("ceridwen_blues", base(np.linspace(0.3, 1.0, 256)))
+
+
+class _LazyCmap:
+    """Build the colormap on first use, so importing this module does not import matplotlib."""
+    _cmap = None
+
+    def __call__(self):
+        if _LazyCmap._cmap is None:
+            _LazyCmap._cmap = _visible_blues()
+        return _LazyCmap._cmap
 _LABELS = {
     "logmass": r"$\log M_\ast/\mathrm{M}_\odot$", "zred": r"$z$",
     "logzsol": r"$\log(Z_\star/\mathrm{Z}_\odot)$",
@@ -108,34 +130,79 @@ def _prior_draws(model, n, seed=0):
     return draws
 
 
-def _sfr_of(model, out, theta_np):
-    """Physical SFR (n, n_sfr) and lookback grid (n, n_time) for free-parameter draws,
-    using the post-processor's SFH conventions with the posterior-median logmass."""
+def _nice_log_ticks(axis, lo, hi):
+    """Labelled ticks at 1, 2, 3, 5 x 10^k inside [lo, hi] on a log axis, plain numbers, no
+    minor labels (matplotlib's defaults give one label per decade or 'a x 10^b' clutter)."""
+    from matplotlib.ticker import FixedLocator, FuncFormatter, NullFormatter
+    ticks = [m * 10.0 ** k for k in range(int(np.floor(np.log10(lo))) - 1,
+                                          int(np.ceil(np.log10(hi))) + 1)
+             for m in (1, 2, 3, 5) if lo <= m * 10.0 ** k <= hi]
+    if len(ticks) > 9:                         # wide ranges: 1 and 3 only
+        ticks = [t for t in ticks if f"{t:.0e}"[0] in "13"]
+    axis.set_major_locator(FixedLocator(ticks))
+    axis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
+    axis.set_minor_formatter(NullFormatter())
+
+
+def _truth_sfr_per_bin(model, out, truths):
+    """Per-bin physical SFR [M_sun/yr] of the injected parameters, or None.  Drawn only when
+    ``truths`` gives the SFH parameters (a vector-valued free parameter such as
+    ``logsfr_ratios``); any other free parameter it lacks takes its posterior median."""
+    if not truths:
+        return None
+    vec = [k for k in model.param_names if np.size(model.theta_init[k]) > 1]
+    if not vec or not all(k in truths for k in vec):
+        return None
     import jax.numpy as jnp
-    from .postprocess import _per_bin_and_nodes
-    csp = model.csp
-    n = next(iter(theta_np.values())).shape[0]
-    T_yr = np.asarray(csp.sfh_times, dtype=float)
-    n_time = T_yr.size
-    med_logmass = float(np.median(out["theta"]["logmass"])) if "logmass" in out["theta"] else None
-    sfr = []
-    use_jax = bool(model.transforms)
-    for i in range(n):
-        one = {k: (jnp.asarray(v[i]) if use_jax else v[i]) for k, v in theta_np.items()}
-        t = model.apply_transforms(one)
-        psi = np.ravel(np.asarray(t["sfh"], dtype=float))
-        bar, nodes = _per_bin_and_nodes(psi, n_time)
-        scale = 10.0 ** (float(np.ravel(np.asarray(t["logmass"]))[0]) if "logmass" in t else (med_logmass or 0.0))
-        sfr.append((nodes if psi.size == n_time else bar) * scale)
-    return np.array(sfr), np.tile(T_yr, (n, 1))
+    from .postprocess import _per_bin_and_nodes, model_theta
+    free = {}
+    for k in model.param_names:
+        v = truths[k] if k in truths else np.median(np.asarray(out["theta"][k]), axis=0)
+        free[k] = jnp.asarray(np.reshape(np.asarray(v, dtype=float),
+                                         np.shape(model.theta_init[k])))
+    t = model_theta(model, free)
+    psi = np.ravel(np.asarray(t["sfh"], dtype=float))
+    n_time = int(np.asarray(out["extras"]["sfh"]["lookback_gyr"]).shape[-1])
+    bar, _nodes = _per_bin_and_nodes(psi, n_time)
+    return bar * (10.0 ** float(np.ravel(np.asarray(t["logmass"]))[0]) if "logmass" in t else 1.0)
+
+
+def _data_wave_range(obs_by_kind):
+    """(lo, hi) observed wavelength [um] covered by the photometry and spectra, padded by
+    ~25 % in log; None when there are none (lines only)."""
+    lo, hi = [], []
+    for o in obs_by_kind["photometry"]:
+        w = np.asarray(o.wavelength, dtype=float)
+        fs = getattr(o, "filterset", None)
+        edges = None
+        if fs is not None and hasattr(fs, "filters"):
+            try:
+                edges = [(float(np.min(f.wavelength[f.transmission > 0.01 * f.transmission.max()])),
+                          float(np.max(f.wavelength[f.transmission > 0.01 * f.transmission.max()])))
+                         for f in fs.filters]
+            except Exception:
+                edges = None
+        if edges:
+            lo.append(min(e[0] for e in edges)); hi.append(max(e[1] for e in edges))
+        elif w.size:
+            lo.append(w.min()); hi.append(w.max())
+    for o in obs_by_kind["spectrum"]:
+        w = np.asarray(o.wavelength, dtype=float)
+        if w.size:
+            lo.append(w.min()); hi.append(w.max())
+    if not lo:
+        return None
+    return min(lo) / 1e4 / 1.25, max(hi) / 1e4 * 1.25
 
 
 def summary_figure(out, model, *, title=None, prior_draws=500, params=None, truths=None,
                    savepath=None, figsize=(15, 11)):
-    """Summary page: SED with residuals, emission lines, SFH with posterior and prior
-    bands, and 1-D marginals of the fitted parameters (median, 16-84 %, best fit).
-    ``out`` is ``PostProcess.run()``'s dict; ``model`` the fitted ``SedModel``;
-    ``truths`` ({name: value or array}) marks injected values in green."""
+    """Summary page: SED with residuals (photometry and model in the same units, limited to
+    the observed wavelengths), emission lines, the SFH (per-bin log10 SFR vs lookback time,
+    posterior 16-84 % and median), and 1-D marginals of the fitted parameters (median,
+    16-84 %, best fit, prior 16-84 %).  ``out`` is ``PostProcess.run()``'s dict; ``model``
+    the fitted ``SedModel``; ``truths`` ({name: value or array}) marks injected values in
+    green, and draws the injected SFH when it gives the SFH parameters (e.g. logsfr_ratios)."""
     import matplotlib.pyplot as plt
     from matplotlib.gridspec import GridSpec
 
@@ -149,10 +216,6 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
         pd = _prior_draws(model, int(prior_draws))
         if pd is not None:
             prior = {"theta": _flat_params(pd)}
-            try:
-                prior["sfr"], prior["T"] = _sfr_of(model, out, pd)
-            except Exception:
-                prior["sfr"] = None
 
     obs_by_kind = {"photometry": [], "spectrum": [], "lines": []}
     for o in model.observations:
@@ -176,7 +239,7 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
     best_pred = out["bestfit"]["prediction"]
     truth_pt = _flat_point(truths, list(truths)) if truths else {}
     observed = "spectra_observed" in pred
-    unit = _MAGGIE_TO_NJY if observed else 1.0
+    unit = _MAGGIE_TO_NJY if observed else _MAGGIE_TO_CGS     # photometry -> spectrum's units
 
     wave_rest = np.asarray(pred["wave_rest"])
     if observed:
@@ -187,10 +250,14 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
         wobs = wave_rest
         spec = np.asarray(pred["spectra_model"], dtype=float)
     lo, med, hi = _quantiles(spec)
+    xr = _data_wave_range(obs_by_kind)                 # [um], observed frame; None: no data
     m = (med > 0) & np.isfinite(med)
+    if xr is not None:
+        m &= (wobs / 1e4 >= xr[0]) & (wobs / 1e4 <= xr[1])
     ax_sed.fill_between(wobs[m] / 1e4, lo[m], hi[m], color=C["band"], alpha=0.6, lw=0,
                         label="model (16$-$84%)")
     ax_sed.plot(wobs[m] / 1e4, med[m], color=C["posterior"], lw=0.9)
+    y_seen = [lo[m], hi[m]]
     unit_spec = _CGS_FNU_TO_NJY if observed else 1.0     # spectra are cgs f_nu, photometry maggies
     for o in obs_by_kind["spectrum"]:
         w = np.asarray(o.wavelength, dtype=float) / 1e4
@@ -199,6 +266,7 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
         mk = np.asarray(o.mask, dtype=bool)
         ax_sed.fill_between(w[mk], (y - s)[mk], (y + s)[mk], color=C["data"], alpha=0.15, lw=0)
         ax_sed.plot(w[mk], y[mk], color=C["data"], lw=0.6, label=f"observed spectrum ({o.name})")
+        y_seen.append(y[mk])
         if o.name in pred["spectra"]:
             p = np.asarray(pred["spectra"][o.name], dtype=float) * unit_spec
             plo, pmed, phi = _quantiles(p)
@@ -216,6 +284,7 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
         det = mk & ~ul
         ax_sed.errorbar(w[det], y[det], yerr=s[det], fmt="o", color=C["data"], ms=5, capsize=2,
                         label="observed", zorder=5)
+        y_seen.append(y[det])
         if ul.any():
             ax_sed.errorbar(w[ul], y[ul], yerr=0.3 * y[ul], uplims=True, fmt="v", color=C["grid"],
                             ms=5, label="upper limit", zorder=5)
@@ -232,13 +301,22 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
             rb = (pb - y) / s
             chi2 += float(np.sum(np.where(ul, np.maximum(rb, 0.0), rb)[mk] ** 2)); ndata += int(mk.sum())
     ax_sed.set_xscale("log"); ax_sed.set_yscale("log")
-    ax_sed.set_ylabel(r"$F_\nu$ [nJy]" if observed else r"$F_\nu$ [model units, no flux factor]")
+    if xr is not None:
+        ax_sed.set_xlim(*xr)
+    ys = np.concatenate([np.ravel(v) for v in y_seen]) if y_seen else np.array([])
+    ys = ys[np.isfinite(ys) & (ys > 0)]
+    if ys.size:
+        ax_sed.set_ylim(ys.min() / 3.0, ys.max() * 3.0)
+    ax_sed.set_ylabel(r"$F_\nu$ [nJy]" if observed
+                      else r"$L_\nu$ [$\mathrm{L}_\odot\,\mathrm{Hz}^{-1}$] ($z = 0$: no distance)")
     ax_sed.legend(fontsize=7, loc="lower right", frameon=False)
     ax_sed.tick_params(labelbottom=False)
     ax_chi.axhline(0, color=C["data"], lw=0.8)
     ax_chi.axhspan(-1, 1, color=C["prior"], alpha=0.6, lw=0)
     ax_chi.set_ylim(-4, 4); ax_chi.set_ylabel(r"$\chi$")
     ax_chi.set_xlabel(r"observed wavelength [$\mu$m]")
+    if xr is not None:
+        _nice_log_ticks(ax_chi.xaxis, *xr)
     for ax in (ax_sed, ax_chi):
         ax.grid(False)
 
@@ -278,43 +356,38 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
         ax_lines.plot([], [], "|", color=C["data"], label="best fit")
         ax_lines.legend(fontsize=7, loc="upper right", frameon=False, ncol=3, bbox_to_anchor=(1.0, 1.08))
 
-    # SFH
+    # SFH (as the paper's figures): per-bin log10 SFR against lookback time [Gyr] on a log
+    # axis; posterior 16-84 % per bin, posterior median, and the injected SFH when given
     sfh = out["extras"]["sfh"]
-    T = np.asarray(sfh["lookback_gyr"], dtype=float) * 1e3
-    sfr = np.asarray(sfh["sfr"], dtype=float)
-    per_bin = sfr.shape[1] == T.shape[1] - 1
-    Tmed = np.median(T, axis=0)
-    edges = Tmed if per_bin else np.concatenate([[Tmed[0]], 0.5 * (Tmed[1:] + Tmed[:-1]), [Tmed[-1]]])
-    edges = np.maximum(edges, 1.0)
-    lo, med, hi = _quantiles(sfr)
-    lo2, _, hi2 = _quantiles(sfr, (0.025, 0.5, 0.975))
-    if prior is not None and prior.get("sfr") is not None:
-        plo, _, phi = _quantiles(prior["sfr"])
-        ax_sfh.stairs(np.maximum(phi, 1e-30), edges, baseline=np.maximum(plo, 1e-30), fill=True,
-                      color=C["prior"], alpha=0.8, lw=0, label=r"prior (16$-$84%) at posterior $M_\ast$")
-    ax_sfh.stairs(np.maximum(hi2, 1e-30), edges, baseline=np.maximum(lo2, 1e-30), fill=True, color=C["band2"], lw=0)
-    ax_sfh.stairs(np.maximum(hi, 1e-30), edges, baseline=np.maximum(lo, 1e-30), fill=True, color=C["band"],
-                  alpha=0.9, lw=0, label=r"posterior (16$-$84%)")
-    ax_sfh.stairs(np.maximum(med, 1e-30), edges, color=C["posterior"], lw=1.8, label="posterior median")
-    bsfr = np.asarray(out["bestfit"]["extras"]["sfh"]["sfr"], dtype=float)
-    ax_sfh.stairs(np.maximum(bsfr, 1e-30), edges, color=C["bestfit"], lw=1.0, label="best fit")
-    for w in (10, 100):
-        ax_sfh.axvline(w, color=C["grid"], lw=0.6, ls=":")
-    ax_sfh.set_xscale("log"); ax_sfh.set_yscale("log")
-    pos = med[med > 0]
-    if pos.size:
-        ax_sfh.set_ylim(max(pos.min() * 1e-2, 1e-6), max(hi.max() * 3, pos.max() * 3))
+    T = np.median(np.asarray(sfh["lookback_gyr"], dtype=float), axis=0)
+    edges = T.copy()
+    if edges[0] <= 0.0:
+        edges[0] = 0.5 * edges[1]              # a log axis has no 0: first bin from t1 / 2
+    if "sfr_per_bin" in sfh:
+        per_bin = np.asarray(sfh["sfr_per_bin"], dtype=float)
+    else:
+        from .postprocess import _per_bin_and_nodes
+        per_bin = np.array([_per_bin_and_nodes(r, T.size)[0]
+                            for r in np.asarray(sfh["sfr"], dtype=float)])
+    with np.errstate(divide="ignore"):
+        lsfr = np.log10(per_bin)
+    lsfr = np.where(np.isfinite(lsfr), lsfr, np.nan)
+    lo, med, hi = _quantiles(lsfr)
+    ax_sfh.stairs(hi, edges, baseline=lo, fill=True, color=C["band"], alpha=0.6, lw=0,
+                  label=r"posterior 16$-$84%")
+    ax_sfh.stairs(med, edges, color=C["posterior"], lw=1.6, label="posterior median")
+    t_sfr = _truth_sfr_per_bin(model, out, truths)
+    if t_sfr is not None:
+        with np.errstate(divide="ignore"):
+            lt = np.log10(t_sfr)
+        ax_sfh.stairs(np.where(np.isfinite(lt), lt, np.nan), edges, color=C["truth"], lw=1.4,
+                      ls="--", label="truth")
+    ax_sfh.set_xscale("log")
     ax_sfh.set_xlim(edges[0], edges[-1])
-    ax_sfh.set_xlabel("lookback time [Myr]"); ax_sfh.set_ylabel(r"SFR [M$_\odot$ yr$^{-1}$]")
-    if "sfr10" in sfh and "sfr100" in sfh:
-        with np.errstate(divide="ignore", invalid="ignore"):
-            r = np.log10(np.asarray(sfh["sfr10"]) / np.asarray(sfh["sfr100"]))
-        r = r[np.isfinite(r)]
-        if r.size:
-            q = _quantiles(r)
-            ax_sfh.text(0.03, 0.04, r"$\log\,\mathrm{SFR}_{10}/\mathrm{SFR}_{100}$ = " + _fmt_q(*q),
-                        transform=ax_sfh.transAxes, fontsize=9)
-    ax_sfh.legend(fontsize=7, loc="upper right", frameon=False)
+    _nice_log_ticks(ax_sfh.xaxis, edges[0], edges[-1])
+    ax_sfh.set_xlabel("lookback time [Gyr]")
+    ax_sfh.set_ylabel(r"$\log_{10}$ SFR [M$_\odot$ yr$^{-1}$]")
+    ax_sfh.legend(fontsize=8, loc="best", frameon=False)
 
     # marginals
     for i, (name, x) in enumerate(cols.items()):
@@ -532,7 +605,7 @@ def diagnostic_figure(result, out=None, *, params=None, savepath=None, max_point
         sel = order[::step]
         for i, name in enumerate(names):
             ax = axes[i // ncol, i % ncol]
-            ax.scatter(sel, cols[name][sel], c=np.clip(lw[sel] - lw[fin].max(), -12, 0), cmap="Blues",
+            ax.scatter(sel, cols[name][sel], c=np.clip(lw[sel] - lw[fin].max(), -12, 0), cmap=_LazyCmap()(),
                        s=3, vmin=-12, vmax=0, rasterized=True)
             qs = _quantiles(cols[name][fin], (0.16, 0.5, 0.84))
             ax.set_title(f"{_label(name)}    posterior " + _fmt_q(*qs), fontsize=8)

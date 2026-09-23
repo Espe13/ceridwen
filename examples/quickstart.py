@@ -25,8 +25,9 @@ does the script fall back to building one, which then does need FSPS +
 ``$SPS_HOME`` at runtime.
 
 The fit takes a few minutes on an unloaded laptop CPU (much faster on GPU;
-longer on a busy machine); lower ``num_live`` in the adapter below for a
-quicker, rougher run.
+longer on a busy machine).  It uses DEMO settings and is NOT a converged fit: it checks
+that the installation works, and its posteriors are wider and noisier than a real fit's
+(see DEMO_NOTICE for the settings a science fit needs).
 """
 from __future__ import annotations
 
@@ -114,7 +115,21 @@ def step0_load_or_build_grid() -> SSPData:
     return SSPData.from_fsps(save_to=SSP_FILE, imf_type=1)
 
 
+DEMO_NOTICE = """
+======================================================================
+ DEMO SETTINGS -- THIS IS NOT A CONVERGED FIT.
+ The sampler runs with deliberately small settings (num_live=150,
+ logZ_tol=-2) so the demo finishes in minutes on a laptop CPU.  It checks
+ that the installation works; the posteriors are wider and noisier than a
+ real fit's.  For science use num_live >= 500, num_inner_steps >= 5 x the
+ number of parameters and the default logZ_tol (-5): much longer on a CPU,
+ fast on a GPU.
+======================================================================
+"""
+
+
 def main() -> int:
+    print(DEMO_NOTICE)
     ssp_data = step0_load_or_build_grid()
 
     # ---- Step 1: forward model -------------------------------------------
@@ -214,6 +229,7 @@ def main() -> int:
 
     result = run_sampler(model, likelihood, adapter, RNG)
     print(f"\nln Z = {result.log_evidence:.3f} +/- {result.log_evidence_err:.3f}")
+    print("(demo settings: not a converged fit -- see the notice at the start)")
 
     # ---- Step 4: post-process --------------------------------------------
     # PostProcess resamples the nested-sampling draws to equal weight, pushes
@@ -243,7 +259,11 @@ def main() -> int:
         print(f"  {name:<20}{'':7s}   {med:+7.3f}  (-{med - lo:.3f} / +{hi - med:.3f})")
 
     figdir = HERE / "quickstart_figures"
-    paths = pp.figures(figdir, title="CERIDWEN quickstart (green = injected truth)", truths=TRUTH)
+    # the figures also draw the injected SFH, so they get the SFH parameters too
+    fig_truth = {**TRUTH, "logsfr_ratios": np.asarray(TRUE_LOGSFR_RATIOS)}
+    paths = pp.figures(figdir, title="CERIDWEN quickstart -- demo settings, NOT a converged "
+                                     "fit (green = injected truth)",
+                       truths=fig_truth)
     for name, path in paths.items():
         print(f"{name:<12} -> {path}")
     pp.save(figdir / "quickstart_post.npz")

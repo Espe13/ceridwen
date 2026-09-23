@@ -804,3 +804,31 @@ read only FSPS's data files (`$SPS_HOME`, a git clone, no compiling); python-fsp
 grids. The messages now say so, and without `$SPS_HOME` the summary is "Core installation OK
 ... NOT yet available: nebular emission and dust emission (need $SPS_HOME)". Exit code
 unchanged.
+
+## 2026-09-23 — v1.0.11: summary figure units and SFH; visible diagnostics; demo notice
+
+(1.0.10 was tagged but never uploaded to PyPI; 1.0.11 contains it.)
+
+**Summary figure (`plotting.py`).** At `zred = 0` the SED panel drew the model spectrum in
+model units (L_sun/Hz x 10^logmass) but the photometry as raw maggies, which `Photometry`
+makes by dividing the band-averaged F_nu by 3631 Jy even in model units: the points sat
+~2.75e19 above the spectrum (verified: predicted maggies / band-averaged `spectra_model` =
+1/3.631e-20 to 1e-6). The photometry is now converted back (`_MAGGIE_TO_CGS`) and the axis
+reads L_nu [L_sun Hz^-1]. The SED x- and y-range cover only the observed wavelengths (filter
+transmission > 1 %, spectrum pixels, padded 25 % in log). The SFH panel follows the paper's
+figures: per-bin log10 SFR against lookback time [Gyr] on a log axis, posterior 16-84 % per
+bin and median, first bin from t1/2; the injected SFH is drawn when `truths` gives the SFH
+parameters (`logsfr_ratios`); the prior band, best-fit line and SFR10/SFR100 note are gone.
+Log axes use plain ticks at 1, 2, 3, 5 x 10^k. **Diagnostics:** the weight colour map is
+Blues from 30 % (its white end made the lowest-weight points invisible).
+
+**Quickstart.** Prints a boxed "DEMO SETTINGS -- THIS IS NOT A CONVERGED FIT" notice (why,
+and the settings a science fit needs) at the start, a reminder after the fit, and the figure
+title says so; passes `logsfr_ratios` as a truth so the injected SFH is drawn.
+
+**Verification.** `tests/test_plotting.py`: new test that at zred = 0 the plotted photometry
+lies within x2 of the plotted spectrum (fails with the old unit: checked), the axes cover the
+data only, and the SFH axes are log-Gyr / log10 SFR. CI mirror in a clean clone
+(`-m "not fsps and not gpu"`, no `$SPS_HOME`, the new BPASS grid): 441 passed, 0 failed;
+the changed tests on the final tree 40 passed; `check_api_usage` 0; misuse 0 SILENT. The
+quickstart rerun: photometry on the spectrum, chi^2/nu = 0.36.
