@@ -218,6 +218,19 @@ def _likelihood(model, theta_np, tag, out):
             for k in keys)))
     except ImportError:
         print("  (package has no profiled calibration: variant skipped)")
+    try:        # the calibration polynomial marginalised analytically
+        from ceridwen.likelihood.poly_marginal import (PolyMarginalGaussianLikelihood,
+                                                       PolynomialMarginal)
+        sp = obs["spec"]
+        pm = PolynomialMarginal(chebyshev_design_matrix(sp.wavelength, sp.mask, 3),
+                                [0.1, 0.1, 0.05, 0.05])
+        nm = {"phot": DiagonalNoiseModel(), "lines": DiagonalNoiseModel(),
+              "spec": DiagonalNoiseModel(use_jitter=True, jitter_key="log_jitter_spec")}
+        variants.append(("polymarg", tuple(
+            PolyMarginalGaussianLikelihood(nm[k], poly_marginal=pm) if k == "spec"
+            else DiagonalGaussianLikelihood(nm[k]) for k in keys)))
+    except ImportError:
+        print("  (package has no marginalised calibration: variant skipped)")
     n = next(iter(theta_np.values())).shape[0]
     f_draws = rng.uniform(1e-4, 0.3, (n, 1))
     for vname, lhs in variants:
@@ -228,7 +241,7 @@ def _likelihood(model, theta_np, tag, out):
             one = {k: jnp.asarray(v[i]) for k, v in theta_np.items()}
             if vname == "outlier":
                 one["f_outlier_spec"] = jnp.asarray(f_draws[i])
-            if vname == "polycal":
+            if vname in ("polycal", "polymarg"):
                 one["log_jitter_spec"] = jnp.log(0.05 * jnp.median(jnp.abs(obs["spec"].flux))
                                                  * (1.0 + f_draws[i]))
                 one["log_err_scale_phot"] = jnp.asarray(f_draws[i])

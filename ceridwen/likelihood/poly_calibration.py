@@ -105,7 +105,10 @@ class PolynomialCalibration:
 
 
 def calibrated_prediction(lhood, y, mu, sigma_obs, mask, params):
-    """``mu`` after the likelihood's profiled calibration (unchanged when it has none)."""
+    """``mu`` after the likelihood's profiled calibration, or its conditional-mean response
+    when the polynomial is marginalised (unchanged when it has neither)."""
+    if getattr(lhood, "poly_marginal", None) is not None:
+        return mu * lhood.conditional(y, mu, sigma_obs, mask, params)[2]
     pc = getattr(lhood, "poly_calibration", None)
     if pc is None:
         return mu

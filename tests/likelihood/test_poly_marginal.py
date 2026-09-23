@@ -472,3 +472,18 @@ def test_postprocess_conditional_polynomial_and_result_file(fits):
     assert cfg["poly_calibration"]["order"] == 3
     assert cfg["poly_calibration"]["prior_sigma"] == [0.1] * 4
     assert r["obs"]["p"]["likelihood"]["class"] == "DiagonalGaussianLikelihood"
+
+
+def test_calibrated_prediction_and_log_line(csp):
+    from ceridwen.fit import _describe_likelihood
+    from ceridwen.likelihood.poly_calibration import calibrated_prediction
+    m = _model(csp, MARG_KW, data=_mock(csp))
+    lh = _lhs(m)["s"]
+    y, sig, mask, _c, _u = observation_data(m.obs_dict["s"])
+    th = {k: jnp.asarray(v) for k, v in m.theta_init.items()}
+    mu = m.predict(m.apply_transforms(th))["s"]
+    _mean, _cov, resp = lh.conditional(y, mu, sig, mask, th)
+    np.testing.assert_array_equal(np.asarray(calibrated_prediction(lh, y, mu, sig, mask, th)),
+                                  np.asarray(mu * resp))
+    line = _describe_likelihood(m.obs_dict["s"], lh)
+    assert "marginalised calibration polynomial, order 3" in line and "0.1" in line
