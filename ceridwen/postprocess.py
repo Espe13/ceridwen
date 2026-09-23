@@ -10,11 +10,16 @@ spectra, the best-fit point and user-defined derived quantities.
     out["extras"]["sfh"]["sfr"]                      # (N, n_bins)   M_sun / yr per SFH bin
     out["extras"]["sfh"]["sfr10"]                    # (N,)  mean SFR over the last 10 Myr
     out["extras"]["sfh"]["ssfr10"]                   # (N,)  sfr10 / formed mass  [1/yr]
+    out["extras"]["sfh"]["mfrac"]                    # (N,)  surviving / formed mass (grid with a mass table only)
+    out["extras"]["sfh"]["mass_surviving"]           # (N,)  mfrac * mass_formed  [M_sun]
+    out["extras"]["sfh"]["ssfr10_surviving"]         # (N,)  sfr10 / mass_surviving  [1/yr]
     out["extras"]["uv"]["MUV"]                       # (N,)  absolute AB mag at 1500 A (dust-attenuated)
     out["extras"]["ionizing"]["nion"]                # (N,)  Q(H) [s^-1] from the intrinsic spectrum
     out["extras"]["elines"]["mean"]                  # (N, m) posterior line fluxes [erg/s/cm^2] (Spectrum(marginalize_elines=True) only;
                                                      #        also "sd", "cloudy", "names", "wave_rest"; predictions then carry these lines)
     out["prediction"]["photometry"]["phot"]          # (N, n_bands) maggies
+    out["prediction"]["calibration"]["spec"]         # (N, n_pix)   profiled response (Spectrum(polynomial_order > 0) only;
+                                                     #        spectra["spec"] already includes it)
     out["prediction"]["spectra"]["spec"]             # (N, n_pix)   as the Spectrum observation
     out["prediction"]["spectra_model"]               # (N, n_wave)  rest-frame L_nu [L_sun/Hz] on wave_rest, model resolution (no kinematic broadening)
     out["prediction"]["spectra_observed"]            # (N, n_wave)  observed-frame f_nu [erg/s/cm^2/Hz, cgs] at (1+z) wave_rest
@@ -40,6 +45,11 @@ Conventions
   mean SFR over the last W Myr of lookback time on the ``sfh_interp`` piecewise
   function ("step" per bin, "linear" between nodes); ``ssfrW = sfrW / mass_formed``
   with no return fraction.
+* ``mfrac`` = M_surviving / M_formed (stars + remnants) of each draw: the SSP grid's
+  surviving-mass table (``ssp_stellar_mass``, SSP schema 3) weighted by the draw's SSP
+  weights, the same weights as its spectrum.  ``mass_surviving = mfrac * mass_formed`` and
+  ``ssfrW_surviving = sfrW / mass_surviving``.  A grid without the table gives no ``mfrac``
+  block and a warning naming ``scripts/attach_stellar_mass.py`` (``mfrac=True`` raises).
 * Model-grid spectra are rest-frame L_nu [L_sun/Hz] times ``10**logmass``, no
   distance, (1+z) or IGM.  ``spectra_model``: the fitted model; ``spectra_intrinsic``:
   stellar continuum only (ionising continuum included); ``spectra_dustfree``: stars
@@ -161,13 +171,17 @@ class PostProcess:
     windows_myr : sequence of float, Myr -- averaging windows W for ``sfrW`` / ``ssfrW``
     derived : dict[str, callable] -- ``name -> f(SpectrumSample) -> float or 1-D array``, evaluated per draw
     batch_size : int -- draws per compiled batch through the forward model
+    mfrac : bool or None -- surviving-mass block (``mfrac``, ``mass_surviving``,
+        ``ssfrW_surviving``): None computes it when the grid has a mass table and warns when it
+        has not; True requires the table (ValueError otherwise); False skips it
     """
 
     def __init__(self, model, result, *, n_samples: Optional[int] = None,
                  seed: int = 0, windows_myr: Sequence[float] = DEFAULT_WINDOWS_MYR,
                  sfr: bool = True, ssfr: bool = True, uv: bool = True,
                  ionizing: bool = True, predictions: bool = True,
-                 derived: Optional[dict] = None, batch_size: int = 256):
+                 derived: Optional[dict] = None, batch_size: int = 256,
+                 mfrac: Optional[bool] = None):
         self.model = model
         self.csp = model.csp
         self.result = self._load_result(result)
@@ -179,6 +193,7 @@ class PostProcess:
                          ionizing=bool(ionizing), predictions=bool(predictions))
         if self.want["ssfr"] and not self.want["sfr"]:
             raise ValueError("ssfr=True needs sfr=True")
+        self.want["mfrac"] = self._resolve_mfrac(mfrac)
         self.derived = dict(derived or {})
         for k, f in self.derived.items():
             if not callable(f):
@@ -194,6 +209,22 @@ class PostProcess:
         self.log_weights = self._log_weights()
         self.n_samples = n_samples
         self.output: Optional[dict] = None
+
+    def _resolve_mfrac(self, mfrac) -> bool:
+        """Whether to compute the surviving-mass block (see the ``mfrac`` parameter)."""
+        if mfrac is not None and not isinstance(mfrac, bool):
+            raise TypeError(f"mfrac must be None, True or False, got {mfrac!r}")
+        has_table = getattr(self.csp, "ssp_stellar_mass", None) is not None
+        if has_table or mfrac is False:
+            return bool(has_table and mfrac is not False)
+        from .ssps.ssp_data import missing_stellar_mass_message
+        msg = missing_stellar_mass_message("the model's SSP grid")
+        if mfrac:
+            raise ValueError(msg)
+        if self.want["sfr"]:
+            warnings.warn(msg + "  PostProcess reports mass_formed only (mfrac=False silences "
+                          "this).", UserWarning, stacklevel=3)
+        return False
 
     def _load_result(self, result):
         if isinstance(result, (str, Path)):
@@ -377,20 +408,56 @@ class PostProcess:
             T = csp._lookback_from_zred(t["zred"])
         else:
             T = csp.sfh_times
-        return {"T_yr": T, "sfh": jnp.ravel(jnp.asarray(t["sfh"], dtype=float))}
+        out = {"T_yr": T, "sfh": jnp.ravel(jnp.asarray(t["sfh"], dtype=float))}
+        if self.want["mfrac"]:
+            out["mfrac"] = csp.surviving_mass_fraction(t)
+        return out
 
     def _compile(self):
         if getattr(self, "_f_spectra", None) is None:
             self._f_spectra = jax.jit(jax.vmap(self._spectra_one))
             self._f_sfh = jax.jit(jax.vmap(self._sfh_one))
 
+    def _poly_likelihoods(self) -> dict:
+        """{obs name: likelihood} of the spectra with a profiled calibration polynomial."""
+        if getattr(self, "_poly_lh", None) is None:
+            from .fit import _likelihood_for
+            model = self.model
+            self._poly_lh = {}
+            for o in model.observations:
+                if int(getattr(o, "polynomial_order", 0) or 0) > 0:
+                    self._poly_lh[o.name] = _likelihood_for(o, model.param_names, model=model)
+        return self._poly_lh
+
+    def _apply_poly(self, pred: dict, th) -> dict:
+        """``pred`` with each profiled spectrum times its response at ``th`` (solved exactly as
+        in the likelihood, on the model times any fixed ``calibration`` vector), plus
+        ``__calib_<name>`` = the response."""
+        from .likelihood.likelihood import observation_data
+        out = dict(pred)
+        for name, lh in self._poly_likelihoods().items():
+            y, sig, mask, calib, _ul = observation_data(self.model.obs_dict[name])
+            mu = pred[name] if calib is None else pred[name] * calib
+            nout = lh.noise_model.compute(sig, mu, mask, th, data=y)
+            _c, resp = lh.poly_calibration.solve(y, mu, nout.inv_var, mask)
+            out[name] = pred[name] * resp.astype(pred[name].dtype)
+            out[f"__calib_{name}"] = resp
+        return out
+
     def _predictor(self):
         """Batched posterior-predictive observations: ``model.predict_vmap``, or, when a
         Spectrum marginalises the emission lines, the predictions with each draw's
-        posterior-mean line fluxes (the likelihood fitSED builds) plus the line posteriors."""
+        posterior-mean line fluxes (the likelihood fitSED builds) plus the line posteriors.
+        Spectra with a profiled calibration polynomial carry each draw's response."""
         es = getattr(self.model, "_eline_system", None)
         if es is None:
-            return self.model.predict_vmap
+            if not self._poly_likelihoods():
+                return self.model.predict_vmap
+            if getattr(self, "_f_poly", None) is None:
+                model = self.model
+                self._f_poly = jax.jit(jax.vmap(
+                    lambda th: self._apply_poly(model.predict(th), th)))
+            return self._f_poly
         if getattr(self, "_f_elines", None) is None:
             from .fit import _likelihood_for
             from .likelihood.likelihood import MultiObservationLikelihood
@@ -407,6 +474,7 @@ class PostProcess:
                 out = dict(pred)
                 for k, A in aux["cols"].items():
                     out[k] = pred[k] + (A @ post["mean"]).astype(pred[k].dtype)
+                out = self._apply_poly(out, th)
                 out["__elines_mean"] = post["mean"]
                 out["__elines_sd"] = post["sd"]
                 out["__elines_cloudy"] = post["cloudy"]
@@ -476,6 +544,14 @@ class PostProcess:
                 if self.want["ssfr"]:
                     with np.errstate(divide="ignore", invalid="ignore"):
                         blk[f"ssfr{w:g}"] = blk[key] / mass_formed
+        if self.want["mfrac"]:
+            mfrac = np.asarray(raw["sfh"]["mfrac"], dtype=float).reshape(n)
+            blk["mfrac"] = mfrac
+            blk["mass_surviving"] = mfrac * mass_formed
+            if self.want["sfr"] and self.want["ssfr"]:
+                for w in self.windows_myr:
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        blk[f"ssfr{w:g}_surviving"] = blk[f"sfr{w:g}"] / blk["mass_surviving"]
         out["extras"]["sfh"] = blk
 
         win = (wave >= _UV_WINDOW_AA[0]) & (wave <= _UV_WINDOW_AA[1])
@@ -525,6 +601,10 @@ class PostProcess:
                 if slot is None:
                     continue
                 pred[slot][obs.name] = np.asarray(raw["pred"][obs.name], dtype=float)
+                ck = f"__calib_{obs.name}"
+                if ck in raw["pred"]:
+                    pred.setdefault("calibration", {})[obs.name] = np.asarray(raw["pred"][ck],
+                                                                             dtype=float)
         out["prediction"] = pred
         es = getattr(m, "_eline_system", None)
         if es is not None and raw["pred"]:
@@ -614,6 +694,8 @@ class PostProcess:
             "observations": [(o.name, getattr(o, "_kind", "")) for o in self.model.observations],
             "sfh_interp": self.csp.sfh_interp, "sfh_per_bin": bool(getattr(self.csp, "sfh_per_bin", False)),
             "metallicity": self._metallicity_meta(),
+            "mfrac": ("computed from the SSP grid's surviving-mass table"
+                      if self.want["mfrac"] else "not computed"),
         }
         self.output = out
         return out

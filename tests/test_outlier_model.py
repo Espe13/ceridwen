@@ -598,8 +598,8 @@ def test_unmasked_nan_warns_and_masked_nan_is_irrelevant(grid):
     # Gaussian and the mixture, with a sampled error scale too
     from ceridwen.sampler.priors import TopHat
     for extra in ({}, _sampled_f("f_outlier_phot")):
-        pr = dict(extra.get("priors", {}), log_err_scale=TopHat(low=-1.0, high=1.0))
-        ini = dict(extra.get("init", {}), log_err_scale=jnp.array([0.1]))
+        pr = dict(extra.get("priors", {}), log_err_scale_phot=TopHat(low=-1.0, high=1.0))
+        ini = dict(extra.get("init", {}), log_err_scale_phot=jnp.array([0.1]))
         m = _model(grid, phot_flux=pf, priors=pr, init=ini)
         lh = _lhs(m)
         lnprob = MultiObservationLikelihood(keys=tuple(lh), likelihoods=tuple(lh.values())

@@ -128,8 +128,8 @@ same prior, or use `eline_prior_width > 0` (a proper prior) when evidences matte
 ## Speed
 
 When nothing the line solve depends on can change between likelihood calls (fixed
-`zred` and `sigma_gas`, no `eline_delta_zred`, no sampled `spectrum_scaling`,
-`spectrum_calib` or `eline_scaling`, and no sampled noise terms or `noise_floor`), the
+`zred` and `sigma_gas`, no `eline_delta_zred`, no sampled `spectrum_scaling*`,
+`spectrum_calib*` or `eline_scaling`, and no sampled noise terms or `noise_floor`), the
 line profiles, the design matrices and, for a flat prior, the whole factorisation are
 computed once at setup. On an A100 at the nested sampler's batch width (100) a
 flat-prior marginalised likelihood then costs 0.99-1.00 times the ordinary one, and
@@ -139,8 +139,8 @@ times. `model._eline_system.static` is `None` when the per-call path is in use.
 ## Noise terms
 
 The weights of the line solve are the likelihood's own inverse variances, so the
-result is the exact marginal also with `log_err_scale`, `log_jitter` and
-`log_f_data`. `noise_floor` and `log_f_calib` scale with the model, which would
+result is the exact marginal also with `log_err_scale_*`, `log_jitter_*` and
+`log_f_data_*`. `noise_floor` and `log_f_calib_*` scale with the model, which would
 include the lines being solved for; they are evaluated on the model **without**
 the fitted lines.
 

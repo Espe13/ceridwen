@@ -137,6 +137,32 @@ def _postprocess(model, theta_np, tag, out):
     o = pp.run()
     o = {k: v for k, v in o.items() if k != "meta"}
     _flat(f"{tag}/postprocess", o, out)
+    _mfrac(model, theta_np, tag, out)
+
+
+def _mfrac(model, theta_np, tag, out):
+    """v1.0.6 surviving-mass fraction per draw, with the FSPS table stored for the test grid
+    (tests/reference/ssp_stellar_mass.npz, matched by chash); skipped on older packages."""
+    csp = model.csp
+    ref = HERE.parent / "tests" / "reference" / "ssp_stellar_mass.npz"
+    if not hasattr(csp, "surviving_mass_fraction") or not ref.is_file():
+        return
+    with np.load(ref) as z:
+        tag_m = next((k[:-6] for k in z.files if k.endswith("/chash")
+                      and str(z[k]) == getattr(csp, "grid_chash", None)), None)
+        if tag_m is None:
+            return
+        mass = np.array(z[f"{tag_m}/mass"])
+    saved = csp.ssp_stellar_mass
+    csp.ssp_stellar_mass = mass
+    try:
+        f = jax.jit(csp.surviving_mass_fraction)
+        n = next(iter(theta_np.values())).shape[0]
+        for i in range(n):
+            t = model.apply_transforms({k: jnp.asarray(v[i]) for k, v in theta_np.items()})
+            out[f"{tag}/mfrac/{i}"] = np.asarray(f(t))
+    finally:
+        csp.ssp_stellar_mass = saved
 
 
 def _likelihood(model, theta_np, tag, out):
@@ -167,6 +193,20 @@ def _likelihood(model, theta_np, tag, out):
         variants.append(("outlier", tuple(DiagonalGaussianLikelihood(nm[k]) for k in keys)))
     except TypeError:
         print("  (package has no outlier model: variant skipped)")
+    try:        # v1.0.7: per-observation noise key + profiled calibration polynomial
+        from ceridwen.likelihood.poly_calibration import (PolynomialCalibration,
+                                                          chebyshev_design_matrix)
+        sp = obs["spec"]
+        pc = PolynomialCalibration(chebyshev_design_matrix(sp.wavelength, sp.mask, 3))
+        nm = {"phot": DiagonalNoiseModel(use_error_scale=True,
+                                         err_scale_key="log_err_scale_phot"),
+              "spec": DiagonalNoiseModel(use_jitter=True, jitter_key="log_jitter_spec"),
+              "lines": DiagonalNoiseModel()}
+        variants.append(("polycal", tuple(
+            DiagonalGaussianLikelihood(nm[k], poly_calibration=pc if k == "spec" else None)
+            for k in keys)))
+    except ImportError:
+        print("  (package has no profiled calibration: variant skipped)")
     n = next(iter(theta_np.values())).shape[0]
     f_draws = rng.uniform(1e-4, 0.3, (n, 1))
     for vname, lhs in variants:
@@ -177,6 +217,10 @@ def _likelihood(model, theta_np, tag, out):
             one = {k: jnp.asarray(v[i]) for k, v in theta_np.items()}
             if vname == "outlier":
                 one["f_outlier_spec"] = jnp.asarray(f_draws[i])
+            if vname == "polycal":
+                one["log_jitter_spec"] = jnp.log(0.05 * jnp.median(jnp.abs(obs["spec"].flux))
+                                                 * (1.0 + f_draws[i]))
+                one["log_err_scale_phot"] = jnp.asarray(f_draws[i])
             val, grad = vg(one)
             out[f"{tag}/lnprob/{vname}/{i}/value"] = np.asarray(val)
             _flat(f"{tag}/lnprob/{vname}/{i}/grad", grad, out)

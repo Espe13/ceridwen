@@ -42,7 +42,8 @@ from ceridwen.model.model import SedModel
 from ceridwen.broadening import Instrument
 from ceridwen.likelihood import DiagonalNoiseModel, DiagonalGaussianLikelihood
 from ceridwen.likelihood.eline_marginal import refuse_outlier_with_elines
-from ceridwen.fit import _check_outlier_setup
+from ceridwen.fit import _check_outlier_setup, _check_noise_setup, _poly_calibration_for
+from ceridwen.model.obs_params import check_names, CALIB_FAMILIES
 from ceridwen.priors import Normal, TopHat
 from types import SimpleNamespace
 
@@ -241,6 +242,26 @@ def run_scenarios():
         ("f_outlier_phot without Photometry", {"ERROR"},
          lambda: _check_outlier_setup(_outlier_model(["f_outlier_phot"],
                                                      {"f_outlier_phot": TopHat(low=0.0, high=0.5)}))),
+        ("mfrac on a grid without a surviving-mass table", {"ERROR"},
+         lambda: csp.surviving_mass_fraction(th)),
+        ("surviving-mass table of the wrong shape", {"ERROR"},
+         lambda: _ssp.with_stellar_mass(np.ones((2, 2)), source="misuse")),
+        ("old shared noise name log_jitter (v1.0.7)", {"ERROR"},
+         lambda: _check_noise_setup(_outlier_model(["log_jitter"], {}))),
+        ("log_jitter_spec with two spectra", {"ERROR"},
+         lambda: _check_noise_setup(_outlier_model(["log_jitter_spec"], {}, n_spec=2))),
+        ("log_jitter_spec_<unknown obs name>", {"ERROR"},
+         lambda: _check_noise_setup(_outlier_model(["log_jitter_spec_nope"], {}))),
+        ("plain spectrum_scaling with two spectra", {"ERROR"},
+         lambda: check_names(_outlier_model([], {}, n_spec=2).observations, CALIB_FAMILIES,
+                             {"spectrum_scaling"})),
+        ("profiled polynomial + sampled spectrum_calib", {"ERROR"},
+         lambda: _poly_calibration_for(
+             Spectrum(wavelength=jnp.linspace(4000, 7000, 40), name="s0", polynomial_order=2),
+             _outlier_model(["spectrum_calib"], {}))),
+        ("negative polynomial_order", {"ERROR"},
+         lambda: Spectrum(wavelength=jnp.linspace(4000, 7000, 40), name="s",
+                          polynomial_order=-1)),
         ("unbounded prior on f_outlier_spec", {"ERROR"},
          lambda: _check_outlier_setup(_outlier_model(["f_outlier_spec"],
                                                      {"f_outlier_spec": Normal(mean=0.1, sigma=0.1)}))),

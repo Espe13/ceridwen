@@ -143,6 +143,18 @@ prefer `predict`/`get_spectrum_components`.
   with dust and age — always keep the photometry in. Order too high eats real
   features; look at the recovered curve (`legendre_design_matrix` rebuilds it
   from the posterior).
+- **One calibration per spectrum (v1.0.7).** With several spectra use
+  `spectrum_scaling_<obs.name>` / `spectrum_calib_<obs.name>`; the plain names then raise
+  (they used to scale every spectrum with one value). With a single spectrum the plain
+  names still work.
+- **Profiled polynomial (v1.0.7).** `Spectrum(polynomial_order=M)` solves the calibration
+  (Chebyshev c_0..c_M, level included) inside the likelihood instead of sampling it
+  (Prospector's `PolyOptCal`, weights from the noise model). It cannot be combined with a
+  sampled `spectrum_scaling` / `spectrum_calib` of the same spectrum (degenerate: refused),
+  nor with `marginalize_elines` on that spectrum. `polynomial_order=0` is off (as in
+  Prospector), not "a constant". The posterior is conditional on the best-fit polynomial:
+  its uncertainty is not propagated, so do not use it where the calibration uncertainty
+  matters (sample `spectrum_calib` there).
 
 ## 6. Environment & data consistency (not auto-guarded — check yourself)
 
@@ -292,17 +304,20 @@ prefer `predict`/`get_spectrum_components`.
 - `fitSED` honours `noise_floor`, `sky`, `calibration` and `upper_limit` and logs
   them; `logify_spectrum` and a `GaussianProcess` noise model are refused
   (`NotImplementedError`) instead of ignored.
-- Sampled noise terms are switched on by NAME: when the model samples
+- Sampled noise terms are switched on by NAME, **per observation** (v1.0.7):
   `log_err_scale` (sigma^2 x exp(2 log_err_scale), a common rescaling of the
   quoted errors), `log_jitter` (+ exp(log_jitter)^2, data units), `log_f_calib`
-  (+ (exp(log_f_calib) |model|)^2) or `log_f_data` (+ (exp(log_f_data) |data|)^2),
-  `fitSED` builds every observation's `DiagonalNoiseModel` with that term, one
-  value shared by all observations, and logs it. Give them a prior and a
-  `free_param_init`. This is a `fitSED` feature: with `run_sampler` you build the
-  `DiagonalNoiseModel(use_error_scale=True, ...)` yourself, otherwise the
-  parameter is sampled from its prior and never enters the likelihood, with no
-  warning. The outlier mixture (`f_outlier_spec` / `f_outlier_phot`, section 13) is
-  switched on the same way but is **per observation kind**, never shared.
+  (+ (exp(log_f_calib) |model|)^2) and `log_f_data` (+ (exp(log_f_data) |data|)^2) are
+  named like the outlier mixture: `log_jitter_<kind>` for the single observation of a
+  kind (kind = `phot` / `spec` / `lines`) or `log_jitter_<kind>_<obs.name>` for each of
+  several. The old shared `log_jitter` etc. raise with the new names: one additive
+  jitter shared between maggies and cgs F_nu was dimensionally meaningless. A constant
+  transform now fixes a term (before, `fitSED` ignored a transform-fixed noise term).
+  Give them a prior and a `free_param_init`. This is a `fitSED` feature: with
+  `run_sampler` you build the `DiagonalNoiseModel(use_jitter=True,
+  jitter_key="log_jitter_spec", ...)` yourself (the key defaults to the historical
+  `log_jitter`), otherwise the parameter is sampled from its prior and never enters the
+  likelihood, with no warning. The outlier mixture (section 13) uses the same names.
 - `SedModel` raises for a prior on a name that is not sampled and warns for
   sampled parameters without a prior; `free_param_init` is applied without
   transforms too; prior constructors reject unknown/missing arguments.
@@ -384,6 +399,26 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
   observation; an unbounded prior on `f` or one outside [0, 1].
 - `lnl_pointwise` holds the mixture terms; `chi` stays the inlier (y - mu)/sigma_eff. The
   per-datum outlier probability comes from `likelihood.outlier_probability(...)`.
+
+## 14. Formed mass vs surviving mass (v1.0.6)
+
+- `logmass` and `PostProcess` `mass_formed` are the mass **formed**; `ssfrW` divides by it.
+  The Prospector-style stellar mass is `mass_surviving = mfrac * mass_formed` (stars +
+  remnants), with `ssfrW_surviving`. Say which one you quote: they differ by 20-40 %.
+- `mfrac` needs a grid with the surviving-mass table (SSP schema 3.0, `ssp_stellar_mass`).
+  Older grids load as before and `PostProcess` warns and skips the block;
+  `python scripts/attach_stellar_mass.py <grid.h5>` writes a copy with the table (FSPS
+  compiled with the grid's isochrones; `--fsps-python` for another environment). It never
+  writes the original file and refuses an FSPS whose isochrones or nodes differ.
+- The table is FSPS's `stellar_mass` as it is: on MIST it exceeds 1 M_sun per M_sun formed
+  below 10^6.45 yr (up to 4.6 at 10^5 yr), so a population dominated by < 3 Myr stars can
+  have `mfrac > 1`. BPASS stays <= 1.
+- CERIDWEN's composite `mfrac` uses its own SFH weights (the ones behind the spectrum), not
+  FSPS's `csp_gen`. Versus python-fsps for 0.1-10 Gyr constant/rising SFHs: <= 4.2e-4 (step),
+  <= 6.3e-3 (linear). The `"linear"` scheme drops mass formed more recently than the youngest
+  SSP node (10^5 yr MIST, 10^6 yr BPASS) and gives the **oldest** SSP node no weight, so a
+  bin older than the second-oldest node (BPASS 12.6 Gyr) is mis-weighted: -4e-4 on `mfrac`
+  at 13.8 Gyr. Both are pre-existing forward-model behaviour, reported, not changed.
 
 ---
 

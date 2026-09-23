@@ -299,6 +299,16 @@ class SedModel:
         """The CSP's cosmology (read-only)."""
         return self.csp.cosmo
 
+    def _check_calibration_names(self):
+        """spectrum_scaling / spectrum_calib (v1.0.7): the plain name only with a single
+        Spectrum, ``<name>_<obs.name>`` for each of several; ambiguous, doubled or unmatched
+        names raise (they would be applied to every spectrum, or sampled and never used)."""
+        from .obs_params import CALIB_FAMILIES, check_names
+        given = set(self.param_names) | set(self.transforms)
+        if any(f.claims(n) for f in CALIB_FAMILIES for n in given):
+            check_names(self.observations, CALIB_FAMILIES, given,
+                        what=" (spectrum calibration)")
+
     def setup_observations(self):
         """Build every observation's projection for this model's grid, redshift and
         kinematics (called by ``__init__`` and by ``fitSED`` when it replaces the
@@ -306,6 +316,7 @@ class SedModel:
         names = [o.name for o in self.observations]
         if len(set(names)) != len(names):
             raise ValueError(f"observation names must be unique, got {names}")
+        self._check_calibration_names()
         neb = getattr(self.csp, "neb", None)
         lib = getattr(self.csp, "lib_resolution", None)
         for obs in self.observations:

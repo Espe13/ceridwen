@@ -1,13 +1,14 @@
 """
 Multiplicative spectrophotometric calibration of ``Spectrum`` predictions from the
-optional theta keys ``spectrum_scaling`` (grey level) and ``spectrum_calib`` (Legendre shape).
+optional theta keys ``spectrum_scaling`` (grey level) and ``spectrum_calib`` (Legendre shape),
+one pair per spectrum since v1.0.7 (``spectrum_scaling_<obs.name>`` with several spectra).
 """
 from __future__ import annotations
 
 import numpy as np
 import jax.numpy as jnp
 
-__all__ = ["spectrum_calibration_factor", "legendre_design_matrix"]
+__all__ = ["spectrum_calibration_factor", "legendre_design_matrix", "calibration_keys"]
 
 _CACHE_ATTR = "_ceridwen_calib_design_cache"
 
@@ -44,19 +45,32 @@ def _design(obs, order: int):
     return jnp.asarray(cache[key])
 
 
+def calibration_keys(obs, theta):
+    """``(level key, shape key)`` of ``obs`` in ``theta`` (either may be None): the
+    per-spectrum ``spectrum_scaling_<obs.name>`` / ``spectrum_calib_<obs.name>`` (v1.0.7)
+    before the plain ``spectrum_scaling`` / ``spectrum_calib``.  Which names a model may use
+    (the plain one only with a single Spectrum) is checked by ``SedModel`` at construction."""
+    name = getattr(obs, "name", None)
+    out = []
+    for root in ("spectrum_scaling", "spectrum_calib"):
+        own = f"{root}_{name}"
+        out.append(own if own in theta else (root if root in theta else None))
+    return tuple(out)
+
+
 def spectrum_calibration_factor(obs, theta, dtype=None):
-    """Factor ``spectrum_scaling * (1 + spectrum_calib . P(x))`` multiplying the MODEL spectrum:
-    a scalar (level only), an ``(n_pix,)`` vector (shape term), or ``None`` if neither key is in theta.
+    """Factor ``spectrum_scaling * (1 + spectrum_calib . P(x))`` multiplying the MODEL spectrum
+    of ``obs`` (keys from :func:`calibration_keys`): a scalar (level only), an ``(n_pix,)``
+    vector (shape term), or ``None`` if the spectrum has neither.
     """
-    has_level = "spectrum_scaling" in theta
-    has_shape = "spectrum_calib" in theta
-    if not has_level and not has_shape:
+    level_key, shape_key = calibration_keys(obs, theta)
+    if level_key is None and shape_key is None:
         return None
     factor = None
-    if has_level:
-        factor = jnp.ravel(theta["spectrum_scaling"])[0]
-    if has_shape:
-        coeff = jnp.ravel(theta["spectrum_calib"])
+    if level_key is not None:
+        factor = jnp.ravel(theta[level_key])[0]
+    if shape_key is not None:
+        coeff = jnp.ravel(theta[shape_key])
         order = int(coeff.shape[0])
         if order < 1:
             raise ValueError(

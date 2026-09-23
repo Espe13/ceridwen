@@ -451,6 +451,7 @@ pp  = PostProcess(model, result)           # SamplingResult or the .h5 file fitS
 out = pp.run()
 out["theta"]["logmass"]                    # (N,) equal-weight draws
 out["extras"]["sfh"]["sfr10"]              # mean SFR over the last 10 Myr; ssfr10, sfr100, ...
+out["extras"]["sfh"]["mass_surviving"]     # mfrac x mass_formed; mfrac, ssfr10_surviving (grids with a mass table)
 out["extras"]["uv"]["MUV"]                 # M_UV at 1500 A; LUV, MUV_intrinsic
 out["extras"]["ionizing"]["nion"]          # Q(H); xion; fesc when the model has frac_obrun
 out["prediction"]["photometry"]["phot"]    # posterior-predictive maggies; spectra, lines
@@ -664,7 +665,7 @@ If you use ceridwen in your research, please cite it:
   author       = {Stoffers, Amanda},
   title        = {{CERIDWEN}: Fast and Flexible {GPU}-Accelerated Stellar Population Inference},
   year         = {2026},
-  note         = {Version 1.0.5},
+  note         = {Version 1.0.7},
   howpublished = {\url{https://github.com/Espe13/ceridwen}}
 }
 ```

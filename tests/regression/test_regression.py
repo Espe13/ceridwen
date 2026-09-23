@@ -50,11 +50,15 @@ CATEGORIES = [
     "csp_spectrum",
     "likelihood",
     "outlier_likelihood",
+    "calibration_likelihood",
     "eline_marginal",
 ]
 
-#: v1.0.5 metallicity baselines, one per grid family; each is skipped where its grid is absent
-OPTIONAL_CATEGORIES = ["logzsol_bpass", "logzsol_mist", "logzsol_afe"]
+#: v1.0.5 metallicity baselines, one per grid family; each is skipped where its grid is absent;
+OPTIONAL_CATEGORIES = ["logzsol_bpass", "logzsol_mist", "logzsol_afe",
+                       # v1.0.6 surviving mass: present when tests/reference holds the
+                       # canonical grid's FSPS mass table (matched by chash)
+                       "stellar_mass"]
 
 
 @pytest.mark.parametrize("category", CATEGORIES + OPTIONAL_CATEGORIES)

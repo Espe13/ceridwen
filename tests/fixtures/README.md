@@ -27,3 +27,8 @@ All grids loaded by the strict schema-2.x loaders must carry the
 `scripts/convert_grids_schema2.py`. Note that every committed fixture version
 permanently consumes GitHub LFS storage quota; do not commit
 `*_schema1_backup.h5` files the converter leaves behind.
+
+The surviving-mass tests (`tests/test_stellar_mass.py`, regression category
+`stellar_mass`) do not need a schema-3 grid: they attach the FSPS mass table stored
+in `tests/reference/ssp_stellar_mass.npz` to the canonical grid in memory, matched
+by the grid's content hash, and skip for any other grid.

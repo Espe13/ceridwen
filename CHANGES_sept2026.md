@@ -361,3 +361,90 @@ difference, where reading the same number as absolute `log10 Z` is 0.231 and a w
 `Z_sun = 0.0142` is 3e-2 to 9e-2 off), `tests/test_result_metallicity.py`, three new
 regression categories `logzsol_bpass` / `logzsol_mist` / `logzsol_afe`, and 12 new
 `misuse_report` rows (37 rows, 0 SILENT).
+
+---
+
+## 2026-09-22 — v1.0.6: surviving stellar mass; provenance in the result file
+
+**Surviving mass (SSP schema 3.0).** `SSPData` gains the optional table
+`ssp_stellar_mass` (grid shape without the wavelength axis; `SSPDataAfe` schema 3.1:
+`(n_afe, n_met, n_age)`), FSPS's `stellar_mass` (stars + remnants per M_sun formed) of every
+SSP, with `stellar_mass_source`. It is written and read by `save` / `load`, validated
+(shape, finite, positive), and kept out of the content hash (`chash`), so a grid keeps its
+identity when the table is attached. Grids without it load as before. `from_fsps` now records
+it; `scripts/attach_stellar_mass.py` adds it to an EXISTING grid without regenerating the
+spectra: it runs FSPS (this interpreter or `--fsps-python`), refuses an FSPS whose isochrones,
+ages or metallicities differ from the grid's, compares FSPS's spectra with the grid's flux
+cube, writes into a copy (`<name>_schema3.h5`) and verifies it (all original datasets
+sha256-identical, table round-trips, chash unchanged). No grid was regenerated and the
+Zenodo registry is untouched.
+
+`CSPBasis.surviving_mass_fraction(theta)` = sum(W m) / sum(W) with the spectrum's own SSP
+weights (post-processing only; the sampled likelihood is unchanged, T4). `PostProcess` adds
+`extras["sfh"]["mfrac"]`, `mass_surviving = mfrac * mass_formed` and
+`ssfr<W>_surviving = sfr<W> / mass_surviving`; `mass_formed` and `ssfr<W>` keep their names
+and meaning. `PostProcess(mfrac=None|True|False)`: auto (warn and skip without a table),
+required, off.
+
+**Verification.** On the BPASS and MIST/MILES test grids FSPS's spectra were bit-identical to
+the grid (attach run), and the tables (stored in `tests/reference/ssp_stellar_mass.npz`)
+reproduce `examples/recipes/reference_mfrac.json`'s single-burst values exactly (MIST) and to
+5.7e-10 (BPASS: the json was evaluated at `tage = T`, interpolated by FSPS). Constant SFH:
+equal to an independent analytic integral of the table to 1e-10 in both SFH schemes. The
+composite values differ from FSPS's `csp_gen` by <= 4.2e-4 (step) / 6.3e-3 (linear) for
+0.1-10 Gyr, CERIDWEN's own SFH integration (GOTCHAS 14). New regression category
+`stellar_mass`; `tests/test_stellar_mass.py`. Found on the way and **not fixed** (forward
+model, needs approval): the `"linear"` scheme never weights the oldest SSP node
+(`jmax` clipped to `n_ssp - 1` with `j < jmax`), a strict xfail test documents it.
+
+**Provenance in `ceridwen_result.h5`.** `/provenance`: `ceridwen_version`,
+`ceridwen_githash` (build stamp, stale in an editable install) plus the live `git_head` /
+`git_dirty` of the package checkout, `jax_version`, `written_utc`, `sampler_json` (the
+settings the adapter ran with: nested `num_live`, `num_inner_steps`, `num_delete`, `logZ_tol`;
+NUTS `num_warmup`, `num_samples`, `num_chains`, `target_acceptance`, step size, bounds, VI)
+and the `rng_key`. Per observation: `sky`, `calibration`, `upper_limit` datasets, the
+`noise_floor`, and `likelihood_json` (kernel class and every `DiagonalNoiseModel` field).
+`read_result_h5` returns them (`["provenance"]`, `["obs"][name]["likelihood"]`);
+`ceridwen.fit.read_provenance(path)`. Older files read as before.
+
+---
+
+## 2026-09-22 — v1.0.7: noise terms and calibration per observation; profiled polynomial
+
+**Per-observation noise terms (renamed; old names refused).** `log_err_scale`,
+`log_jitter`, `log_f_calib` and `log_f_data` were one value shared by every observation
+(`fitSED`); an additive jitter shared between maggies and cgs F_nu was dimensionally
+meaningless. They now follow the outlier-mixture naming (`ceridwen/model/obs_params.py`, one
+helper for both): `log_jitter_<kind>` for the single observation of a kind, or
+`log_jitter_<kind>_<obs.name>` for each of several (kind = phot / spec / lines); the plain
+kind name is ambiguous with several and raises, as do both spellings for one observation and
+names matching no observation. The old shared names raise in `fitSED` with the names to use
+for that model. `DiagonalNoiseModel` gains `err_scale_key` / `jitter_key` / `f_calib_key` /
+`f_data_key` (theta key or fixed float; defaults are the historical names, so a hand-built
+noise model reads the same keys as before). A noise term fixed by a constant transform is now
+used; before, `fitSED` silently ignored it.
+
+**Per-spectrum calibration.** `spectrum_scaling_<obs.name>` / `spectrum_calib_<obs.name>`
+calibrate one spectrum each; the plain names remain for a model with a single `Spectrum` and
+raise in `SedModel` with several (they used to apply one value to every spectrum).
+
+**Profiled polynomial calibration** (`Spectrum(polynomial_order=M,
+polynomial_regularization=...)`, `ceridwen/likelihood/poly_calibration.py`): Prospector's
+`PolyOptCal` inside the sampled likelihood. The response `1 + sum_{m<=M} c_m T_m(x)`
+(Chebyshev over the unmasked wavelength range) is solved by weighted least squares at every
+call, JIT-safe and differentiable, with the noise model's weights (Prospector: raw
+`1/sigma^2`). Opt-in per spectrum (`order = 0` = off, as in Prospector); refused together with
+a sampled calibration of the same spectrum (degenerate) and on the `marginalize_elines`
+spectrum. Applied in `DiagonalGaussianLikelihood[WithUpperLimits].__call__` and their
+`make_lnprobfn`, so `run_sampler`, `MultiObservationLikelihood` and `fitSED` all use it;
+`PostProcess` predictions carry each draw's response (`prediction["calibration"]`); the
+result file records the order and regularisation (`likelihood_json`).
+
+**Verification.** Equal to Prospector's own `compute_response` (prospect 2.0a2.dev42, code
+identical to a78d153) to 1.1e-15 on three reference cases
+(`tests/reference/prospector_polyopt.npz`, `run_prospector_polyopt.py`); recovers a known
+polynomial to 1e-10 noise-free and within 4 sigma with noise; profiled ln L equals the maximum
+over the sampled `spectrum_scaling` / `spectrum_calib` to 1e-9; exact first-order gradients
+(`check_grads`), finite full-model gradients with masked NaN data, vmap equals loop;
+`tests/test_noise_calibration.py`. New regression category `calibration_likelihood`; new T4
+variant `polycal`. With the feature off the change is bit-identical (T4).

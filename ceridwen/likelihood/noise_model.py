@@ -71,12 +71,12 @@ class DiagonalNoiseModel(NoiseModelBase):
 
     Parameters
     ----------
-    use_error_scale : bool -- multiply sigma_obs^2 by exp(params["log_err_scale"])^2, a
+    use_error_scale : bool -- multiply sigma_obs^2 by exp(params[err_scale_key])^2, a
         common rescaling of the quoted uncertainties (the log-normalisation term keeps it
         from running away)
-    use_jitter : bool -- add exp(params["log_jitter"])^2 (data units)
-    use_fractional : bool -- add (exp(params["log_f_calib"]) * |mu|)^2, model-anchored
-    use_data_fractional : bool -- add (exp(params["log_f_data"]) * |y|)^2, data-anchored, needs ``data``
+    use_jitter : bool -- add exp(params[jitter_key])^2 (data units)
+    use_fractional : bool -- add (exp(params[f_calib_key]) * |mu|)^2, model-anchored
+    use_data_fractional : bool -- add (exp(params[f_data_key]) * |y|)^2, data-anchored, needs ``data``
     noise_floor : float -- fixed fractional floor on |mu|
     f_outlier : None, float or str -- outlier mixture (Hogg, Bovy & Lang 2010): the fraction
         of data drawn from a Gaussian ``nsigma_outlier`` times broader than sigma_eff.  Default
@@ -85,6 +85,10 @@ class DiagonalNoiseModel(NoiseModelBase):
         by the likelihood classes, not by ``compute``.
     nsigma_outlier : float or str -- width of the outlier Gaussian in units of sigma_eff,
         fixed (default 50, Prospector's) or a theta key
+    err_scale_key, jitter_key, f_calib_key, f_data_key : str or float -- where each switched-on
+        term reads its (log) value: a theta key (default the historical ``log_err_scale`` /
+        ``log_jitter`` / ``log_f_calib`` / ``log_f_data``; ``fitSED`` passes the per-observation
+        names ``log_jitter_<kind>[_<obs>]`` of v1.0.7) or a fixed float
     """
 
     use_jitter          : bool = False
@@ -94,6 +98,10 @@ class DiagonalNoiseModel(NoiseModelBase):
     use_error_scale     : bool = False
     f_outlier           : Optional[float | str] = None
     nsigma_outlier      : float | str = 50.0
+    err_scale_key       : float | str = "log_err_scale"
+    jitter_key          : float | str = "log_jitter"
+    f_calib_key         : float | str = "log_f_calib"
+    f_data_key          : float | str = "log_f_data"
 
     def __post_init__(self) -> None:
         f, ns = self.f_outlier, self.nsigma_outlier
@@ -112,6 +120,15 @@ class DiagonalNoiseModel(NoiseModelBase):
             object.__setattr__(self, "nsigma_outlier", float(ns))
         elif not ns:
             raise ValueError("nsigma_outlier theta key must be a non-empty string")
+        for k in ("err_scale_key", "jitter_key", "f_calib_key", "f_data_key"):
+            v = getattr(self, k)
+            if isinstance(v, str):
+                if not v:
+                    raise ValueError(f"{k} must be a non-empty theta key or a float")
+            elif isinstance(v, bool) or not isinstance(v, (int, float)):
+                raise TypeError(f"{k} must be a theta key (str) or a fixed float, got {v!r}")
+            else:
+                object.__setattr__(self, k, float(v))
 
     @property
     def use_outlier(self) -> bool:
@@ -144,20 +161,23 @@ class DiagonalNoiseModel(NoiseModelBase):
         params    : Optional[dict[str, Array]] = None,
         data      : Optional[Array] = None,
     ) -> NoiseModelOutput:
-        """Return ``NoiseModelOutput``; ``params`` keys ``log_err_scale``/``log_jitter``/
-        ``log_f_calib``/``log_f_data`` as configured, ``data`` (observed y) required when
-        ``use_data_fractional``."""
+        """Return ``NoiseModelOutput``; ``params`` holds the theta keys ``err_scale_key`` /
+        ``jitter_key`` / ``f_calib_key`` / ``f_data_key`` of the switched-on terms (a float key
+        is a fixed value), ``data`` (observed y) required when ``use_data_fractional``."""
         if params is None:
             params = {}
 
+        def get(key):
+            return params[key] if isinstance(key, str) else key
+
         var: Array = sigma_obs ** 2
         if self.use_error_scale:
-            var = var * jnp.exp(2.0 * params["log_err_scale"])
+            var = var * jnp.exp(2.0 * get(self.err_scale_key))
         if self.noise_floor > 0.0:
             var = var + (self.noise_floor * jnp.abs(mu)) ** 2
 
         if self.use_fractional:
-            f_calib = jnp.exp(params["log_f_calib"])
+            f_calib = jnp.exp(get(self.f_calib_key))
             var = var + (f_calib * jnp.abs(mu)) ** 2
 
         if self.use_data_fractional:
@@ -166,11 +186,11 @@ class DiagonalNoiseModel(NoiseModelBase):
                     "DiagonalNoiseModel(use_data_fractional=True) requires the "
                     "observed data array; call compute(..., data=y)."
                 )
-            f_data = jnp.exp(params["log_f_data"])
+            f_data = jnp.exp(get(self.f_data_key))
             var = var + (f_data * jnp.abs(data)) ** 2
 
         if self.use_jitter:
-            jitter = jnp.exp(params["log_jitter"])
+            jitter = jnp.exp(get(self.jitter_key))
             var = var + jitter ** 2
 
         var = jnp.where(mask, var, jnp.ones_like(var))
@@ -186,14 +206,12 @@ class DiagonalNoiseModel(NoiseModelBase):
     def nuisance_param_names(self) -> tuple[str, ...]:
         """Names of nuisance parameters expected in ``params`` at compute time."""
         names: list[str] = []
-        if self.use_error_scale:
-            names.append("log_err_scale")
-        if self.use_fractional:
-            names.append("log_f_calib")
-        if self.use_data_fractional:
-            names.append("log_f_data")
-        if self.use_jitter:
-            names.append("log_jitter")
+        for on, key in ((self.use_error_scale, self.err_scale_key),
+                        (self.use_fractional, self.f_calib_key),
+                        (self.use_data_fractional, self.f_data_key),
+                        (self.use_jitter, self.jitter_key)):
+            if on and isinstance(key, str):
+                names.append(key)
         return tuple(names)
 
     def __repr__(self) -> str:
@@ -206,8 +224,14 @@ class DiagonalNoiseModel(NoiseModelBase):
             f"use_error_scale={self.use_error_scale}"
             + (f", f_outlier={self.f_outlier!r}, nsigma_outlier={self.nsigma_outlier!r}"
                if self.use_outlier else "")
+            + "".join(f", {k}={getattr(self, k)!r}" for k, d in _DEFAULT_KEYS.items()
+                      if getattr(self, k) != d)
             + ")"
         )
+
+
+_DEFAULT_KEYS = {"err_scale_key": "log_err_scale", "jitter_key": "log_jitter",
+                 "f_calib_key": "log_f_calib", "f_data_key": "log_f_data"}
 
 
 jax.tree_util.register_pytree_node(
@@ -215,10 +239,12 @@ jax.tree_util.register_pytree_node(
     flatten_func=lambda nm: (
         [],
         (nm.use_jitter, nm.use_fractional, nm.use_data_fractional, nm.noise_floor,
-         nm.use_error_scale, nm.f_outlier, nm.nsigma_outlier),
+         nm.use_error_scale, nm.f_outlier, nm.nsigma_outlier,
+         nm.err_scale_key, nm.jitter_key, nm.f_calib_key, nm.f_data_key),
     ),
     unflatten_func=lambda aux, _: DiagonalNoiseModel(
         use_jitter=aux[0], use_fractional=aux[1], use_data_fractional=aux[2],
         noise_floor=aux[3], use_error_scale=aux[4], f_outlier=aux[5], nsigma_outlier=aux[6],
+        err_scale_key=aux[7], jitter_key=aux[8], f_calib_key=aux[9], f_data_key=aux[10],
     ),
 )

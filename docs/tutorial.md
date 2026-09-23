@@ -231,6 +231,25 @@ rather than predicting zeros for it.
     Implementation: `ceridwen/csp/spectrum_calibration.py`, applied in
     `_project_observations` of both `CSPBasis` and `CSPBasis_afe`.
 
+    **Several spectra (v1.0.7).** Each spectrum has its own calibration:
+    `spectrum_scaling_<obs.name>` / `spectrum_calib_<obs.name>`. The plain names are
+    accepted only when the model has exactly one `Spectrum`; with two they are
+    ambiguous and `SedModel` raises (before v1.0.7 one value silently scaled both).
+
+!!! tip "Profiled calibration polynomial: `Spectrum(polynomial_order=M)`"
+    Instead of sampling the calibration, let the likelihood solve it:
+    `Spectrum(..., polynomial_order=3)` multiplies the model by
+    `1 + sum_{m=0}^{3} c_m T_m(x)` (Chebyshev, `x` over the unmasked wavelength range)
+    with the coefficients that maximise the likelihood at every call, a weighted linear
+    least-squares solve inside the jitted likelihood (Prospector's `PolyOptCal`). It adds
+    no sampled dimensions and is differentiable. The weights are the noise model's
+    `1/sigma_eff^2` (Prospector uses the raw `1/sigma^2`; the two agree unless noise terms
+    are on). `T_0` is the level, so `spectrum_scaling` / `spectrum_calib` of the same
+    spectrum are refused. It is a *profile*, not a marginalisation: the posterior is
+    conditional on the best polynomial. `polynomial_regularization=` adds a ridge term.
+    `PostProcess` predictions include each draw's response
+    (`out["prediction"]["calibration"][name]`).
+
 ## 5. Priors and the model
 
 Collect the observations into a single list. Any subset is fine; use an empty

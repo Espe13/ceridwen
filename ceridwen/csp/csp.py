@@ -247,6 +247,10 @@ class CSPBasis:
              np.asarray(SSPData.ssp_resolution, dtype=np.float64))
             if getattr(SSPData, "ssp_resolution", None) is not None else None)
         self.ssp_ages_lgyr = self.ages + 9                 # log10(yr)
+        # surviving mass per M_sun formed (SSP schema 3); post-processing only, never traced
+        # by the forward model
+        _m = getattr(SSPData, "ssp_stellar_mass", None)
+        self.ssp_stellar_mass = None if _m is None else np.asarray(_m, dtype=np.float64)
 
         self._ssp_isoc_type    = getattr(SSPData, "isoc_type", None)
         self._ssp_spec_library = getattr(SSPData, "spec_library", None)
@@ -1438,6 +1442,22 @@ class CSPBasis:
     def calculate_ssp_weights_var_zh_step(self, theta):
         """Weights for a metallicity history, piecewise-constant SFH."""
         return self._ssp_weights(theta, zh_mode="var", sfh_mode="step")
+
+    def _stellar_mass_at(self, theta):
+        """(n_z, n_age) surviving mass per M_sun formed of each SSP (the grid's table)."""
+        return jnp.asarray(self.ssp_stellar_mass)
+
+    def surviving_mass_fraction(self, theta):
+        """mfrac = M_surviving / M_formed of the population ``theta`` describes: the grid's
+        surviving-mass table weighted by the same SSP weights as the spectrum,
+        sum(W m) / sum(W).  Post-processing only (``PostProcess``); needs a grid with
+        ``ssp_stellar_mass`` (SSP schema 3), else ValueError naming the attach script."""
+        if self.ssp_stellar_mass is None:
+            from ceridwen.ssps.ssp_data import missing_stellar_mass_message
+            raise ValueError(missing_stellar_mass_message("the SSP grid of this CSPBasis"))
+        W = self.calculate_ssp_weights(theta)
+        m = self._stellar_mass_at(theta)
+        return jnp.sum(W * m) / jnp.maximum(jnp.sum(W), 1e-300)
 
 
     def _build_neb_array(self, theta, *, include_lines):

@@ -332,7 +332,11 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
         y_phot_o, mu_phot, sig_phot, mask_phot, is_upper_limit=ul_p)
     out["outlier_likelihood"]["lnl_phot_upper_limit"] = np.asarray(lnl_p_ul, dtype=np.float64)
 
+    out["calibration_likelihood"] = _calibration_likelihood_baseline(
+        np.asarray(wave_spec), mu_spec, mask_spec, jax.random.PRNGKey(p["noise_seed"]))
+
     out.update(_logzsol_baselines(p))
+    out.update(_stellar_mass_baseline(p))
     out["eline_marginal"] = _eline_marginal_baseline(p, ssp_data)
     return out
 
@@ -394,6 +398,90 @@ def _logzsol_baselines(p) -> dict:
             blk["logzsol_total"] = np.asarray(csp.logzsol_total(th), dtype=np.float64)
         out[cat] = blk
     return out
+
+
+def _calibration_likelihood_baseline(wave, mu, mask, key) -> dict:
+    """v1.0.7: the profiled polynomial calibration (Spectrum(polynomial_order > 0), Prospector's
+    PolyOptCal) and a per-observation noise key.  Data = the "csp_spectrum" prediction times a
+    known response 1 + 0.05 T_1 - 0.03 T_2 + 0.01 T_3, with 5 % Gaussian noise (sigma =
+    0.05 |mu|; the "likelihood" category's 1e-12 error floor would swamp cgs fluxes).  Justified in the commit message: the
+    solve equals Prospector's compute_response on its own reference dump to 1e-15
+    (tests/test_noise_calibration.py), and the profiled ln L equals the maximum over the sampled
+    spectrum_scaling / spectrum_calib (rel 1e-9)."""
+    from ceridwen.likelihood.noise_model import DiagonalNoiseModel
+    from ceridwen.likelihood.likelihood import DiagonalGaussianLikelihood
+    from ceridwen.likelihood.poly_calibration import (PolynomialCalibration,
+                                                      chebyshev_design_matrix)
+    A = chebyshev_design_matrix(wave, np.asarray(mask), 3)
+    sig = 0.05 * jnp.abs(mu)
+    y_cal = (mu * (1.0 + jnp.asarray(A) @ jnp.array([0.0, 0.05, -0.03, 0.01]))
+             + sig * jax.random.normal(key, mu.shape))
+    pc = PolynomialCalibration(A)
+    pc_reg = PolynomialCalibration(A, regularization=[0.0, 30.0, 60.0, 100.0])
+    out = {}
+    for tag, pcal in (("", pc), ("_reg", pc_reg)):
+        c, resp = pcal.solve(y_cal, mu, 1.0 / sig ** 2, mask)
+        lnl, _ = DiagonalGaussianLikelihood(poly_calibration=pcal)(y_cal, mu, sig, mask)
+        out[f"coeffs{tag}"] = np.asarray(c, dtype=np.float64)
+        out[f"response{tag}"] = np.asarray(resp, dtype=np.float64)
+        out[f"lnl{tag}"] = np.asarray(lnl, dtype=np.float64)
+    jit = 0.05 * float(jnp.median(jnp.abs(mu)))
+    th = {"log_jitter_spec": jnp.array([np.log(jit)])}
+    nm = DiagonalNoiseModel(use_jitter=True, jitter_key="log_jitter_spec")
+    lnl_j, _ = DiagonalGaussianLikelihood(noise_model=nm, poly_calibration=pc)(
+        y_cal, mu, sig, mask, th)
+    out["lnl_jitter_spec"] = np.asarray(lnl_j, dtype=np.float64)
+    return out
+
+
+STELLAR_MASS_TABLES = REPO_ROOT / "tests" / "reference" / "ssp_stellar_mass.npz"
+
+
+def _stellar_mass_baseline(p) -> dict:
+    """Surviving-mass fraction (v1.0.6, SSP schema 3) on the canonical test grid with the
+    FSPS mass table stored in tests/reference/ssp_stellar_mass.npz (matched by chash; the
+    category is absent when the grid is another one).  mfrac of a two-burst SFH and of a
+    constant SFH on a 0-10 Gyr grid, in both SFH schemes, at logzsol = -0.4 (constant) and
+    for a metallicity history.  Justified in the commit message: the constant-SFH values
+    equal an independent analytic integral of the table to 1e-10 (tests/test_stellar_mass.py),
+    and the table equals FSPS's stellar_mass at the nodes (examples/recipes/reference_mfrac.json
+    burst values)."""
+    from ceridwen.ssps.ssp_data import SSPData
+    from ceridwen.csp.csp import CSPBasis
+    from ceridwen.cosmology import Cosmology
+    if not STELLAR_MASS_TABLES.is_file():
+        return {}
+    grid = SSPData.load(SSP_FILE)
+    with np.load(STELLAR_MASS_TABLES) as z:
+        tag = next((k[:-len("/chash")] for k in z.files
+                    if k.endswith("/chash") and str(z[k]) == grid.chash), None)
+        if tag is None:
+            return {}
+        grid = grid.with_stellar_mass(np.array(z[f"{tag}/mass"]), source=str(z[f"{tag}/source"]))
+    # 0-10 Gyr: every bin stays below the grid's second-oldest SSP age (BPASS 10^10.1 yr),
+    # clear of the pre-v1.0.6 "linear"-scheme defect that gives the oldest SSP node no weight
+    # (reported in REPORT_feat-mfrac-and-noise.md; not fixed here)
+    n = 10
+    lb = jnp.linspace(0.0, 10.0, n)
+    sfh = (jnp.exp(-0.5 * ((lb - 0.05) / 0.03) ** 2)
+           + 0.7 * jnp.exp(-0.5 * ((lb - 8.0) / 0.8) ** 2))
+    out = {}
+    for interp in ("step", "linear"):
+        for zh in ("const", "var"):
+            theta = {"lookback_time": lb, "sfh": sfh}
+            if zh == "const":
+                theta["logzsol"] = jnp.array([LOGZSOL_INTERIOR])
+            else:
+                theta["logzsol_hist"] = jnp.linspace(LOGZSOL_INTERIOR, -1.2, n)
+            csp = CSPBasis(grid, theta=theta, cosmo=Cosmology.planck18(),
+                           zh_const=(zh == "const"), add_neb=False, add_dust=False,
+                           add_diffuse_dust=False, add_igm=False, verbose=False,
+                           sfh_interp=interp)
+            th = dict(csp.theta_init)
+            vals = [csp.surviving_mass_fraction(th),
+                    csp.surviving_mass_fraction(dict(th, sfh=jnp.ones(n)))]
+            out[f"mfrac_{interp}_{zh}zh"] = np.asarray(vals, dtype=np.float64)
+    return {"stellar_mass": out}
 
 
 def _eline_marginal_baseline(p, ssp_data) -> dict[str, np.ndarray]:

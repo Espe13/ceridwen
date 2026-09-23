@@ -403,19 +403,19 @@ def build_eline_system(model) -> Optional[ElineSystem]:
     return es
 
 
-_NOISE_KEYS = ("log_err_scale", "log_jitter", "log_f_calib", "log_f_data")
-
-
 def _static_precompute(model, es, spec, phots, lines_obs, proj, s_gas, used, gas):
     """When nothing the line solve depends on can change between likelihood calls (fixed
     redshift and sigma_gas, no eline_delta_zred, no sampled spectrum calibration or
     eline_scaling, and noise weights 1/sigma^2 only), precompute the line profiles, the
     design matrices, the weights and -- for a flat prior on every line -- the whole
     factorisation.  Returns None otherwise (the general per-call path is used)."""
+    from ..model.obs_params import CALIB_FAMILIES, NOISE_FAMILIES
     names = set(model.param_names) | set(model.transforms)
+    sampled_calib = any(f.claims(n) for f in CALIB_FAMILIES for n in names)
+    sampled_noise = any(f.claims(n) for f in NOISE_FAMILIES for n in names)
     if (proj.free_z or isinstance(gas, str) or "eline_delta_zred" in names
-            or names & {"spectrum_scaling", "spectrum_calib"}
-            or (lines_obs and "eline_scaling" in names) or names & set(_NOISE_KEYS)):
+            or sampled_calib
+            or (lines_obs and "eline_scaling" in names) or sampled_noise):
         return None
     obs_by_key = {o.name: o for o in [spec, *phots, *lines_obs]}
     if any(float(getattr(obs_by_key[k], "noise_floor", 0.0) or 0.0) > 0.0 for k in es.keys):
@@ -503,6 +503,15 @@ def refuse_outlier_with_elines(keys, likelihoods, system_keys):
     marginalising Spectrum, every Photometry and every Lines observation) carries an outlier
     mixture: the closed-form Gaussian marginal over the line fluxes is not exact under a
     mixture.  Observations outside the system keep their mixture."""
+    poly = [k for k, lh in zip(keys, likelihoods)
+            if k in system_keys and getattr(lh, "poly_calibration", None) is not None]
+    if poly:
+        raise NotImplementedError(
+            f"Spectrum(polynomial_order > 0) on {poly} cannot be combined with "
+            "marginalize_elines on the same spectrum: the line marginal is taken at a fixed "
+            "model spectrum, and the profiled polynomial rescales it.  Sample the calibration "
+            "instead (spectrum_scaling / spectrum_calib), or profile the polynomial on a "
+            "spectrum outside the marginalised system")
     bad = [k for k, lh in zip(keys, likelihoods)
            if k in system_keys
            and getattr(getattr(lh, "noise_model", None), "use_outlier", False)]

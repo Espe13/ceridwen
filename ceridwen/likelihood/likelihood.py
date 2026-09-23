@@ -10,6 +10,7 @@ import jax
 import jax.numpy as jnp
 
 from .noise_model import DiagonalNoiseModel, NoiseModelBase, NoiseModelOutput
+from .poly_calibration import PolynomialCalibration
 
 Array = jax.Array
 
@@ -298,6 +299,15 @@ class DiagonalGaussianLikelihood(LikelihoodBase):
     noise_model: DiagonalNoiseModel = field(
         default_factory=DiagonalNoiseModel
     )
+    #: profiled polynomial calibration (Spectrum(polynomial_order > 0)); None = off
+    poly_calibration: Optional[PolynomialCalibration] = None
+
+    def _calibrated(self, y, mu, sigma_obs, mask, params):
+        """``mu`` times the profiled calibration response (unchanged when off)."""
+        if self.poly_calibration is None:
+            return mu
+        return self.poly_calibration.calibrate(y, mu, sigma_obs, mask, params,
+                                               self.noise_model)
 
     def __call__(
         self,
@@ -308,6 +318,7 @@ class DiagonalGaussianLikelihood(LikelihoodBase):
         params    : Optional[dict[str, Array]] = None,
     ) -> tuple[Array, LikelihoodOutput]:
         """Return ``(lnl_total, LikelihoodOutput)``."""
+        mu = self._calibrated(y, mu, sigma_obs, mask, params)
         noise_out: NoiseModelOutput = self.noise_model.compute(
             sigma_obs, mu, mask, params, data=y
         )
@@ -348,11 +359,12 @@ class DiagonalGaussianLikelihood(LikelihoodBase):
         y, sigma_obs = finite_data(observations.flux, observations.uncertainty)
         mask      : Array = observations.mask
         noise_model       = self.noise_model
+        calibrate         = self._calibrated
 
         if getattr(noise_model, "use_outlier", False):
             @jax.jit
             def lnprobfn_outlier(theta: dict[str, Array]) -> Array:
-                mu = model.predict(theta)
+                mu = calibrate(y, model.predict(theta), sigma_obs, mask, theta)
                 noise_out = noise_model.compute(sigma_obs, mu, mask, theta, data=y)
                 f, nsigma = noise_model.outlier_params(theta)
                 lnl, _    = lnlike_diag_outlier(
@@ -364,7 +376,7 @@ class DiagonalGaussianLikelihood(LikelihoodBase):
 
         @jax.jit
         def lnprobfn(theta: dict[str, Array]) -> Array:
-            mu = model.predict(theta)
+            mu = calibrate(y, model.predict(theta), sigma_obs, mask, theta)
             noise_out = noise_model.compute(sigma_obs, mu, mask, theta, data=y)
             lnl, _    = lnlike_diag_gaussian(
                 y, mu, noise_out.inv_var, noise_out.log_det, mask
@@ -375,14 +387,15 @@ class DiagonalGaussianLikelihood(LikelihoodBase):
         return lnprobfn
 
     def __repr__(self) -> str:
-        return f"DiagonalGaussianLikelihood(noise_model={self.noise_model!r})"
+        pc = "" if self.poly_calibration is None else f", poly_calibration={self.poly_calibration!r}"
+        return f"DiagonalGaussianLikelihood(noise_model={self.noise_model!r}{pc})"
 
 
 jax.tree_util.register_pytree_node(
     DiagonalGaussianLikelihood,
-    flatten_func   = lambda lh: ([], (lh.noise_model,)),
+    flatten_func   = lambda lh: ([], (lh.noise_model, lh.poly_calibration)),
     unflatten_func = lambda aux, _: DiagonalGaussianLikelihood(
-        noise_model=aux[0]
+        noise_model=aux[0], poly_calibration=aux[1]
     ),
 )
 
@@ -397,6 +410,15 @@ class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
     noise_model: DiagonalNoiseModel = field(
         default_factory=DiagonalNoiseModel
     )
+    #: profiled polynomial calibration (Spectrum(polynomial_order > 0)); None = off
+    poly_calibration: Optional[PolynomialCalibration] = None
+
+    def _calibrated(self, y, mu, sigma_obs, mask, params):
+        """``mu`` times the profiled calibration response (unchanged when off)."""
+        if self.poly_calibration is None:
+            return mu
+        return self.poly_calibration.calibrate(y, mu, sigma_obs, mask, params,
+                                               self.noise_model)
 
     def __call__(
         self,
@@ -408,6 +430,7 @@ class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
         is_upper_limit  : Optional[Array]            = None,
     ) -> tuple[Array, LikelihoodOutput]:
         """Return ``(lnl_total, LikelihoodOutput)``; ``is_upper_limit=None`` means all detections."""
+        mu = self._calibrated(y, mu, sigma_obs, mask, params)
         noise_out: NoiseModelOutput = self.noise_model.compute(
             sigma_obs, mu, mask, params, data=y
         )
@@ -437,11 +460,12 @@ class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
         else:
             is_ul = jnp.asarray(is_ul, dtype=bool)
         noise_model = self.noise_model
+        calibrate   = self._calibrated
 
         if getattr(noise_model, "use_outlier", False):
             @jax.jit
             def lnprobfn_outlier(theta: dict[str, Array]) -> Array:
-                mu = model.predict(theta)
+                mu = calibrate(y, model.predict(theta), sigma_obs, mask, theta)
                 noise_out = noise_model.compute(sigma_obs, mu, mask, theta, data=y)
                 f, nsigma = noise_model.outlier_params(theta)
                 lnl, _    = lnlike_diag_outlier_with_upper_limits(
@@ -453,7 +477,7 @@ class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
 
         @jax.jit
         def lnprobfn(theta: dict[str, Array]) -> Array:
-            mu = model.predict(theta)
+            mu = calibrate(y, model.predict(theta), sigma_obs, mask, theta)
             noise_out = noise_model.compute(sigma_obs, mu, mask, theta, data=y)
             lnl, _    = lnlike_diag_gaussian_with_upper_limits(
                 y, mu, noise_out.inv_var, noise_out.log_det, mask, is_ul,
@@ -466,15 +490,17 @@ class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
     def __repr__(self) -> str:
         return (
             f"DiagonalGaussianLikelihoodWithUpperLimits("
-            f"noise_model={self.noise_model!r})"
+            f"noise_model={self.noise_model!r}"
+            + ("" if self.poly_calibration is None
+               else f", poly_calibration={self.poly_calibration!r}") + ")"
         )
 
 
 jax.tree_util.register_pytree_node(
     DiagonalGaussianLikelihoodWithUpperLimits,
-    flatten_func   = lambda lh: ([], (lh.noise_model,)),
+    flatten_func   = lambda lh: ([], (lh.noise_model, lh.poly_calibration)),
     unflatten_func = lambda aux, _: DiagonalGaussianLikelihoodWithUpperLimits(
-        noise_model=aux[0]
+        noise_model=aux[0], poly_calibration=aux[1]
     ),
 )
 
