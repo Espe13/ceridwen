@@ -110,9 +110,9 @@ def test_unknown_zsun_raises_and_zsun_kwarg_rescues():
 
 
 def test_zsun_kwarg_disagreeing_with_the_table_raises():
-    ssp, _ = _load("mist_bpass_v2")
+    path = _path("mist_bpass_v2")
     with pytest.raises(ValueError):                 # 0.0142 is not a node of the BPASS axis
-        SSPData.load(str(REPO / GRIDS["mist_bpass_v2"][0]), zsun=0.0142)
+        SSPData.load(str(path), zsun=0.0142)
 
 
 def test_flipped_byte_is_not_matched(tmp_path):
