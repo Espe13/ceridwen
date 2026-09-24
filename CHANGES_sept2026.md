@@ -937,3 +937,36 @@ longer mutates `sampler_kwargs` (B2-004), `CSPBasis` no longer mutates `init_*_p
 weighted quantiles (B3-001); `fetch_grid` names a pre-re-deposit cache (B3-007);
 `ceridwen.check` verifies the FSPS data files (B3-002). Docs, README, tutorial, GOTCHAS,
 AGENTS and examples corrected per the B3/Q1/P findings (see `git log main..night/fixes`).
+
+## Unreleased
+
+### [α/Fe] memory under `vmap`; NUTS diagnostics (day/F4: B1-022, B2-012)
+
+- **`CSPBasis_afe` no longer builds an interpolated flux plane per sample (B1-022).** A
+  sampled `afe` was applied as `(1-w) flux[k-1] + w flux[k]`, an `(n_z, n_age, n_wave)` array,
+  before the contraction, so `jit(vmap(...))` needed about one plane per lane. The two-hot
+  [α/Fe] weights are now folded into the SSP weights and one einsum runs over a
+  `(n_age, n_afe·n_z, n_wave)` copy of the cube (`csp_afe.py`, `_contract`). XLA temp memory of
+  `jit(vmap(csp.get_spectrum))`, HR grid `amist_c3k_hr_krou_afe`, CPU, compile-only
+  `memory_analysis`:
+
+  | W | before | after |
+  |---|---|---|
+  | 1 | 0.071 GB | 0.005 GB |
+  | 80 | 5.653 GB | 0.002 GB |
+  | 400 | 28.265 GB | 0.011 GB |
+
+  CPU wall per call at W=80 (shared 11-core laptop): 355-410 -> 153 ms (LR grid 104-126 -> 39 ms). The price is a second copy
+  of the cube (HR: 306 MB, float32) held by the basis. Spectra change at float32 rounding
+  only: the T2 array `logzsol_afe/spectrum` moves by at most 5.5e-7 of its maximum (1.65e-6
+  in one pixel), and a float64 recomputation puts the old and the new code equally close to
+  the exact sum (max 1.2e-6 and 1.4e-6); the test tolerance is 2e-6 of the spectrum maximum. Without `afe` in theta,
+  or on a one-plane grid, the code path is unchanged.
+- **NUTS: the printed R-hat says what it measures; ESS is per chain (B2-012).** All chains
+  start from the one warmup end state (without `vi`), so the split R-hat measures mixing
+  within that run and cannot detect a warmup stuck in one mode; the log prints this above
+  the table, and the docstring, GOTCHAS §18 and `docs/postprocessing.md` say so. The printed
+  ESS is now each chain's ESS summed (the estimator of the diagnostic figure) instead of the
+  autocorrelation of the concatenated chains, which counted offsets between chains as
+  correlation (AR(1) test: 46.7 before, analytic 26 667). Samples are byte-identical.
+  Dispersed per-chain warmups were not added (a design decision: F4-001).
