@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,6 +44,7 @@ _IGNORED_MODEL_KEYS = {"converted_from", "converted_note"}
 # recorded only by files written after the entry was added: absent from an older file is a
 # note ("not recorded"), not a difference
 _ADDED_LATER = {"/model@csp_config", "/model/sfh_times_yr"}
+_ADDED_LATER_ATTRS = {"likelihood_json"}   # per observation: /obs/<name>@likelihood_json
 
 
 @dataclass
@@ -140,10 +142,24 @@ def _model_record(model) -> dict:
         log_evidence=float("nan"), log_evidence_err=float("nan"),
         log_weights=jnp.zeros(1), log_likelihoods=jnp.zeros(1), param_names=names,
         n_likelihood_calls=0, wall_time_s=0.0, sampler_name="record")
+    # the likelihood fitSED builds and records (/obs/<name>@likelihood_json); a model that
+    # fitSED cannot build a likelihood for is recorded without it
+    from .fit import _likelihood_for
+    from .likelihood import MultiObservationLikelihood
+    lh = None
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            keys = tuple(model.obs_dict)
+            lh = MultiObservationLikelihood(keys=keys, likelihoods=tuple(
+                _likelihood_for(model.obs_dict[k], model.param_names, model=model)
+                for k in keys))
+    except (ValueError, TypeError, NotImplementedError, KeyError, AttributeError):
+        lh = None
     fd, tmp = tempfile.mkstemp(suffix=".h5")
     os.close(fd)
     try:
-        write_result_h5(tmp, model, stub, verbose=False)
+        write_result_h5(tmp, model, stub, verbose=False, likelihood=lh)
         return _read_record(tmp)
     finally:
         os.remove(tmp)
@@ -156,7 +172,9 @@ def check_model_against_result(model, path, *, raise_on_difference: bool = False
     Every recorded attribute and dataset of ``/model`` and ``/obs`` is compared exactly
     (priors, parameter names and shapes, transform names, zred, kinematics, cosmology, grid
     provenance and metallicity axes, the model wavelength grid, and every observation's data,
-    mask, filters and instrument).  ``theta_init`` values are reported as notes only.
+    mask, filters and instrument, and the likelihood settings fitSED records per observation,
+    ``likelihood_json``).  ``theta_init`` values, and a record the file predates, are reported
+    as notes only.
     Returns a :class:`ResultComparison`; with ``raise_on_difference`` a difference raises.
     """
     from .fit import _require_logzsol_result
@@ -176,7 +194,8 @@ def check_model_against_result(model, path, *, raise_on_difference: bool = False
             continue
         entry = (key, _short(a), _short(b))
         is_init = key.startswith("/model/theta_init/")
-        if a is None and key in _ADDED_LATER:
+        if a is None and (key in _ADDED_LATER
+                          or key.split("@")[-1] in _ADDED_LATER_ATTRS):
             cmp.notes.append((key, "(not recorded by this file)", entry[2]))
         elif is_init and a is not None and b is not None and np.shape(a) == np.shape(b):
             cmp.notes.append(entry)

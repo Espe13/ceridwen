@@ -72,8 +72,9 @@ def setup():
                 sfh=sfh_from_ratios)
 
 
-def _write(model, path):
-    from ceridwen.fit import write_result_h5
+def _write(model, path, with_likelihood=True):
+    from ceridwen.fit import write_result_h5, _likelihood_for
+    from ceridwen.likelihood import MultiObservationLikelihood
     from ceridwen.sampler.runner import SamplingResult
     names = list(model.theta_init)
     n = 3
@@ -83,8 +84,33 @@ def _write(model, path):
         log_evidence=-1.0, log_evidence_err=0.1, log_weights=jnp.zeros(n),
         log_likelihoods=jnp.zeros(n), param_names=names, n_likelihood_calls=1,
         wall_time_s=0.0, sampler_name="test")
-    write_result_h5(path, model, res, verbose=False)
+    lh = None
+    if with_likelihood:         # exactly as fitSED builds it (fit.py, fitSED)
+        keys = tuple(model.obs_dict)
+        lh = MultiObservationLikelihood(keys=keys, likelihoods=tuple(
+            _likelihood_for(model.obs_dict[k], model.param_names, model=model) for k in keys))
+    write_result_h5(path, model, res, verbose=False, likelihood=lh)
     return path
+
+
+@needs_grid
+def test_file_written_like_fitsed_rebuilds(setup, tmp_path):
+    """B2-001: fitSED passes likelihood= to write_result_h5, so its files carry
+    /obs/<name>@likelihood_json; the model side must record it too."""
+    from ceridwen.resultfile import check_model_against_result, rebuild_model
+    model = setup["build"]()
+    path = _write(model, tmp_path / "fitsed.h5")
+    cmp = check_model_against_result(model, path)
+    assert cmp.ok, str(cmp)
+    rebuild_model(path, setup["csp"], setup["observations"](),
+                  transforms={"sfh": setup["sfh"]})
+    # a file without likelihood_json (written before it was recorded) is a note, not a
+    # difference
+    old = _write(model, tmp_path / "old.h5", with_likelihood=False)
+    cmp = check_model_against_result(model, old)
+    assert cmp.ok, str(cmp)
+    assert {n[0] for n in cmp.notes} == {"/obs/phot@likelihood_json",
+                                         "/obs/spec@likelihood_json"}
 
 
 @needs_grid
