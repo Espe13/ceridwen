@@ -530,14 +530,16 @@ the CLOUDY grids at `$SPS_HOME`), see the [tutorial](https://github.com/Espe13/c
 The fastest way to confirm your whole setup works end to end. It follows the
 same steps as above but drives the nested sampler directly through
 `run_sampler` with relaxed demo settings (150 live points, `logZ_tol=-2`), so
-it writes no HDF5 result: it loads the SSP grid (building it from FSPS only if
-none is found), generates mock UV-to-IR photometry in the unitless `zred = 0`
+it writes no HDF5 result: it loads the SSP grid named by `$SSP_FILE` (or
+`examples/ssp_data.h5`; without either it builds one with FSPS, so without FSPS set
+`SSP_FILE` as below), generates mock UV-to-IR photometry in the unitless `zred = 0`
 convention (the `SedModel(zred=0) applies NO flux factor` warning is expected
 here), fits it, prints recovered-vs-true parameters and writes the summary,
 corner and sampling-diagnostic figures to `examples/quickstart_figures/`:
 
 ```bash
-python examples/quickstart.py
+SSP_FILE=$(python -c "from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_miles_chab'))") \
+    python examples/quickstart.py
 ```
 
 Without a clone, fetch that one file and run it anywhere — it imports only from
