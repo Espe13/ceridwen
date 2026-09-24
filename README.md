@@ -290,17 +290,19 @@ TRUTH = {                                          # parameters to inject and re
     "diffuse_dust_index": jnp.array([-0.7]),
 }
 
-# SSP grid: load the Step 0 cache, or build it on first run (needs FSPS).
+# SSP grid: your own FSPS build from Step 0 if it is here, otherwise the
+# published MIST + MILES grid (downloaded once, no FSPS needed).
 # lookback_time is the static SFH node grid (Gyr, increasing, index 0 = today,
 # >= 2 nodes; oldest node < age of universe at ZRED, which SedModel checks).
 import pathlib
+from ceridwen.ssps import fetch_grid
 SSP_FILE = pathlib.Path("ssp_data.h5")
 if SSP_FILE.is_file():
-    print(f"[grid] loading cached SSP grid: {SSP_FILE}")
+    print(f"[grid] loading your SSP grid: {SSP_FILE}")
     ssp = SSPData.load(str(SSP_FILE))
 else:
-    print(f"[grid] no cache found, building with FSPS (a few minutes) ...")
-    ssp = SSPData.from_fsps(imf_type=1, save_to=str(SSP_FILE))
+    print("[grid] loading the published mist_miles_chab grid (downloads 67 MB once) ...")
+    ssp = SSPData.load(fetch_grid("mist_miles_chab"))
 ssp.display()                                      # grid summary + provenance
 
 print("[csp] building the composite-stellar-population basis ...")

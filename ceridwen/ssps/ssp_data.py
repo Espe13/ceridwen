@@ -15,7 +15,9 @@ def _import_fsps():
     except (ImportError, RuntimeError) as exc:
         raise ImportError(
             "FSPS is required for SSP data generation but is not available. "
-            "See https://dfm.io/python-fsps/current/installation/") from exc
+            "See https://dfm.io/python-fsps/current/installation/ .  Without FSPS, load a "
+            "published grid instead: SSPData.load(ceridwen.ssps.fetch_grid('mist_miles_chab'))"
+            ) from exc
     return fsps
 
 
