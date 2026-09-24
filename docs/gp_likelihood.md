@@ -108,7 +108,7 @@ hyperparameters and compares the result with the diagonal fit.
 |---|---|
 | the noise terms `noise_floor`, `log_err_scale_spec`, `log_jitter_spec`, `log_f_calib_spec`, `log_f_data_spec` | **yes**: they set σ_eff before the whitening |
 | `sky`, a fixed `calibration` vector | **yes** |
-| the sampled calibration `spectrum_scaling` / `spectrum_calib` | **yes**: it acts on the model before the residuals are formed |
+| the sampled calibration `spectrum_scaling` / `spectrum_calib` | **yes**: it acts on the model before the residuals are formed (not tested together yet) |
 | other observations (photometry, lines, other spectra) | **yes**: each keeps its own likelihood; the GP is per spectrum |
 | a free redshift, a free LSF scale, emission lines painted from the grid | **yes** in principle: they change the model, the GP acts on the residuals (not tested together yet) |
 | the outlier mixture `f_outlier_spec` on the same spectrum | **refused** at setup |
