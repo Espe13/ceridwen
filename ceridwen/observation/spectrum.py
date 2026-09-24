@@ -7,7 +7,6 @@ import warnings
 import jax.numpy as jnp
 import numpy as np
 from .base import Observation
-from ..constants import C_AA_S, C_KMS
 from ..broadening import Instrument, Kinematics, SpectralProjector
 
 
@@ -371,7 +370,8 @@ class Spectrum(Observation):
         ``filterset``; None if there is no data."""
         if self.flux is None or self._wavelength is None:
             return None
-        flux_flam = self.flux * C_AA_S / self._wavelength**2
+        _c        = jnp.array(2.998e18)   # Å/s
+        flux_flam = self.flux * _c / self._wavelength**2
         return filterset.get_sed_maggies(flux_flam, sourcewave=self._wavelength)
 
     def mask_wavelength_range(self, wave_min, wave_max):
@@ -394,7 +394,7 @@ class Spectrum(Observation):
                 "pixel grid; pass zred=<source redshift> (zred=0.0 if the data are rest frame)",
                 stacklevel=2)
             zred = 0.0
-        c_kms = C_KMS
+        c_kms = 2.998e5
         opz   = 1.0 + float(zred)
         for lam0_rest in np.asarray(line_waves).ravel():
             lam0_obs = opz * float(lam0_rest)

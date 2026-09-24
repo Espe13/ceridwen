@@ -33,6 +33,6 @@ Reported, not fixed:
 
 - `ceridwen.priors.LogNormal.scale` (`sampler/priors.py:297-299`) returns Prospector's `exp(mode+σ²)`, which is not the scale of the `tfd.LogNormal(loc=mode)` that is actually sampled.
 - Photometry: the gridded `FilterSet` projection used for fit predictions differs from sedpy / `Filter.ab_mag` by up to 1.5e-3 mag (sdss_u0 on a BPASS SSP). `Filter.ab_mag` itself equals sedpy exactly.
-- L_sun: CERIDWEN and FSPS use 3.839e33 (`ceridwen.constants.LSUN_ERG_S`, FSPS `sps_vars.f90:422`); Prospector uses 3.846e33 (`prospect/sources/constants.py:15`). The same L_sun/Hz array therefore gives magnitudes 1.98 mmag apart.
+- L_sun: CERIDWEN and FSPS use 3.839e33 (`postprocess._LSUN_ERG_S`, FSPS `sps_vars.f90:422`); Prospector uses 3.846e33 (`prospect/sources/constants.py:15`). The same L_sun/Hz array therefore gives magnitudes 1.98 mmag apart.
 - `BlackJAXNUTSAdapter._flatten` (`sampler/nuts.py:121-131`) concatenates in dict order. `jax.vmap` returns dicts with sorted keys, so a future caller flattening inside `vmap` would pair values with the wrong bounds. It is harmless today, because NUTS flattens outside any transform.
 - Prospector at a78d153: `add_dla` converts to the absorber frame upside down (`sedmodel.py:816`: `wave_rest*(1+dla_z)/(1+zred)` should be `*(1+zred)/(1+dla_z)`), so a foreground DLA lands redward of Lyα. Its plain `NoiseModel` multiplies χ² by ln 2π (`noise_model.py:90-91`).

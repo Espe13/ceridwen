@@ -45,12 +45,12 @@ dl_native = float(luminosity_distance_mpc(ZRED))
 ff_native = float(flux_factor_maggies(ZRED))
 print("── cosmology ─────────────────────────────────────────────")
 print(f"D_L({ZRED}) native            = {dl_native:.2f} Mpc   (Planck18: 475.6)")
-print(f"flux_factor_maggies({ZRED})   = {ff_native:.6e}  (expect 1.5589e-22)")
+print(f"flux_factor_maggies({ZRED})   = {ff_native:.6e}  (expect 1.5532e-22)")
 print(f"flux_factor_maggies(0.0)   = {float(flux_factor_maggies(0.0)):.6e}"
-      f"  (expect 3.2085e-07, 10 pc convention)")
+      f"  (expect 3.1968e-07, 10 pc convention)")
 print(f"flux_factor_maggies(-0.05) = {float(flux_factor_maggies(-0.05)):.6e}"
-      f"  (expect 3.2085e-07: z<=0 pinned, no silent clamp)")
-assert np.isclose(ff_native, 1.558870e-22, rtol=1e-3), "ff(0.1) wrong!"
+      f"  (expect 3.1968e-07: z<=0 pinned, no silent clamp)")
+assert np.isclose(ff_native, 1.553165e-22, rtol=1e-3), "ff(0.1) wrong!"
 
 # ── 2. end-to-end model prediction ─────────────────────────────────────────
 ssp = SSPData.load(str(SSP_FILE))

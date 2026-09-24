@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 
 
-from ceridwen.constants import C_AA_S as CLIGHT_AA_S
+CLIGHT_AA_S = 2.99792458e18  # Angstrom/s
 MDUST_PREFACTOR = 3.21e-3 / (4.0 * jnp.pi)
 _DUSTEM_CACHE = {}
 

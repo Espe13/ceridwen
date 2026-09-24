@@ -80,11 +80,12 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from .constants import C_AA_S, LSUN_ERG_S as _LSUN_ERG_S, HPLANCK_ERG_S as _HPLANCK_ERG_S, PC_TO_CM as _PC_CM
-
 __all__ = ["PostProcess", "SpectrumSample", "load_postprocess"]
 
+_LSUN_ERG_S = 3.839e33
+_HPLANCK_ERG_S = 6.6261e-27
 _LYMAN_LIMIT_AA = 912.0
+_PC_CM = 3.0856775814913673e18
 _AB_ZERO_FNU = 3.631e-20                      # erg s^-1 cm^-2 Hz^-1
 _UV_WINDOW_AA = (1450.0, 1550.0)
 
@@ -125,7 +126,7 @@ class SpectrumSample:
         m = (self.wave_rest >= lo_aa) & (self.wave_rest <= hi_aa)
         if m.sum() < 2:
             raise ValueError(f"fewer than two model pixels in [{lo_aa}, {hi_aa}] A")
-        nu = C_AA_S / self.wave_rest[m]
+        nu = 2.99792458e18 / self.wave_rest[m]
         return float(-_trapz(spectrum[m], nu) * _LSUN_ERG_S)
 
 

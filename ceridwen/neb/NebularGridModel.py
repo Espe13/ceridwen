@@ -13,9 +13,10 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from ceridwen.constants import C_AA_S as CLIGHT_AA_S, HPLANCK_ERG_S as HPLANK_ERG_S, LSUN_ERG_S
 
-
+CLIGHT_AA_S    = 2.9979e18     # A/s
+HPLANK_ERG_S   = 6.6261e-27    # erg s
+LSUN_ERG_S     = 3.839e33      # erg/s
 LYMAN_LIMIT_AA = 912.0         # Lyman limit, Angstrom
 SQRT_2PI       = float(np.sqrt(2.0 * np.pi))
 TINY           = 1.0e-95       # floor for log10

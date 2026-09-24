@@ -37,7 +37,8 @@ __all__ = [
     "make_line_painter", "SpectralProjector", "PhotometricBroadener",
 ]
 
-from .constants import C_KMS as CKMS, C_AA_S
+CKMS = 2.99792458e5
+C_AA_S = 2.99792458e18
 FWHM_TO_SIGMA = 1.0 / (2.0 * np.sqrt(2.0 * np.log(2.0)))
 BAND_NSIGMA = 5.0
 

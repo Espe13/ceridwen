@@ -27,9 +27,8 @@ quantities (no return fraction / surviving mass).
 
 Absolute magnitudes: the rest-frame L_nu ``s.full`` [L_sun/Hz] x 10**logmass (dust-attenuated,
 lines included, no IGM, no (1+z): ``postprocess.py:83-85``, ``:350-367``) is placed at 10 pc,
-``f_nu = L_nu L_sun / (4 pi (10 pc)^2)``, with the package's own constants
-(``ceridwen.constants.LSUN_ERG_S``, ``PC_TO_CM``, the ones behind ``MUV`` and the flux factor),
-and projected through the
+``f_nu = L_nu L_sun / (4 pi (10 pc)^2)``, with the package's own constants (``_LSUN_ERG_S``,
+``_PC_CM``, ``postprocess.py:68, :71``, the ones behind ``MUV``), and projected through the
 package's vendored filters with one of two package paths:
 
 * ``method="hires"`` (default): ``Filter.ab_mag`` (``observation/filters.py:341``, trapezoid on the
@@ -48,7 +47,7 @@ Prospector equivalents (bd-j/prospector @ a78d153)
 * ``prospect/plotting/sfh.py:267-278``     ``sfh_to_cmf`` (cumulative mass fraction -> t50/t90)
 
 Known difference: Prospector's ``lsun = 3.846e33`` erg/s (``prospect/sources/constants.py:15``)
-while CERIDWEN (and FSPS) use ``3.839e33`` (``ceridwen/constants.py``; FSPS ``src/sps_vars.f90:422``). Feeding the same L_sun/Hz
+while CERIDWEN (and FSPS) use ``3.839e33`` (``postprocess.py:68``; FSPS ``src/sps_vars.f90:422``). Feeding the same L_sun/Hz
 array to both therefore differs by 2.5 log10(3.846/3.839) = 1.98 mmag; the check compares the
 same PHYSICAL spectrum (erg/s/Hz).
 
@@ -87,8 +86,8 @@ from typing import Optional, Sequence
 import numpy as np
 from scipy.optimize import brentq
 
-from ceridwen.constants import C_AA_S, LSUN_ERG_S as _LSUN_ERG_S, PC_TO_CM as _PC_CM
-from ceridwen.postprocess import _formed_mass, _mean_sfr_window, _per_bin_and_nodes
+from ceridwen.postprocess import (_LSUN_ERG_S, _PC_CM, _formed_mass,
+                                  _mean_sfr_window, _per_bin_and_nodes)
 from ceridwen.observation import Photometry
 from ceridwen.observation.filters import load_filters
 
@@ -179,7 +178,7 @@ class AbsMagFilters:
         fnu = np.asarray(fnu_cgs, dtype=float)
         if self.method == "photometry":
             return np.asarray(self._phot.get_maggies(wave, fnu), dtype=float).reshape(-1)
-        flam = fnu * C_AA_S / wave ** 2             # the c of filters.py
+        flam = fnu * 2.998e18 / wave ** 2           # the c of filters.py:26 / sedpy
         return np.array([10.0 ** (-0.4 * float(f.ab_mag(wave, flam))) for f in self._filters])
 
 

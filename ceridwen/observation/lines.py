@@ -4,7 +4,6 @@ import json
 import jax.numpy as jnp
 import numpy as np
 from .base import Observation
-from ..constants import C_AA_S, C_KMS
 
 
 class Lines(Observation):
@@ -124,7 +123,7 @@ class Lines(Observation):
 
     def _build_W(self, wm_rest, sigma_v, zred):
         lam0_rest = np.asarray(self._wavelength, dtype=np.float64)
-        c_kms  = C_KMS
+        c_kms  = 2.998e5
         opz = 1.0 + float(zred)
 
         # blends: row = pixel-wise max of the component Gaussians (no double counting of overlap)
@@ -135,7 +134,7 @@ class Lines(Observation):
             dlam[1:-1] = 0.5 * (wm[2:] - wm[:-2])
             dlam[0] = 0.5 * (wm[1] - wm[0])
             dlam[-1] = 0.5 * (wm[-1] - wm[-2])
-            c_aa_s = C_AA_S
+            c_aa_s = 2.998e18
             W = np.zeros((len(comps), len(wm)), dtype=np.float64)
             for k, comp in enumerate(comps):
                 for lam_c in comp:
@@ -150,7 +149,7 @@ class Lines(Observation):
     def _aperture_rows(wm_rest, lam0_rest, sigma_v, opz):
         """(n_lines, n_wave) float32 aperture rows in the observed frame; rows are scaled by
         c / lambda_obs^2 so ``W @ F_nu`` is an integrated flux [erg/s/cm^2]; NaN centre -> zero row."""
-        c_kms = C_KMS
+        c_kms = 2.998e5
         lam0_rest = np.asarray(lam0_rest, dtype=np.float64)
         pad = ~np.isfinite(lam0_rest)
         lam0_rest = np.where(pad, 1.0, lam0_rest)
@@ -163,7 +162,7 @@ class Lines(Observation):
         dlam[0]     = 0.5 * (wm[1]  - wm[0])
         dlam[-1]    = 0.5 * (wm[-1] - wm[-2])
 
-        c_aa_s = C_AA_S
+        c_aa_s = 2.998e18
         norm = c_aa_s / (lam0 ** 2)
 
         diff     = wm[None, :] - lam0[:, None]

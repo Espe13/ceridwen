@@ -36,8 +36,6 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.linalg import cho_solve, solve_triangular
 
-from ..constants import C_KMS as CKMS
-
 __all__ = ["ElineSystem", "build_eline_system", "eline_marginal_loglike",
            "eline_marginal_loglike_static",
            "joint_loglike", "eline_line_fluxes", "line_table_for", "line_profiles_on_grid",
@@ -347,7 +345,7 @@ def build_eline_system(model) -> Optional[ElineSystem]:
         else:
             for z in zs:
                 lo = pos[r] * (1.0 + z)
-                s = np.hypot(s_gas, np.interp(lo, wave, s_tab)) / CKMS
+                s = np.hypot(s_gas, np.interp(lo, wave, s_tab)) / 2.99792458e5
                 if not (wave[0] * np.exp(3 * s) < lo < wave[-1] * np.exp(-3 * s)):
                     why = "within 3 sigma of the spectrum edge"
                     break

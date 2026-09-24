@@ -11,7 +11,9 @@ import jax.numpy as jnp
 
 Array = jax.Array
 
-from .constants import C_KMS as c_km_s, MPC_TO_CM, PC_TO_CM, LSUN_HZ_TO_FNU_CGS_AT_10PC
+c_km_s = 299792.458
+MPC_TO_CM = 3.0856775814913673e24
+PC_TO_CM = 3.0856775814913673e18
 
 _OGAMMA_H2_REF = 2.473e-5        # Omega_gamma h^2 at Tcmb = 2.7255 K
 _NU_MASS_CONST_H2 = 93.14        # eV; Omega_nu h^2 = sum(m_nu)/93.14
@@ -344,7 +346,7 @@ def flux_factor(z: Array, cosmo: Cosmology | None = None,
 
 _D_FID_10PC = 10.0
 
-_LSUN_HZ_TO_FNU_CGS_AT_10PC = LSUN_HZ_TO_FNU_CGS_AT_10PC   # erg s^-1 cm^-2 Hz^-1 per L_sun Hz^-1 at 10 pc
+_LSUN_HZ_TO_FNU_CGS_AT_10PC = 3.1967965e-7   # erg s^-1 cm^-2 Hz^-1 per L_sun Hz^-1 at 10 pc
 
 
 def flux_factor_cgs(z, cosmo: Cosmology | None = None,
