@@ -765,9 +765,7 @@ def _refuse_stellar_mass(filename, chash, mass) -> str:
     import warnings
     name = published_grid_name(chash)
     what = f"the published grid {name!r} ({filename})" if name else str(filename)
-    todo = (f"The registered download of {name!r} still carries FSPS's table; a corrected copy "
-            f"is registered in a later CERIDWEN release (then fetch_grid({name!r}, force=True))."
-            if name else
+    todo = (f"Fetch the current copy with fetch_grid({name!r}, force=True)." if name else
             "Rebuild the grid with SSPData.from_fsps, which records the corrected table.")
     reason = (f"table reaches {np.max(mass):.4g} M_sun per M_sun formed in "
               f"{int(np.sum(mass > STELLAR_MASS_MAX))} SSPs (bound {STELLAR_MASS_MAX:g})")
