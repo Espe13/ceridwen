@@ -427,7 +427,10 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
             bits.append(r"$\log\,\mathrm{SFR}_{10}$ = " + _fmt_q(*_quantiles(s10)))
     nfree = sum(int(np.size(v)) for v in model.theta_init.values())
     if ndata:
-        bits.append(rf"$\chi^2/\nu$ = {chi2 / max(ndata - nfree, 1):.2f} (best fit; $N_\mathrm{{data}}$ = {ndata})")
+        # diagonal chi^2 with the quoted uncertainties; a spectrum fitted with a GP likelihood
+        # is scored by the full covariance in the fit, which this number does not include
+        diag = " diagonal, no GP;" if _has_gp(model) else ""
+        bits.append(rf"$\chi^2/\nu$ = {chi2 / max(ndata - nfree, 1):.2f} (best fit;{diag} $N_\mathrm{{data}}$ = {ndata})")
     if "log_evidence" in meta and np.isfinite(meta["log_evidence"]):
         bits.append(rf"$\ln Z$ = {meta['log_evidence']:.1f}")
     fig.text(0.06, 0.965, title or "CERIDWEN fit", fontsize=14, weight="bold", va="top")
@@ -435,6 +438,14 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
     if savepath:
         fig.savefig(savepath, bbox_inches="tight")
     return fig
+
+
+def _has_gp(model) -> bool:
+    """True when some Spectrum of ``model`` is fitted with the GP likelihood."""
+    from .model.obs_params import GP_FAMILIES
+    given = set(getattr(model, "param_names", ())) | set(getattr(model, "transforms", {}) or {})
+    return (any(getattr(o, "noise", None) is not None for o in model.observations)
+            or any(f.claims(n) for f in GP_FAMILIES for n in given))
 
 
 def _smooth(H, sigma=1.0):

@@ -28,8 +28,10 @@ twice and the fitted ``sigma_gal`` is the dispersion itself, not a residual.
 
 Not shown but available: ``calibration=`` (per-pixel multiplicative vector on
 the model) and ``spec.fit_polynomial_calibration(model_flux, order)`` for
-post-hoc calibration checks.  ``noise=GaussianProcess(...)`` is a diagnostic for
-``Spectrum.log_likelihood`` only; fitSED refuses it.
+post-hoc calibration checks.  ``noise=GaussianProcess(a, l)`` fits correlated pixel
+residuals with a GP of fixed hyperparameters; sample them instead with
+``log_gp_amp_spec`` / ``log_gp_length_spec`` (docs/gp_likelihood.md,
+examples/recipes/gp_likelihood.py).
 
     conda activate <your-env>
     python examples/demo_3_spectrum_advanced.py

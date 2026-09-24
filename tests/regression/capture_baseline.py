@@ -344,6 +344,9 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
     out["calibration_likelihood"] = _calibration_likelihood_baseline(
         np.asarray(wave_spec), mu_spec, mask_spec, jax.random.PRNGKey(p["noise_seed"]))
 
+    out["gp_likelihood"] = _gp_likelihood_baseline(
+        np.asarray(wave_spec), mu_spec, jax.random.PRNGKey(p["noise_seed"] + 1))
+
     out["igm_damping_dla"] = _igm_damping_dla_baseline()
     out["dust_laws"] = _dust_laws_baseline(p, ssp_data)
     out.update(_logzsol_baselines(p))
@@ -553,6 +556,54 @@ def _calibration_likelihood_baseline(wave, mu, mask, key) -> dict:
         y_cal, mu, sig, mask, th)
     out["lnl_jitter_spec"] = np.asarray(lnl_j, dtype=np.float64)
     return out
+
+
+def _gp_likelihood_baseline(wave, mu, key) -> dict:
+    """The compiled GP likelihood of a spectrum (GPGaussianLikelihood).  Data = the
+    "csp_spectrum" prediction plus noise drawn from the GP covariance itself, sigma = 0.05 |mu|
+    times L z with L L^T = I + a^2 SE(l) (a = 1, l = 100 A: ~4 pixels of this grid), and a
+    mask (every 13th pixel and pixels 60-79).  Justified in the commit message: the fixed-
+    hyperparameter values equal the independent numpy GaussianProcess.log_likelihood plus the
+    sigma_eff normalisation to rel 1e-10 (tests/likelihood/test_gp_likelihood.py), and the
+    ln a = -30 value differs from the diagonal Gaussian by the analytic eps term."""
+    from ceridwen.likelihood.noise_model import DiagonalNoiseModel
+    from ceridwen.likelihood.gp_likelihood import (GPGaussianLikelihood, gp_sqdist,
+                                                   GP_JITTER)
+    mu = jnp.asarray(mu, dtype=jnp.float64)
+    n = mu.size
+    sig = 0.05 * jnp.abs(mu)
+    D = gp_sqdist(wave)
+    C = np.exp(-0.5 * np.asarray(D) / 100.0 ** 2) + (1.0 + GP_JITTER) * np.eye(n)
+    y = mu + sig * (jnp.asarray(np.linalg.cholesky(C)) @ jax.random.normal(key, (n,)))
+    idx = np.arange(n)
+    mask = jnp.asarray((idx % 13 != 0) & ~((idx >= 60) & (idx < 80)))
+    full = jnp.ones(n, dtype=bool)
+    fixed = GPGaussianLikelihood(DiagonalNoiseModel(), D, log_amp=0.0, log_len=np.log(100.0))
+    nm = DiagonalNoiseModel(use_jitter=True, jitter_key="log_jitter_spec")
+    sampled = GPGaussianLikelihood(nm, D, log_amp="log_gp_amp_spec",
+                                   log_len="log_gp_length_spec")
+    th = {"log_gp_amp_spec": jnp.array([np.log(0.8)]),
+          "log_gp_length_spec": jnp.array([np.log(70.0)]),
+          "log_jitter_spec": jnp.array([np.log(0.02 * float(jnp.median(jnp.abs(mu))))])}
+    small = GPGaussianLikelihood(DiagonalNoiseModel(), D, log_amp=-30.0, log_len=np.log(100.0))
+    lnl_f, aux_f = fixed(y, mu, sig, full)
+    lnl_m, aux_m = fixed(y, mu, sig, mask)
+    lnl_s, _ = sampled(y, mu, sig, mask, th)
+
+    def f(t):
+        return sampled(y, mu, sig, mask, t)[0]
+    g = jax.grad(f)(th)
+    return {
+        "lnl_fixed": np.asarray(lnl_f, dtype=np.float64),
+        "lnl_pointwise_fixed": np.asarray(aux_f.lnl_pointwise, dtype=np.float64),
+        "lnl_masked": np.asarray(lnl_m, dtype=np.float64),
+        "lnl_pointwise_masked": np.asarray(aux_m.lnl_pointwise, dtype=np.float64),
+        "lnl_sampled": np.asarray(lnl_s, dtype=np.float64),
+        "grad_sampled": np.array([float(g[k][0]) for k in sorted(g)], dtype=np.float64),
+        "lnl_small_amp": np.asarray(small(y, mu, sig, mask)[0], dtype=np.float64),
+        "gp_mean_fixed": np.asarray(fixed.conditional_mean(y, mu, sig, mask), dtype=np.float64)
+                         / float(jnp.median(sig)),
+    }
 
 
 STELLAR_MASS_TABLES = REPO_ROOT / "tests" / "reference" / "ssp_stellar_mass.npz"

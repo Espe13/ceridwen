@@ -62,5 +62,6 @@ nav:
   - Conventions & gotchas: conventions.md
   - Emission-line marginalisation: eline_marginalisation.md
   - Outlier mixture likelihood: outlier_model.md
+  - GP likelihood (correlated residuals): gp_likelihood.md
   - Post-processing: postprocessing.md
   - API reference: api.md

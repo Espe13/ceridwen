@@ -179,8 +179,9 @@ def _mfrac(model, theta_np, tag, out):
 def _likelihood(model, theta_np, tag, out):
     """fitSED's sampled log-posterior (MultiObservationLikelihood.make_lnprobfn): value and
     gradient at every draw, plus the SHA-256 of the lowered StableHLO of jit(value_and_grad).  Then
-    the outlier-mixture variant (f_outlier_spec sampled, f_outlier_phot fixed) when the
-    package has it."""
+    the outlier-mixture variant (f_outlier_spec sampled, f_outlier_phot fixed), the profiled
+    calibration and the spectrum GP likelihood (ln a, ln l sampled), each when the package has
+    it."""
     from ceridwen.fit import _likelihood_for
     from ceridwen.likelihood import DiagonalGaussianLikelihood, MultiObservationLikelihood
     rng = np.random.default_rng(SEED + 2)
@@ -218,6 +219,15 @@ def _likelihood(model, theta_np, tag, out):
             for k in keys)))
     except ImportError:
         print("  (package has no profiled calibration: variant skipped)")
+    try:        # GP likelihood of the spectrum, hyperparameters sampled
+        from ceridwen.likelihood.gp_likelihood import GPGaussianLikelihood, gp_sqdist
+        sp = obs["spec"]
+        gp_lh = GPGaussianLikelihood(DiagonalNoiseModel(), gp_sqdist(sp.wavelength),
+                                     log_amp="log_gp_amp_spec", log_len="log_gp_length_spec")
+        variants.append(("gp", tuple(gp_lh if k == "spec" else DiagonalGaussianLikelihood()
+                                     for k in keys)))
+    except ImportError:
+        print("  (package has no GP likelihood: variant skipped)")
     n = next(iter(theta_np.values())).shape[0]
     f_draws = rng.uniform(1e-4, 0.3, (n, 1))
     for vname, lhs in variants:
@@ -232,6 +242,9 @@ def _likelihood(model, theta_np, tag, out):
                 one["log_jitter_spec"] = jnp.log(0.05 * jnp.median(jnp.abs(obs["spec"].flux))
                                                  * (1.0 + f_draws[i]))
                 one["log_err_scale_phot"] = jnp.asarray(f_draws[i])
+            if vname == "gp":
+                one["log_gp_amp_spec"] = jnp.log(jnp.asarray(f_draws[i]) * 3.0)
+                one["log_gp_length_spec"] = jnp.log(30.0 + 300.0 * jnp.asarray(f_draws[i]))
             val, grad = vg(one)
             out[f"{tag}/lnprob/{vname}/{i}/value"] = np.asarray(val)
             _flat(f"{tag}/lnprob/{vname}/{i}/grad", grad, out)

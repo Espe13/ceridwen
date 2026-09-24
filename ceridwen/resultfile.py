@@ -34,6 +34,8 @@ NOT_RECORDED = (
     "and parameters fixed inside the CSP, nebular / dust-emission grid options)",
     "observation options not stored in /obs (noise_floor, upper limits, calibration, sky, "
     "PhotometricBroadener settings)",
+    "a Spectrum's fixed GaussianProcess noise= (its hyperparameters are in the obs' "
+    "likelihood_json, but the observations you pass are not compared with them)",
 )
 
 # /model entries that are not part of the model definition

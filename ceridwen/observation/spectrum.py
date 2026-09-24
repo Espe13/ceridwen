@@ -31,8 +31,10 @@ class Spectrum(Observation):
     sky : array-like (n_pix,) -- subtracted from data in chi_sq/residuals/
         log_likelihood only (not in ``predict``).
     noise_floor : float -- fractional floor: sigma_eff^2 = sigma^2 + (floor*|model|)^2.
-    noise : GaussianProcess -- adds a correlated-residual term in ``log_likelihood``
-        only.
+    noise : GaussianProcess -- squared-exponential GP on the whitened residuals with FIXED
+        hyperparameters, used by ``log_likelihood`` and by ``fitSED`` (``GPGaussianLikelihood``);
+        to sample them, leave it None and sample ``log_gp_amp_spec`` / ``log_gp_length_spec``
+        (``docs/gp_likelihood.md``).
     zred_range : (z_min, z_max) -- support of a SAMPLED redshift; otherwise taken from
         the finite bounds of the model's ``zred`` prior.
     marginalize_elines : bool -- marginalise analytically over the fluxes of the nebular
@@ -342,7 +344,8 @@ class Spectrum(Observation):
 
     def chi_sq(self, model_flux):
         """Sum of squared normalised residuals over unmasked pixels for
-        ``model_flux`` (n_pix,) on the observed grid."""
+        ``model_flux`` (n_pix,) on the observed grid: the DIAGONAL chi^2 (sigma_eff with the
+        noise floor only), without the GP of ``self.noise`` even when one is set."""
         resid = self._compute_residuals(model_flux)
         return float(jnp.sum(jnp.where(self.mask, resid ** 2, 0.0)))
 
@@ -353,7 +356,10 @@ class Spectrum(Observation):
 
     def log_likelihood(self, model_flux):
         """Gaussian log-likelihood of ``model_flux`` (n_pix,), including the
-        sigma_eff normalisation and the GP term when ``self.noise`` is set."""
+        sigma_eff normalisation; with ``self.noise`` a GaussianProcess it is the full GP
+        likelihood (the value ``fitSED``'s ``GPGaussianLikelihood`` gives for the same fixed
+        hyperparameters and noise_floor), otherwise the diagonal one.  Host-side floats,
+        for use after a fit; the samplers use the compiled likelihood."""
         resid, sigma_r = self._compute_residuals(model_flux, return_sigma=True)
         mask = self.mask
 

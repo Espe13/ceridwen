@@ -163,8 +163,8 @@ p = likelihood.outlier_probability(obs.flux, pred, obs.uncertainty, obs.mask, th
 ## Not supported
 
 - **Correlated noise.** The mixture is diagonal only, as Prospector's
-  (`assert Sigma.ndim == 1`). A `GaussianProcess` noise model is already refused by
-  `fitSED`.
+  (`assert Sigma.ndim == 1`). On a spectrum with the GP likelihood
+  (`docs/gp_likelihood.md`) the mixture is refused at setup.
 - **Inside the emission-line marginalisation** (above).
 
 ## Non-finite data
