@@ -15,6 +15,10 @@ from .runner import SamplerAdapter, SamplingResult
 Array = jax.Array
 
 
+# relative tolerance of the resume check on the saved live points' ln L (see _load_resume)
+RESUME_LOGL_RTOL = 1e-6
+
+
 class BlackJAXNestedSamplerAdapter(SamplerAdapter):
     """Nested-sampling adapter driving the NSS kernel with a Ceridwen ``SedModel``.
 
@@ -176,11 +180,13 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
             raise ValueError(
                 f"{self.resume_from} was written by a different run; differing settings "
                 + ", ".join(f"{k}: checkpoint {a!r} vs now {b!r}" for k, (a, b) in diff.items()))
-        # the same data and forward model: the saved live points must have the same ln L now
+        # the same data and forward model: the saved live points must have the same ln L now,
+        # to the forward model's float32-contraction precision (re-evaluated at another batch
+        # width, ln L moves ~1e-8 relative; the T3 spectra tolerance is 1e-6)
         pts = res["live"].particles
         logl_saved = _np.asarray(pts.loglikelihood)
         logl_now = _np.asarray(jax.jit(jax.vmap(loglike_fn))(pts.position))
-        bad = ~_np.isclose(logl_now, logl_saved, rtol=1e-9, atol=1e-9)
+        bad = ~_np.isclose(logl_now, logl_saved, rtol=RESUME_LOGL_RTOL, atol=1e-6)
         if bad.any():
             i = int(_np.argmax(_np.abs(logl_now - logl_saved)))
             raise ValueError(

@@ -183,6 +183,13 @@ def test_resume_refuses_a_foreign_checkpoint(tmp_path, monkeypatch):
     with pytest.raises(FileNotFoundError):
         BlackJAXNestedSamplerAdapter(priors, resume_from=str(tmp_path / "nope.pkl"))
 
+    # Q1-006: the same model re-evaluated at another batch width moves ln L in the last
+    # float32-contraction digits (1.4e-8 relative on the README model); that is not a
+    # foreign checkpoint and must resume
+    res = BlackJAXNestedSamplerAdapter(priors, resume_from=ck_path, **_KW).run(
+        lambda t: loglike(t) * (1.0 + 1e-8), logprior, theta_init, key)
+    assert np.isfinite(float(res.log_evidence))
+
     # a checkpoint without the sampler state (older format, or a rescue pickle)
     import pickle
     ck = BlackJAXNestedSamplerAdapter.load_checkpoint(ck_path)

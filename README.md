@@ -443,7 +443,9 @@ result = fitSED(model, sampler="nuts", optimize=True,
 A nested-sampling run with checkpoints (`checkpoint_dir=` or `$CERIDWEN_CHECKPOINT_DIR`) can be
 continued after a kill with `resume_from=`: it reproduces the uninterrupted run at the same
 `rng_key`, and refuses a checkpoint whose settings, parameter shapes or live-point
-log-likelihoods do not match the model.
+log-likelihoods (to a relative 1e-6) do not match the model. A checkpoint is written every
+`checkpoint_interval_s` seconds (default 1200) as `ns_checkpoint_<pid>.pkl`; pass the same
+`rng_key` and sampler settings as the killed run.
 
 ```python
 result = fitSED(model, sampler="nested", output_dir="./my_fit",
