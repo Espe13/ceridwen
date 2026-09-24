@@ -16,6 +16,12 @@ __all__ = ["Prior", "Uniform", "TopHat", "Normal", "MultivariateNormalPrior", "C
            "LogNormal", "LogUniform", "StudentT"]
 
 
+def _scalar_or_list(v):
+    """A prior parameter for JSON: a float for a scalar, a (nested) list for an array."""
+    a = np.asarray(v)
+    return a.tolist() if a.ndim else float(a)
+
+
 @dataclass(frozen=True)
 class Prior(abc.ABC):
     """Prior base class delegating to a TFP-JAX distribution; subclasses define
@@ -72,8 +78,7 @@ class Prior(abc.ABC):
         """JSON-ready description: type, parameters (lists for arrays), name."""
         out = {"type": type(self).__name__, "name": self.name}
         for k, v in self.params.items():
-            a = np.asarray(v)
-            out[k] = a.tolist() if a.ndim else float(a)
+            out[k] = _scalar_or_list(v)
         return out
 
     def __len__(self) -> int:
@@ -144,8 +149,8 @@ class Uniform(Prior):
     def serialize(self):
         return {
             "type": "Uniform",
-            "low": float(self.params["low"]),
-            "high": float(self.params["high"]),
+            "low": _scalar_or_list(self.params["low"]),
+            "high": _scalar_or_list(self.params["high"]),
             "name": self.name,
         }
 

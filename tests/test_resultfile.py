@@ -245,3 +245,22 @@ def test_priors_round_trip_through_their_serialisation(tmp_path):
         if k == "m":
             continue
         assert np.array_equal(np.asarray(back[k].logpdf(x)), np.asarray(p.logpdf(x))), k
+
+
+@needs_grid
+def test_vector_uniform_prior_round_trips(setup, tmp_path):
+    """G2-001: a Uniform with per-element bounds on a vector parameter is written (it
+    raised TypeError in Uniform.serialize, after sampling) and read back."""
+    from ceridwen.priors import Uniform
+    from ceridwen.resultfile import check_model_against_result, priors_from_result
+    pri = dict(setup["priors"], logsfr_ratios=Uniform(low=-np.array([1.0, 2.0, 3.0, 4.0]),
+                                                      high=np.array([1.0, 2.0, 3.0, 4.0])))
+    model = setup["build"](priors=pri)
+    path = _write(model, tmp_path / "vec.h5")
+    back = priors_from_result(path)
+    assert back["logsfr_ratios"].serialize() == pri["logsfr_ratios"].serialize()
+    assert back["logsfr_ratios"].serialize()["low"] == [-1.0, -2.0, -3.0, -4.0]
+    assert check_model_against_result(model, path).ok
+    # scalar bounds serialise exactly as before (floats)
+    assert Uniform(low=0.0, high=1.0).serialize() == {"type": "Uniform", "low": 0.0,
+                                                      "high": 1.0, "name": ""}
