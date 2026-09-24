@@ -11,8 +11,8 @@ export CERIDWEN_TEST_SSP=$(python -c "from ceridwen.ssps import fetch_grid; prin
 
 The suite's main SSP grid is the published BPASS grid. A grid-dependent test skips when it
 finds no grid, so read the `-ra` summary at the end of a run: a skip is not a pass. Do not run
-scripts from the folder that contains the clone: a folder named `ceridwen` in the working
-directory shadows the installed package.
+scripts from the folder that contains the clone: Python then finds the clone folder
+`ceridwen` before the installed package.
 
 ## The checks
 

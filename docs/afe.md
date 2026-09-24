@@ -32,10 +32,14 @@ theta = {
     "logzsol":            jnp.array([-0.3]),   # = [Fe/H] on an aMIST grid
     "afe":                jnp.array([0.4]),    # [α/Fe]: re-partitions that Z
     "tau_pow":            jnp.array([0.3]),
+    "alpha_pow":          jnp.array([-1.0]),
     "diffuse_tau_kc":     jnp.array([0.2]),
     "diffuse_dust_index": jnp.array([0.0]),
 }
 wave, fnu = csp.wave, csp.get_spectrum(theta)   # rest-frame Lsun/Hz per Msun
+print(csp)                                      # grids, [Fe/H] axis, Z_sun, parameters
+i = int(jnp.argmin(jnp.abs(wave - 5500.0)))
+print(f"{fnu.shape[0]} pixels, L_nu(5500 A) = {float(fnu[i]):.3e} Lsun/Hz per Msun")
 ```
 
 `amist_c3k_hr_krou_afe` is built from the alpha-MC C3K high-resolution SSPs (MIST v2.5 +
@@ -55,6 +59,9 @@ log10 Z = [Fe/H] + log10(0.0185), i.e. `logzsol` = [Fe/H].
   refused, and the basis reads nothing from `$SPS_HOME` unless `add_dust_emission=True`.
 - `CSPBasis_afe` accepts only α-aware 4-D grids; a solar-scaled 3-D grid raises a `TypeError`
   that points to `CSPBasis`. `ssp_afe=` is keyword-only when you construct a grid by hand.
+- `logzsol` above +0.25 together with [α/Fe] above +0.4 is refused: FSPS ships the same
+  isochrone file for [α/Fe] = +0.4 and +0.6 at [Fe/H] = +0.5, and `display()` lists the cell.
+  A prior that reaches it raises at construction.
 - The grid does not carry a surviving-mass table yet, so fit it with
   `fitSED(..., mfrac=False)` and quote the formed mass.
 

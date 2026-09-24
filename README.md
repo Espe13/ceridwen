@@ -230,7 +230,7 @@ metallicity configurations (`tests/csp/test_lookback_flip_invariant.py`) with SS
 
 ## For developers
 
-Install from a clone (`--depth 1` skips the history, most of the 244 MB download):
+Install from a clone (`--depth 1` skips the history: 41 MB instead of 244 MB):
 
 ```bash
 git clone --depth 1 https://github.com/Espe13/ceridwen.git
@@ -250,8 +250,8 @@ pytest tests/regression/test_regression.py tests/csp/test_lookback_flip_invarian
 
 A grid-dependent test skips when it finds no grid, so read the skip summary: a skip is not a
 pass. [Development](https://www.amanda-stoffers.de/ceridwen/development/) lists every check and
-how the code is built. Do not run scripts from the folder that contains the clone: a folder named `ceridwen` in
-the working directory shadows the installed package.
+how the code is built. Do not run scripts from the folder that contains the clone: Python then finds the clone
+folder `ceridwen` before the installed package.
 
 ## Citing
 

@@ -23,9 +23,9 @@ install a Fortran compiler ([Installation](installation.md#building-your-own-ssp
 `$CERIDWEN_GRID_DIR`) is incomplete or an earlier release. `fetch_grid(name, force=True)`
 downloads it again.
 
-**An import picks up the wrong `ceridwen`.** A folder named `ceridwen` in the working
-directory (for example a clone, seen from its parent folder) shadows the installed package.
-Run scripts from any other folder.
+**An import picks up the wrong `ceridwen`.** Started from the folder that contains a clone,
+Python finds the clone folder `ceridwen` before the installed package. Run scripts from
+inside the clone or from any other folder.
 
 **NUTS prints nothing for a long time.** Warmup and sampling are each one compiled loop, so
 there is no progress output, and Ctrl-C does not stop them; use `kill`. On a CPU, NUTS takes
