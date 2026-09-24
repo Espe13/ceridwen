@@ -625,3 +625,18 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
   rebuild it, build the CSP with `init_neb_params={"cloudy_dust": True}`; the default CSP is
   reported as a different model.
 
+## 23. Dust emission, and the IGM on lines and breaks
+
+- **The dust-emission energy balance counts the lines.** The energy the dust absorbs from the
+  nebular lines is re-emitted in the IR on every path, so `get_spectrum(include_lines=False)`
+  (the continuum) already carries the re-emission of the lines; `include_lines` only adds the
+  attenuated lines themselves. Fixed-z photometry (static line basis) and free-z photometry
+  (painted lines) give the same IR fluxes.
+- **Line fluxes under the IGM** (`Lines`, and the lines a `Spectrum` paints) use the IGM
+  transmission averaged over the line's profile on the model grid, the same as the painted
+  path. At Ly-α the Madau forest starts inside the line, so its blue half is absorbed (the
+  line keeps 0.81 of its flux at z = 3, 0.49 at z = 6 on the BPASS grid); the value depends on how finely the model grid samples the line (2 Å pixels on BPASS:
+  1-3% below a continuous quadrature at z = 3-9).
+- **The IGM acts after `σ_gal`** and before the instrument (`docs/conventions.md`,
+  Broadening). A fixed `σ_gal = 0` keeps the IGM on the model grid.
+

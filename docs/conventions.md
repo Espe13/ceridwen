@@ -51,7 +51,7 @@ safe".
 | `csp.get_spectrum(theta)` (model grid) | rest-frame L_ν in L☉ Hz⁻¹ per M☉ (no mass, distance or IGM) |
 | `Spectrum` predictions (`model.predict`) | observed-frame F_ν in erg s⁻¹ cm⁻² Hz⁻¹ (cgs; × 1e32 for nJy), only with a redshift or `lumdist_mpc` in force |
 | Broadband fluxes | AB maggies |
-| Emission-line fluxes | erg s⁻¹ cm⁻² |
+| Emission-line fluxes | erg s⁻¹ cm⁻², observed frame; with an IGM, its transmission averaged over the line's profile on the model grid |
 | Marginalised line fluxes (`marginalize_elines=True`: `/elines` in the result, `extras["elines"]`) | erg s⁻¹ cm⁻², observed frame, IGM-transmitted at the line, **not** divided by the spectrum calibration; lines named as in `$SPS_HOME/data/emlines_info.dat`, vacuum rest-frame Å |
 | Stellar mass | `logmass` = log10(M⋆/M☉) |
 
@@ -96,6 +96,13 @@ The three widths live in three different places, and each is set exactly once:
 | `σ_gal`, `σ_gas` | the galaxy's stellar and gas velocity dispersions [km/s] | `Kinematics(...)`, passed to `SedModel(kinematics=...)`; the same object serves every observation |
 | `σ_inst(λ)` | the instrument's line-spread function at each observed pixel | `Instrument.<unit>(...)`, passed to each `Spectrum(instrument=...)` |
 | `σ_lib(λ)` | the resolution already in the SSP library | stored in every schema-2 grid (`SSPData.ssp_resolution`); read automatically |
+
+The IGM acts between the galaxy and the instrument, in the order the light meets them:
+galaxy kinematics (rest frame), redshift, IGM, instrument. A `Spectrum` smooths the model by
+`σ_gal`, multiplies by the IGM transmission, then applies the instrument (and library) part of
+the kernel; broadened photometry multiplies by the transmission after the `σ_gal` broadening.
+So the Ly-α break is as sharp as the IGM model and the instrument make it. (With `σ_gal` fixed
+at 0 the IGM is applied on the model grid, as without broadening.)
 
 There is no other place where a width enters. In particular the model spectrum
 (`csp.get_spectrum`) is **not** broadened by the galaxy any more, and emission

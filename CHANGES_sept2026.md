@@ -957,3 +957,34 @@ and name the setting in the error. Checked against python-fsps 0.5.0 (default FS
 (`tests/test_nebular_default_grid.py`). The golden spectra and the `eline_marginal` /
 `lsf_scale` regression categories pin `cloudy_dust=True`, the grid they were captured with.
 
+**Dust-emission energy balance includes the lines (B1-006).** With `add_dust_emission=True` the
+absorbed luminosity is computed from the line-inclusive spectra on every path;
+`include_lines=False` returns the attenuated continuum plus the full dust emission. Before, the
+continuum (which the fixed-z photometry and every `Spectrum` use) left out the re-emission of the
+lines' absorbed energy: IR bands 2-3% faint, and fixed-z and free-z fits of the same object
+disagreed. Now static and painted photometry agree to < 3e-7 in the IR; the energy balance closes
+to 1.5e-9 (`tests/test_dust_emission_lines.py`). Moves every dust-emission continuum in the IR
+(lines' share of L_abs, 4.7% in the test model); `get_spectrum(include_lines=True)` is unchanged.
+
+**IGM on line fluxes (B1-018).** `Lines` fluxes and the lines a `Spectrum` paints take the IGM
+transmission averaged over each line's painted profile (`gaussnebarr` x trapezoid in nu), not
+linearly interpolated at the line centre. Ly-alpha now equals the painted-then-attenuated path
+(to 1.2e-6 at z = 3, 6, 9; was 0.76 / 0.37 / 0.34 vs 0.81 / 0.49 / 0.46 on BPASS). Lines redward
+of 1215.67 A are unchanged (factor 1 to rounding).
+
+**IGM after the galaxy's kinematic broadening (B1-027).** Order: galaxy kinematics (rest
+frame), redshift, IGM, instrument. A `Spectrum` (fixed or sampled z) applies the IGM after the
+`sigma_gal` kernel and before the instrument response; broadened photometry after its
+`sigma_gal` broadening. The Ly-alpha break is no longer smeared by the galaxy's dispersion
+(`tests/test_igm_after_kinematics.py`, against a direct construction). A fixed `sigma_gal = 0`
+keeps the old arithmetic; spectra redward of Ly-alpha (T = 1) are unchanged.
+
+**`frac_obrun` (B1-013, B1-012, P1-011).** `frac_obrun = 0` is now exactly the model without the
+key: in `runaway_bc` the young nebular continuum below 912 A kept escaping the birth cloud as
+soon as the key existed. `fesc_geometry='picket'` requires `add_neb=True` (it silently ran the
+runaway arithmetic without it). The picket geometry is tested point by point against its
+definition (clear fraction free of birth-cloud and diffuse dust, nebular emission x (1 - fo),
+f_esc = fo, no dust heating by the clear light). Documented: in `runaway_bc` the fraction
+`frac_obrun` of every age row skips that row's age-bin dust, so with several attenuated bins old
+stars brighten too (`docs/conventions.md`, GOTCHAS 21).
+
