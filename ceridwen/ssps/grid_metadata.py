@@ -119,7 +119,8 @@ _register("chash-v1:6049a6ea0487a96eba1e293f8cdf8a8de448aa3fc055be8307b12d3fcae4
              "[Fe/H] = -2.5..+0.5 in 0.25; node[10]",
     file_sha256=("d52f1940e4cfcf739a50e8afaea0389871bec9404653a7e023faa53f86382f31",
                  "56142e9cc9ec6362d927d1401e14af11980b1e9fd3d82ce43a45df1d7a8cfcd7",
-                 "2f6777a848f211b7b93a50ff206466a3c2faab073e8acab09d4c0e2dcea378fb")))
+                 "2f6777a848f211b7b93a50ff206466a3c2faab073e8acab09d4c0e2dcea378fb",
+                 "f2f40fe9d57b7fbdba5a60aa130c79acad09c0d7f26e789d95f93092eeedf4fd")))
 
 _register("chash-v1:39200b1bbccb1144cfd3ce43d0ddc1fdf921c7f7a5434f674a60dbaa009ec114", GridMeta(
     name="mist_c3k_lr_chab", log10_zsun=-1.73282826600002, zsun_nominal=0.0185,

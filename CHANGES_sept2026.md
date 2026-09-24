@@ -937,3 +937,26 @@ longer mutates `sampler_kwargs` (B2-004), `CSPBasis` no longer mutates `init_*_p
 weighted quantiles (B3-001); `fetch_grid` names a pre-re-deposit cache (B3-007);
 `ceridwen.check` verifies the FSPS data files (B3-002). Docs, README, tutorial, GOTCHAS,
 AGENTS and examples corrected per the B3/Q1/P findings (see `git log main..night/fixes`).
+
+---
+
+## Grid re-deposit: `mist_miles_chab` surviving-mass table (Zenodo 22937956, 2026-09-24)
+
+**What.** The registry now points at Zenodo record 22937956
+(doi:10.5281/zenodo.22937956), a new version of record 22921057. Only
+`ssp_data_mist_miles.h5` changed: its `ssp_stellar_mass` table is corrected for truncated
+young isochrones (326 of 1391 cells change, all younger than 10^6.45 yr; see the Q2-003
+entry). Spectra and the wavelength, age and metallicity axes are bit-identical, so the
+content hash (chash) is unchanged. New sha256 `f2f40fe9…`. `mist_bpass_v2` and
+`amist_c3k_hr_krou_afe` are the same files, now fetched from the new record. The old
+sha256 stays in `grid_metadata.py`, so copies downloaded earlier still resolve their
+metadata; `fetch_grid("mist_miles_chab", force=True)` gets the corrected table.
+
+**Why.** FSPS puts the whole stellar mass below the first isochrone point into the first
+bin. On truncated young isochrones this gave a surviving mass above the formed mass in 360
+cells (Q2-003).
+
+**Verification.** The uploaded file's MD5 was checked against the prepared file
+(`cd42a1d4…`) on Zenodo before publishing. The download through `fetch_grid` from the
+new URLs is checked in the release's CI simulation.
+

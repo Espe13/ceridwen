@@ -19,20 +19,21 @@ from pathlib import Path
 REGISTRY: dict[str, dict] = {
     "mist_miles_chab": {
         "stellar_mass_table": True,
-        "url": "https://zenodo.org/records/22921057/files/"
+        "url": "https://zenodo.org/records/22937956/files/"
                "ssp_data_mist_miles.h5?download=1",
-        "sha256": "2f6777a848f211b7b93a50ff206466a3"
-                  "c2faab073e8acab09d4c0e2dcea378fb",
+        "sha256": "f2f40fe9d57b7fbdba5a60aa130c79ac"
+                  "ad09c0d7f26e789d95f93092eeedf4fd",
         "size_mb": 67,
         "notes": "python-fsps 0.5.0, MIST + MILES, Chabrier IMF "
                  "(imf_type=1).  Schema 3.0: ssp_resolution = sampling "
                  "floor max MILES LSF (FWHM 2.54 A, Falcon-Barroso+2011); "
-                 "surviving-mass table (FSPS stellar_mass) for mfrac. "
-                 "Nebular-capable via CSPBasis.",
+                 "surviving-mass table (FSPS stellar_mass; first isochrone bin "
+                 "corrected for truncated young isochrones, Zenodo 22937956) "
+                 "for mfrac.  Nebular-capable via CSPBasis.",
     },
     "mist_bpass_v2": {
         "stellar_mass_table": True,
-        "url": "https://zenodo.org/records/22921057/files/"
+        "url": "https://zenodo.org/records/22937956/files/"
                "ssp_data_bpass.h5?download=1",
         "sha256": "c119d19e6ade6f1de72ebf0a887e70e8"
                   "8330a1d36c6323b4d314d8baa952d151",
@@ -44,7 +45,7 @@ REGISTRY: dict[str, dict] = {
     },
     "amist_c3k_hr_krou_afe": {
         "stellar_mass_table": False,
-        "url": "https://zenodo.org/records/22921057/files/"
+        "url": "https://zenodo.org/records/22937956/files/"
                "amist_c3k_hr_krou_afe.h5?download=1",
         "sha256": "f6af03d813569f5982891d969f030d93"
                   "45278a60de907b90b2a910d56af32a16",

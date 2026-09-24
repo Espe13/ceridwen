@@ -56,7 +56,7 @@ and that is expected.
 ## SSP grids
 
 Fitting needs an SSP grid (an HDF5 file). The published grids are on Zenodo
-([doi:10.5281/zenodo.22921057](https://doi.org/10.5281/zenodo.22921057)) and registered by
+([doi:10.5281/zenodo.22937956](https://doi.org/10.5281/zenodo.22937956)) and registered by
 name. `fetch_grid` downloads a grid once into `~/.ceridwen/grids` (or `$CERIDWEN_GRID_DIR`),
 checks its SHA-256 on every call, and returns the path:
 

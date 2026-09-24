@@ -83,7 +83,7 @@ def test_gives_up_with_a_clear_error(tmp_path):
 def test_404_fails_at_once(tmp_path):
     import urllib.error
     try:
-        _download("https://zenodo.org/records/22921057/files/does-not-exist.h5?download=1",
+        _download("https://zenodo.org/records/22937956/files/does-not-exist.h5?download=1",
                   tmp_path / "x", attempts=5)
     except urllib.error.HTTPError as exc:
         assert exc.code == 404
