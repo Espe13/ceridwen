@@ -64,7 +64,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 BASELINE_DIR = HERE / "baselines"
 REPO_ROOT = HERE.parent.parent
 
-from _gridfixture import require_test_grid
+from _gridfixture import require_test_grid, find_named_grid
 
 SSP_FILE = str(require_test_grid())
 SPS_HOME = os.environ.get("SPS_HOME", str(pathlib.Path.home() / "Prospector" / "fsps"))
@@ -476,10 +476,11 @@ AFE_INTERIOR = 0.3           # between the +0.2 and +0.4 planes, clear of the re
 
 LOGZSOL_GRIDS = {
     # the canonical test grid, resolved like every other test grid ($CERIDWEN_TEST_SSP ->
-    # tests/fixtures -> ceridwen/data/test_data), so CI runs this category too
+    # tests/fixtures -> ceridwen/data/test_data -> fetch_grid cache), so CI runs this
+    # category too; the other two by file name (repo copy, else the fetch_grid cache)
     "logzsol_bpass": (SSP_FILE, False),
-    "logzsol_mist":  ("ceridwen/data/test_data/ssp_data_mist_miles.h5", False),
-    "logzsol_afe":   ("ceridwen/data/test_data/amist_c3k_hr_krou_afe.h5", True),
+    "logzsol_mist":  (find_named_grid("ssp_data_mist_miles.h5"), False),
+    "logzsol_afe":   (find_named_grid("amist_c3k_hr_krou_afe.h5"), True),
 }
 
 
@@ -501,6 +502,8 @@ def _logzsol_baselines(p) -> dict:
 
     out = {}
     for cat, (rel, is_afe) in LOGZSOL_GRIDS.items():
+        if rel is None:
+            continue
         path = pathlib.Path(rel) if pathlib.Path(rel).is_absolute() else REPO_ROOT / rel
         if not path.is_file():
             continue

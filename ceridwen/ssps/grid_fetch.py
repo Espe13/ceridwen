@@ -59,10 +59,15 @@ REGISTRY: dict[str, dict] = {
 }
 
 
+def _grid_cache_root() -> Path:
+    """$CERIDWEN_GRID_DIR or ~/.ceridwen/grids, without creating it."""
+    root = os.environ.get("CERIDWEN_GRID_DIR")
+    return Path(root) if root else Path.home() / ".ceridwen" / "grids"
+
+
 def grid_cache_dir() -> Path:
     """Cache directory: $CERIDWEN_GRID_DIR or ~/.ceridwen/grids."""
-    root = os.environ.get("CERIDWEN_GRID_DIR")
-    path = Path(root) if root else Path.home() / ".ceridwen" / "grids"
+    path = _grid_cache_root()
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -126,6 +131,38 @@ def _is_earlier_copy(name: str, sha: str) -> bool:
     return ch is not None and CHASH_TABLE[ch].name == name
 
 
+def _verify_cached(name: str, dest: Path) -> None:
+    """Raise RuntimeError unless the cached file ``dest`` has the registry checksum of ``name``."""
+    entry = REGISTRY[name]
+    got = _sha256(dest)
+    if entry["sha256"] and got != entry["sha256"]:
+        if _is_earlier_copy(name, got):
+            raise RuntimeError(
+                f"Cached grid {dest} is an earlier release of {name!r} (sha256 "
+                f"{got[:12]}..., before the 2026-09 Zenodo re-deposit that added the "
+                f"surviving-mass table); this version expects {entry['sha256'][:12]}....  "
+                f"Refresh it with fetch_grid({name!r}, force=True)."
+            )
+        raise RuntimeError(
+            f"Cached grid {dest} fails its checksum "
+            f"(got {got[:12]}..., expected {entry['sha256'][:12]}...). "
+            f"Delete it or call fetch_grid({name!r}, force=True)."
+        )
+
+
+def cached_grid(name: str) -> Path | None:
+    """The checksum-verified cached copy of the registry grid ``name``, or ``None`` when
+    :func:`fetch_grid` has not downloaded it.  Never downloads and never creates the cache
+    directory; a cached file that fails its checksum raises, as in :func:`fetch_grid`."""
+    if name not in REGISTRY:
+        raise KeyError(f"Unknown grid {name!r}. Available: {sorted(REGISTRY)}.")
+    dest = _grid_cache_root() / f"{name}.h5"
+    if not dest.is_file():
+        return None
+    _verify_cached(name, dest)
+    return dest
+
+
 def fetch_grid(name: str, *, force: bool = False, quiet: bool = False) -> Path:
     """Return a local, checksum-verified path to the registry grid ``name``,
     downloading into :func:`grid_cache_dir` on first use (``force`` re-downloads)."""
@@ -143,20 +180,7 @@ def fetch_grid(name: str, *, force: bool = False, quiet: bool = False) -> Path:
     dest = grid_cache_dir() / f"{name}.h5"
 
     if dest.exists() and not force:
-        got = _sha256(dest)
-        if entry["sha256"] and got != entry["sha256"]:
-            if _is_earlier_copy(name, got):
-                raise RuntimeError(
-                    f"Cached grid {dest} is an earlier release of {name!r} (sha256 "
-                    f"{got[:12]}..., before the 2026-09 Zenodo re-deposit that added the "
-                    f"surviving-mass table); this version expects {entry['sha256'][:12]}....  "
-                    f"Refresh it with fetch_grid({name!r}, force=True)."
-                )
-            raise RuntimeError(
-                f"Cached grid {dest} fails its checksum "
-                f"(got {got[:12]}..., expected {entry['sha256'][:12]}...). "
-                f"Delete it or call fetch_grid({name!r}, force=True)."
-            )
+        _verify_cached(name, dest)
         return dest
 
     if not quiet:

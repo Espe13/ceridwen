@@ -41,20 +41,27 @@ GRIDS = {
 
 
 def _path(name):
-    """The grid file of ``name``: its repo path, or for the published BPASS grid the suite's
-    test grid ($CERIDWEN_TEST_SSP, as CI provides it); skip when neither exists."""
+    """The grid file of ``name``: its repo path, else for a published grid its fetch_grid
+    cache copy (checksum-verified; ``_gridfixture.find_named_grid``), else for the published
+    BPASS grid the suite's test grid ($CERIDWEN_TEST_SSP, as CI provides it); skip when none
+    exists."""
+    import sys
+    sys.path.insert(0, str(REPO / "tests"))
+    from _gridfixture import find_named_grid, find_test_grid, REGISTRY_NAME, _MISS
     rel, _ = GRIDS[name]
     path = REPO / rel
+    fname = pathlib.Path(rel).name
+    if not path.is_file() and REGISTRY_NAME.get(fname) == name:
+        path = find_named_grid(fname) or path
     if not path.is_file() and name == "mist_bpass_v2":
-        import sys
-        sys.path.insert(0, str(REPO / "tests"))
-        from _gridfixture import find_test_grid
         found = find_test_grid()
         if found is not None and SSPData.load(str(found)).chash == next(
                 c for c, m in GM.CHASH_TABLE.items() if m.name == name):
             path = found
     if not path.is_file():
-        pytest.skip(f"{name}: {rel} is not present")
+        how = (f"; fetch_grid({name!r}) would provide it" if name in REGISTRY_NAME.values()
+               else "; it is not a published grid")
+        pytest.skip(_MISS.get(fname) or f"{name}: {rel} is not present{how}")
     return path
 
 
