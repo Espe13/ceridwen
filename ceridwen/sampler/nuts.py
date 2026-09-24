@@ -75,7 +75,8 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
     target_acceptance : float -- dual-averaging target, default 0.95
     max_num_doublings : int -- max tree depth (2**n leapfrog steps)
     dense_mass : bool -- full inverse mass matrix; default True (False with ``vi``)
-    bounds : dict -- name -> (low, high); None auto-detects from model priors
+    bounds : dict -- name -> (low, high) for the logit map; None = no bounded parameters
+        (the adapter never sees the priors; fitSED passes fit._detect_bounds(model))
     vi : None | 'tril' | 'iaf' | VariationalMap | TrainedMap -- variational preconditioning
     vi_kwargs : dict -- map constructor kwargs plus ``num_steps``, ``batch_size``, ``lr0`` for training
     """
