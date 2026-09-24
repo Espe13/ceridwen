@@ -158,9 +158,9 @@ class SSPDataAfe(SSPData):
                              ": duplicated isoc_feh_p050_afe_p6 (= p4) in FSPS")
         if self.n_afe > 1 and "chash table" in (self.zsun_source or ""):
             notes += ["note",
-                      "  grids written before v1.0.5 carry units_lgmet = 'absolute total "
-                      "metallicity'; that is wrong: the axis is [Fe/H] + log10 Z_sun on every "
-                      "plane.  The metadata table (by chash) overrides it."]
+                      "  files written before v1.0.5 label units_lgmet 'absolute total metallicity'; "
+                      "the axis is [Fe/H] + log10 Z_sun on every plane, and CERIDWEN reads it so "
+                      "from its metadata table (by chash): nothing to do."]
         if self.n_afe == 1:
             return notes + [
                 "note",

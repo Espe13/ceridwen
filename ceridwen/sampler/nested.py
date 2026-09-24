@@ -350,7 +350,7 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         wall_time = _elapsed0 + time.perf_counter() - t_start
         if self.verbose:
             print(
-                f"  Converged  logZ = {_get_logZ(live):.3f}  "
+                f"  Converged  (live-point logZ estimate {_get_logZ(live):.3f}; the final ln Z follows)  "
                 f"({wall_time:.1f} s,  {n_like_calls:,} likelihood calls)"
             )
 

@@ -447,7 +447,8 @@ Nested sampling draws its live points from the prior, so there the MAP is only r
 ```python
 from ceridwen.optimize import map_fit
 
-best = map_fit(model, n_starts=16, rng_key=jax.random.PRNGKey(1))
+best = map_fit(model, n_starts=16, rng_key=jax.random.PRNGKey(1))   # on its own: best.theta
+# or let fitSED run the same optimisation and start NUTS there:
 result = fitSED(model, sampler="nuts", optimize=True,
                 optimize_kwargs={"n_starts": 16}, output_dir="./my_fit")
 ```

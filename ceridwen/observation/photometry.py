@@ -216,7 +216,7 @@ class Photometry(Observation):
         return "\n".join(lines)
 
     def _display_str(self, max_rows: int = 80) -> str:
-        """Per-filter table of name, λ_eff, flux, σ, S/N, mask, UL."""
+        """Per-filter table of name, λ_eff, flux, σ, S/N, used (the mask: True = fitted), UL."""
         header = str(self)
         flux = np.asarray(self.flux) if self.flux is not None else None
         unc  = np.asarray(self.uncertainty) if self.uncertainty is not None else None
@@ -230,7 +230,7 @@ class Photometry(Observation):
               else np.zeros(n, dtype=bool))
 
         col = f"  {'#':<3}  {'filter':<28}  {'λ_eff [Å]':>12}  " \
-              f"{'flux [maggies]':>14}  {'σ':>12}  {'S/N':>7}  {'mask':>5}  {'UL':>3}"
+              f"{'flux [maggies]':>14}  {'σ':>12}  {'S/N':>7}  {'used':>5}  {'UL':>3}"
         sep = "  " + "-" * (len(col) - 2)
         out = [header, "", col, sep]
 

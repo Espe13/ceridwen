@@ -309,7 +309,7 @@ class Lines(Observation):
 
         col = (f"  {'#':<3}  {'line_name':<28}  {'idx':>4}  "
                f"{'λ [Å]':>10}  {'flux':>14}  {'σ':>14}  "
-               f"{'S/N':>7}  {'mask':>5}")
+               f"{'S/N':>7}  {'used':>5}")
         sep = "  " + "-" * (len(col) - 2)
         out = [header, "", col, sep]
 

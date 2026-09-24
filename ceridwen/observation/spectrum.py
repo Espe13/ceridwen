@@ -541,7 +541,7 @@ class Spectrum(Observation):
                                      if self.polynomial_order else "none (sampled route only)"),
             f"  lines         : " + (("marginalised, " + ("flat prior" if not self.eline_prior_width
                                       else f"prior width {self.eline_prior_width:g} x CLOUDY"))
-                                     if self.marginalize_elines else "CLOUDY fluxes"),
+                                     if self.marginalize_elines else "model (CLOUDY with add_neb=True, none without)"),
             f"  noise model   : {repr(self.noise) if self.noise is not None else 'none'}",
             f"  masked pixels : {self.ndata - self.ndof} / {self.ndata}",
         ]
