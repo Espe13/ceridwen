@@ -1,0 +1,37 @@
+"""B1-011: an afe prior / constant transform outside the [alpha/Fe] grid is refused, like
+logzsol (it was accepted silently and the interpolation clamped)."""
+import types
+import warnings
+
+import numpy as np
+import pytest
+
+from ceridwen.model.model import SedModel
+from ceridwen.priors import Normal, Uniform
+
+GRID = np.array([-0.2, 0.0, 0.2, 0.4, 0.6])
+
+
+def _fake(priors, fixed=None):
+    return types.SimpleNamespace(csp=types.SimpleNamespace(afe_grid=GRID), priors=priors,
+                                 _transform_value=lambda name: fixed)
+
+
+def test_wide_bounded_prior_raises():
+    with pytest.raises(ValueError, match=r"'afe' covers \[-0.800, \+0.400\]"):
+        SedModel._check_afe_range(_fake({"afe": Uniform(low=-0.8, high=0.4)}))
+
+
+def test_prior_on_the_grid_and_no_alpha_grid_pass():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        SedModel._check_afe_range(_fake({"afe": Uniform(low=-0.2, high=0.6)}))
+        SedModel._check_afe_range(types.SimpleNamespace(csp=types.SimpleNamespace(),
+                                                        priors={}))
+
+
+def test_unbounded_prior_warns_and_fixed_value_outside_raises():
+    with pytest.warns(UserWarning, match="'afe' is unbounded"):
+        SedModel._check_afe_range(_fake({"afe": Normal(mean=0.2, sigma=0.3)}))
+    with pytest.raises(ValueError, match="transform for 'afe'"):
+        SedModel._check_afe_range(_fake({}, fixed=np.array([0.9])))

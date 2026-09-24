@@ -241,7 +241,39 @@ class SedModel:
                     f"absolute-log10-Z prior?  logzsol = log10(Z/Z_sun) is 0 at solar; the "
                     f"absolute bounds [{lo:+.3f}, {hi:+.3f}] convert to "
                     f"[{lo - l0:+.3f}, {hi - l0:+.3f}].", stacklevel=3)
+        self._check_afe_range()
         self._check_refused_alpha_cell()
+
+    def _check_afe_range(self):
+        """The logzsol rule for [alpha/Fe] on an alpha grid (B1-011): a bounded prior or a
+        constant transform outside the afe axis raises (the interpolation clamps there, a flat
+        likelihood tail); an unbounded prior warns."""
+        from ..csp.csp import prior_support
+        grid = getattr(self.csp, "afe_grid", None)
+        if grid is None:
+            return
+        alo, ahi = float(np.min(grid)), float(np.max(grid))
+        prior = self.priors.get("afe")
+        if prior is None:
+            fixed = self._transform_value("afe")
+            if fixed is not None and (float(np.min(fixed)) < alo - 1e-12
+                                      or float(np.max(fixed)) > ahi + 1e-12):
+                raise ValueError(
+                    f"the transform for 'afe' gives {np.array2string(fixed, precision=3)}, "
+                    f"outside this grid's [alpha/Fe] range [{alo:+.3f}, {ahi:+.3f}]; the "
+                    "interpolation would clamp there.")
+            return
+        lo, hi = prior_support(prior)
+        if not (np.isfinite(lo) and np.isfinite(hi)):
+            warnings.warn(
+                f"the prior on 'afe' is unbounded; [alpha/Fe] is clamped to the grid "
+                f"[{alo:+.3f}, {ahi:+.3f}] outside it.  Prefer a bounded prior.", stacklevel=4)
+        elif lo < alo - 1e-12 or hi > ahi + 1e-12:
+            raise ValueError(
+                f"the prior on 'afe' covers [{lo:+.3f}, {hi:+.3f}], outside this grid's "
+                f"[alpha/Fe] range [{alo:+.3f}, {ahi:+.3f}]; the interpolation clamps there, "
+                "which makes a flat posterior tail that looks like a constraint.  Narrow the "
+                f"prior to the grid, e.g. Uniform(low={alo:+.3f}, high={ahi:+.3f}).")
 
     def _transform_value(self, name):
         """The value a CONSTANT transform gives for ``name`` (None when there is no transform
