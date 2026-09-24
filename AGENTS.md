@@ -45,9 +45,13 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
    spectra are `F_nu` (per unit frequency). Broadband fluxes are AB maggies.
    Emission-line fluxes are erg s⁻¹ cm⁻². Stellar mass is supplied as
    `logmass` = log10(M⋆/M_sun); the spectrum of `theta['sfh']` is scaled by `10**logmass`.
-   That is unit mass, and `logmass` the formed mass, only when `theta['sfh']` integrates
-   to 1 M_sun, as `logsfr_ratios_to_sfh(..., sfh_times_yr=t)` arranges (trapezoidal rule,
-   item 4); a directly sampled `sfh` carries its own normalisation.
+   The SSP weights sum to the integral of `theta['sfh']` over the construction lookback
+   grid (`csp.sfh_times`, or a predict-time `theta['lookback_time']`) at every redshift:
+   with `track_zred_age=True` the grid is stretched to `age(zred)` and the SFR scaled so
+   that this mass is kept. So `logmass` is the formed mass whenever `theta['sfh']`
+   integrates to 1 M_sun on the construction grid, as `logsfr_ratios_to_sfh(...,
+   sfh_times_yr=csp.sfh_times)` arranges (trapezoidal rule, item 4), fixed or free
+   redshift; a directly sampled `sfh` carries its own normalisation.
 
 4. **SFH mass normalisation is mass-weighted (trapezoidal), not mean-SFR.** See
    `model/transforms.py` (`logsfr_ratios_to_sfh`). Getting this wrong biases

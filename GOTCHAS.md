@@ -100,6 +100,15 @@ prefer `predict`/`get_spectrum_components`.
   overrides the construction grid for that evaluation, and with
   `track_zred_age=True` the grid is rescaled to `age(zred)`. Its *length* can
   never change after construction.
+- **What `logmass` means is fixed by the construction grid.** The SSP weights
+  sum to the integral of `theta['sfh']` over `csp.sfh_times` (or a predict-time
+  `theta['lookback_time']`). The `track_zred_age` rescaling keeps that mass: the
+  SFR is scaled by `T_grid / age(zred)` as the grid is stretched. So normalise
+  the SFH on the construction grid, `logsfr_ratios_to_sfh(...,
+  sfh_times_yr=csp.sfh_times)`, for a fixed or a free redshift, and `logmass` is
+  the formed mass (`PostProcess` `mass_formed = 10**logmass`, test
+  `tests/csp/test_sfh_mass_normalisation.py`). A directly sampled `sfh` that does
+  not integrate to 1 M_sun makes `logmass` a scale, not a mass.
 
 ## 5. Observations must be set up before `predict`
 
@@ -272,7 +281,8 @@ prefer `predict`/`get_spectrum_components`.
   `fitSED` log print which case is in force; check them. `lumdist_mpc`
   makes `SedModel` inject `zred` (even 0) into theta, so with
   `track_zred_age=True` the SFH grid is rescaled to `age(zred)` exactly as
-  for any fixed non-zero redshift.
+  for any fixed non-zero redshift. The rescaling keeps the formed mass
+  (section 4): `logmass` stays the formed mass at every `zred`.
 - The cosmology is written to the HDF5 result (`cosmo_*` attrs).
   `ceridwen.result_cosmology(path)` reads it back; files written before
   2026-09-03 carry none (KeyError).

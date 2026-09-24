@@ -171,7 +171,8 @@ class CSPBasis:
     sfh_interp : {'step', 'linear'} -- piecewise-constant (non-negative weights) or
         piecewise-linear (analytic log-age integral, small negative weights clipped) SFH.
     track_zred_age : bool -- with a sampled ``zred``, rescale the lookback grid so its oldest node
-        is the age of the Universe at that redshift.
+        is the age of the Universe at that redshift, keeping the mass theta["sfh"] forms on the
+        construction grid (the SFR is scaled by T_grid / age(zred)).
     fesc_geometry : {'runaway_bc', 'picket'} -- how the ``frac_obrun`` escape channel bypasses dust.
     cosmo : Cosmology -- required; used for the flux factor and for the age of the Universe.
     nebemlineinspec : bool -- default of ``include_lines`` in ``get_spectrum`` only.
@@ -1338,23 +1339,31 @@ class CSPBasis:
         scaled = self.sfh_times * (tuniv_yr / ref_old_yr)
         return jnp.clip(scaled, 0.0, self._age_clip_hi)
 
+    def _sfh_grids(self, theta):
+        """``(times, ref)`` [yr]: the lookback grid the SFH is integrated on, and the grid whose
+        formed mass it keeps (None when they are the same grid).  Precedence:
+        theta["lookback_time"] (Gyr), then the zred-tracked grid (ref = ``self.sfh_times``: the
+        rescaling moves the SFH in time and keeps the mass theta["sfh"] forms on the
+        construction grid), then ``self.sfh_times``."""
+        if "lookback_time" in theta:
+            return jnp.atleast_1d(jnp.asarray(theta["lookback_time"], dtype=float)) * 1e9, None
+        if self.track_zred_age and "zred" in theta:
+            return self._lookback_from_zred(theta["zred"]), self.sfh_times
+        return self.sfh_times, None
+
     def _ssp_weights(self, theta, *, zh_mode, sfh_mode):
         """(n_z, n_age) SSP weights.  ``zh_mode`` "const" reads theta["logzsol"], "var"
         theta["logzsol_hist"] (both log10(Z/Z_sun), looked up on the logzsol axis self.zmet); ``sfh_mode`` "linear" integrates a piecewise-linear SFH in
         log age (a per-bin SFH is first mapped to nodes as in ``display_sfh``), "step" a
         piecewise-constant SFH over the SSP Voronoi cells.  Grid precedence:
-        theta["lookback_time"] (Gyr), then the zred-tracked grid, then ``self.sfh_times``.
+        theta["lookback_time"] (Gyr), then the zred-tracked grid, then ``self.sfh_times``
+        (``_sfh_grids``).  sum(W) is the integral of theta["sfh"] dt on the construction grid
+        (on theta["lookback_time"] when given), also on the zred-tracked grid.
         """
         floor = 1e-30
         sfh = jnp.clip(theta["sfh"], floor, None)
 
-        if "lookback_time" in theta:
-            _times = jnp.atleast_1d(
-                jnp.asarray(theta["lookback_time"], dtype=float)) * 1e9  # Gyr->yr
-        elif self.track_zred_age and "zred" in theta:
-            _times = self._lookback_from_zred(theta["zred"])             # years
-        else:
-            _times = self.sfh_times
+        _times, _ref = self._sfh_grids(theta)
         t_young = _times[:-1]
         t_old   = _times[1:]
         dt      = t_old - t_young
@@ -1411,6 +1420,10 @@ class CSPBasis:
                 - jnp.maximum(t_young[:, None], self._ssp_voronoi_lo[None, :])
             )
             w1 = sfh_mid[:, None] * overlap
+
+        if _ref is not None:   # zred-tracked grid: form the mass theta["sfh"] forms on the construction grid
+            sbar = sfh_mid if sfh_mode == "step" else 0.5 * (sfh[:-1] + sfh[1:])
+            m2 = m2 * (jnp.sum(sbar * jnp.diff(_ref)) / jnp.maximum(jnp.sum(m2), 1e-300))
 
         m1          = jnp.maximum(w1.sum(axis=1), 1e-30)
         sfh_weights = w1 * (m2 / m1)[:, None]
