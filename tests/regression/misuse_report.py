@@ -43,7 +43,7 @@ from ceridwen.broadening import Instrument
 from ceridwen.likelihood import DiagonalNoiseModel, DiagonalGaussianLikelihood
 from ceridwen.likelihood.eline_marginal import refuse_outlier_with_elines
 from ceridwen.fit import (_check_outlier_setup, _check_noise_setup, _poly_calibration_for,
-                          _resolve_fit_mfrac)
+                          _poly_marginal_for, _resolve_fit_mfrac)
 from ceridwen.model.obs_params import check_names, CALIB_FAMILIES
 from ceridwen.priors import LogUniform, Normal, TopHat
 from types import SimpleNamespace
@@ -306,6 +306,30 @@ def run_scenarios():
          lambda: _poly_calibration_for(
              Spectrum(wavelength=jnp.linspace(4000, 7000, 40), name="s0", polynomial_order=2),
              _outlier_model(["spectrum_calib"], {}))),
+        ("marginalised polynomial without polynomial_prior_sigma", {"ERROR"},
+         lambda: Spectrum(wavelength=jnp.linspace(4000, 7000, 40), name="s",
+                          polynomial_order=2, polynomial_mode="marginalize")),
+        ("marginalised polynomial with a flat prior (sigma = inf)", {"ERROR"},
+         lambda: Spectrum(wavelength=jnp.linspace(4000, 7000, 40), name="s",
+                          polynomial_order=2, polynomial_mode="marginalize",
+                          polynomial_prior_sigma=np.inf)),
+        ("polynomial_regularization with polynomial_mode='marginalize'", {"ERROR"},
+         lambda: Spectrum(wavelength=jnp.linspace(4000, 7000, 40), name="s",
+                          polynomial_order=2, polynomial_mode="marginalize",
+                          polynomial_prior_sigma=0.1, polynomial_regularization=10.0)),
+        ("polynomial_prior_sigma with the profiled polynomial (ignored)", {"ERROR"},
+         lambda: Spectrum(wavelength=jnp.linspace(4000, 7000, 40), name="s",
+                          polynomial_order=2, polynomial_prior_sigma=0.1)),
+        ("marginalised polynomial + sampled spectrum_scaling with T_0 free", {"ERROR"},
+         lambda: _poly_marginal_for(
+             Spectrum(wavelength=jnp.linspace(4000, 7000, 40), name="s0", polynomial_order=2,
+                      polynomial_mode="marginalize", polynomial_prior_sigma=0.1),
+             _outlier_model(["spectrum_scaling"], {}), DiagonalNoiseModel())),
+        ("marginalised polynomial + outlier mixture", {"ERROR"},
+         lambda: _poly_marginal_for(
+             Spectrum(wavelength=jnp.linspace(4000, 7000, 40), name="s0", polynomial_order=2,
+                      polynomial_mode="marginalize", polynomial_prior_sigma=0.1),
+             None, DiagonalNoiseModel(f_outlier="f_outlier_spec"))),
         ("negative polynomial_order", {"ERROR"},
          lambda: Spectrum(wavelength=jnp.linspace(4000, 7000, 40), name="s",
                           polynomial_order=-1)),
@@ -325,6 +349,9 @@ def run_scenarios():
          lambda: _gp_setup(_GP, transforms={"f_outlier_spec": lambda th: jnp.array([0.1])})),
         ("GP + profiled calibration polynomial", {"ERROR"},
          lambda: _gp_setup(_GP, polynomial_order=2)),
+        ("GP + marginalised calibration polynomial (names route)", {"ERROR"},
+         lambda: _gp_setup(_GP, polynomial_order=2, polynomial_mode="marginalize",
+                           polynomial_prior_sigma=0.1)),
         ("GP + marginalize_elines", {"ERROR"},
          lambda: _gp_setup(_GP, marginalize_elines=True, instrument=Instrument.R_fwhm(2000.0))),
         ("IGM damping wing (x_HI > 0) without Ob0", {"ERROR"},

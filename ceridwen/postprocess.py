@@ -19,7 +19,10 @@ spectra, the best-fit point and user-defined derived quantities.
                                                      #        also "sd", "cloudy", "names", "wave_rest"; predictions then carry these lines)
     out["prediction"]["photometry"]["phot"]          # (N, n_bands) maggies
     out["prediction"]["calibration"]["spec"]         # (N, n_pix)   profiled response (Spectrum(polynomial_order > 0) only;
-                                                     #        spectra["spec"] already includes it)
+                                                     #        spectra["spec"] already includes it; marginalised
+                                                     #        polynomial: the conditional-mean response)
+    out["extras"]["calibration"]["spec"]["mean"]     # (N, k) conditional-mean coefficients (polynomial_mode="marginalize"
+                                                     #        only; also "sd", "cov", "draws")
     out["prediction"]["spectra"]["spec"]             # (N, n_pix)   as the Spectrum observation
     out["prediction"]["spectra_model"]               # (N, n_wave)  rest-frame L_nu [L_sun/Hz] on wave_rest, model resolution (no kinematic broadening)
     out["prediction"]["spectra_observed"]            # (N, n_wave)  observed-frame f_nu [erg/s/cm^2/Hz, cgs] at (1+z) wave_rest
@@ -490,7 +493,8 @@ class PostProcess:
             self._f_sfh = jax.jit(jax.vmap(self._sfh_one))
 
     def _poly_likelihoods(self) -> dict:
-        """{obs name: likelihood} of the spectra with a profiled calibration polynomial."""
+        """{obs name: likelihood} of the spectra with a profiled or marginalised calibration
+        polynomial."""
         if getattr(self, "_poly_lh", None) is None:
             from .fit import _likelihood_for
             model = self.model
@@ -503,14 +507,21 @@ class PostProcess:
     def _apply_poly(self, pred: dict, th) -> dict:
         """``pred`` with each profiled spectrum times its response at ``th`` (solved exactly as
         in the likelihood, on the model times any fixed ``calibration`` vector), plus
-        ``__calib_<name>`` = the response."""
+        ``__calib_<name>`` = the response.  A marginalised polynomial uses the conditional
+        mean of its coefficients (``__calcoef_mean_<name>``, covariance ``__calcoef_cov_<name>``)."""
         from .likelihood.likelihood import observation_data
         out = dict(pred)
         for name, lh in self._poly_likelihoods().items():
             y, sig, mask, calib, _ul = observation_data(self.model.obs_dict[name])
             mu = pred[name] if calib is None else pred[name] * calib
-            nout = lh.noise_model.compute(sig, mu, mask, th, data=y)
-            _c, resp = lh.poly_calibration.solve(y, mu, nout.inv_var, mask)
+            if getattr(lh, "poly_marginal", None) is not None:
+                # marginalised polynomial: the conditional-mean response of this draw
+                c_mean, c_cov, resp = lh.conditional(y, mu, sig, mask, th)
+                out[f"__calcoef_mean_{name}"] = c_mean
+                out[f"__calcoef_cov_{name}"] = c_cov
+            else:
+                nout = lh.noise_model.compute(sig, mu, mask, th, data=y)
+                _c, resp = lh.poly_calibration.solve(y, mu, nout.inv_var, mask)
             out[name] = pred[name] * resp.astype(pred[name].dtype)
             out[f"__calib_{name}"] = resp
         return out
@@ -676,6 +687,12 @@ class PostProcess:
                 if ck in raw["pred"]:
                     pred.setdefault("calibration", {})[obs.name] = np.asarray(raw["pred"][ck],
                                                                              dtype=float)
+                mk = f"__calcoef_mean_{obs.name}"
+                if mk in raw["pred"]:
+                    out["extras"].setdefault("calibration", {})[obs.name] = \
+                        _coefficient_block(np.asarray(raw["pred"][mk], dtype=float),
+                                           np.asarray(raw["pred"][f"__calcoef_cov_{obs.name}"],
+                                                      dtype=float), obs)
         out["prediction"] = pred
         es = getattr(m, "_eline_system", None)
         if es is not None and raw["pred"]:
@@ -815,6 +832,23 @@ def _squeeze_leading(d):
         return {k: _squeeze_leading(v) for k, v in d.items()}
     a = np.asarray(d)
     return a[0] if a.ndim >= 1 and a.shape[0] == 1 and not isinstance(d, (str, float, int)) else d
+
+
+def _coefficient_block(mean, cov, obs) -> dict:
+    """``extras['calibration'][name]`` of a marginalised polynomial: per draw the conditional
+    mean (N, k), sd (N, k) and covariance (N, k, k) of the coefficients, and one draw from each
+    conditional Gaussian (N, k; ``default_rng(0)``, deterministic), which together sample the
+    coefficients' marginal posterior."""
+    n, k = mean.shape
+    rng = np.random.default_rng(0)
+    ev, V = np.linalg.eigh(cov)                   # PSD; a pinned coefficient (s = 0) has ev 0
+    L = V * np.sqrt(np.maximum(ev, 0.0))[:, None, :]
+    draws = mean + np.einsum("nij,nj->ni", L, rng.standard_normal((n, k)))
+    return {"mean": mean, "sd": np.sqrt(np.diagonal(cov, axis1=1, axis2=2)), "cov": cov,
+            "draws": draws, "order": int(k - 1),
+            "prior_sigma": np.asarray(obs.polynomial_prior_sigma, dtype=float),
+            "basis": "Chebyshev T_0..T_order over the unmasked wavelength range; response "
+                     "1 + sum_m c_m T_m"}
 
 
 def _flatten(d, prefix, flat):

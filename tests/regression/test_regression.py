@@ -52,6 +52,7 @@ CATEGORIES = [
     "outlier_likelihood",
     "gp_likelihood",
     "calibration_likelihood",
+    "poly_marginal",
     "eline_marginal",
     "igm_damping_dla",
     "dust_laws",

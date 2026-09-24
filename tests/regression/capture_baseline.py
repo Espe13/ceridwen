@@ -346,6 +346,9 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
 
     out["gp_likelihood"] = _gp_likelihood_baseline(
         np.asarray(wave_spec), mu_spec, jax.random.PRNGKey(p["noise_seed"] + 1))
+    out["poly_marginal"] = _poly_marginal_baseline(
+        np.asarray(wave_spec), mu_spec, mask_spec,
+        jax.random.fold_in(jax.random.PRNGKey(p["noise_seed"]), 11))
 
     out["igm_damping_dla"] = _igm_damping_dla_baseline()
     out["dust_laws"] = _dust_laws_baseline(p, ssp_data)
@@ -604,6 +607,54 @@ def _gp_likelihood_baseline(wave, mu, key) -> dict:
         "gp_mean_fixed": np.asarray(fixed.conditional_mean(y, mu, sig, mask), dtype=np.float64)
                          / float(jnp.median(sig)),
     }
+
+
+def _poly_marginal_baseline(wave, mu, mask, key) -> dict:
+    """The analytically marginalised calibration polynomial
+    (Spectrum(polynomial_mode="marginalize"), ceridwen/likelihood/poly_marginal.py).  Data = the
+    "csp_spectrum" prediction times 1 + 0.02 T_0 + 0.05 T_1 - 0.03 T_2 + 0.01 T_3 with 5 %
+    Gaussian noise.  Three prior settings (order 3): widths (0.1, 0.1, 0.05, 0.05), T_0 pinned
+    (0, 0.1, 0.1, 0.1), and the first with a sampled jitter.  Justified by the brute force:
+    before anything is returned, every marginal ln L is checked here against the dense
+    ln N(y - mu; 0, C + D Lambda D^T) (numpy slogdet / solve) to rel 1e-10, and every
+    conditional mean against the dense posterior mean (tests/likelihood/test_poly_marginal.py
+    does the same on random problems)."""
+    from ceridwen.likelihood.noise_model import DiagonalNoiseModel
+    from ceridwen.likelihood.poly_calibration import chebyshev_design_matrix
+    from ceridwen.likelihood.poly_marginal import (PolyMarginalGaussianLikelihood,
+                                                   PolynomialMarginal)
+    A = chebyshev_design_matrix(wave, np.asarray(mask), 3)
+    sig = 0.05 * jnp.abs(mu)
+    y = (mu * (1.0 + jnp.asarray(A) @ jnp.array([0.02, 0.05, -0.03, 0.01]))
+         + sig * jax.random.normal(key, mu.shape))
+    jit = 0.05 * float(jnp.median(jnp.abs(mu)))
+    th = {"log_jitter_spec": jnp.array([np.log(jit)])}
+    m = np.asarray(mask, dtype=bool)
+    out = {}
+    for tag, s_prior, nm, extra in (
+            ("", [0.1, 0.1, 0.05, 0.05], DiagonalNoiseModel(), 0.0),
+            ("_pinned", [0.0, 0.1, 0.1, 0.1], DiagonalNoiseModel(), 0.0),
+            ("_jitter", [0.1, 0.1, 0.05, 0.05],
+             DiagonalNoiseModel(use_jitter=True, jitter_key="log_jitter_spec"), jit)):
+        lh = PolyMarginalGaussianLikelihood(noise_model=nm,
+                                            poly_marginal=PolynomialMarginal(A, s_prior))
+        lnl, aux = lh(y, mu, sig, mask, th)
+        mean, cov, resp = lh.conditional(y, mu, sig, mask, th)
+        # brute force (float64 numpy, n x n)
+        D = (np.asarray(mu)[:, None] * A)[m]
+        S = (np.diag(np.asarray(sig)[m] ** 2 + extra ** 2)
+             + D @ np.diag(np.asarray(s_prior) ** 2) @ D.T)
+        r = np.asarray(y - mu)[m]
+        ref = -0.5 * r @ np.linalg.solve(S, r) - 0.5 * np.linalg.slogdet(2 * np.pi * S)[1]
+        ref_mean = np.diag(np.asarray(s_prior) ** 2) @ D.T @ np.linalg.solve(S, r)
+        assert abs(float(lnl) / ref - 1.0) < 1e-10, (tag, float(lnl), ref)
+        assert np.allclose(np.asarray(mean), ref_mean, rtol=1e-8, atol=1e-12), tag
+        out[f"lnl{tag}"] = np.asarray(lnl, dtype=np.float64)
+        out[f"lnl_pointwise{tag}"] = np.asarray(aux.lnl_pointwise, dtype=np.float64)
+        out[f"coeff_mean{tag}"] = np.asarray(mean, dtype=np.float64)
+        out[f"coeff_cov{tag}"] = np.asarray(cov, dtype=np.float64)
+        out[f"response{tag}"] = np.asarray(resp, dtype=np.float64)
+    return out
 
 
 STELLAR_MASS_TABLES = REPO_ROOT / "tests" / "reference" / "ssp_stellar_mass.npz"

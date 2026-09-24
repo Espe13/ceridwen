@@ -353,7 +353,8 @@ def test_setup_refusals_names(case, exc, match):
     ("upper_limit", "upper limits"),
     ("marginalize_elines", "marginalize_elines"),
     ("logify", "logify_spectrum"),
-    ("polynomial", "profiled calibration polynomial"),
+    ("polynomial", "calibration polynomial"),
+    ("polymarg", "polynomial_mode='marginalize'"),
 ])
 @pytest.mark.parametrize("route", ["names", "object"])
 def test_setup_refused_combinations(case, match, route):
@@ -375,6 +376,13 @@ def test_setup_refused_combinations(case, match, route):
         kw.update(logify_spectrum=True)
     elif case == "polynomial":
         kw.update(polynomial_order=2)
+    elif case == "polymarg":
+        kw.update(polynomial_order=2, polynomial_mode="marginalize",
+                  polynomial_prior_sigma=0.1)
+        if route == "object":        # refused already at Spectrum construction
+            with pytest.raises(ValueError, match="GaussianProcess noise model is not supported"):
+                _spec(**kw)
+            return
     s = _spec(**kw)
     if case == "upper_limit":
         s.upper_limit = jnp.zeros(s.flux.shape, bool).at[5].set(True)

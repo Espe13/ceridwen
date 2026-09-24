@@ -146,7 +146,9 @@ projection → likelihood → sampler.
   `csp_afe.py`: `CSPBasis_afe`, the [alpha/Fe] variant without a nebular model.
   `spectrum_calibration.py`: `spectrum_scaling` / `spectrum_calib` factor (one per
   spectrum, `spectrum_scaling_<obs.name>` with several). The profiled alternative is
-  `Spectrum(polynomial_order=M)`, solved in the likelihood (`likelihood/poly_calibration.py`).
+  `Spectrum(polynomial_order=M)`, solved in the likelihood (`likelihood/poly_calibration.py`),
+  or marginalised analytically with `polynomial_mode="marginalize"`
+  (`likelihood/poly_marginal.py`, `PolyMarginalGaussianLikelihood`).
 - `broadening.py` — `Kinematics` (sigma_gal / sigma_gas, fixed or theta keys),
   `Instrument` (LSF; `scale=` multiplies its width, a float or a sampled theta key with a
   bounded prior), `SpectralProjector` (continuum FFT kernel + banded
@@ -184,7 +186,11 @@ projection → likelihood → sampler.
   `lnlike_gp_gaussian`, the squared-exponential GP on a spectrum's whitened residuals
   (dense Cholesky, static mask as identity rows), built by `fit._likelihood_for` when
   `log_gp_amp_spec[_<obs.name>]` and `log_gp_length_spec[_<obs.name>]` are set or the
-  Spectrum has `noise=GaussianProcess(...)` (`docs/gp_likelihood.md`).
+  Spectrum has `noise=GaussianProcess(...)` (`docs/gp_likelihood.md`); it refuses a
+  calibration polynomial on the same spectrum. `poly_calibration.py`: the profiled calibration polynomial;
+  `poly_marginal.py`: `PolyMarginalGaussianLikelihood`, the polynomial integrated out under a
+  Gaussian prior (`Spectrum(polynomial_mode="marginalize")`); `eline_marginal.py`: the
+  emission-line flux marginalisation.
 - `sampler/` — `priors.py` (TFP-JAX priors with logpdf/sample/unit_transform),
   `nested.py` (BlackJAX nested sampling; periodic checkpoints carry the sampler state, and
   `resume_from=` continues a killed run bit for bit), `nuts.py` (NUTS, VI-preconditioned),

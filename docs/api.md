@@ -91,6 +91,12 @@ The GP likelihood of a spectrum is off by default; `fitSED` builds it from
 
 ::: ceridwen.observation.GaussianProcess
 
+::: ceridwen.likelihood.poly_marginal.PolyMarginalGaussianLikelihood
+
+::: ceridwen.likelihood.poly_marginal.PolynomialMarginal
+
+::: ceridwen.likelihood.poly_marginal.poly_marginal_loglike
+
 ::: ceridwen.model.obs_params.check_names
 
 ## Fitting

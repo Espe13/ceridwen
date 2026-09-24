@@ -25,6 +25,7 @@ from .gp_likelihood import (
     gp_conditional_mean,
     GPGaussianLikelihood,
 )
+from .poly_marginal import PolyMarginalGaussianLikelihood
 
 __all__ = [
     "NoiseModelOutput",
@@ -46,4 +47,5 @@ __all__ = [
     "lnlike_gp_gaussian",
     "gp_conditional_mean",
     "GPGaussianLikelihood",
+    "PolyMarginalGaussianLikelihood",
 ]

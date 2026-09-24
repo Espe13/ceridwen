@@ -57,9 +57,11 @@ class PolynomialCalibration:
 
     @classmethod
     def for_spectrum(cls, obs):
-        """From ``Spectrum(polynomial_order=..., polynomial_regularization=...)``; None when off."""
+        """From ``Spectrum(polynomial_order=..., polynomial_regularization=...)``; None when off
+        or when the polynomial is marginalised (``polynomial_mode="marginalize"``, see
+        :class:`~ceridwen.likelihood.poly_marginal.PolynomialMarginal`)."""
         order = int(getattr(obs, "polynomial_order", 0) or 0)
-        if order <= 0:
+        if order <= 0 or getattr(obs, "polynomial_mode", "profile") != "profile":
             return None
         return cls(chebyshev_design_matrix(obs.wavelength, obs.mask, order),
                    getattr(obs, "polynomial_regularization", 0.0))
@@ -79,7 +81,7 @@ class PolynomialCalibration:
                 f"regularization={self.reg.tolist()})")
 
     def config(self) -> dict:
-        return {"order": self.order, "regularization": self.reg.tolist(),
+        return {"mode": "profile", "order": self.order, "regularization": self.reg.tolist(),
                 "basis": "Chebyshev T_0..T_order over the unmasked wavelength range"}
 
     def solve(self, y, mu, inv_var, mask):
@@ -103,7 +105,10 @@ class PolynomialCalibration:
 
 
 def calibrated_prediction(lhood, y, mu, sigma_obs, mask, params):
-    """``mu`` after the likelihood's profiled calibration (unchanged when it has none)."""
+    """``mu`` after the likelihood's profiled calibration, or its conditional-mean response
+    when the polynomial is marginalised (unchanged when it has neither)."""
+    if getattr(lhood, "poly_marginal", None) is not None:
+        return mu * lhood.conditional(y, mu, sigma_obs, mask, params)[2]
     pc = getattr(lhood, "poly_calibration", None)
     if pc is None:
         return mu

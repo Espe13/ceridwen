@@ -252,6 +252,75 @@ rather than predicting zeros for it.
     `PostProcess` predictions include each draw's response
     (`out["prediction"]["calibration"][name]`).
 
+!!! tip "Marginalised calibration polynomial: `polynomial_mode=\"marginalize\"`"
+    The likelihood is linear in the polynomial coefficients, so under a Gaussian prior
+    they can be integrated out in closed form instead of being profiled or sampled:
+
+    ```python
+    spec = Spectrum(..., polynomial_order=6, polynomial_mode="marginalize",
+                    polynomial_prior_sigma=0.1)     # float, or one width per T_0..T_6
+    ```
+
+    With the prior `c_m ~ N(0, s_m^2)` and the response `1 + sum_m c_m T_m(x)` (the same
+    Chebyshev basis as the profiled mode), the likelihood is the exact marginal
+
+    `ln L = ln L_diag(y - mu) + 1/2 b^T M^-1 b - 1/2 ln|M| - 1/2 ln|Lambda|`,
+
+    `M = D^T W D + Lambda^-1`, `b = D^T W (y - mu)`, `D = diag(mu) A`, `Lambda = diag(s^2)`:
+    O(n k^2) per call, no sampled dimension, and the calibration uncertainty is
+    propagated into the posterior and the evidence (the profiled mode conditions on the
+    best polynomial). Units of `s`: the fractional response, so `s = 0.1` allows ~10 %
+    calibration errors per term. `s_m = 0` pins a coefficient at 0; `s = inf` (a flat prior)
+    is refused, because the marginal likelihood would be undefined.
+
+    - `T_0` is a grey scale with prior width `s_0`: degenerate with the mass unless the
+      photometry (or a fixed flux scale) anchors the level. To sample the level instead,
+      pin `T_0` (`polynomial_prior_sigma=[0.0, s_1, ..., s_M]`) and sample
+      `spectrum_scaling`; any other sampled calibration of that spectrum is refused.
+    - `polynomial_regularization` belongs to the profiled mode and is refused here: the
+      prior width is its analogue (`reg_m = 1/s_m` gives the same best polynomial, which is
+      the conditional mean below).
+    - Refused (they make the likelihood non-Gaussian or non-linear in `c`): the outlier
+      mixture on this spectrum, upper limits, `logify_spectrum=True`, a Gaussian-process
+      `noise`, and `marginalize_elines=True` on the same spectrum (the polynomial also
+      scales the lines, so the model is bilinear in the two sets of coefficients).
+    - The noise weights `W` are the noise model's `1/sigma_eff^2` at the uncalibrated
+      model, as in the profiled mode (exact when no noise term depends on the model).
+    - `PostProcess` applies each draw's conditional-mean response
+      (`out["prediction"]["calibration"][name]`, included in `spectra[name]`) and returns
+      the coefficients in `out["extras"]["calibration"][name]`: `mean`, `sd`, `cov` per draw
+      and `draws` (one draw from each conditional Gaussian: together a sample of the
+      marginal posterior of `c`). The result file records mode, order and prior widths
+      (`read_result_h5(path)["obs"][name]["likelihood"]["poly_calibration"]`).
+
+    **Cost.** Per call the marginal costs the same as the profile (both O(n k^2)); the sampled
+    route is cheaper per call but adds M + 1 dimensions to the sampler. Measured on CPU
+    (Apple, shared machine, +-20 %; `scripts/bench_poly_marginal.py`), jitted, float64, a batch
+    of W draws under `vmap`, microseconds per batch:
+
+    | | W | M | profile | marginalize | sampled |
+    |---|---|---|---|---|---|
+    | spectrum likelihood only (2000 px), value + grad | 32 | 1 | 916 | 905 | 177 |
+    | | 32 | 3 | 900 | 943 | 294 |
+    | | 32 | 6 | 2249 | 2298 | 288 |
+    | | 32 | 10 | 3521 | 3878 | 297 |
+    | | 32 | 20 | 5006 | 6328 | 356 |
+    | full log-posterior (forward model, 1000 px), value + grad | 1 | 3 | 2372 | 2173 | 2591 |
+    | | 1 | 20 | 2262 | 2616 | 2160 |
+    | | 32 | 1 | 65090 | 65246 | 64855 |
+    | | 32 | 3 | 67722 | 66507 | 69782 |
+    | | 32 | 6 | 71060 | 70132 | 70526 |
+    | | 32 | 10 | 70523 | 70375 | 81709 |
+    | | 32 | 20 | 66412 | 65540 | 65974 |
+
+    The forward model dominates the log-posterior: the three modes cost the same there at
+    every order, so a high order costs nothing per call in the profiled or marginalised mode,
+    while in the sampled mode it costs sampler dimensions. GPU timing at the production width
+    W = 100 is not measured yet.
+
+    Derivation: `docs/dev/poly_marginalisation_design.md`; code:
+    `ceridwen/likelihood/poly_marginal.py`.
+
 ## 5. Priors and the model
 
 Collect the observations into a single list. Any subset is fine; use an empty
