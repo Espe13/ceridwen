@@ -73,7 +73,9 @@ in order in one Python session.
 
 **1. Get an SSP grid.** The published MIST + MILES grid (Chabrier IMF) is downloaded once
 (67 MB) into `~/.ceridwen/grids` (or `$CERIDWEN_GRID_DIR`), and its SHA-256 is checked on
-every call. `available_grids()` lists the others.
+every call. `available_grids()` lists the others. All published grids are archived on
+Zenodo ([doi:10.5281/zenodo.22937956](https://doi.org/10.5281/zenodo.22937956)); this README
+and `fetch_grid` always point at the current record.
 
 ```python
 from ceridwen import SSPData
