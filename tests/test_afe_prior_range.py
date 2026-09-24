@@ -35,3 +35,16 @@ def test_unbounded_prior_warns_and_fixed_value_outside_raises():
         SedModel._check_afe_range(_fake({"afe": Normal(mean=0.2, sigma=0.3)}))
     with pytest.raises(ValueError, match="transform for 'afe'"):
         SedModel._check_afe_range(_fake({}, fixed=np.array([0.9])))
+
+
+def test_eline_scaling_without_lines_is_refused():
+    """B1-014: eline_scaling scales only a Lines prediction; sampled with observations but
+    no Lines it was a silent prior-volume nuisance."""
+    def fake(kinds):
+        return types.SimpleNamespace(
+            param_names=["logmass", "eline_scaling"], transforms={},
+            observations=[types.SimpleNamespace(kind=k, name=k) for k in kinds])
+    with pytest.raises(ValueError, match="no observation is a Lines"):
+        SedModel._check_calibration_names(fake(["photometry", "spectrum"]))
+    SedModel._check_calibration_names(fake(["photometry", "lines"]))
+    SedModel._check_calibration_names(fake([]))          # predict-only model

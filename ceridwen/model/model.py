@@ -341,6 +341,14 @@ class SedModel:
         if any(f.claims(n) for f in CALIB_FAMILIES for n in given):
             check_names(self.observations, CALIB_FAMILIES, given,
                         what=" (spectrum calibration)")
+        # eline_scaling multiplies only the Lines prediction (csp.py predict_line_fluxes); with
+        # observations but none of them Lines it would be sampled and never used (B1-014)
+        if ("eline_scaling" in self.param_names and self.observations
+                and not any(getattr(o, "kind", None) == "lines" for o in self.observations)):
+            raise ValueError(
+                "'eline_scaling' is sampled but no observation is a Lines: it scales only the "
+                "Lines prediction (not a Spectrum or Photometry), so it would be sampled "
+                "without being used.  Drop it, or use spectrum_scaling for a spectrum's level")
 
     def setup_observations(self):
         """Build every observation's projection for this model's grid, redshift and

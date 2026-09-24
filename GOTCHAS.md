@@ -130,6 +130,8 @@ prefer `predict`/`get_spectrum_components`.
   scaled by `eline_scaling`; now the spectrum is governed solely by
   `spectrum_scaling`, so a joint Spectrum + Lines fit that previously leaned on
   `eline_scaling` to set the spectrum level must add a `spectrum_scaling` prior.
+  Sampling `eline_scaling` in a model whose observations include no `Lines` raises at
+  `SedModel` construction (it would be sampled without being used).
 - `spectrum_scaling` acts on `Spectrum` **only** (a no-op for pure photometry/line
   fits). In the nebular-free `CSPBasis_afe` it is the *only* spectrum
   level knob (there are no lines, so `eline_scaling` is inert there).

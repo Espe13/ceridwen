@@ -45,7 +45,7 @@ from ceridwen.likelihood.eline_marginal import refuse_outlier_with_elines
 from ceridwen.fit import (_check_outlier_setup, _check_noise_setup, _poly_calibration_for,
                           _poly_marginal_for, _resolve_fit_mfrac)
 from ceridwen.model.obs_params import check_names, CALIB_FAMILIES
-from ceridwen.priors import LogUniform, Normal, TopHat
+from ceridwen.priors import LogUniform, Normal, TopHat, Uniform
 from types import SimpleNamespace
 
 from _gridfixture import require_test_grid
@@ -295,6 +295,10 @@ def run_scenarios():
         ("f_outlier_spec_<unknown obs name>", {"ERROR"},
          lambda: _check_outlier_setup(_outlier_model(["f_outlier_spec_nope"],
                                                      {"f_outlier_spec_nope": TopHat(low=1e-5, high=0.5)}))),
+        ("sampled eline_scaling with no Lines observation", {"ERROR"},
+         lambda: SedModel(csp, [Spectrum(wavelength=jnp.linspace(4000, 7000, 100), name="s")],
+                          priors={"eline_scaling": Uniform(low=0.1, high=2.0)},
+                          free_param_init={"eline_scaling": jnp.array([1.0])}, zred=0.0)),
         ("Spectrum.mask_lines without zred", {"WARN"},
          lambda: Spectrum(wavelength=jnp.linspace(6000, 7000, 50), flux=jnp.ones(50),
                           uncertainty=jnp.ones(50), name="s").mask_lines([6564.72])),
