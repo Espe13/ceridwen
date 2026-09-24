@@ -141,10 +141,13 @@ class NebularModel:
     sigma_smooth : float -- intrinsic width of the painted lines (0: pixel floor only).
     res_floor_factor : float -- minimum painted width in local pixels.
 
-    Attributes: ``nebem_cont`` (nspec, nz, nage, nu) and ``nebem_line`` (nemline, nz, nage, nu)
-    are log10(L_nu / Q) and log10(L / Q); ``nebem_line_pos`` (nemline,) rest wavelengths [A];
-    ``gaussnebarr`` (nspec, nemline) painted profiles including lambda^2/c; ``young_mask`` /
-    ``young_idx`` over ``ssp_ages_lgyr``.
+    Attributes
+    ----------
+    nebem_cont : (nspec, nz, nage, nu) -- log10(L_nu / Q)
+    nebem_line : (nemline, nz, nage, nu) -- log10(L / Q)
+    nebem_line_pos : (nemline,) -- rest wavelengths [A]
+    gaussnebarr : (nspec, nemline) -- painted profiles including lambda^2/c
+    young_mask, young_idx : the young ages over ``ssp_ages_lgyr``
     """
 
     def __init__(self,

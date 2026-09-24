@@ -59,6 +59,8 @@ def fitSED(
         when the grid has the table and logs one line when it has not; True requires the table
         (ValueError before sampling); False skips it.  The same switch as ``PostProcess(mfrac=)``.
 
+    Notes
+    -----
     Noise terms and the outlier mixture are switched on by the names the model samples (see
     ``_likelihood_for``); all outlier fractions default to 0 (off).
     """

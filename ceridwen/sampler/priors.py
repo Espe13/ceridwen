@@ -208,10 +208,7 @@ class Normal(Prior):
 class MultivariateNormalPrior(Prior):
     """Multivariate Gaussian prior.
 
-    Parameters
-    ----------
-    mean : (d,)
-    Sigma : (d, d) -- covariance matrix
+    Keyword arguments: ``mean`` (d,) and ``Sigma`` (d, d), the covariance matrix.
     """
     prior_params = ("mean", "Sigma")
 

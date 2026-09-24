@@ -26,10 +26,13 @@ class Photometry(Observation):
     Parameters
     ----------
     filters : list of str or Filter -- names are resolved in the filter library
-    flux : array (n_filters,), maggies
-    uncertainty : array (n_filters,), maggies -- 1-sigma
-    mask : bool array (n_filters,) -- True = used in the fit
     upper_limit : bool array (n_filters,) -- True = one-sided (model > data only) chi-squared penalty
+
+    Attributes
+    ----------
+    flux : array (n_filters,), maggies (keyword argument)
+    uncertainty : array (n_filters,), maggies -- 1-sigma (keyword argument)
+    mask : bool array (n_filters,) -- True = used in the fit (keyword argument)
     """
 
     _kind = "photometry"

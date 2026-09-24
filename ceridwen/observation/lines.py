@@ -14,13 +14,17 @@ class Lines(Observation):
     line_ind : array-like of int -- indices of the observed lines in the SPS emission-line array
     line_names : list of str, optional -- one name per line; needed by ``mask_by_name`` / ``select_by_name``
     wavelength : array-like of float, vacuum rest-frame Angstrom
-    flux, uncertainty : array-like of float, same units as the model prediction (typically erg/s/cm^2)
     components : list of sequences of float, optional -- per observed line, the vacuum rest wavelengths
         [Angstrom] of all grid lines summed into that measurement (unresolved doublets); default one per line
     upper_limit : array-like of bool, optional -- True treats the line as a non-detection: chi^2 penalises
         only model > data
     sigma_v : float, km/s -- Gaussian aperture width of ``predict`` (integration of a painted
         spectrum); ``CSPBasis.predict`` does not use it, it reads the line fluxes from the grid
+
+    Attributes
+    ----------
+    flux, uncertainty : array-like of float, same units as the model prediction (typically
+        erg/s/cm^2) (keyword arguments)
     """
 
     _kind = "lines"

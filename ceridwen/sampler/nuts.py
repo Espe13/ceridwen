@@ -80,6 +80,8 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
     vi : None | 'tril' | 'iaf' | VariationalMap | TrainedMap -- variational preconditioning
     vi_kwargs : dict -- map constructor kwargs plus ``num_steps``, ``batch_size``, ``lr0`` for training
 
+    Notes
+    -----
     One ``window_adaptation`` run is shared by all chains.  Without ``vi`` every chain starts
     from its end state and differs only by its rng key, so the printed split R-hat measures
     mixing within that one run: it cannot detect a warmup that settled in one of several

@@ -69,6 +69,8 @@ class Spectrum(Observation):
     polynomial_prior_sigma : float or array (M+1,) -- the prior widths s (finite, >= 0; 0 pins
         a coefficient at 0); required with ``polynomial_mode="marginalize"``, refused otherwise.
 
+    Notes
+    -----
     The galaxy's velocity dispersions are not a property of the observation:
     they are set once on the model (``SedModel(kinematics=Kinematics(...))``).
     """
