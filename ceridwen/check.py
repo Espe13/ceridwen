@@ -118,14 +118,25 @@ def check_environment(verbose: bool = True) -> bool:
     elif not os.path.isdir(sps_home):
         record(_WARN, "$SPS_HOME", f"set to {sps_home!r} but that directory does not exist")
     else:
+        # the files the forward model opens: CLOUDY grids (nebular/*.lines, *.cont),
+        # dust-emission templates (dust/dustem/DL07_MW3.1_*.dat), the FSPS line list
         neb = os.path.join(sps_home, "nebular")
-        if os.path.isdir(neb):
-            record(_OK, "$SPS_HOME", sps_home)
+        dustem = os.path.join(sps_home, "dust", "dustem")
+        emlines = os.path.join(sps_home, "data", "emlines_info.dat")
+        neb_files = (sorted(f for f in os.listdir(neb) if f.endswith((".lines", ".cont")))
+                     if os.path.isdir(neb) else [])
+        dl07 = (sorted(f for f in os.listdir(dustem) if f.startswith("DL07_MW3.1_"))
+                if os.path.isdir(dustem) else [])
+        missing = ([] if neb_files else ["nebular/*.lines, *.cont (CLOUDY grids)"]) \
+            + ([] if dl07 else ["dust/dustem/DL07_MW3.1_*.dat (dust emission)"]) \
+            + ([] if os.path.isfile(emlines) else ["data/emlines_info.dat (line list)"])
+        if not missing:
+            record(_OK, "$SPS_HOME", f"{sps_home} ({len(neb_files)} CLOUDY files, "
+                   f"{len(dl07)} DL07 templates, emlines_info.dat)")
             sps_ok = True
         else:
             record(_WARN, "$SPS_HOME",
-                   f"{sps_home} exists but has no nebular/ subdir; nebular "
-                   "models will not find their CLOUDY grids.")
+                   f"{sps_home} lacks {'; '.join(missing)}: is it a full FSPS clone?")
 
     if verbose:
         header = "CERIDWEN environment check"
@@ -134,7 +145,8 @@ def check_environment(verbose: bool = True) -> bool:
         print("\n".join(lines))
         print()
         if required_ok and sps_ok:
-            print("All components present: every model component is available.")
+            print("All components present: the FSPS data files that nebular and dust emission "
+                  "read are in $SPS_HOME.")
         elif required_ok:
             print("Core installation OK: fits of stellar populations with the published "
                   "grids work.\nNOT yet available: nebular emission and dust emission "
