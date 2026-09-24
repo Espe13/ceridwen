@@ -627,3 +627,46 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
   above `fit.GP_WARN_NPIX` pixels. Timings are in the docs.
 - **chi^2 is diagonal.** `Spectrum.chi_sq` and the summary figure's chi^2/nu do not include
   the GP; `Spectrum.log_likelihood` and the sampled log-likelihoods do.
+
+## 21. `frac_obrun`: which light escapes (`fesc_geometry`)
+
+- **`runaway_bc` (default) acts on every age row, not only on young stars.** The fraction
+  `frac_obrun` of each row skips that row's age-bin attenuation (not the diffuse dust). With the
+  default single birth-cloud bin (ages < 10.7 Myr) this touches only young stars; with an
+  age-binned `Dust` whose old bins are attenuated, `frac_obrun` brightens old stars too (old-only
+  population, `tau_pow2 = 0.5`: x1.19 at 5500 A for `frac_obrun = 0.3`). Use `picket`, or a
+  single attenuated bin, if the escape channel is meant for young stars only.
+- **`picket` means "not attenuated by anything"** for a fraction `frac_obrun` of the ages of the
+  nebular grid (to log age 7.3 = 20 Myr): no birth-cloud or diffuse dust, no nebular
+  reprocessing, no dust-emission heating. It needs `add_neb=True` (it raises otherwise). The
+  11-20 Myr ages are young for the picket but outside the default birth-cloud bin.
+- `frac_obrun = 0` is exactly the model without the key (both geometries).
+
+## 22. Nebular grid: `cloudy_dust` defaults to False
+
+- The CLOUDY grids **without** dust in the H II region (`ZAU_ND`) are the default, as in FSPS,
+  python-fsps and Prospector. `init_neb_params={"cloudy_dust": True}` gives the dusty grids
+  (`ZAU_WD`): on MIST, H-alpha x0.78, Ly-alpha x0.17, [O III] 5007 x1.13 relative to ND (BPASS:
+  x0.95, x0.40, x0.99). Compare with Prospector at the same setting.
+- **`gas_logz` / `gas_logu` priors must stay on the CLOUDY axis** (`gas_logz` [-1.3, +0.3],
+  `gas_logu` [-4, -1] on both grids). A bounded prior reaching outside, or a fixed value outside,
+  raises when the `SedModel` is built; an unbounded prior warns.
+- A result file without `csp_config['cloudy_dust']` was fitted with `cloudy_dust=True`. To
+  rebuild it, build the CSP with `init_neb_params={"cloudy_dust": True}`; the default CSP is
+  reported as a different model.
+
+## 23. Dust emission, and the IGM on lines and breaks
+
+- **The dust-emission energy balance counts the lines.** The energy the dust absorbs from the
+  nebular lines is re-emitted in the IR on every path, so `get_spectrum(include_lines=False)`
+  (the continuum) already carries the re-emission of the lines; `include_lines` only adds the
+  attenuated lines themselves. Fixed-z photometry (static line basis) and free-z photometry
+  (painted lines) give the same IR fluxes.
+- **Line fluxes under the IGM** (`Lines`, and the lines a `Spectrum` paints) use the IGM
+  transmission averaged over the line's profile on the model grid, the same as the painted
+  path. At Ly-α the Madau forest starts inside the line, so its blue half is absorbed (the
+  line keeps 0.81 of its flux at z = 3, 0.49 at z = 6 on the BPASS grid); the value depends on how finely the model grid samples the line (2 Å pixels on BPASS:
+  1-3% below a continuous quadrature at z = 3-9).
+- **The IGM acts after `σ_gal`** and before the instrument (`docs/conventions.md`,
+  Broadening). A fixed `σ_gal = 0` keeps the IGM on the model grid.
+

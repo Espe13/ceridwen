@@ -267,6 +267,7 @@ class SedModel:
                     f"absolute bounds [{lo:+.3f}, {hi:+.3f}] convert to "
                     f"[{lo - l0:+.3f}, {hi - l0:+.3f}].", stacklevel=3)
         self._check_tied_gas_range()
+        self._check_gas_range()
         self._check_afe_range()
         self._check_refused_alpha_cell()
 
@@ -296,6 +297,54 @@ class SedModel:
                     f"[{lo:+.3f}, {hi:+.3f}] leaves the CLOUDY gas axis [{glo:+.3f}, {ghi:+.3f}]; "
                     "outside it the emission lines are frozen at the edge value (the stellar "
                     "continuum still follows logzsol)", stacklevel=4)
+
+    def _check_gas_range(self):
+        """The logzsol rule for the nebular parameters (T2-002, T4-002): a bounded prior on
+        ``gas_logz`` / ``gas_logu`` whose support leaves the CLOUDY axis of the grid in use, or a
+        fixed value outside it, raises (the interpolation clamps there: frozen lines, a flat
+        likelihood tail that looks like a constraint); an unbounded prior warns."""
+        from ..csp.csp import prior_support
+        neb = getattr(self.csp, "neb", None)
+        if neb is None:
+            return
+        grid = getattr(neb, "line_file", None)
+        grid = "" if grid is None else f" ({getattr(grid, 'stem', grid)})"
+        for name, attrs in (("gas_logz", ("nebem_cont_logz", "nebem_line_logz")),
+                            ("gas_logu", ("nebem_cont_logu", "nebem_line_logu"))):
+            if name == "gas_logz" and getattr(self.csp, "gas_tied", False):
+                continue                     # follows logzsol (_check_tied_gas_range)
+            axes = [np.asarray(getattr(neb, a), dtype=float) for a in attrs
+                    if getattr(neb, a, None) is not None]
+            if not axes:
+                continue
+            glo = max(float(a.min()) for a in axes)
+            ghi = min(float(a.max()) for a in axes)
+            prior = self.priors.get(name)
+            if prior is not None:
+                lo, hi = prior_support(prior)
+                if not (np.isfinite(lo) and np.isfinite(hi)):
+                    warnings.warn(
+                        f"the prior on {name!r} is unbounded; the nebular emission is clamped "
+                        f"to the CLOUDY axis [{glo:+.3f}, {ghi:+.3f}]{grid} outside it.  Prefer "
+                        "a bounded prior (Uniform / TopHat / ClippedNormal).", stacklevel=4)
+                    continue
+                if lo < glo - 1e-9 or hi > ghi + 1e-9:
+                    raise ValueError(
+                        f"the prior on {name!r} covers [{lo:+.3f}, {hi:+.3f}], outside the "
+                        f"nebular grid's {name} axis [{glo:+.3f}, {ghi:+.3f}]{grid}; the CLOUDY "
+                        "interpolation clamps there, so the lines freeze at the edge and the "
+                        "posterior piles up in a flat tail that looks like a constraint.  "
+                        f"Narrow the prior to the grid, e.g. Uniform(low={glo:+.3f}, "
+                        f"high={ghi:+.3f}).")
+                continue
+            fixed = self._transform_value(name)          # a fixed value is a constant transform
+            if fixed is None:
+                continue
+            if float(np.min(fixed)) < glo - 1e-9 or float(np.max(fixed)) > ghi + 1e-9:
+                raise ValueError(
+                    f"the transform for {name!r} gives {np.array2string(fixed, precision=3)}, outside the "
+                    f"nebular grid's {name} axis [{glo:+.3f}, {ghi:+.3f}]{grid}; the CLOUDY "
+                    "interpolation would clamp to the edge.  Give a value inside the axis.")
 
     def _check_afe_range(self):
         """The logzsol rule for [alpha/Fe] on an alpha grid (B1-011): a bounded prior or a

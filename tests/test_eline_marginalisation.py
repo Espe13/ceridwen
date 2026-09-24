@@ -345,10 +345,11 @@ def test_jit_vmap_production_width_and_gradients(csp):
     batch["logmass"] = xs[:, None]
     vm = np.asarray(jax.jit(jax.vmap(f))(batch))
     for i in (0, 37, W_PROD - 1):
-        # 1e-7: the CSP and photometry have float32 stages whose summation order vmap changes;
-        # the ordinary likelihood shows the same (8.7e-9 measured at this theta)
+        # 3e-7: the CSP and photometry have float32 stages whose summation order vmap changes;
+        # the ordinary likelihood shows the same (8.7e-9 measured at this theta); 1.35e-7
+        # measured here with the default (dust-free, ZAU_ND) CLOUDY grid, < 1e-7 with ZAU_WD
         assert vm[i] == pytest.approx(float(f(dict(th, logmass=jnp.array([xs[i]])))),
-                                      rel=1e-7, abs=0.0)
+                                      rel=3e-7, abs=0.0)
     g = float(jax.grad(lambda x: f(dict(th, logmass=jnp.array([x]))))(x0))
     h = 1e-4            # mass enters as float32(10**logmass): steps must exceed its resolution
     fd = (float(f(dict(th, logmass=jnp.array([x0 + h]))))

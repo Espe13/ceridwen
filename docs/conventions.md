@@ -51,7 +51,7 @@ safe".
 | `csp.get_spectrum(theta)` (model grid) | rest-frame L_ν in L☉ Hz⁻¹ per M☉ (no mass, distance or IGM) |
 | `Spectrum` predictions (`model.predict`) | observed-frame F_ν in erg s⁻¹ cm⁻² Hz⁻¹ (cgs; × 1e32 for nJy), only with a redshift or `lumdist_mpc` in force |
 | Broadband fluxes | AB maggies |
-| Emission-line fluxes | erg s⁻¹ cm⁻² |
+| Emission-line fluxes | erg s⁻¹ cm⁻², observed frame; with an IGM, its transmission averaged over the line's profile on the model grid |
 | Marginalised line fluxes (`marginalize_elines=True`: `/elines` in the result, `extras["elines"]`) | erg s⁻¹ cm⁻², observed frame, IGM-transmitted at the line, **not** divided by the spectrum calibration; lines named as in `$SPS_HOME/data/emlines_info.dat`, vacuum rest-frame Å |
 | Stellar mass | `logmass` = log10(M⋆/M☉) |
 
@@ -101,6 +101,13 @@ The three widths live in three different places, and each is set exactly once:
 | `σ_gal`, `σ_gas` | the galaxy's stellar and gas velocity dispersions [km/s] | `Kinematics(...)`, passed to `SedModel(kinematics=...)`; the same object serves every observation |
 | `σ_inst(λ)` | the instrument's line-spread function at each observed pixel | `Instrument.<unit>(...)`, passed to each `Spectrum(instrument=...)` |
 | `σ_lib(λ)` | the resolution already in the SSP library | stored in every schema-2 grid (`SSPData.ssp_resolution`); read automatically |
+
+The IGM acts between the galaxy and the instrument, in the order the light meets them:
+galaxy kinematics (rest frame), redshift, IGM, instrument. A `Spectrum` smooths the model by
+`σ_gal`, multiplies by the IGM transmission, then applies the instrument (and library) part of
+the kernel; broadened photometry multiplies by the transmission after the `σ_gal` broadening.
+So the Ly-α break is as sharp as the IGM model and the instrument make it. (With `σ_gal` fixed
+at 0 the IGM is applied on the model grid, as without broadening.)
 
 There is no other place where a width enters. In particular the model spectrum
 (`csp.get_spectrum`) is **not** broadened by the galaxy any more, and emission
@@ -300,6 +307,44 @@ them.
 `model.observations` later requires `model.setup_observations()` (called for
 you by `fitSED(model, observations)`); a `Spectrum` therefore needs its
 `wavelength=` at construction even if the flux is attached later.
+
+## Nebular grid: CLOUDY without dust in the H II region
+
+`CSPBasis` reads the Byler et al. (2017) CLOUDY grids from `$SPS_HOME/nebular`. By default it
+uses the grids **without dust inside the H II region** (`ZAU_ND_<isochrones>`), the default of
+FSPS, python-fsps and Prospector, so the nebular lines match theirs.
+`init_neb_params={"cloudy_dust": True}` selects the grids with dust (`ZAU_WD_<isochrones>`),
+whose lines are fainter in hydrogen and Ly-alpha. The factor depends on the grid: for a constant
+SFR over 0-1 Gyr at solar metallicity and logU = -2.5, WD/ND is 0.78 (H-alpha), 0.79 (H-beta),
+0.17 (Ly-alpha) and 1.13 ([O III] 5007) on MIST, and 0.95, 0.95, 0.40 and 0.99 on BPASS. The
+result file records the choice (`csp_config['cloudy_dust']`); a file that does not record it
+was made with `cloudy_dust=True`, and `rebuild_model` asks for that CSP.
+
+## Dust geometry and the escape fraction `frac_obrun`
+
+The CSP attenuates each SSP age row by its age bin's dust (`init_dust_params['bin_edges']`,
+log10 age/Gyr; by default one "birth-cloud" bin, ages below 10^-1.97 Gyr = 10.7 Myr) and then
+everything by the diffuse dust. `theta['frac_obrun']` opens an escape channel, and
+`fesc_geometry` (on `CSPBasis`) chooses what escapes:
+
+- **`'runaway_bc'`** (default). A fraction `frac_obrun` of the light of **every age row** skips
+  that row's age-bin attenuation; it is still attenuated by the diffuse dust. The nebular ages
+  also emit a fraction `frac_obrun` of their ionising photons (free of the age-bin dust) and
+  power `1 - frac_obrun` of the nebular emission. With the default single bin only the ages
+  below 10.7 Myr are attenuated by a bin, so only they are affected. With several attenuated
+  age bins, old stars escape their own bin's dust too: an old-only population (two power-law
+  bins, `tau_pow1 = 1`, `tau_pow2 = 0.5`, SFR zero below 2.6 Gyr) is 1.19x brighter at 5500 A
+  for `frac_obrun = 0.3` and 1.65x for `frac_obrun = 1`.
+- **`'picket'`**. A fraction `frac_obrun` of the **young** light (the ages of the nebular CLOUDY
+  grid, log age <= 7.3, 20 Myr, on the shipped grids), ionising photons included, is not
+  attenuated by any dust or gas: no age-bin dust, no diffuse dust, no nebular reprocessing
+  (the nebular emission scales with `1 - frac_obrun` and the escape fraction of ionising
+  photons is `frac_obrun`), and it is not counted as absorbed in the dust-emission energy
+  balance. Requires `add_neb=True`. The picket's "young" (to 20 Myr) is wider than the default
+  birth-cloud bin (to 10.7 Myr): the 11-20 Myr ages get no birth-cloud dust, but a fraction
+  `frac_obrun` of their light still skips the diffuse dust.
+
+`frac_obrun = 0` is the model without the key in both geometries.
 
 ## FSPS at runtime
 

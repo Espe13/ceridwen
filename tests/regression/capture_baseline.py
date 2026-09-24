@@ -728,7 +728,8 @@ def _eline_marginal_baseline(p, ssp_data) -> dict[str, np.ndarray]:
     csp = CSPBasis(ssp_data, lookback_time=jnp.linspace(0.0, float(cosmo.age(z)), 6),
                    cosmo=cosmo, zh_const=True, sfh_interp="step", add_dust=False,
                    add_diffuse_dust=True, add_neb=True, add_igm=True, sps_home=SPS_HOME,
-                   verbose=False)
+                   verbose=False,
+                   init_neb_params={"cloudy_dust": True})   # the grid of the capture
     fixed = {k: jnp.atleast_1d(jnp.asarray(v)) for k, v in csp.theta_init.items()}
     # captured at the native axis value log10 Z = -2.0; in logzsol that is the same
     # physical metallicity, -2.0 - log10 Z_sun (BPASS: -0.30102999566398125)
@@ -811,7 +812,8 @@ def _lsf_scale_baseline(p, ssp_data) -> dict[str, np.ndarray]:
     csp = CSPBasis(ssp_data, lookback_time=jnp.linspace(0.0, float(cosmo.age(z)), 6),
                    cosmo=cosmo, zh_const=True, sfh_interp="step", add_dust=False,
                    add_diffuse_dust=True, add_neb=True, add_igm=False, sps_home=SPS_HOME,
-                   verbose=False)
+                   verbose=False,
+                   init_neb_params={"cloudy_dust": True})   # the grid of the capture
     fixed = {k: jnp.atleast_1d(jnp.asarray(v)) for k, v in csp.theta_init.items()}
     fixed.update(sfh=jnp.array([1.0, 1.0, 0.6, 0.3, 0.2, 0.1]),
                  logzsol=jnp.array([-0.3]),

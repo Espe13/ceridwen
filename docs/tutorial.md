@@ -184,8 +184,9 @@ lines = Lines(
 
 The model prediction for a `Lines` observation is the line luminosity read
 from the nebular grid and carried through dust, mass, distance and IGM like the
-continuum; no profile and no width enter, so `Kinematics` and `Instrument`
-play no role here. A basis built with `add_neb=False` (and `CSPBasis_afe`,
+continuum (the IGM transmission averaged over the line's profile on the model grid,
+which matters at Ly-α, where the Madau forest starts inside the line); no other
+width enters, so `Kinematics` and `Instrument` play no role here. A basis built with `add_neb=False` (and `CSPBasis_afe`,
 which has no nebular model) refuses a `Lines` observation with a `ValueError`
 rather than predicting zeros for it.
 

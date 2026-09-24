@@ -8,6 +8,13 @@ preserve the public API and give bit-comparable science (identical/near-identica
 later entries (e.g. the v1.0.5 `logzsol` metallicity keys, the v1.0.7 per-observation
 noise names) change the API and say so in their own entry.
 
+> **Nebular default changed (Unreleased, 1.0.12): `cloudy_dust=False`.** `CSPBasis` now
+> reads the CLOUDY grids without dust in the H II region (`ZAU_ND`, the FSPS / Prospector
+> default) instead of `ZAU_WD`. Nebular line fluxes change: on MIST, Balmer x1/0.78,
+> Ly-alpha x1/0.17, [O III] 5007 x1/1.13 relative to before (BPASS: x1/0.95, x1/0.40,
+> x1/0.99). `init_neb_params={"cloudy_dust": True}` restores the old grid; result files that
+> do not record `cloudy_dust` are read as `True`. See "Unreleased" below.
+
 > Scope note: this documents the edits from *this* work. The repo working tree
 > also carries other uncommitted changes that predate this session; `git diff`
 > is the authoritative full record. Line numbers drift — references are by
@@ -1058,3 +1065,57 @@ per bin to <= 1.4e-9 of the total (BPASS to 12, 13, 13.8 Gyr; MIST to 13.7 Gyr);
 difference from a whole-grid quadrature is the youngest-node effect (GOTCHAS 14). The
 `test_stellar_mass` xfail passes. Moves the `"linear"` golden W arrays and the T2 categories
 built on the linear 0-13.8 Gyr CSP (numbers in the F1 day report).
+
+## Unreleased — dust, nebular and IGM fixes (branch day/F2; finding IDs from the night audit)
+
+**Nebular default: `cloudy_dust=False` (B1-024).** `CSPBasis` / `NebularModel` default to the
+CLOUDY grids without dust in the H II region (`ZAU_ND`), as FSPS, python-fsps and Prospector
+do. Lines change by the WD/ND factors in the note at the top. `init_neb_params` no longer has to
+carry `cloudy_dust` (it merges over the default). `fitSED` records it in `csp_config`;
+`check_model_against_result` / `rebuild_model` read a file without it as `cloudy_dust=True`
+and name the setting in the error. Checked against python-fsps 0.5.0 (default FSPS grid, one
+3 Myr population): six lines at 1e-6 in ratio and 2e-3 absolute
+(`tests/test_nebular_default_grid.py`). The golden spectra and the `eline_marginal` /
+`lsf_scale` regression categories pin `cloudy_dust=True`, the grid they were captured with.
+
+**Dust-emission energy balance includes the lines (B1-006).** With `add_dust_emission=True` the
+absorbed luminosity is computed from the line-inclusive spectra on every path;
+`include_lines=False` returns the attenuated continuum plus the full dust emission. Before, the
+continuum (which the fixed-z photometry and every `Spectrum` use) left out the re-emission of the
+lines' absorbed energy: IR bands 2-3% faint, and fixed-z and free-z fits of the same object
+disagreed. Now static and painted photometry agree to < 3e-7 in the IR; the energy balance closes
+to 1.5e-9 (`tests/test_dust_emission_lines.py`). Moves every dust-emission continuum in the IR
+(lines' share of L_abs, 4.7% in the test model); `get_spectrum(include_lines=True)` is unchanged.
+
+**IGM on line fluxes (B1-018).** `Lines` fluxes and the lines a `Spectrum` paints take the IGM
+transmission averaged over each line's painted profile (`gaussnebarr` x trapezoid in nu), not
+linearly interpolated at the line centre. Ly-alpha now equals the painted-then-attenuated path
+(to 1.2e-6 at z = 3, 6, 9; was 0.76 / 0.37 / 0.34 vs 0.81 / 0.49 / 0.46 on BPASS). Lines redward
+of 1215.67 A are unchanged (factor 1 to rounding).
+
+**IGM after the galaxy's kinematic broadening (B1-027).** Order: galaxy kinematics (rest
+frame), redshift, IGM, instrument. A `Spectrum` (fixed or sampled z) applies the IGM after the
+`sigma_gal` kernel and before the instrument response; broadened photometry after its
+`sigma_gal` broadening. The Ly-alpha break is no longer smeared by the galaxy's dispersion
+(`tests/test_igm_after_kinematics.py`, against a direct construction). A fixed `sigma_gal = 0`
+keeps the old arithmetic; spectra redward of Ly-alpha (T = 1) are unchanged.
+
+**`frac_obrun` (B1-013, B1-012, P1-011).** `frac_obrun = 0` is now exactly the model without the
+key: in `runaway_bc` the young nebular continuum below 912 A kept escaping the birth cloud as
+soon as the key existed. `fesc_geometry='picket'` requires `add_neb=True` (it silently ran the
+runaway arithmetic without it). The picket geometry is tested point by point against its
+definition (clear fraction free of birth-cloud and diffuse dust, nebular emission x (1 - fo),
+f_esc = fo, no dust heating by the clear light). Documented: in `runaway_bc` the fraction
+`frac_obrun` of every age row skips that row's age-bin dust, so with several attenuated bins old
+stars brighten too (`docs/conventions.md`, GOTCHAS 21).
+
+**Nebular priors checked against the CLOUDY axis (T2-002, T4-002).** `SedModel` raises at
+construction when a bounded `gas_logz` or `gas_logu` prior reaches outside the nebular grid's
+axis (both Byler+17 grids, ZAU_ND and ZAU_WD: `gas_logz` [-1.3, +0.3], `gas_logu` [-4, -1]), or when
+a constant transform fixes either outside it; an unbounded prior warns. The message names the
+prior bounds, the axis, the grid file and the fix (`Uniform(low=-1.300, high=+0.300)`). Before,
+such a prior was accepted silently and the interpolation clamped at the edge (frozen lines, a flat
+posterior tail); e.g. U[-2, 0.5] on `gas_logz`, as in the JADES-like mock suite, now raises.
+Same rule as the logzsol guard. `tests/test_gas_prior_range.py`; two ERROR rows in
+`tests/regression/misuse_report.py`.
+

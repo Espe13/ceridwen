@@ -58,13 +58,13 @@ def _flat(prefix, obj, out):
 
 
 def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False, lsf=None,
-           interp="step", track=False):
+           interp="step", track=False, zred=ZRED, spec_wave=SPEC_WAVE, filters=FILTERS):
     path = find_test_grid()
     if path is None:
         sys.exit("no test SSP grid found (tests/_gridfixture.py)")
     ssp = SSPData.load(str(path))
     cosmo = Cosmology.planck18()
-    kw = dict(lookback_time=jnp.linspace(0.0, float(cosmo.age(0.0 if track else ZRED)), N_TIME),
+    kw = dict(lookback_time=jnp.linspace(0.0, float(cosmo.age(0.0 if track else zred)), N_TIME),
               zh_const=True, sfh_interp=interp, add_dust=True, add_diffuse_dust=True,
               add_neb=add_neb, add_igm=add_igm, add_dust_emission=dust_emission,
               verbose=False, cosmo=cosmo)
@@ -84,10 +84,10 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
         return logsfr_ratios_to_sfh(t["logsfr_ratios"], sfh_times_yr=_t)
     _sfh.__name__ = "logsfr_ratios_to_sfh"
 
-    obs = [Photometry(filters=FILTERS, flux=[2e-9] * len(FILTERS),
-                      uncertainty=[2e-10] * len(FILTERS), name="phot"),
-           Spectrum(wavelength=SPEC_WAVE * (1.0 + ZRED), flux=np.full(SPEC_WAVE.size, 1e-9),
-                    uncertainty=np.full(SPEC_WAVE.size, 1e-10),
+    obs = [Photometry(filters=filters, flux=[2e-9] * len(filters),
+                      uncertainty=[2e-10] * len(filters), name="phot"),
+           Spectrum(wavelength=spec_wave * (1.0 + zred), flux=np.full(spec_wave.size, 1e-9),
+                    uncertainty=np.full(spec_wave.size, 1e-10),
                     instrument=(Instrument.sigma_kms(150.0) if lsf is None else
                                 # LSF scale: fixed float, or sampled ("lsf_scale") in (0.8, 1.3)
                                 Instrument.sigma_kms(150.0, scale=lsf, scale_range=(
@@ -104,7 +104,7 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
     if isinstance(lsf, str):
         init[lsf] = jnp.array([1.1])
     model = SedModel(csp, obs, priors={}, transforms={"sfh": _sfh},
-                     free_param_init=init, zred=ZRED,
+                     free_param_init=init, zred=zred,
                      kinematics=Kinematics(sigma_gal=sigma_losvd))
     return model
 
@@ -125,7 +125,7 @@ def _forward(model, theta_np, tag, out):
         pred = model._predict_jit_fn(one)
         _flat(f"{tag}/predict/{i}", pred, out)
         t = model.apply_transforms(one)
-        t["zred"] = jnp.array([ZRED])
+        t["zred"] = jnp.array([model.zred])
         cont, lines = csp.get_spectrum_components(t)
         out[f"{tag}/components/{i}/cont"] = np.asarray(cont)
         out[f"{tag}/components/{i}/lines"] = np.asarray(lines)
@@ -330,6 +330,12 @@ def collect(args):
     # kept) under the "linear" scheme; last, for the same reason
     configs.append(("tracked_linear", dict(add_neb=False, add_igm=True, sigma_losvd=250.0,
                                            dust_emission=False, interp="linear", track=True)))
+    # the Ly-alpha break in the spectrum (z = 6): the IGM on the model grid (sigma_gal = 0) and
+    # after the galaxy kernel (sigma_gal = 300); appended last, earlier draws unchanged
+    brk = dict(add_neb=False, add_igm=True, dust_emission=False, zred=6.0,
+               spec_wave=np.linspace(1100.0, 1400.0, 300), filters=["jwst_f090w", "jwst_f115w"])
+    configs.append(("igm_break_s0", dict(brk, sigma_losvd=0.0)))
+    configs.append(("igm_break_s300", dict(brk, sigma_losvd=300.0)))
     for tag, cfg in configs:
         t0 = time.perf_counter()
         model = _build(**cfg)

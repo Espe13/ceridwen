@@ -1083,6 +1083,7 @@ def _write_csp_config(mod_grp, model) -> None:
            "track_zred_age": getattr(csp, "track_zred_age", None),
            "nebemlineinspec": getattr(csp, "nebemlineinspec", None),
            "fesc_geometry": getattr(csp, "fesc_geometry", None),
+           "cloudy_dust": getattr(getattr(csp, "neb", None), "cloudy_dust", None),
            "igm": None if igm is None else type(igm).__name__,
            "igm_factor": getattr(csp, "igm_factor", None),
            "isoc_type": getattr(csp, "_ssp_isoc_type", None),

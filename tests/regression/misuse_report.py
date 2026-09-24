@@ -170,6 +170,18 @@ def _tied_gas_with_prior():
     return _model_with(priors={"gas_logz": TopHat(low=-1.0, high=0.2)}, csp_obj=c)
 
 
+def _gas_prior_outside_cloudy_axis(transform=False):
+    """gas_logz prior U[-2, 0.5] (the CLOUDY axis is [-1.3, 0.3]), or a fixed gas_logz = -1.5."""
+    if not os.environ.get("SPS_HOME"):
+        raise RuntimeError("SPS_HOME unset: needs the nebular grids (scenario n/a)")
+    c = _short_csp(add_neb=True, sps_home=os.environ["SPS_HOME"])
+    if transform:
+        ph = Photometry(filters=["sdss_g0"], flux=[1e-9], uncertainty=[1e-10], name="p")
+        return SedModel(c, [ph], transforms={"gas_logz": lambda th: jnp.array([-1.5])},
+                        zred=0.5)
+    return _model_with(priors={"gas_logz": Uniform(low=-2.0, high=0.5)}, csp_obj=c)
+
+
 def _afe_refused_cell():
     """The (logzsol, afe) corner built on FSPS's duplicated isoc_feh_p050_afe_p6 file."""
     from ceridwen.ssps.ssp_data_afe import SSPDataAfe
@@ -409,6 +421,9 @@ def run_scenarios():
                                          instrument=Instrument.R_fwhm(1000.0, scale="lsf_scale"))],
                           priors={"lsf_scale": Normal(mean=1.0, sigma=0.1)},
                           free_param_init={"lsf_scale": 1.0}, zred=0.0)),
+        ("gas_logz prior beyond the CLOUDY axis", {"ERROR"}, _gas_prior_outside_cloudy_axis),
+        ("fixed gas_logz outside the CLOUDY axis", {"ERROR"},
+         lambda: _gas_prior_outside_cloudy_axis(transform=True)),
         ("sampled LSF scale not in theta", {"ERROR"},
          lambda: SedModel(csp, [Spectrum(wavelength=jnp.linspace(4000, 7000, 400), name="s",
                                          instrument=Instrument.R_fwhm(1000.0, scale="lsf_scale"))],

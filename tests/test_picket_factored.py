@@ -54,7 +54,7 @@ def _dense_picket(csp, theta, include_lines):
 @pytest.mark.parametrize("include_lines", [False, True])
 def test_picket_nodem_matches_dense(include_lines):
     csp = _csp(False)
-    theta = dict(csp.theta_init, Z=jnp.array([-2.0]), frac_obrun=jnp.array([0.3]))
+    theta = dict(csp.theta_init, logzsol=jnp.array([-2.0 - csp.log10_zsun]), frac_obrun=jnp.array([0.3]))
     new = np.asarray(csp.get_spectrum(theta, include_lines=include_lines))
     old = np.asarray(_dense_picket(csp, theta, include_lines)[0])
     np.testing.assert_allclose(new, old, rtol=2e-5, atol=1e-12 * np.max(old))
@@ -62,7 +62,7 @@ def test_picket_nodem_matches_dense(include_lines):
 
 def test_picket_dem_matches_dense():
     csp = _csp(True)
-    theta = dict(csp.theta_init, Z=jnp.array([-2.0]), frac_obrun=jnp.array([0.3]))
+    theta = dict(csp.theta_init, logzsol=jnp.array([-2.0 - csp.log10_zsun]), frac_obrun=jnp.array([0.3]))
     new = np.asarray(csp.get_spectrum(theta, include_lines=True))
     attenuated, dust_free, diffuse = _dense_picket(csp, theta, True)
     old, _, _ = csp.dust_emi.compute_dust_emission(
@@ -77,7 +77,7 @@ def test_picket_frac_obrun_zero_equals_full_covering():
     """fo = 0: every young photon is covered; the picket spectrum equals the runaway
     geometry with frac_obrun = 0 (no bypass, LyC absorbed)."""
     csp = _csp(False)
-    theta = dict(csp.theta_init, Z=jnp.array([-2.0]), frac_obrun=jnp.array([0.0]))
+    theta = dict(csp.theta_init, logzsol=jnp.array([-2.0 - csp.log10_zsun]), frac_obrun=jnp.array([0.0]))
     picket = np.asarray(csp.get_spectrum(theta, include_lines=True))
     csp.fesc_geometry = "runaway_bc"
     runaway = np.asarray(csp.get_spectrum(theta, include_lines=True))

@@ -172,7 +172,8 @@ projection → likelihood → sampler.
   `DustEmission.py`: DL07 + THEMIS grids (`CSPBasis(duste_model=...)`, default DL07),
   bilinear interp in (qPAH, Umin), dust
   mass. `AGBDustShell.py`: optional AGB circumstellar dust.
-- `neb/` — `NebularGridModel.py`: `NebularModel` (CLOUDY grids, each cube
+- `neb/` — `NebularGridModel.py`: `NebularModel` (CLOUDY grids, default
+  `cloudy_dust=False` = `ZAU_ND_<isoc>` as in FSPS/Prospector, `True` = `ZAU_WD`; each cube
   interpolated against its own gas_logz/gas_logu/age axes, line profiles at
   the pixel floor, `line_profiles(sigma)` for the photometric line basis).
 - `observation/` — `base.py` (`Observation` base class), `photometry.py` (filter convolution via

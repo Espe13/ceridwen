@@ -811,11 +811,16 @@ class SpectralProjector:
                    line_wave_rest=lw_kept, line_sigma_table_kms=s_table,
                    inst_scale_key=scale_key, inst_scale_range=scale_rng, scaled=scaled)
 
-    def continuum(self, spec_rest, sigma_gal_kms, opz=None, inst_scale=None):
+    def continuum(self, spec_rest, sigma_gal_kms, opz=None, inst_scale=None, transmission=None):
         """Continuum on the observed pixels; ``opz`` = 1 + z (traced) when ``free_z``,
-        ``inst_scale`` (traced) when the instrument scale is sampled."""
+        ``inst_scale`` (traced) when the instrument scale is sampled.  ``transmission``: a
+        callable ``T(rest wavelengths)`` (the IGM) applied after the sigma_gal kernel and before
+        the instrument, on the log grid; ``spec_rest`` is then the spectrum before the IGM."""
         scale = None if opz is None else self.opz_ref / opz
         spec_log = self.window.smooth(self.window.to_log(spec_rest, scale), sigma_gal_kms)
+        if transmission is not None:
+            w_log = self.window._wave_log if scale is None else self.window._wave_log * scale
+            spec_log = spec_log * transmission(w_log).astype(spec_log.dtype)
         if inst_scale is None:
             return apply_response(self.J, self.W, spec_log)
         return apply_response(self.scaled.J, self.scaled.weights(inst_scale), spec_log)
@@ -832,7 +837,7 @@ class SpectralProjector:
             return self.paint(flux, sigma_gas_kms)
         return self.paint(flux, sigma_gas_kms, inst_scale)
 
-    def predict(self, spec_rest, line_flux_obs_all, theta):
+    def predict(self, spec_rest, line_flux_obs_all, theta, transmission=None):
         s_gal, s_gas = self.kinematics.resolve(theta)
         opz = None
         if self.free_z:
@@ -840,7 +845,7 @@ class SpectralProjector:
                 raise KeyError("projector built with zred_range needs theta['zred']")
             opz = 1.0 + jnp.ravel(jnp.asarray(theta["zred"]))[0]
         s_ins = self.inst_scale(theta)
-        out = self.continuum(spec_rest, s_gal, opz, s_ins)
+        out = self.continuum(spec_rest, s_gal, opz, s_ins, transmission)
         if self.paint is not None and line_flux_obs_all is not None:
             out = out + self.lines(line_flux_obs_all, s_gas, opz, s_ins)
         return out
@@ -863,7 +868,7 @@ class SpectralProjector:
         return phi * jnp.asarray(wo / C_AA_S)[:, None]
 
     def predict_with_line_basis(self, spec_rest, line_flux_obs_all, theta, fit_pos=None,
-                                basis=None):
+                                basis=None, transmission=None):
         """``(prediction, A)``: continuum plus the lines of ``line_flux_obs_all`` painted with
         :meth:`line_basis` at ``(1 + zred + eline_delta_zred)`` (theta key, default 0), and the
         unit-flux columns ``A`` (n_pix, len(fit_pos)) of the kept lines at positions ``fit_pos``
@@ -875,7 +880,7 @@ class SpectralProjector:
                 raise KeyError("projector built with zred_range needs theta['zred']")
             opz = 1.0 + jnp.ravel(jnp.asarray(theta["zred"]))[0]
         s_ins = self.inst_scale(theta)
-        out = self.continuum(spec_rest, s_gal, opz, s_ins)
+        out = self.continuum(spec_rest, s_gal, opz, s_ins, transmission)
         if self.line_wave_rest is None or self.line_idx.size == 0:
             return out, None
         if basis is None:   # a precomputed basis is only passed for fixed z, widths, dz = 0
