@@ -968,10 +968,10 @@ What changes for you, in short (details in the sections below):
   (weights at the oldest nodes were off by up to 16 % on BPASS fits reaching 13 Gyr; spectra
   move by up to 4e-4 in the optical).
 - **Surviving mass of young MIST populations** (< 2.8 Myr) no longer exceeds the formed mass
-  (FSPS reports up to 4.6). `fetch_grid("mist_miles_chab")` now downloads the corrected grid
-  (Zenodo 22937956); a copy fetched earlier fails the checksum, and `fetch_grid(...,
-  force=True)` replaces it. A surviving-mass table above 1.01 is refused at load with a
-  warning (spectra unaffected). `mist_bpass_v2` is unchanged.
+  (FSPS reports up to 4.6). A grid table above 1.01 is refused at load with a warning: the
+  published `mist_miles_chab` copy is refused this way until its corrected copy is deposited
+  on Zenodo and registered in a later release, so it fits without `mfrac` until then
+  (spectra unaffected). `mist_bpass_v2` is unchanged.
 - **Sampled `[α/Fe]` no longer builds a flux plane per sample** (28 GB -> 0.01 GB of XLA
   temporary memory at 400 parallel evaluations on the high-resolution grid).
 - **NUTS** labels its R-hat as within-run mixing and sums the per-chain ESS.
@@ -1155,24 +1155,4 @@ such a prior was accepted silently and the interpolation clamped at the edge (fr
 posterior tail); e.g. U[-2, 0.5] on `gas_logz`, as in the JADES-like mock suite, now raises.
 Same rule as the logzsol guard. `tests/test_gas_prior_range.py`; two ERROR rows in
 `tests/regression/misuse_report.py`.
-
-### Grid re-deposit: `mist_miles_chab` surviving-mass table (Zenodo 22937956, 2026-09-24)
-
-**What.** The registry now points at Zenodo record 22937956
-(doi:10.5281/zenodo.22937956), a new version of record 22921057. Only
-`ssp_data_mist_miles.h5` changed: its `ssp_stellar_mass` table is corrected for truncated
-young isochrones (326 of 1391 cells change, all younger than 10^6.45 yr; see the Q2-003
-entry). Spectra and the wavelength, age and metallicity axes are bit-identical, so the
-content hash (chash) is unchanged. New sha256 `f2f40fe9…`. `mist_bpass_v2` and
-`amist_c3k_hr_krou_afe` are the same files, now fetched from the new record. The old
-sha256 stays in `grid_metadata.py`, so copies downloaded earlier still resolve their
-metadata; `fetch_grid("mist_miles_chab", force=True)` gets the corrected table.
-
-**Why.** FSPS puts the whole stellar mass below the first isochrone point into the first
-bin. On truncated young isochrones this gave a surviving mass above the formed mass in 360
-cells (Q2-003).
-
-**Verification.** The uploaded file's MD5 was checked against the prepared file
-(`cd42a1d4…`) on Zenodo before publishing. The download through `fetch_grid` from the
-new URLs is checked in the release's CI simulation.
 
