@@ -2,48 +2,34 @@
 
 ## `quickstart.py`
 
-A complete, self-contained fit: builds (or loads) the FSPS SSP cache, makes
+A complete, self-contained fit: loads an SSP grid, makes
 mock UV-to-IR photometry (GALEX+SDSS+2MASS+WISE) from known parameters, recovers them with BlackJAX nested
 sampling, post-processes the fit with `PostProcess`, prints true-vs-posterior
 values, and writes the summary, corner and sampling-diagnostic figures (truth
 marked in green) plus `quickstart_post.npz` to `quickstart_figures/`.
 
-Recommended route — build the SSP grid yourself with FSPS (you control
-isochrones, spectral library, and IMF; see the README for the FSPS install):
+Install CERIDWEN and FSPS as in the [README](../README.md#installation), then run it with the
+published grid:
 
 ```bash
-pip install .                      # everything except FSPS
-pip install "fsps>=0.4.4"          # needs gfortran + $SPS_HOME; see README
-export SPS_HOME=/path/to/fsps
-python examples/quickstart.py      # builds examples/ssp_data.h5 on first run
+SSP_FILE=$(python -c "from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_miles_chab'))") \
+    python examples/quickstart.py
 ```
 
-No FSPS? A pre-built grid always works too, by name (downloaded once into
-`~/.ceridwen/grids`, sha256-verified):
+The script resolves the grid in this order: `$SSP_FILE`, then `examples/ssp_data.h5`, then
+the local developer grid `ceridwen/data/test_data/ssp_data_bpass.h5` (not in the
+repository); with none of them it builds `examples/ssp_data.h5` with `python-fsps`
+([building your own SSP grid](../docs/installation.md#building-your-own-ssp-grid)).
 
-```python
-from ceridwen.ssps import fetch_grid, SSPData
-ssp = SSPData.load(fetch_grid("mist_miles_chab"))
-```
+It uses demo settings (150 live points, `logZ_tol=-2`) and is not a converged fit. Broadband
+photometry alone constrains `logmass` well but `logzsol` and the dust only weakly: their
+posteriors are broad and can miss the truth by about 2 sigma (a run on 2026-09-24 recovered
+`logzsol` -1.25 (-0.43/+0.48) against a truth of -0.20, with a bimodal posterior). It writes
+`quickstart_post.npz` (~145 MB) next to the figures.
 
-or by hand to the quickstart location:
-
-```bash
-curl -L -o examples/ssp_data.h5 \
-    "https://zenodo.org/records/22921057/files/ssp_data_mist_miles.h5?download=1"
-```
-
-The script resolves the grid in this order: `$SSP_FILE` →
-`examples/ssp_data.h5` → the local developer grid
-`ceridwen/data/test_data/ssp_data_bpass.h5` (not shipped in the repository).
-
-`add_neb=True` additionally needs `$SPS_HOME` at runtime (CLOUDY nebular
-data), i.e. an FSPS data checkout even with a downloaded grid.
-
-For spectroscopy and VI-preconditioned NUTS see the end-to-end template in the
-[README](../README.md#step-1-fit-a-galaxy-end-to-end); for emission lines, free
-redshift and the joint fit see [`docs/tutorial.md`](../docs/tutorial.md) and
-`demo_2_photometry_lines.py` / `demo_3_spectrum_advanced.py` below.
+For a spectrum and photometry fitted jointly, see the [Quick start](../README.md#quick-start);
+for emission lines, free redshift and the joint fit see [`docs/tutorial.md`](../docs/tutorial.md)
+and `demo_2_photometry_lines.py` / `demo_3_spectrum_advanced.py` below.
 
 ## `demo_1_mock_test.py`, `demo_2_photometry_lines.py`, `demo_3_spectrum_advanced.py`
 

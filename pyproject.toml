@@ -84,7 +84,7 @@ dependencies = [
 # not a pure-Python wheel — it compiles Fortran against $SPS_HOME at install
 # time, so bundling it would make `pip install` fail on any machine without a
 # Fortran compiler and $SPS_HOME set. FSPS is a documented prerequisite instead
-# (see the README "Installing FSPS" section): install it with `pip install fsps`.
+# (see docs/installation.md, "Building your own SSP grid"): install it with `pip install fsps`.
 
 [project.optional-dependencies]
 # Maintainer-only: tooling to build the documentation site. Not needed to use
