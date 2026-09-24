@@ -906,3 +906,34 @@ likelihood (rel 1e-14); the conditional mean equals the profiled solve with `reg
 the loop; every refusal; a mock with an injected order-3 calibration recovered by a short nested
 fit, consistent with the sampled route; result-file round trip. New regression category
 `poly_marginal` (asserts the dense brute force at capture); new T4 variant `polymarg`.
+
+## 2026-09-24 — audit fixes (night/fixes; finding IDs from the night audit)
+
+**Behaviour changes (numbers).**
+- Nested-sampling weights: BlackJAX's NaN birth likelihood of the prior-drawn initial live
+  points is a birth at −∞ (`ns_weights.nested_log_weights`), so those points are weighted
+  and counted; `logsumexp(log_weights)` now equals the stored ln Z (B2-016).
+- Prior draws for vector parameters (per-element `Uniform`, `MultivariateNormalPrior`) have
+  shape `(n, *param_shape)` in nested sampling, `map_fit` and the figures (B2-002); scalar
+  priors draw exactly as before.
+- `chevallard` has a finite gradient at `tau_chev = 0` (bit-identical for τ > 0) (B1-004).
+
+**Now refused or warned (were silent).** `SedModel`: an `afe` prior outside the α grid
+(B1-011); sampled `eline_scaling` with no `Lines`, `igm_factor` without IGM, `frac_obrun`
+with no nebular or dust model (B1-014, B1-021); `zred < 0` without `lumdist_mpc` (B1-026);
+warnings for a sampled `zred` whose prior lies after the oldest SFH node (B1-002) and for
+`gas_tied` beyond the CLOUDY axis (B1-019). `upper_limit` of the wrong length (B2-006); the
+plain `DiagonalGaussianLikelihood.make_lnprobfn` on flagged upper limits (B2-003);
+`Spectrum.mask_lines` without `zred` warns (B1-009); a dust-law key missing from theta warns
+(B1-007); the eline fast path refuses a mask changed after setup (B2-015); the import-time
+switches `CERIDWEN_X64=0` / `CERIDWEN_MATMUL_PRECISION` warn (B1-023).
+
+**Fixed.** `rebuild_model` / `check_model_against_result` accept the files `fitSED` writes
+(B2-001); `resume_from` accepts its own checkpoint (ln L check at rtol 1e-6) (Q1-006);
+single-observation `make_lnprobfn` honours sky and calibration (B2-003); vector `Uniform`
+serialises (G2-001) and `_detect_bounds` keeps per-element bounds (B2-005); `fitSED` no
+longer mutates `sampler_kwargs` (B2-004), `CSPBasis` no longer mutates `init_*_params`
+(B1-015); `/map` records its settings, key and bounds (B2-011); NS diagnostic titles are
+weighted quantiles (B3-001); `fetch_grid` names a pre-re-deposit cache (B3-007);
+`ceridwen.check` verifies the FSPS data files (B3-002). Docs, README, tutorial, GOTCHAS,
+AGENTS and examples corrected per the B3/Q1/P findings (see `git log main..night/fixes`).
