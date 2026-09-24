@@ -10,7 +10,7 @@ wavelength. It is part of the compiled likelihood that nested sampling, NUTS, VI
 
 !!! note "Off by default."
     A spectrum has a GP only when you switch one on (below). Without one, the likelihood
-    is the diagonal Gaussian, compiled to the same program as before the feature.
+    is the diagonal Gaussian, compiled to the same program as a model without a GP.
 
 ## The likelihood
 
@@ -155,7 +155,7 @@ compile time excluded:
 | 2000 | 1 | 26.5 | 215 | 215 | 0.023 | 32.0 |
 | 2000 | 32 | 716 | 5835 | 182 | 0.686 | 32.0 |
 
-(Apple M3 Pro laptop CPU, float64, 2026-09-23, with another CPU-heavy job running on the
+(Apple M3 Pro laptop CPU, float64, with another CPU-heavy job running on the
 machine, so treat these as indicative. The GP kernel only; the forward model comes on top.)
 The gradient costs 5-8 times the value, and from 1000 to 2000 pixels the cost grows by a
 factor of about 7 (close to n³). At 1000 pixels the GP adds ~26 ms of value and gradient per

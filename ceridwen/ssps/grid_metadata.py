@@ -5,7 +5,7 @@ metallicity *of the grid in use*.  A grid's Z_sun is resolved at construction
 (:class:`~ceridwen.ssps.ssp_data.SSPData`), in this order:
 
 1. an explicit ``zsun=`` keyword,
-2. the ``log10_zsun`` provenance attribute written by builds since v1.0.5,
+2. the ``log10_zsun`` provenance attribute written by the grid build,
 3. :data:`CHASH_TABLE` below, keyed by the grid's content hash (``chash-v1``),
 4. otherwise a teaching error.  Nothing is guessed from ``isoc_type``: the MIST Z_sun of
    FSPS changed 0.0142 -> 0.0191 -> 0.0185 between versions under the same name.
@@ -100,7 +100,7 @@ def _register(chash: str, meta: GridMeta) -> None:
 
 
 # ---------------------------------------------------------------------------------------
-# Table entries.  Evidence (Phase A report, Claude outputs/metallicity_phase0_2026-09-22/):
+# Table entries.  Evidence:
 #   A1 FSPS source: src/sps_vars.f90 `#elif (MIST)` zsol = 0.0142 (049875039497, 2016),
 #      0.0191 (c8752a1d7951, 2026-07-24), 0.0185 (1c9d8763a4e9, 2026-07-28); BPASS
 #      zsol = 0.020.  python-fsps 0.5.0 bundles 0.0185 (get_zsol() = 0.01850000023841858),
@@ -175,8 +175,8 @@ _register("chash-v1:3b386b55520bbcd93dd6847a072ab71f9b1df48767d1a4277cc3b656a998
     name="amist_c3k_hr_krou_afe", log10_zsun=-1.7328282715969863, zsun_nominal=0.0185,
     axis_meaning="feh", alpha_axis=True, isoc_type="mist", spec_library="c3k_hr",
     fsps_version=None,
-    evidence="M. J. Park FITS (ext2 column feh) + log10(0.0185) in float64 "
-             "(scripts_afe/build_afe_hr_grid.py:129), bitwise; node[10]; Fe5270 moves "
+    evidence="M. J. Park FITS (ext2 column feh) + log10(0.0185) in float64, "
+             "bitwise; node[10]; Fe5270 moves "
              "-0.11 A and Mgb +2.3 A from [a/Fe] 0 to +0.4 at a fixed node, i.e. fixed [Fe/H]",
     refused_cells=((12, 4),), refused_reason=_A3_CORNER,
     file_sha256=("f6af03d813569f5982891d969f030d9345278a60de907b90b2a910d56af32a16",

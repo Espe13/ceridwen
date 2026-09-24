@@ -11,7 +11,7 @@ alone, without FSPS:
   with m_ssp linear in log10(tau) between nodes and 1 below the first node.
 
 FSPS works in single precision (real(SP)), so the tolerance is 1e-7; the
-measured agreement on 2026-09-22 was <= 2.8e-9 for all nine numbers.
+measured agreement is <= 2.8e-9 for all nine numbers.
 """
 import json
 import os

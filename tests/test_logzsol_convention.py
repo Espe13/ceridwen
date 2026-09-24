@@ -266,7 +266,7 @@ def test_logzsol_axis_matches_the_external_node_set(name):
 
 def test_old_absolute_keys_raise_with_the_converted_value():
     ssp, _ = _load("mist_bpass_v2")
-    with pytest.raises(ValueError, match=r"theta\['Z'\] was removed"):
+    with pytest.raises(ValueError, match=r"theta\['Z'\] is not a parameter name"):
         _csp(ssp, False, theta={"lookback_time": jnp.linspace(0.0, 13.0, 4),
                                 "sfh": jnp.ones(4), "Z": jnp.array([-2.0])},
              lookback_time=None)

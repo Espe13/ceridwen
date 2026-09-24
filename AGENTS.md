@@ -11,25 +11,25 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
 
 ## Conventions that are easy to get wrong — do not assume the common defaults
 
-1. **Metallicity is SOLAR-RELATIVE: `logzsol = log10(Z/Z_sun)` (v1.0.5).** The parameters
+1. **Metallicity is SOLAR-RELATIVE: `logzsol = log10(Z/Z_sun)`.** The parameters
    are `theta["logzsol"]` (constant, shape `(1,)`) and `theta["logzsol_hist"]`
    (shape `(n_time,)`); `0.0` is solar on every grid. Z_sun is the **grid's own** solar node,
    resolved at load from `zsun=`, the file's `log10_zsun` provenance, or the content-hash
-   table in `ceridwen/ssps/grid_metadata.py` — never from `isoc_type` (FSPS changed MIST's
-   `zsol` 0.0142 -> 0.0191 -> 0.0185 under the same name). A grid whose Z_sun is unknown
+   table in `ceridwen/ssps/grid_metadata.py` — never from `isoc_type` (FSPS versions give MIST's
+   `zsol` as 0.0142, 0.0191 or 0.0185 under the same name). A grid whose Z_sun is unknown
    raises. Typical ranges: BPASS `[-2.30, +0.30]` (Z_sun 0.020), MIST/aMIST `[-2.50, +0.50]`
    (Z_sun 0.0185). `Uniform(low=-2.0, high=0.2)` is safe on every shipped grid; a bounded
-   prior wider than the grid raises. The old absolute keys `Z` / `zh` raise everywhere with
-   the converted value. On MIST/aMIST grids `logzsol` **is `[Fe/H]`** and the total
-   metallicity is the derived `logzsol_total` = `[Z/H]`. `gas_logz` was already
-   solar-relative (CLOUDY axis) and is unchanged; `CSPBasis(gas_tied=True)` sets
+   prior wider than the grid raises. The absolute-metallicity keys `Z` / `zh` raise everywhere,
+   printing the converted value. On MIST/aMIST grids `logzsol` **is `[Fe/H]`** and the total
+   metallicity is the derived `logzsol_total` = `[Z/H]`. `gas_logz` is
+   solar-relative (CLOUDY axis); `CSPBasis(gas_tied=True)` sets
    `gas_logz := logzsol`.
 
 2. **`lookback_time` INCREASES with index; index 0 = today.** Element 0 is the
    present, the last element is the oldest bin (≈ age of the universe). The SFH
-   array `sfh` is indexed the same way. The OLD decreasing convention
+   array `sfh` is indexed the same way. A decreasing convention
    (`lookback = T_univ - t_grid`) is rejected at construction with a `ValueError`
-   — do not reintroduce it, and do not "helpfully" reverse arrays.
+   — do not use it, and do not "helpfully" reverse arrays.
 
    A construction-time grid is REQUIRED (either `CSPBasis(ssp,
    lookback_time=...)` or a full `theta=` dict): it is where monotonicity and
@@ -68,17 +68,17 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
   The CLOUDY nebular grids and Draine & Li dust-emission templates are read from
   `$SPS_HOME` whenever `add_neb=True` or `add_dust_emission=True`. Building the
   SSP cache (`SSPData.from_fsps`) also needs FSPS.
-- **Filters and attenuation curves are internal** since v1.0.0:
+- **Filters and attenuation curves are internal**:
   `ceridwen/observation/filters.py` and `ceridwen/dust/attenuation_laws.py`,
   vendored from `sedpy-jax` (MIT), with the 293 filter `.par` files and the two
   reference spectra under `ceridwen/data/`. There is no `sedpy` dependency; do
-  not reintroduce one.
+  not add one.
 - **Nested sampling needs `blackjax.nss`/`blackjax.ns`**, released in blackjax
   1.6; `pyproject.toml` requires `blackjax>=1.6` (which forces `jax>=0.9` and
   Python >= 3.11). Every dependency is a normal PyPI requirement: never add a
   direct git/URL reference, PyPI refuses to publish a package that has one.
-  blackjax >= 1.6 removed `window_adaptation(progress_bar=)`; don't pass it. Its signature
-  now ends in `**extra_parameters`, which are forwarded to the kernel, so an unknown kwarg
+  blackjax >= 1.6 has no `window_adaptation(progress_bar=)`; don't pass it. Its signature
+  ends in `**extra_parameters`, which are forwarded to the kernel, so an unknown kwarg
   is not rejected there -- it fails later inside `blackjax.nuts`, or silently does nothing.
 
 ## Staying JAX-correct when editing the package
@@ -116,13 +116,12 @@ from ceridwen.resultfile import rebuild_model, check_model_against_result
 Equivalent namespaced paths also work: `ceridwen.ssps.SSPData`,
 `ceridwen.csp.CSPBasis`, `ceridwen.model.SedModel`.
 
-- The only nebular class is `NebularModel`. The old `NebularModelFSPSMatch`
-  (bug-for-bug FSPS reproduction) has been removed: upstream FSPS was fixed and
-  now matches the strict `NebularModel`. `init_neb_params={"match_fsps": True}`
-  is obsolete and ignored with a warning, and `CSPBasis(..., match_fsps=True)`
-  raises a `TypeError` like any unknown keyword. Do not reintroduce either.
-- `ssps/ssp_data.py` no longer stores `log_qq`; the nebular model derives the
-  ionising-photon rate internally. Old HDF5 caches with a `log_qq` dataset still
+- The only nebular class is `NebularModel`; there is no bug-for-bug FSPS variant
+  (upstream FSPS matches the strict `NebularModel`). `init_neb_params={"match_fsps": True}`
+  is ignored with a warning, and `CSPBasis(..., match_fsps=True)`
+  raises a `TypeError` like any unknown keyword. Do not add either.
+- `ssps/ssp_data.py` does not store `log_qq`; the nebular model derives the
+  ionising-photon rate internally. HDF5 caches with a `log_qq` dataset
   load (the field is ignored).
 
 ## Canonical workflow
@@ -192,7 +191,7 @@ projection → likelihood → sampler.
   `MultiObservationLikelihood`, pure-JAX `lnlike_diag_gaussian`, masking,
   `make_lnprobfn()` (the jitted log-posterior factory). `noise_model.py`:
   `DiagonalNoiseModel` (noise floor, optional error scale / jitter / calibration error,
-  named per observation `log_jitter_<kind>[_<obs.name>]` in `fitSED` since v1.0.7, optional
+  named per observation `log_jitter_<kind>[_<obs.name>]` in `fitSED`, optional
   Prospector-style outlier mixture `f_outlier` / `nsigma_outlier` per observation
   (`f_outlier_spec/_phot/_lines[_<obs.name>]` in `fitSED`, all default 0 = off: switch on
   explicitly), applied by the likelihood kernels `lnlike_diag_outlier[_with_upper_limits]`;

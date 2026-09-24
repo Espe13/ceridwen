@@ -1,4 +1,4 @@
-"""Per-observation parameter names (v1.0.7): one naming rule for every parameter that belongs
+"""Per-observation parameter names: one naming rule for every parameter that belongs
 to a single observation -- the outlier mixture, the noise nuisance terms, the spectrum
 calibration and the spectrum GP likelihood.
 
@@ -98,15 +98,15 @@ def family(label, root, kinds=("photometry", "spectrum", "lines"), per_kind=True
     return NameFamily(label, root, lambda sfx, _r=root: _r, tuple(kinds))
 
 
-#: the outlier mixture (v1.0.4): f_outlier_<kind>[_<obs>], nsigma_outlier_<kind>[_<obs>]
+#: the outlier mixture: f_outlier_<kind>[_<obs>], nsigma_outlier_<kind>[_<obs>]
 OUTLIER_FAMILIES = (family("outlier fraction", "f_outlier"),
                     family("outlier width", "nsigma_outlier"))
 
-#: the noise nuisance terms (v1.0.7), one per observation: <root>_<kind>[_<obs>]
+#: the noise nuisance terms, one per observation: <root>_<kind>[_<obs>]
 NOISE_ROOTS = ("log_err_scale", "log_jitter", "log_f_calib", "log_f_data")
 NOISE_FAMILIES = tuple(family(f"noise term {r}", r) for r in NOISE_ROOTS)
 
-#: the spectrum calibration (v1.0.7), one per Spectrum: spectrum_scaling[_<obs>], ...
+#: the spectrum calibration, one per Spectrum: spectrum_scaling[_<obs>], ...
 CALIB_ROOTS = ("spectrum_scaling", "spectrum_calib")
 CALIB_FAMILIES = tuple(family(f"calibration {r}", r, kinds=("spectrum",), per_kind=False)
                        for r in CALIB_ROOTS)

@@ -10,13 +10,13 @@ reproduced to machine precision.
 !!! note "All outlier fractions default to 0; switch the mixture on explicitly."
     Every `f_outlier_*` is 0 (off) unless your model samples it or fixes it to a non-zero
     value. With no outlier parameter, or one fixed at 0, the likelihood is the ordinary
-    Gaussian, compiled to the same program as before the feature.
+    Gaussian, compiled to the same program as a model without the mixture.
 
 ## The likelihood
 
 Per unmasked datum *i*, with σ_eff,i the uncertainty after **every** noise term
 (`noise_floor`, `log_err_scale_*`, `log_jitter_*`, `log_f_calib_*`, `log_f_data_*`, named
-per observation like the outlier fractions since v1.0.7), χ_i =
+per observation like the outlier fractions), χ_i =
 (y_i − μ_i)/σ_eff,i and `log_det_i = ½ ln(2π σ_eff,i²)`:
 
 ```
@@ -61,7 +61,7 @@ The per-observation names below have the same defaults: 0 (off) and 50.
 and `f_outlier_phot` free (`TopHat(0.0, 0.5)`), the current SFR came out
 0.592 [−0.344, 0.753] (median [16, 84 %]) against 0.770 [0.580, 0.965] for the Gaussian
 fit: with few bands the fit can treat a rest-UV band as a possible outlier and the SFR
-constraint loosens (A100 recovery test, 2026-09-22). Free it only when a bad band is
+constraint loosens (A100 recovery test). Free it only when a bad band is
 suspected and the photometry has enough bands to tell.
 
 **Several observations of one kind** (two spectra, say `"G140M"` and `"G395M"`): each takes

@@ -8,14 +8,14 @@ fitting real data. The repository also ships a fuller misuse guide in
 
 The stellar metallicity is `theta["logzsol"]` (constant) or `theta["logzsol_hist"]`
 (one value per lookback node), in `log10(Z / Z_sun)` with the **Z_sun of the grid you
-loaded**: `0.0` is solar everywhere. The pre-v1.0.5 keys `Z` / `zh` held `log10` of the
-*absolute* metallicity and now raise, printing the converted value.
+loaded**: `0.0` is solar everywhere. The keys `Z` / `zh` (`log10` of the *absolute* metallicity)
+are not accepted: they raise, printing the converted value.
 
 Typical ranges: BPASS `[-2.30, +0.30]` (Z_sun = 0.020); MIST and aMIST `[-2.50, +0.50]`
 (Z_sun = 0.0185, or 0.0142 for grids built with python-fsps <= 0.4.7). Print the axis of
 your own grid with `print(csp.zmet.min(), csp.zmet.max(), csp.zsun_nominal)`.
 
-Z_sun comes from the grid, never from `isoc_type` (FSPS changed MIST's value twice in 2026
+Z_sun comes from the grid, never from `isoc_type` (FSPS versions give MIST different values
 under the same name): an explicit `zsun=`, the file's `log10_zsun` provenance, or the
 content-hash table in `ceridwen.ssps.grid_metadata`. A grid whose Z_sun cannot be
 established raises at load.
@@ -28,7 +28,7 @@ solar-relative on the CLOUDY grid's own reference, and `CSPBasis(gas_tied=True)`
 the gas to the stars.
 
 !!! danger "Common mistake"
-    Passing an old absolute value such as `-1.85` as `logzsol`: on BPASS that is inside the
+    Passing an absolute `log10 Z` such as `-1.85` as `logzsol`: on BPASS that is inside the
     grid (0.014 Z_sun), so it cannot be an error — it warns instead. A *bounded* prior wider
     than the grid raises; `Uniform(low=-2.0, high=0.2)` is a safe default on every shipped
     grid. `csp.check_param_ranges(theta)` reports in logzsol and names the grid's Z_sun.
@@ -36,9 +36,9 @@ the gas to the stars.
 ## Lookback time increases with index (index 0 = today)
 
 `lookback_time` element 0 is the present; the last element is the oldest bin,
-near the age of the universe. The `sfh` array is indexed the same way. The old
+near the age of the universe. The `sfh` array is indexed the same way. A
 decreasing convention (`lookback = T_univ - t_grid`) is rejected at construction
-with a `ValueError`, so do not reintroduce it, and do not reverse arrays "to be
+with a `ValueError`, so do not use it, and do not reverse arrays "to be
 safe".
 
 ## Units
@@ -81,10 +81,6 @@ time, at no cost to the hot path. Model-level free parameters like
 `logsfr_ratios` are registered automatically and do not warn.
 
 ## Broadening: one kernel, three widths
-
-<!-- 2026-09-03 broadening pass: describes ceridwen/broadening.py (Kinematics,
-     Instrument, SpectralProjector, PhotometricBroadener) and the SedModel /
-     Spectrum wiring of BROADENING_DESIGN.md section 7. -->
 
 Every width a spectral feature acquires is a Gaussian in `ln λ`, so the
 projection of the model onto a spectrum applies a single kernel per pixel:

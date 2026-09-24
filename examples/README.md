@@ -23,7 +23,7 @@ repository); with none of them it builds `examples/ssp_data.h5` with `python-fsp
 
 It uses demo settings (150 live points, `logZ_tol=-2`) and is not a converged fit. Broadband
 photometry alone constrains `logmass` well but `logzsol` and the dust only weakly: their
-posteriors are broad and can miss the truth by about 2 sigma (a run on 2026-09-24 recovered
+posteriors are broad and can miss the truth by about 2 sigma (one run recovered
 `logzsol` -1.25 (-0.43/+0.48) against a truth of -0.20, with a bimodal posterior). It writes
 `quickstart_post.npz` (~145 MB) next to the figures.
 

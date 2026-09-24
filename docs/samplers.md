@@ -42,7 +42,7 @@ The settings, passed in `sampler_kwargs`:
 The sampler shows a progress bar of dead points. Its cost scales with `num_live`: on a shared
 11-core laptop CPU, the Quick start model at `num_live=100, num_delete=20, logZ_tol=-2.0`
 took 21-29 min in two runs (67 800 likelihood calls), and at `num_live=400` it advanced about 1.3 dead points
-per second, i.e. hours (measured 2026-09-24).
+per second, i.e. hours.
 
 ### Checkpoints and resuming
 
@@ -123,7 +123,7 @@ result = fitSED(model, sampler="nuts", optimize=True,
 
 ## NUTS on a CPU: measured times
 
-Measured on shared 11-core laptop CPUs on 2026-09-23/24 with the Quick start model (a
+Measured on shared 11-core laptop CPUs with the Quick start model (a
 12-band photometry + 600-pixel spectrum fit, 9 free parameters). The machines were running
 other jobs, so these times are upper limits, but they show the order of magnitude:
 

@@ -1,8 +1,7 @@
-"""Vendored from sedpy-jax v0.1.1 (MIT, (c) 2026 Amanda Stoffers) on
-2026-09-14, so that CERIDWEN carries its own filter and attenuation
-machinery and has no sedpy dependency.  Behaviour is unchanged: the
-module is the upstream file with its package-internal imports and data
-paths repointed at ``ceridwen``.
+"""Vendored from sedpy-jax v0.1.1 (MIT, (c) 2026 Amanda Stoffers), so that
+CERIDWEN carries its own filter and attenuation machinery and has no sedpy
+dependency.  The module is the upstream file with its package-internal
+imports and data paths repointed at ``ceridwen``.
 """
 # -*- coding: utf-8 -*-
 
@@ -520,12 +519,8 @@ ATTENUATION_LAWS = {
     },
     "powerlaw": {
         "func": powerlaw,
-        # 2026-06-12: slope key renamed "alpha" -> "alpha_pow" to match the
-        # function signature.  Under the old name the Dust wrapper's
-        # signature-intersection extracted ONLY tau_pow, so any theta
-        # entry for the slope was silently ignored and the function
-        # default (-1.0) was always used.  With the correct key the slope
-        # is now steerable via fit_params["alpha_pow"].
+        # The slope key must match the function signature ("alpha_pow"):
+        # the Dust wrapper passes only the theta keys that intersect it.
         "params": {
             "tau_pow": "Optical depth at 5500 Å (curve normalisation)",
             "alpha_pow": "Slope of attenuation power law (typically negative)",
@@ -549,8 +544,7 @@ ATTENUATION_LAWS = {
         "doc": "Empirical attenuation curve for local starbursts (Calzetti et al. 2000)."
     },
     "drude": {
-        # 2026-09-22: was "func": drude, which takes inverse microns; Dust passes Angstrom, so
-        # the law returned ~1e-7 instead of a profile peaking at 1 at 2179 A.
+        # drude_law, not drude: drude takes inverse microns and Dust passes Angstrom.
         "func": drude_law,
         "params": {
             "gamma": "Width of the Drude profile (inverse microns)",

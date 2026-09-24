@@ -113,8 +113,7 @@ jobs:
   # by marker. Python 3.11 (the lowest supported version).
   #
   # The suite's main test grid is NOT in the repository (tests/_gridfixture.py):
-  # without it 56 grid-dependent tests skipped (run 34826046295, 2026-09-14:
-  # 130 passed, 65 skipped) and a green run proves little. It
+  # without it the grid-dependent tests skip and a green run proves little. It
   # is the published BPASS grid (Zenodo doi:10.5281/zenodo.22937956), so it is
   # fetched by name with ceridwen's own fetch_grid (SHA-256 verified on every
   # call) and handed to the tests through $CERIDWEN_TEST_SSP / $SSP_FILE.

@@ -20,9 +20,8 @@ venv/
 animation/
 presentations/
 data/
-# ...but ceridwen/data/ is PACKAGE data and must ship: since v1.0.0 the filter
-# curves and attenuation laws are part of ceridwen itself (vendored from
-# sedpy-jax), and FilterSet cannot resolve a filter name without them.  The
+# ...but ceridwen/data/ is PACKAGE data and must ship: the filter curves and
+# attenuation laws are part of ceridwen itself, and FilterSet cannot resolve a filter name without them.  The
 # blanket `data/` above would otherwise keep all 293 .par files out of the
 # repository, so a fresh clone would install a package that cannot load a
 # filter.  The big SSP grids under ceridwen/data/test_data/ stay ignored.
@@ -346,10 +345,15 @@ environment.yml
 
 # Local diagnostics from the nebular refactor (need the private jades_full tree;
 # verify_library_resolution.py uses the removed Spectrum(inres=...) API).
-# Untracked 2026-09-21; kept on disk only.
+# Kept on disk only.
 /diagnose_lookback_grad.py
 /profile_ceridwen.py
 /verify_library_resolution.py
 /verify_neb_refactor.py
 # output of examples/quickstart.py (figures + ~145 MB quickstart_post.npz)
 examples/quickstart_figures/
+
+# Maintainer-only material kept out of the public tree
+CHANGES_sept2026.md
+docs/dev/
+scripts_afe/

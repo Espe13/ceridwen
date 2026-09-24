@@ -59,11 +59,11 @@ class CSPBasis_afe(CSPBasis):
         if kwargs:
             hint = ""
             if "sigma_losvd_kms" in kwargs:
-                hint = (" ('sigma_losvd_kms' was removed: the galaxy velocity "
+                hint = (" ('sigma_losvd_kms' is not an argument: the galaxy velocity "
                         "dispersion is set once on the model, "
                         "SedModel(kinematics=Kinematics(sigma_gal=...)))")
             elif "tuniv" in kwargs:
-                hint = (" ('tuniv' was removed: the age of the Universe comes from "
+                hint = (" ('tuniv' is not an argument: the age of the Universe comes from "
                         "the cosmology, csp.age_at(z) / cosmo.age(z))")
             raise TypeError(
                 f"CSPBasis_afe got unexpected keyword argument(s) {sorted(kwargs)}{hint}")

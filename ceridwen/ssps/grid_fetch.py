@@ -140,8 +140,7 @@ def _verify_cached(name: str, dest: Path) -> None:
         if _is_earlier_copy(name, got):
             raise RuntimeError(
                 f"Cached grid {dest} is an earlier release of {name!r} (sha256 "
-                f"{got[:12]}..., before the 2026-09 Zenodo re-deposit that added the "
-                f"surviving-mass table); this version expects {entry['sha256'][:12]}....  "
+                f"{got[:12]}..., without the surviving-mass table); this version expects {entry['sha256'][:12]}....  "
                 f"Refresh it with fetch_grid({name!r}, force=True)."
             )
         raise RuntimeError(

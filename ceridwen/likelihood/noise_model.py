@@ -86,9 +86,9 @@ class DiagonalNoiseModel(NoiseModelBase):
     nsigma_outlier : float or str -- width of the outlier Gaussian in units of sigma_eff,
         fixed (default 50, Prospector's) or a theta key
     err_scale_key, jitter_key, f_calib_key, f_data_key : str or float -- where each switched-on
-        term reads its (log) value: a theta key (default the historical ``log_err_scale`` /
+        term reads its (log) value: a theta key (default ``log_err_scale`` /
         ``log_jitter`` / ``log_f_calib`` / ``log_f_data``; ``fitSED`` passes the per-observation
-        names ``log_jitter_<kind>[_<obs>]`` of v1.0.7) or a fixed float
+        names ``log_jitter_<kind>[_<obs>]``) or a fixed float
     """
 
     use_jitter          : bool = False

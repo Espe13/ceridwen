@@ -10,7 +10,7 @@ Photometry (the static line-to-band basis) and each Lines observation (the blend
 
 where ``mu_k`` is the model with the fitted lines removed.  The prior on alpha_j is flat, or
 Gaussian N(F_j, (w F_j)^2) around the CLOUDY flux F_j (``eline_prior_width`` = w); Ly-alpha is
-always flat.  The exact marginal likelihood is (``docs/dev/eline_marginalisation_design.md``)
+always flat.  The exact marginal likelihood is (``docs/eline_marginalisation.md``)
 
     ln Z = -1/2 r'^T W r' + 1/2 b'^T P^-1 b' - 1/2 ln|P| + 1/2 sum_prior ln(1/s_j^2)
            + (m_flat/2) ln 2 pi - sum_k sum_i ln sqrt(2 pi sigma_eff,i^2)

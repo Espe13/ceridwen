@@ -111,7 +111,7 @@ def removed_metallicity_key_error(key, value, log10_zsun, axis_meaning=None, whe
             conv = ""
     feh = (" On this grid logzsol is [Fe/H]." if axis_meaning == "feh" else "")
     return ValueError(
-        f"{where}[{key!r}] was removed in v1.0.5: the stellar metallicity is now "
+        f"{where}[{key!r}] is not a parameter name: the stellar metallicity is "
         f"{where}[{new!r}] = log10(Z/Z_sun), with Z_sun the SSP grid's own solar node "
         f"(log10 Z_sun = {float(log10_zsun)!r}, so logzsol = log10 Z - ({float(log10_zsun):.6f})), "
         f"not the absolute log10 Z.{feh}{conv} Nothing is reinterpreted silently: rename the "
@@ -231,11 +231,11 @@ class CSPBasis:
         if kwargs:
             hint = ""
             if "sigma_losvd_kms" in kwargs:
-                hint = (" ('sigma_losvd_kms' was removed: the galaxy velocity "
+                hint = (" ('sigma_losvd_kms' is not an argument: the galaxy velocity "
                         "dispersion is set once on the model, "
                         "SedModel(kinematics=Kinematics(sigma_gal=...)))")
             elif "tuniv" in kwargs:
-                hint = (" ('tuniv' was removed: the age of the Universe comes from "
+                hint = (" ('tuniv' is not an argument: the age of the Universe comes from "
                         "the cosmology, csp.age_at(z) / cosmo.age(z))")
             raise TypeError(
                 f"CSPBasis got unexpected keyword argument(s) {sorted(kwargs)}{hint}")
@@ -481,12 +481,11 @@ class CSPBasis:
         _diffs = np.diff(_lb)
         if not (np.all(_diffs > 0.0) and _lb[0] >= 0.0 and _lb[0] < 1e8):
             raise ValueError(
-                "theta['lookback_time'] must be monotonically *increasing* "
-                "(NEW convention, post-2026-06-03 refactor):\n"
+                "theta['lookback_time'] must be monotonically *increasing*:\n"
                 f"  - index 0 = today (≈ 0 Gyr): got {_lb[0]/1e9:.3f} Gyr\n"
                 f"  - index -1 = oldest (≈ T_univ): got {_lb[-1]/1e9:.3f} Gyr\n"
                 f"  - first three values [Gyr]: {(_lb[:3]/1e9).tolist()}\n"
-                "If you see this from a pre-refactor script, replace e.g.\n"
+                "If your grid runs from oldest to today, replace e.g.\n"
                 "    lookback = T_UNIV - jnp.linspace(eps, T_UNIV, N)\n"
                 "with\n"
                 "    lookback = jnp.linspace(0.0, T_UNIV, N)\n"

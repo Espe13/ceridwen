@@ -1,8 +1,7 @@
-"""Vendored from sedpy-jax v0.1.1 (MIT, (c) 2026 Amanda Stoffers) on
-2026-09-14, so that CERIDWEN carries its own filter and attenuation
-machinery and has no sedpy dependency.  Behaviour is unchanged: the
-module is the upstream file with its package-internal imports and data
-paths repointed at ``ceridwen``.
+"""Vendored from sedpy-jax v0.1.1 (MIT, (c) 2026 Amanda Stoffers), so that
+CERIDWEN carries its own filter and attenuation machinery and has no sedpy
+dependency.  The module is the upstream file with its package-internal
+imports and data paths repointed at ``ceridwen``.
 """
 """reference_spectra.py — Load and store Vega and Solar reference spectra.
 

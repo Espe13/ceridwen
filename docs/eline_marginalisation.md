@@ -42,9 +42,6 @@ marginal likelihood, for
   `eline_prior_width=0.2` meaning 20 % (Prospector's convention). Ly-α always
   has a flat prior (resonant scattering makes its grid flux unreliable).
 
-The derivation, the proof that it is exact and the comparison with
-Prospector's `fit_mle_elines` are in `docs/dev/eline_marginalisation_design.md`.
-
 ## Options
 
 | `Spectrum(...)` argument | Meaning |
@@ -109,7 +106,7 @@ metallicity or [α/Fe]. So with `CSPBasis(..., add_neb=False)` and with
   Each fitted line gets a prior N(F_j(θ), (0.2 F_j(θ))²): the data may move a line by
   about ±20 % from what the star-forming nebular model predicts for the current
   stellar parameters, more only at a price. Because the centre and the width both
-  follow F_j(θ), the lines now inform the stellar fit: a line much stronger than
+  follow F_j(θ), the lines inform the stellar fit: a line much stronger than
   predicted pulls the SFH towards more recent star formation, and where the model
   predicts no line (F_j → 0, e.g. an old population) the width shrinks to zero and
   the line is pinned at ~0 even if the data show one. Use it only when the lines are

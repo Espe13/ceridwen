@@ -384,8 +384,8 @@ class PostProcess:
             if np.max(np.abs(np.exp(a) - np.exp(b))) > 1e-6:
                 warnings.warn("the stored log_weights differ from the weights recomputed from "
                               "(logL, logL_birth); the recomputed ones are used.  Stored weights "
-                              "from before 2026-09-03 were sorted by likelihood and misaligned "
-                              "with the samples for the final live points.")
+                              "sorted by likelihood are misaligned with the samples for the "
+                              "final live points.")
         return lw
 
     def _check_names(self):

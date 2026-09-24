@@ -1,4 +1,4 @@
-"""Profiled polynomial calibration of a ``Spectrum`` (v1.0.7), the equivalent of Prospector's
+"""Profiled polynomial calibration of a ``Spectrum``, the equivalent of Prospector's
 ``PolyOptCal`` (``prospect/observation/observation.py:579-658``, commit a78d153).
 
 Instead of sampling calibration coefficients, the likelihood multiplies the model spectrum

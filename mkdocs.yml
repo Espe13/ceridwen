@@ -4,8 +4,6 @@ site_url: https://www.amanda-stoffers.de/ceridwen/
 repo_url: https://github.com/Espe13/ceridwen
 repo_name: Espe13/ceridwen
 docs_dir: docs
-exclude_docs: |
-  dev/
 
 theme:
   name: material

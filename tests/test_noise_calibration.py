@@ -141,7 +141,7 @@ def test_old_shared_name_refused(csp, old):
     m = _model(csp, [_spec("s", 5000, 8000), _phot()], extra_init={old: jnp.array([-3.0])})
     with pytest.raises(ValueError, match=rf"{old}_spec.*{old}_phot|{old}_phot.*{old}_spec") as e:
         _lhs(m)
-    assert "v1.0.7" in str(e.value) and "maggies" in str(e.value)
+    assert "is not a parameter name" in str(e.value) and "maggies" in str(e.value)
 
 
 @pytest.mark.parametrize("names, match", [
