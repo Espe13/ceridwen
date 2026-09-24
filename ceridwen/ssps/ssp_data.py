@@ -76,8 +76,8 @@ _CSP_OWNED_KWARGS = {
     ),
     **_owned(
         ["fagn", "agn_tau"],
-        "AGN emission, which is applied downstream by the CSP forward model, "
-        "not baked into the SSP grid",
+        "AGN emission, which CERIDWEN does not model (a planned extension) and which must "
+        "not be baked into the SSP grid",
     ),
     **_owned(
         ["add_neb_emission", "add_neb_continuum", "gas_logz", "gas_logu",
