@@ -529,7 +529,7 @@ continuum kernel and in the line widths (`docs/conventions.md`).
 
 ### What is *not* guarded (and why)
 
-Runtime, per-sample value checks (e.g. "this drawn `Z` is out of grid") are
+Runtime, per-sample value checks (e.g. "this drawn `logzsol` is out of grid") are
 deliberately **not** placed in the jitted hot path — doing so would either break
 JIT or slow every evaluation. Use the non-jitted `csp.check_param_ranges(theta)`
 on your priors/bounds once before sampling instead.

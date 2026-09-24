@@ -540,7 +540,7 @@ SSP_FILE=$(python -c "from ceridwen.ssps import fetch_grid; print(fetch_grid('mi
 ```
 
 If it prints a recovered-vs-true table, your setup works. `logmass` recovers the
-injected truth; `Z` and the dust parameters are weakly constrained by broadband
+injected truth; `logzsol` and the dust parameters are weakly constrained by broadband
 photometry alone, so their posteriors are broad (add spectroscopy or emission
 lines to pin them down).
 

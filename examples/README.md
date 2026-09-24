@@ -64,7 +64,7 @@ and the figures next to the result file.
 
 [alpha/Fe] fitting of a quiescent galaxy from a Legacy-Surveys-style spectrum
 (DECam `grz` + WISE photometry) with the alpha-enhanced, nebular-free
-`CSPBasis_afe`. Fits a 10-bin continuity SFH, total metallicity `Z`,
+`CSPBasis_afe`. Fits a 10-bin continuity SFH, metallicity `logzsol` (= [Fe/H] on the alpha grid),
 alpha-enhancement `afe`, diffuse-dust optical depth and slope, at fixed
 redshift, plus a fitted spectrophotometric normalisation `spectrum_scaling` that
 rescales the observed spectrum onto the photometric flux scale (photometry

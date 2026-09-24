@@ -14,7 +14,8 @@ where [alpha/Fe] is both strongest and cleanest to measure. This demo fits:
 
     - a NON-parametric star-formation history: 10 bins with a continuity
       (Student-t on the log SFR ratios) prior
-    - the total stellar metallicity ``Z`` (log10 ABSOLUTE metallicity)
+    - the metallicity ``logzsol`` = [Fe/H] (solar-relative; on this alpha grid the total
+      [Z/H] is the derived ``logzsol_total``)
     - the alpha-enhancement ``afe`` = [alpha/Fe] (the new axis)
     - diffuse-dust optical depth ``diffuse_tau_kc`` and slope
       ``diffuse_dust_index`` (Kriek & Conroy law; no birth-cloud dust)
