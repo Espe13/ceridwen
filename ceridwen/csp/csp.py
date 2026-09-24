@@ -737,6 +737,8 @@ class CSPBasis:
             self.ion_mask    = self.wave < 912.0
             self.kill_ion    = self.young_mask[:, None] & self.ion_mask[None, :]
 
+            self._neb_line_profile_w, self._neb_line_on_grid = self._line_profile_weights()
+
             young_idx = self.neb.young_idx
             self._neb_young_idx   = young_idx
             self._neb_n_young     = int(young_idx.shape[0])
@@ -744,6 +746,19 @@ class CSPBasis:
             self._neb_logqq_young = self.neb.log_qq[:, young_idx]      # (n_z, n_young)
 
         return theta
+
+    def _line_profile_weights(self):
+        """``(P (n_lines, n_wave), on_grid (n_lines,))``: each painted line profile (``gaussnebarr``
+        column) times the trapezoid weight in frequency, normalised to unit sum, so ``P @ T`` is
+        the transmission ``T`` averaged over the line as painted; ``on_grid`` False for a line
+        whose profile does not reach the grid."""
+        wave = np.asarray(self.wave, dtype=np.float64)
+        dnu = np.abs(np.diff(2.99792458e18 / wave))
+        w = np.concatenate([[0.5 * dnu[0]], 0.5 * (dnu[:-1] + dnu[1:]), [0.5 * dnu[-1]]])
+        G = np.asarray(self.neb.gaussnebarr, dtype=np.float64).T * w[None, :]
+        tot = G.sum(axis=1)
+        on_grid = tot > 0
+        return (jnp.asarray(G / np.where(on_grid, tot, 1.0)[:, None]), jnp.asarray(on_grid))
 
     def initialize_dust_components(
         self, add_dust, add_diffuse_dust, add_dust_emission,
@@ -1106,8 +1121,8 @@ class CSPBasis:
         """Observed-frame fluxes of every nebular grid line (n_lines,), through the same weights,
         dust, escape, mass and distance factors as the spectrum.
 
-        Default: integrated fluxes [erg/s/cm^2] with the 1/(1+z) Jacobian, IGM at the line
-        wavelength and ``eline_scaling`` (the Lines observation).  ``for_spectrum``: the same
+        Default: integrated fluxes [erg/s/cm^2] with the 1/(1+z) Jacobian, the IGM transmission
+        averaged over the line's painted profile and ``eline_scaling`` (the Lines observation).  ``for_spectrum``: the same
         without ``eline_scaling`` (painted by the Spectrum projector).  ``for_photometry``: per-Hz
         amplitudes with the full f_nu flux factor and no IGM (applied inside the photometric line
         basis) and no ``eline_scaling``.
@@ -1157,8 +1172,11 @@ class CSPBasis:
             ff = self._flux_factor(theta)
             F = F * (ff if for_photometry else ff / (1.0 + z_scalar))
             if self.igm is not None and not for_photometry:
+                # averaged over the painted profile, as the painted path applies it (the IGM
+                # can jump inside a line: Madau at Ly-alpha)
                 trans = self._igm_transmission(z_scalar, theta)
-                F = F * ((1.0 - lf) * trans[li] + lf * trans[li + 1])
+                F = F * jnp.where(self._neb_line_on_grid, self._neb_line_profile_w @ trans,
+                                  (1.0 - lf) * trans[li] + lf * trans[li + 1])
         if not for_photometry and not for_spectrum and "eline_scaling" in theta:
             F = F * jnp.ravel(theta["eline_scaling"])[0]
         return F
