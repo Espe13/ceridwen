@@ -87,7 +87,8 @@ ssp.display()                                      # library, IMF, grid coverage
 
 **2. Build the model.** `lookback_time` holds the SFH nodes in Gyr, increasing from 0
 (today). The SFH is sampled as `logsfr_ratios` and turned into a star formation rate per node
-by a transform. `logzsol` is log10(Z/Z_sun) of the grid.
+by a transform. `logzsol` is log10(Z/Z_sun) of the grid; on the MIST grids used here this is
+[Fe/H], and the figures label it that way.
 
 ```python
 import jax, jax.numpy as jnp
