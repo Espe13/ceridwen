@@ -79,6 +79,13 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
         (the adapter never sees the priors; fitSED passes fit._detect_bounds(model))
     vi : None | 'tril' | 'iaf' | VariationalMap | TrainedMap -- variational preconditioning
     vi_kwargs : dict -- map constructor kwargs plus ``num_steps``, ``batch_size``, ``lr0`` for training
+
+    One ``window_adaptation`` run is shared by all chains.  Without ``vi`` every chain starts
+    from its end state and differs only by its rng key, so the printed split R-hat measures
+    mixing within that one run: it cannot detect a warmup that settled in one of several
+    modes.  With ``vi`` the chains start from independent N(0, 1) draws in the whitened space
+    (no burn-in).  The printed ESS is the sum of the per-chain ESS
+    (``ceridwen.plotting._ess``, the estimator of the diagnostic figure).
     """
 
     def __init__(
@@ -422,7 +429,10 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             )
 
         if self.verbose and self.num_chains >= 2:
-            self._print_diagnostics(all_chain_positions, theta_template)
+            self._print_diagnostics(
+                all_chain_positions, theta_template,
+                note="within-run mixing only: every chain starts from the one warmup end "
+                     "state, so R-hat cannot detect a warmup stuck in one mode")
 
         return SamplingResult(
             samples=merged_samples,
@@ -658,7 +668,10 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
                       f"(consider raising target_acceptance or num_warmup)")
 
         if self.verbose and self.num_chains >= 2:
-            self._print_diagnostics(per_chain_constrained, theta_template)
+            self._print_diagnostics(
+                per_chain_constrained, theta_template,
+                note="chains start from independent N(0, 1) draws in the whitened space "
+                     "(no burn-in), with the step size and mass matrix of one shared warmup")
 
         return SamplingResult(
             samples=merged_samples,
@@ -690,9 +703,12 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
             },
         )
 
-    def _print_diagnostics(self, all_chain_samples, theta_template):
-        """Print split R-hat and ESS per scalar parameter."""
+    def _print_diagnostics(self, all_chain_samples, theta_template, note=None):
+        """Print split R-hat and ESS (sum over chains) per scalar parameter; ``note`` says
+        what the R-hat can detect, given how the chains were started."""
         print("\n  Convergence diagnostics:")
+        if note:
+            print(f"  R-hat: {note}")
         print(f"  {'Parameter':<25s}  {'R-hat':>8s}  {'ESS':>8s}")
         print("  " + "-" * 45)
 
@@ -743,27 +759,8 @@ class BlackJAXNUTSAdapter(SamplerAdapter):
 
     @staticmethod
     def _ess(chains: list[np.ndarray]) -> float:
-        """Bulk effective sample size from a truncated autocorrelation sum."""
-        combined = np.concatenate(chains)
-        n = len(combined)
-        if n < 4:
-            return float(n)
-
-        mean = np.mean(combined)
-        var = np.var(combined)
-        if var < 1e-30:
-            return float(n)
-
-        max_lag = min(n // 2, 1000)
-        centered = combined - mean
-        acf = np.correlate(centered, centered, mode='full')
-        acf = acf[n - 1:n - 1 + max_lag + 1] / (n * var)
-
-        tau = 1.0
-        for lag in range(1, max_lag):
-            rho = acf[lag]
-            if rho < 0.05:
-                break
-            tau += 2.0 * rho
-
-        return float(n / tau)
+        """Effective sample size: each chain's own autocorrelation (initial positive sequence,
+        ``ceridwen.plotting._ess``), summed over chains.  Never the autocorrelation of the
+        concatenated chains, whose lags straddle chain boundaries."""
+        from ceridwen.plotting import _ess as _ess_one
+        return float(sum(_ess_one(c) for c in chains))

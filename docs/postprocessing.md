@@ -185,7 +185,8 @@ fit and ln Z), a **corner** plot of all fitted parameters (median dashed,
 maximum-likelihood sample in red), and a **diagnostics** page (nested sampling:
 dead points in deletion order coloured by posterior weight, the log-likelihood
 run and the cumulative posterior weight with ln Z and the effective sample size;
-MCMC: per-chain traces with split-R̂ and ESS). The functions
+MCMC: per-chain traces with split-R̂ and ESS; without `vi` all NUTS chains start from one
+warmup end state, so R̂ there measures within-run mixing only). The functions
 `summary_figure(out, model)`, `corner_figure(out)` and
 `diagnostic_figure(result, out)` return the matplotlib figures for further
 editing.
