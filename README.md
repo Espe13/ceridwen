@@ -238,9 +238,9 @@ cd ceridwen
 pip install -e .
 ```
 
-The test suite needs the published BPASS grid. The first command below runs what CI runs;
-it took ZZ min on an 11-core MacBook. The second compares the forward model with the stored
-baselines and needs `$SPS_HOME`.
+The test suite needs the published BPASS grid. The first command below runs what CI runs; it
+took 33 min on an 11-core laptop CPU shared with other jobs. The second compares the forward
+model with the stored baselines and needs `$SPS_HOME`.
 
 ```bash
 export CERIDWEN_TEST_SSP=$(python -c "from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_bpass_v2'))")
