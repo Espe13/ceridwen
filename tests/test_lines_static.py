@@ -129,11 +129,11 @@ def test_predict_matches_pre_refactor_reference_at_sigma200():
     dlam[1:-1]  = 0.5 * (wave_model[2:] - wave_model[:-2])
     dlam[0]     = 0.5 * (wave_model[1]  - wave_model[0])
     dlam[-1]    = 0.5 * (wave_model[-1] - wave_model[-2])
-    sigma_aa = line_waves * (200.0 / 2.998e5)
+    sigma_aa = line_waves * (200.0 / 2.99792458e5)          # exact c (B1-020; was 2.998e5)
     diff = wave_model[None, :] - line_waves[:, None]
     W = np.exp(-0.5 * (diff / sigma_aa[:, None]) ** 2)
     W = (W * dlam[None, :]).astype(np.float32)
-    norm = (2.998e18 / line_waves**2).astype(np.float32)
+    norm = (2.99792458e18 / line_waves**2).astype(np.float32)
     W = W * norm[:, None]
     ref = W @ np.asarray(spec)
     np.testing.assert_allclose(out, ref, rtol=1e-6, atol=0.0)
