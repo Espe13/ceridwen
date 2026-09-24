@@ -53,10 +53,12 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
 
 ## Hard requirements (the model will not run otherwise)
 
-- **float64 must be on.** `import ceridwen` already calls
-  `jax.config.update("jax_enable_x64", True)`. Do not disable it; evidence
+- **float64 must be on.** `import ceridwen` calls
+  `jax.config.update("jax_enable_x64", ...)` with True unless the environment sets
+  `CERIDWEN_X64=0` (a debugging switch: never set it for a fit). Do not disable it; evidence
   estimates and gradients depend on it.
-- **FSPS + `$SPS_HOME` are required at runtime,** not just to build the SSP cache.
+- **The FSPS data files (`$SPS_HOME`) are required at runtime** for nebular and dust
+  emission, not just to build the SSP cache (python-fsps itself only for building grids).
   The CLOUDY nebular grids and Draine & Li dust-emission templates are read from
   `$SPS_HOME` whenever `add_neb=True` or `add_dust_emission=True`. Building the
   SSP cache (`SSPData.from_fsps`) also needs FSPS.
@@ -94,6 +96,7 @@ branches. When modifying it:
 # Primary model builders are available straight from the top level:
 from ceridwen import (SSPData, CSPBasis, SedModel,
                       DustModel, DustEmission, NebularModel, fitSED, read_result_h5)
+# (DustModel is the module ceridwen.dust.DustModel, holding the classes Dust / DiffuseDust)
 # Observation containers, priors and samplers live in clear sub-namespaces:
 from ceridwen.observation import Photometry, Spectrum, Lines
 from ceridwen.priors import (Prior, Uniform, TopHat, Normal, ClippedNormal,
@@ -155,14 +158,15 @@ projection → likelihood → sampler.
   instrument response + analytic line painting on the observed pixels),
   `PhotometricBroadener`. The only place spectral widths are set.
 - `dust/` — `DustModel.py`: `Dust`/`DiffuseDust`, age-binned attenuation with
-  multiple switchable laws per bin via `lax.switch` (params are plain dicts).
+  one attenuation law per bin, evaluated in a Python loop over the bins and stacked
+  (params are plain dicts).
   `DustEmission.py`: DL07 + THEMIS grids (`CSPBasis(duste_model=...)`, default DL07),
   bilinear interp in (qPAH, Umin), dust
   mass. `AGBDustShell.py`: optional AGB circumstellar dust.
 - `neb/` — `NebularGridModel.py`: `NebularModel` (CLOUDY grids, each cube
   interpolated against its own gas_logz/gas_logu/age axes, line profiles at
   the pixel floor, `line_profiles(sigma)` for the photometric line basis).
-- `observation/` — `base.py` (ABC), `photometry.py` (filter convolution via
+- `observation/` — `base.py` (`Observation` base class), `photometry.py` (filter convolution via
   `filters.FilterSet` → matrix-vector projection `_T`, optional
   `PhotometricBroadener` and static line basis), `spectrum.py` (`Instrument`
   + `SpectralProjector` built by `setup_for_model`), `lines.py` (line fluxes
