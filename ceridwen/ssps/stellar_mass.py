@@ -19,9 +19,10 @@ import numpy as np
 
 # A surviving-mass table (M_sun per M_sun formed) above this is refused: more mass cannot
 # survive than was formed.  The 1 % margin covers FSPS's midpoint IMF sum, whose formed mass
-# sum_i wght_i * mini_i is itself 0.998-1.002 (MIST, 1.0017 at 10^6.5 yr): the corrected
-# mist_miles_chab table peaks at 1.0036 (10^6.1 yr, logzsol -2.25), FSPS's uncorrected one at
-# 4.62 (measured 2026-09-24).
+# sum_i wght_i * mini_i is itself not exactly 1 (MIST: 1.0017 at 10^6.5 yr, logzsol +0.25).
+# mist_miles_chab: the corrected SSPs peak at 1.0013; FSPS's own values on complete isochrones
+# reach 1.0036 (10^6.1 yr, logzsol -2.25; 42 SSPs above 1); FSPS's uncorrected values on the
+# truncated ones reach 4.62 (measured 2026-09-24).
 STELLAR_MASS_MAX = 1.0 + 1e-2
 
 

@@ -947,7 +947,8 @@ at that point's mass, and the young pre-main-sequence isochrones start at up to 
 `ceridwen.ssps.stellar_mass` counts that bin by its IMF mass (times the point's mact/mini) in
 SSPs whose isochrone is truncated; `SSPData.from_fsps`, `SSPDataAfe.from_fsps` and
 `scripts/attach_stellar_mass.py` (new `--replace`) use it. On `mist_miles_chab` 326 SSPs change,
-to [0.971, 1.0036]; every SSP at >= 10^6.45 yr keeps FSPS's value bit for bit. BPASS is unchanged
+to [0.971, 1.0013]; every other SSP keeps FSPS's value bit for bit (table maximum 1.0036, FSPS's
+own value on a complete isochrone at 10^6.1 yr). BPASS is unchanged
 (its masses come from `bpass.mass`, <= 1). Spectra are not touched.
 
 **Now refused (was silent).** A surviving-mass table above `STELLAR_MASS_MAX` = 1.01: the
