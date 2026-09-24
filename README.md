@@ -709,7 +709,9 @@ emission-line observations are rejected (continuum and photometry only)
 until α-enhanced photoionisation grids exist.
 
 The grid used above, `amist_c3k_hr_krou_afe`, is the α grid of the Zenodo deposit:
-**high-resolution** C3K (10992 λ points, R up to ~65000 in the optical, Kroupa IMF), built
+**high-resolution** C3K (10992 λ points, Kroupa IMF; the C3K spectra are resampled onto
+pixels of λ/Δλ = 6000 between 3000 and 9000 Å, so the file resolves R ≈ 3000 at the
+two-pixel floor there, and `ssp.display()` reports the floor), built
 from the alpha-MC C3K high-res SSPs (MIST v2.5 + C3K v2.3) of M. J. Park, which are too large
 to ship inside FSPS/python-FSPS. Its native axis is the FSPS label
 log10 Z = [Fe/H] + log10(0.0185), i.e. logzsol = [Fe/H]. It does not carry a surviving-mass
