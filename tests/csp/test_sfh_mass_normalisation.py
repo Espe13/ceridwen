@@ -204,6 +204,20 @@ def test_postprocess_mass_formed_free_z_untracked():
     np.testing.assert_allclose(got, want, rtol=1e-10, atol=0)
 
 
+
+@pytest.mark.parametrize("interp", ["step", "linear"])
+def test_summary_truth_sfr_is_the_postprocess_sfr(interp):
+    """plotting's truth SFH (summary figure) uses the SFR convention of PostProcess on a
+    tracked grid: truths = one draw give that draw's sfr_per_bin."""
+    from ceridwen.plotting import _truth_sfr_per_bin
+    csp = _csp(_bpass(), interp, False, True)
+    model = _model(csp, True, 1.0)
+    _got, _want, out = _pp_mass(model, [1.0, 3.0, 6.0])
+    for i in range(3):
+        truths = {k: np.asarray(v)[i] for k, v in out["theta"].items()}
+        np.testing.assert_allclose(_truth_sfr_per_bin(model, out, truths),
+                                   out["extras"]["sfh"]["sfr_per_bin"][i], rtol=1e-10)
+
 @pytest.mark.parametrize("interp", ["step", "linear"])
 def test_afe_tracked_grid_forms_unit_mass(interp):
     path = TEST_DATA_DIR / "amist_c3k_lr_chab_afe.h5"

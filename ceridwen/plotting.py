@@ -169,7 +169,7 @@ def _truth_sfr_per_bin(model, out, truths):
     if not vec or not all(k in truths for k in vec):
         return None
     import jax.numpy as jnp
-    from .postprocess import _per_bin_and_nodes, model_theta
+    from .postprocess import _formed_mass, _per_bin_and_nodes, model_theta
     free = {}
     for k in model.param_names:
         v = truths[k] if k in truths else np.median(np.asarray(out["theta"][k]), axis=0)
@@ -178,7 +178,12 @@ def _truth_sfr_per_bin(model, out, truths):
     t = model_theta(model, free)
     psi = np.ravel(np.asarray(t["sfh"], dtype=float))
     n_time = int(np.asarray(out["extras"]["sfh"]["lookback_gyr"]).shape[-1])
-    bar, _nodes = _per_bin_and_nodes(psi, n_time)
+    bar, nodes = _per_bin_and_nodes(psi, n_time)
+    T, T_ref = model.csp._sfh_grids(t)
+    if T_ref is not None:   # zred-tracked grid: the SFR the forward model forms, as in PostProcess
+        interp = model.csp.sfh_interp
+        bar = bar * (_formed_mass(np.asarray(T_ref, dtype=float), bar, nodes, interp)
+                     / _formed_mass(np.asarray(T, dtype=float), bar, nodes, interp))
     return bar * (10.0 ** float(np.ravel(np.asarray(t["logmass"]))[0]) if "logmass" in t else 1.0)
 
 
