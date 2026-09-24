@@ -719,3 +719,17 @@ def test_afe_line_list_needs_sps_home(monkeypatch):
     monkeypatch.delenv("SPS_HOME", raising=False)
     with pytest.raises(ValueError, match="emlines_info.dat.*SPS_HOME"):
         _afe_model(acsp)
+
+
+def test_static_fast_path_refuses_a_mask_changed_after_setup(csp):
+    """B2-015: the precomputed weights froze the masks at setup_observations; a mask changed
+    afterwards is refused (it was silently ignored by the marginalised block), and
+    setup_observations() rebuilds the system with the new mask."""
+    model, lh = _model(csp)
+    assert model._eline_system.static is not None
+    spec = model.obs_dict["spec"]
+    spec.mask_wavelength_range(float(spec.wavelength[10]), float(spec.wavelength[20]))
+    with pytest.raises(ValueError, match="changed its mask or uncertainty"):
+        _lnl(model, lh)(_theta(model))
+    model.setup_observations()
+    assert np.isfinite(float(_lnl(model, lh)(_theta(model))))

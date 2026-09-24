@@ -444,7 +444,12 @@ def _static_precompute(model, es, spec, phots, lines_obs, proj, s_gas, used, gas
         w[k] = np.where(msk, 1.0 / var, 0.0)
         lognorm += float(np.sum(np.where(msk, 0.5 * np.log(var) + _HALF_LOG_2PI, 0.0)))
     M = sum(A[k].T @ (w[k][:, None] * A[k]) for k in es.keys)
-    st = {"basis": basis, "A": A, "w": w, "lognorm": lognorm, "M": M,
+    # what the precompute read, checked against the observations at every fit (joint_loglike)
+    used = {k: (np.asarray(_used_mask(obs_by_key[k], np.size(obs_by_key[k].uncertainty)),
+                           dtype=bool).copy(),
+                np.asarray(obs_by_key[k].uncertainty, dtype=np.float64).copy())
+            for k in es.keys}
+    st = {"used": used, "basis": basis, "A": A, "w": w, "lognorm": lognorm, "M": M,
           "B": {k: A[k].T * w[k][None, :] for k in es.keys}, "all_flat": bool(np.all(es.is_flat))}
     if st["all_flat"]:
         d = 1.0 / np.sqrt(np.maximum(np.diag(M), np.finfo(np.float64).tiny))
@@ -559,11 +564,33 @@ def _blocks(model, predictions, aux, static_data, lhood_of, theta):
     return blocks, rest
 
 
+def _check_static_current(model, st):
+    """The precomputed weights froze each observation's mask and uncertainty at
+    ``SedModel.setup_observations``; refuse a fit after either changed (e.g. a later
+    ``spec.mask_lines(...)``) instead of silently using the old ones."""
+    obs = {o.name: o for o in model.observations}
+    for k, (m0, s0) in st.get("used", {}).items():
+        o = obs.get(k)
+        if o is None:
+            continue
+        sig = np.asarray(o.uncertainty, dtype=np.float64)
+        m = np.asarray(_used_mask(o, sig.size), dtype=bool)
+        if m.shape != m0.shape or not np.array_equal(m, m0) or sig.shape != s0.shape \
+                or not np.array_equal(sig, s0, equal_nan=True):
+            raise ValueError(
+                f"observation {k!r} changed its mask or uncertainty after "
+                "SedModel.setup_observations(): the emission-line marginal precomputed its "
+                "weights from the old ones.  Call model.setup_observations() again (or change "
+                "the observation before building the SedModel)")
+
+
 def joint_loglike(model, keys, likelihoods, static_data, theta):
     """Total ln-likelihood of all observations with the fitted line fluxes marginalised:
     the observations in the ElineSystem jointly, the others as usual."""
     es = model._eline_system
     refuse_outlier_with_elines(keys, likelihoods, es.keys)
+    if es.static is not None:
+        _check_static_current(model, es.static)
     predictions, aux = model.predict_with_elines(theta)
     if es.static is not None:
         rest, r = 0.0, {}
