@@ -119,6 +119,13 @@ def _download(url: str, path: Path, *, attempts: int = 8) -> None:
             f"{attempts} attempts; the connection keeps dropping.  Try again later.")
 
 
+def _is_earlier_copy(name: str, sha: str) -> bool:
+    """True when ``sha`` is a known earlier file of the registry grid ``name``."""
+    from .grid_metadata import CHASH_TABLE, FILE_SHA_ALIASES
+    ch = FILE_SHA_ALIASES.get(sha)
+    return ch is not None and CHASH_TABLE[ch].name == name
+
+
 def fetch_grid(name: str, *, force: bool = False, quiet: bool = False) -> Path:
     """Return a local, checksum-verified path to the registry grid ``name``,
     downloading into :func:`grid_cache_dir` on first use (``force`` re-downloads)."""
@@ -138,6 +145,13 @@ def fetch_grid(name: str, *, force: bool = False, quiet: bool = False) -> Path:
     if dest.exists() and not force:
         got = _sha256(dest)
         if entry["sha256"] and got != entry["sha256"]:
+            if _is_earlier_copy(name, got):
+                raise RuntimeError(
+                    f"Cached grid {dest} is an earlier release of {name!r} (sha256 "
+                    f"{got[:12]}..., before the 2026-09 Zenodo re-deposit that added the "
+                    f"surviving-mass table); this version expects {entry['sha256'][:12]}....  "
+                    f"Refresh it with fetch_grid({name!r}, force=True)."
+                )
             raise RuntimeError(
                 f"Cached grid {dest} fails its checksum "
                 f"(got {got[:12]}..., expected {entry['sha256'][:12]}...). "

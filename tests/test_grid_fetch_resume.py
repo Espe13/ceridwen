@@ -91,3 +91,19 @@ def test_404_fails_at_once(tmp_path):
         pytest.skip(f"no network: {exc}")
     else:
         pytest.fail("a missing file downloaded")
+
+
+def test_stale_cached_grid_is_named(tmp_path, monkeypatch):
+    """B3-007: a cached copy from before the 2026-09 re-deposit is recognised as an earlier
+    release of the same grid (it raised a bare checksum error); an unknown file keeps the
+    checksum error."""
+    from ceridwen.ssps import grid_fetch as gf
+    monkeypatch.setattr(gf, "grid_cache_dir", lambda: tmp_path)
+    (tmp_path / "mist_miles_chab.h5").write_bytes(b"x")
+    old = "d52f1940e4cfcf739a50e8afaea0389871bec9404653a7e023faa53f86382f31"
+    monkeypatch.setattr(gf, "_sha256", lambda p: old)
+    with pytest.raises(RuntimeError, match="earlier release of 'mist_miles_chab'.*force=True"):
+        gf.fetch_grid("mist_miles_chab")
+    monkeypatch.setattr(gf, "_sha256", lambda p: "0" * 64)
+    with pytest.raises(RuntimeError, match="fails its checksum"):
+        gf.fetch_grid("mist_miles_chab")
