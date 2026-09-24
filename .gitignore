@@ -351,3 +351,5 @@ environment.yml
 /profile_ceridwen.py
 /verify_library_resolution.py
 /verify_neb_refactor.py
+# output of examples/quickstart.py (figures + ~145 MB quickstart_post.npz)
+examples/quickstart_figures/

@@ -535,7 +535,8 @@ it writes no HDF5 result: it loads the SSP grid named by `$SSP_FILE` (or
 `SSP_FILE` as below), generates mock UV-to-IR photometry in the unitless `zred = 0`
 convention (the `SedModel(zred=0) applies NO flux factor` warning is expected
 here), fits it, prints recovered-vs-true parameters and writes the summary,
-corner and sampling-diagnostic figures to `examples/quickstart_figures/`:
+corner and sampling-diagnostic figures, and the post-processed draws
+(`quickstart_post.npz`, ~145 MB), to `examples/quickstart_figures/` (next to the script):
 
 ```bash
 SSP_FILE=$(python -c "from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_miles_chab'))") \
