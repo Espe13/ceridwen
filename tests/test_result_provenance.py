@@ -141,6 +141,14 @@ def test_nuts_settings_and_old_files(model, tmp_path):
 def test_fitsed_records_what_it_ran(model, tmp_path):
     for name in model.param_names:
         model.priors.setdefault(name, Uniform(low=-1.0, high=1.0))
+    # data consistent with the model (its prediction at theta_init, 10 % errors): with the
+    # placeholder fluxes ln L is ~ -1e21, where logZ_live - logZ cannot resolve logZ_tol and the
+    # run never stops on macOS (S2-002); this test is about the recorded provenance only
+    th0 = {k: jnp.asarray(v) for k, v in model.theta_init.items()}
+    pred = model.predict(model.apply_transforms(th0))
+    for o in model.observations:
+        o.flux = jnp.asarray(pred[o.name])
+        o.uncertainty = 0.1 * jnp.abs(jnp.asarray(pred[o.name]))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         fitSED(model, output_dir=tmp_path, rng_key=jax.random.PRNGKey(3), verbose=False,

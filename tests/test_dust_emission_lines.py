@@ -120,4 +120,6 @@ def test_static_and_painted_photometry_agree_with_dust_emission():
         csp._force_paint_lines = False
     r = out[True] / out[False] - 1
     assert np.all(np.abs(r[2:]) < 1e-6), r      # infrared bands (were 2-3%)
-    assert np.all(np.abs(r) < 5e-6), r          # UV/optical: float32 line projection
+    # UV/optical: the float32 static-basis vs painted line projection, independent of the
+    # energy balance (GALEX FUV 8.6e-6 here with dust emission on AND off, measured 2026-09-24)
+    assert np.all(np.abs(r) < 2e-5), r

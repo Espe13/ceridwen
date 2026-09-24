@@ -334,7 +334,9 @@ def test_gradient_matches_finite_differences(grad_model):
     for k, v in th.items():
         v = np.asarray(v, dtype=float)
         for i in range(v.size):
-            h = 1e-4 * max(1.0, abs(v.flat[i]))
+            # sigma_gal (~170 km/s): a 0.017 km/s step is float32 noise with the ZAU_ND line
+            # strengths (AD 0.50133; FD 0.5132 at h 0.01, 0.50120 at h 1: rel 1.3e-4, 2026-09-24)
+            h = 1.0 if k == "sigma_gal" else 1e-4 * max(1.0, abs(v.flat[i]))
             up, dn = v.copy(), v.copy()
             up.flat[i] += h
             dn.flat[i] -= h
