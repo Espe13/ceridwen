@@ -36,7 +36,7 @@ emission does need the FSPS data files** — a `git clone`, no compiler; see
 - [x] Star formation history (non-parametric continuity + parametric)
 - [x] Metallicity history
 - [x] Dust attenuation (Kriek & Conroy diffuse, power-law birth-cloud, multi-component age-dependent; 12 registered laws incl. Calzetti, Noll, Pei SMC/LMC, Gordon+03 SMC bar `gordon03_smcbar`, Reddy+15 `reddy15`)
-- [x] Dust emission (Draine & Li 2007 grids, or THEMIS with `CSPBasis(duste_model="THEMIS")`)
+- [x] Dust emission (Draine & Li 2007 grids, or THEMIS with `CSPBasis(add_dust_emission=True, duste_model="THEMIS")`)
 - [x] Nebular continuum + emission lines (CLOUDY grids)
 - [x] Analytic marginalisation over emission-line fluxes, jointly across spectrum, photometry and line fluxes (`Spectrum(marginalize_elines=True)`, [docs](https://github.com/Espe13/ceridwen/blob/main/docs/eline_marginalisation.md))
 - [x] Observation input (broadband photometry, emission-line fluxes, spectra)

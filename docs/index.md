@@ -18,7 +18,7 @@ runs on CPU or GPU.
 - Metallicity history (constant or time-varying)
 - [α/Fe] as a sampled stellar axis (`CSPBasis_afe`, FSPS v4.0 aMIST + C3K grids; continuum-only, downloadable grid — no FSPS install needed)
 - Dust attenuation (Kriek & Conroy diffuse, power-law birth-cloud, multi-component age-dependent; Gordon+03 SMC bar and Reddy+15 among the registered laws)
-- Dust emission (Draine & Li 2007 grids, or THEMIS with `CSPBasis(duste_model="THEMIS")`)
+- Dust emission (Draine & Li 2007 grids, or THEMIS with `CSPBasis(add_dust_emission=True, duste_model="THEMIS")`)
 - Nebular continuum and emission lines (CLOUDY grids)
 - Broadband photometry, spectra, and emission-line fluxes, fit on their own or jointly
 - One broadening kernel: galaxy stellar and gas velocity dispersions (`Kinematics`, fixed or sampled) combined in quadrature with the instrument's line-spread function (`Instrument`, unit and convention in the constructor name) and the SSP library resolution, which is removed automatically
