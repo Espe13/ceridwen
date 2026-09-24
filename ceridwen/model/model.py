@@ -394,6 +394,18 @@ class SedModel:
         if any(f.claims(n) for f in CALIB_FAMILIES for n in given):
             check_names(self.observations, CALIB_FAMILIES, given,
                         what=" (spectrum calibration)")
+        # keys the CSP configuration makes inert (B1-021): sampled, they would do nothing
+        csp = self.csp
+        if "igm_factor" in self.param_names and hasattr(csp, "igm") and csp.igm is None:
+            raise ValueError(
+                "'igm_factor' is sampled but the CSP has no IGM model (add_igm=False), so it "
+                "would be sampled without being used.  Drop it, or build the CSP with add_igm=True")
+        if ("frac_obrun" in self.param_names and getattr(csp, "neb", None) is None
+                and hasattr(csp, "flux") and not hasattr(csp, "attenuate_dust")):
+            raise ValueError(
+                "'frac_obrun' is sampled but the CSP has neither a nebular model nor dust "
+                "attenuation, so it would be sampled without being used.  Drop it, or build the "
+                "CSP with add_neb=True or dust")
         # eline_scaling multiplies only the Lines prediction (csp.py predict_line_fluxes); with
         # observations but none of them Lines it would be sampled and never used (B1-014)
         if ("eline_scaling" in self.param_names and self.observations

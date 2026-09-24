@@ -42,7 +42,7 @@ def test_eline_scaling_without_lines_is_refused():
     no Lines it was a silent prior-volume nuisance."""
     def fake(kinds):
         return types.SimpleNamespace(
-            param_names=["logmass", "eline_scaling"], transforms={},
+            param_names=["logmass", "eline_scaling"], transforms={}, csp=types.SimpleNamespace(),
             observations=[types.SimpleNamespace(kind=k, name=k) for k in kinds])
     with pytest.raises(ValueError, match="no observation is a Lines"):
         SedModel._check_calibration_names(fake(["photometry", "spectrum"]))
@@ -63,3 +63,18 @@ def test_tied_gas_prior_outside_the_cloudy_axis_warns():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         SedModel._check_tied_gas_range(fake(Uniform(low=-1.3, high=0.3)))
+
+
+def test_inert_igm_factor_and_frac_obrun_are_refused():
+    """B1-021: igm_factor without an IGM model, frac_obrun without nebular or dust model."""
+    def fake(names, **csp):
+        return types.SimpleNamespace(param_names=names, transforms={}, observations=[],
+                                     csp=types.SimpleNamespace(flux=1, **csp))
+    with pytest.raises(ValueError, match="no IGM model"):
+        SedModel._check_calibration_names(fake(["igm_factor"], igm=None))
+    SedModel._check_calibration_names(fake(["igm_factor"], igm=object()))
+    with pytest.raises(ValueError, match="neither a nebular model nor dust"):
+        SedModel._check_calibration_names(fake(["frac_obrun"], igm=None, neb=None))
+    SedModel._check_calibration_names(fake(["frac_obrun"], igm=None, neb=object()))
+    SedModel._check_calibration_names(fake(["frac_obrun"], igm=None, neb=None,
+                                           attenuate_dust=lambda *a: None))
