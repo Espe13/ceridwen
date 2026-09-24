@@ -547,7 +547,7 @@ class Spectrum(Observation):
         ]
         return "\n".join(lines)
 
-    def _display_str(self, max_rows: int = 20) -> str:
+    def _display_str(self, max_rows: int = 10) -> str:
         header = str(self)
         if self._wavelength is None or self.flux is None:
             return header + "\n  (no wavelength / flux vector)"
@@ -560,7 +560,7 @@ class Spectrum(Observation):
         mask = np.asarray(self.mask)
         n    = len(wave)
 
-        col = f"  {'i':<6}  {'λ [Å]':>12}  {'flux':>14}  {'σ':>14}  {'mask':>5}"
+        col = f"  {'i':<6}  {'λ [Å]':>12}  {'flux':>14}  {'σ':>14}  {'used':>5}"
         sep = "  " + "-" * (len(col) - 2)
         out = [header, "", col, sep]
 
@@ -581,7 +581,8 @@ class Spectrum(Observation):
 
         for i in idxs:
             if i is None:
-                out.append("  ...")
+                out.append(f"  ... ({n - len(idxs) + 1} more pixels; "
+                           f"display(max_rows={n}) prints all)")
             else:
                 out.append(_row(i))
 

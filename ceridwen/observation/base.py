@@ -88,11 +88,13 @@ class Observation:
     def __repr__(self):
         return f"<{self.__class__.__name__} '{self.name}' ndof={self.ndof}>"
 
-    def display(self, max_rows: int = 80, return_str: bool = False,
+    def display(self, max_rows: int | None = None, return_str: bool = False,
                 file=None):
         """Print (or return, if ``return_str``) a per-datum table; long tables
-        are head/tail truncated to ``max_rows``."""
-        txt = self._display_str(max_rows=max_rows)
+        are head/tail truncated to ``max_rows`` (default: the class's own, 10 pixels for
+        a ``Spectrum``)."""
+        txt = (self._display_str() if max_rows is None
+               else self._display_str(max_rows=max_rows))
         if return_str:
             return txt
         import sys as _sys
