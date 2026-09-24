@@ -44,7 +44,9 @@ def fitSED(
     Parameters
     ----------
     observations : list[Observation] -- replaces ``model.observations`` and re-runs ``setup_for_model`` at ``model.zred``
-    sampler_kwargs : dict -- forwarded to the sampler adapter constructor
+    sampler_kwargs : dict -- forwarded to the sampler adapter constructor.  fitSED's nested
+        defaults are num_live=500 and num_inner_steps=30 (the adapter on its own, e.g. via
+        run_sampler, uses 5 x the number of free dimensions); pass num_inner_steps to choose
     vi : None, 'tril', 'iaf', or a VI map -- NUTS-only variational preconditioning
     vi_kwargs : dict -- forwarded to VI training / map constructor
     optimize : bool -- first find the MAP with ``ceridwen.optimize.map_fit`` (L-BFGS from prior
