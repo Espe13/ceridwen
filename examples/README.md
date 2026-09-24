@@ -82,3 +82,23 @@ Note the two independent spectrum calibrations: `spectrum_scaling` scales the wh
 `Spectrum`, `eline_scaling` scales only emission **lines** (inert here, since
 the alpha-enhanced model carries no nebular emission). See
 [`docs/tutorial.md`](../docs/tutorial.md) and `GOTCHAS.md`.
+
+## `demo_eline_marginalisation.py`
+
+Emission-line marginalisation on a NIRSpec-like spectrum at z = 2.5 whose lines do not
+follow the CLOUDY prediction ([O III] 3x, [O II] 0.5x, Balmer 1.5x, [Ne III] 2x): the line
+fluxes are marginalised analytically (`Spectrum(marginalize_elines=True)`) and the recovered
+fluxes are compared with the truth. Needs `$SPS_HOME` (nebular grids). See
+`docs/eline_marginalisation.md`.
+
+## `make_mock_data.py`
+
+Writes a self-consistent mock galaxy (photometry + an optical spectrum) by pushing known
+TRUTH parameters through the same forward model and adding Gaussian noise
+(`examples/mock_galaxy.npz`). Builds the SSP grid with FSPS only when `ssp_data.h5` is not
+next to it.
+
+## `recipes/`
+
+Prospector features written as small add-ons, each with a check script against Prospector;
+several have since landed in the package. See `recipes/README.md`.
