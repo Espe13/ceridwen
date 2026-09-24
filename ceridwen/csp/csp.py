@@ -16,6 +16,8 @@ import numpy as np
 import jax.numpy as jnp
 import pprint
 
+from ceridwen.constants import C_AA_S
+
 from ceridwen.dust.DustModel import Dust, DiffuseDust
 from ceridwen.dust.DustEmission import DustEmission
 from ceridwen.neb.NebularGridModel            import NebularModel
@@ -26,8 +28,7 @@ LOG10E = math.log10(math.e)
 
 def fnu2flam(lam, fnu):
     """f_nu [erg/s/cm^2/Hz] -> f_lambda [erg/s/cm^2/A]."""
-    c = 2.998e18  # Å/s
-    return c * (fnu / (lam ** 2))
+    return C_AA_S * (fnu / (lam ** 2))
 
 
 def intsfwght(t_hi, t_lo, a, slope, logage):

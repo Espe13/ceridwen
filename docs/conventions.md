@@ -249,7 +249,9 @@ forces the painted path for A/B checks.
 The cosmology enters the forward model in two places, both evaluated by the
 CSP: the flux factor `(1+z) (10 pc / D_L)^2` that turns the rest-frame
 luminosity density into observed-frame F_ν in cgs (`CSPBasis._flux_factor`, applied
-to spectra, photometry and line fluxes), and the age of the universe that
+to spectra, photometry and line fluxes; the grids' L_sun/Hz is converted with FSPS's
+L_sun = 3.839e33 erg/s, `ceridwen.constants.LSUN_ERG_S`, the value FSPS itself uses for
+every grid), and the age of the universe that
 rescales the SFH grid when `zred` is sampled with `track_zred_age=True`
 (`CSPBasis._lookback_from_zred`). A sampled `zred` reaches every observation:
 `Photometry` is projected through the filters per sample, `Lines` fluxes carry

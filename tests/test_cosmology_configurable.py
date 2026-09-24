@@ -109,7 +109,8 @@ def test_methods_match_helpers():
 def test_flux_factor_with_explicit_lumdist():
     """lumdist replaces D_L(z); (1+z) still comes from z; no 10 pc pin at z = 0."""
     ff = float(flux_factor_cgs(0.0, ALT, lumdist_mpc=3.5))
-    expected = (10.0 / 3.5e6) ** 2 * 3.1967965e-7
+    # FSPS L_sun (sps_vars.f90:422) over 4 pi (10 pc)^2, IAU parsec
+    expected = (10.0 / 3.5e6) ** 2 * 3.839e33 / (4.0 * np.pi * (10.0 * 3.0856775814913673e18) ** 2)
     assert _relative_difference(ff, expected) < 1e-12
     z = 0.01
     ff_z = float(flux_factor_cgs(z, ALT, lumdist_mpc=3.5))

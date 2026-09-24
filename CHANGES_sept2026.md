@@ -1119,3 +1119,25 @@ posterior tail); e.g. U[-2, 0.5] on `gas_logz`, as in the JADES-like mock suite,
 Same rule as the logzsol guard. `tests/test_gas_prior_range.py`; two ERROR rows in
 `tests/regression/misuse_report.py`.
 
+### Physical constants: one L_sun, one speed of light (`ceridwen/constants.py`) (B1-003, B1-020)
+
+**Behaviour change (numbers): every flux in physical units is 0.367 % higher.** The 10 pc
+factor that turns the grids' L_sun/Hz into F_nu was the hard-coded `3.1967965e-7`, which
+implies L_sun = 3.825e33 erg/s. It is now derived as
+`LSUN_ERG_S / (4 pi (10 pc)^2) = 3.2085378e-7`, with FSPS's `LSUN_ERG_S = 3.839e33`
+(`sps_vars.f90:422`). The nebular Q and PostProcess already used 3.839e33, so the package
+now uses one L_sun throughout. It is the same for every grid: FSPS divides every stellar
+library by this `lsun` (`getspec.f90:200`), reads the BPASS SSPs without rescaling
+(`sps_setup.f90:196-206`) and converts all of them to magnitudes with the same `lsun`
+(`sps_vars.f90:432`). Synthetic magnitudes of MIST/MILES grid nodes now match python-fsps
+`get_mags` to 3e-6; before the change they were 3.67e-3 low (`tests/test_constants.py`).
+At equal data, a fitted `logmass` is 0.0016 dex lower. Predictions of a
+`SedModel(zred=0)` without `lumdist_mpc` are unchanged, because no flux factor is applied.
+
+The speed of light is `C_AA_S = 2.99792458e18` A/s, `C_KMS` and `C_CMS`, imported
+everywhere. It replaces 2.998e18, 2.9979e18 and 2.998e5 in `csp`, `photometry`,
+`spectrum`, `lines`, `filters`, `library_resolution` and `NebularGridModel`. In photometry,
+c cancels between the F_nu->F_lambda factor and the AB zero point. Nebular line
+amplitudes (lambda^2/c) move by -8.2e-6, and the `Lines` apertures and the library sigma
+by 2.5e-5. The Prospector-ported damping wing / DLA in `igm.py` keeps Prospector's
+2.99792e10 for parity with Prospector.

@@ -5,6 +5,7 @@ Broadband photometric observation container (AB maggies).
 import jax.numpy as jnp
 import numpy as np
 from ceridwen.observation.filters import FilterSet
+from ceridwen.constants import C_AA_S
 from .base import Observation
 
 _FILTERSET_CACHE = {}
@@ -79,7 +80,7 @@ class Photometry(Observation):
         (reference path; normalisation follows the input flux units)."""
         if self.filterset is None:
             raise ValueError("No FilterSet configured; call set_filters() first.")
-        _c         = jnp.array(2.998e18)
+        _c         = jnp.array(C_AA_S)
         wave       = jnp.asarray(model_wave,  dtype=float)
         flux_flam  = jnp.asarray(model_fnu,   dtype=float) * _c / wave**2
         return self.filterset.get_sed_maggies(flux_flam, sourcewave=wave)
@@ -91,7 +92,7 @@ class Photometry(Observation):
         opz = 1.0 + float(zred)
         wm = opz * wm_rest
         n_wave = len(wm)
-        _c = 2.998e18
+        _c = C_AA_S
 
         fnu_to_flam = _c / wm**2
 
@@ -162,7 +163,7 @@ class Photometry(Observation):
         if self.filterset is None:
             raise ValueError("No FilterSet configured; call set_filters() first.")
         wave_obs = (1.0 + jnp.asarray(zred)) * jnp.asarray(wave_rest)
-        flux_flam = spectrum_fnu_observed * (2.998e18 / (wave_obs * wave_obs))
+        flux_flam = spectrum_fnu_observed * (C_AA_S / (wave_obs * wave_obs))
         return self.filterset.get_sed_maggies(flux_flam, sourcewave=wave_obs)
 
     def chi_sq(self, model_maggies):
