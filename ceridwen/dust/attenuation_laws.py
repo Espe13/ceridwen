@@ -540,7 +540,7 @@ ATTENUATION_LAWS = {
         "func": calzetti,
         "params": {
             "tau_cal00": "V-band optical depth",
-            "R_v_cal00": "Not used (shape is fixed)",
+            "R_v_cal00": "R_v of Calzetti et al. (2000), default 4.05; it changes the curve shape (added to k(lambda) and to k_V); fix it with a constant transform unless you mean to fit it",
         },
         "defaults": {
             "tau_cal00": 1.0,
