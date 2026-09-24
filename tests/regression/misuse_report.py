@@ -69,15 +69,33 @@ def _kw(**over):
     return kw
 
 
-def _run(fn):
-    """Run fn, classify outcome as ERROR / WARN / SILENT."""
+#: WARN scenarios: a fragment of the warning each one must emit; any other warning alone
+#: leaves the scenario SILENT (an unrelated warning must not count as handling it)
+WARN_EXPECT = {
+    "negative SFR": "contains negative values",
+    "typo theta key (logmas)": "unrecognized theta key(s) ['logmas']",
+    "logzsol outside metallicity grid": "outside the SSP metallicity grid",
+    "absolute-looking logzsol value (-1.85)": "is it an OLD abso",
+    "absolute-looking logzsol prior": "OLD absolute-log10-Z prior",
+    "NaN flux not in the mask": "non-finite flux",
+    "noll bump under its old name E_bump": "unrecognized theta key(s) ['E_bump']",
+}
+
+
+def _run(fn, expect=None):
+    """Run fn, classify outcome as ERROR / WARN / SILENT.  With ``expect`` only a warning
+    containing that fragment counts as WARN."""
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         try:
             fn()
-            return ("WARN", str(w[-1].message)[:90]) if w else ("SILENT", "")
         except Exception as e:
             return ("ERROR", f"{type(e).__name__}: {str(e)[:80]}")
+    msgs = [str(x.message) for x in w]
+    if expect is not None:
+        hit = [m for m in msgs if expect in m]
+        return ("WARN", hit[0][:90]) if hit else ("SILENT", "")
+    return ("WARN", msgs[-1][:90]) if msgs else ("SILENT", "")
 
 
 def _without_table(csp):
@@ -380,7 +398,7 @@ def run_scenarios():
 
     rows = []
     for label, good, fn in scenarios:
-        kind, detail = _run(fn)
+        kind, detail = _run(fn, WARN_EXPECT.get(label))
         ok = kind in good
         rows.append((label, kind, ok, detail, good))
     return rows
