@@ -277,6 +277,11 @@ class CSPBasis:
         if fesc_geometry not in ("runaway_bc", "picket"):
             raise ValueError(
                 f"fesc_geometry must be 'runaway_bc' or 'picket', got {fesc_geometry!r}")
+        if fesc_geometry == "picket" and not add_neb:
+            raise ValueError(
+                "fesc_geometry='picket' needs add_neb=True: its clear channel is defined on the "
+                "ages of the nebular (CLOUDY) grid and the covered ionising photons power the "
+                "nebular emission.  Without a nebular model use fesc_geometry='runaway_bc'.")
         self.fesc_geometry = str(fesc_geometry)
 
         self._logage_lo  = self.ssp_ages_lgyr[1:]
