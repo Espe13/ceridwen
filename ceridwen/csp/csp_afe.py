@@ -129,6 +129,11 @@ class CSPBasis_afe(CSPBasis):
         self.flux      = jnp.array(_flux_in, dtype=jnp.float32)  # (n_afe, n_z, n_age, n_wave)
         self.afe_grid  = _afe_in                           # (n_afe,) [alpha/Fe]
         self._n_afe    = int(_afe_in.size)
+        # the same cube laid out (n_age, n_afe * n_z, n_wave) for _contract: a sampled afe is
+        # folded into the SSP weights, so no interpolated plane is built per sample under vmap
+        self._flux_afe_t = None if self._n_afe == 1 else jnp.asarray(np.ascontiguousarray(
+            np.transpose(np.asarray(self.flux), (2, 0, 1, 3)).reshape(
+                self.flux.shape[2], -1, self.flux.shape[3])))
         self._afe_solar_idx = int(np.argmin(np.abs(np.asarray(_afe_in))))
         self.wave      = jnp.array(SSPData.ssp_wave)       # (n_wave,)
         self.ages      = jnp.array(SSPData.ssp_lg_age_gyr) # (n_age,)  log10(Gyr)
@@ -320,7 +325,7 @@ class CSPBasis_afe(CSPBasis):
         return k, w
 
     def _flux_at_afe(self, theta):
-        """(n_z, n_age, n_wave) flux cube at theta['afe']: the single plane for n_afe == 1, the solar plane without 'afe', else the two-plane interpolation."""
+        """(n_z, n_age, n_wave) flux cube at theta['afe']: the single plane for n_afe == 1, the solar plane without 'afe', else the two-plane interpolation.  The forward model builds only the first two (``_contract``); the interpolated plane is its reference."""
         if self._n_afe == 1:
             return self.flux[0]
         if "afe" not in theta:
@@ -330,6 +335,29 @@ class CSPBasis_afe(CSPBasis):
         f_hi = jnp.take(self.flux, k,     axis=0)
         w32  = w.astype(jnp.float32)
         return (jnp.float32(1.0) - w32) * f_lo + w32 * f_hi
+
+    def _contract(self, theta, weights, attn_age=None):
+        """sum_{z,a} weights[z,a] flux_afe[z,a,w] (* attn_age[a,w]) with flux_afe the cube at theta['afe'].
+
+        Equal to contracting ``_flux_at_afe(theta)`` up to float32 rounding, without building
+        that plane: a sampled afe becomes the two-hot vector wa = (1-w) e_{k-1} + w e_k over
+        the n_afe axis, folded into the weights and contracted against ``_flux_afe_t`` in one
+        einsum.  Memory stays O(n_z n_age + n_wave) per sample under vmap (B1-022)."""
+        if self._n_afe == 1 or "afe" not in theta:
+            flux = self._flux_at_afe(theta)
+            if attn_age is None:
+                return jnp.einsum("za,zaw->w", weights, flux)
+            return jnp.einsum("za,zaw,aw->w", weights, flux, attn_age)
+        k, w = self._afe_coords(theta)
+        w32 = w.astype(jnp.float32)
+        idx = jnp.arange(self._n_afe)
+        wa = (jnp.where(idx == k - 1, jnp.float32(1.0) - w32, jnp.float32(0.0))
+              + jnp.where(idx == k, w32, jnp.float32(0.0)))             # (n_afe,)
+        wk = (wa[:, None, None] * weights[None]).transpose(2, 0, 1).reshape(
+            weights.shape[1], -1)                                        # (n_age, n_afe * n_z)
+        if attn_age is None:
+            return jnp.einsum("ak,akw->w", wk, self._flux_afe_t)
+        return jnp.einsum("ak,akw,aw->w", wk, self._flux_afe_t, attn_age)
 
     def _stellar_mass_at(self, theta):
         """(n_z, n_age) surviving-mass table at theta['afe'], interpolated as ``_flux_at_afe``."""
@@ -419,7 +447,6 @@ class CSPBasis_afe(CSPBasis):
     def get_spectrum_dattn_nodem_noneb(self, theta, *, include_lines=None):
         """Dust attenuation only (``include_lines`` ignored)."""
         _ = include_lines
-        flux = self._flux_at_afe(theta)               # (n_z, n_age, n_wave)
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
 
         M       = self._age_bin_mix
@@ -431,7 +458,7 @@ class CSPBasis_afe(CSPBasis):
             attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
 
         weights  = self.calculate_ssp_weights(theta).astype(jnp.float32)
-        spectrum = jnp.einsum("za,zaw,aw->w", weights, flux, attn_age)
+        spectrum = self._contract(theta, weights, attn_age)
         spectrum *= jnp.exp(-attn_diffuse.astype(jnp.float32))
 
         return spectrum.reshape((-1,))
@@ -439,7 +466,6 @@ class CSPBasis_afe(CSPBasis):
     def get_spectrum_dattn_dem_noneb(self, theta, *, include_lines=None):
         """Dust attenuation + dust emission (``include_lines`` ignored)."""
         _ = include_lines
-        flux = self._flux_at_afe(theta)               # (n_z, n_age, n_wave)
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
 
         M             = self._age_bin_mix
@@ -452,8 +478,8 @@ class CSPBasis_afe(CSPBasis):
             attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
 
         weights           = self.calculate_ssp_weights(theta).astype(jnp.float32)
-        spectrum_dust_free= jnp.einsum("za,zaw->w", weights, flux)
-        attenuated        = jnp.einsum("za,zaw,aw->w", weights, flux, attn_age)
+        spectrum_dust_free= self._contract(theta, weights)
+        attenuated        = self._contract(theta, weights, attn_age)
         attenuated       *= diffuse_curve
 
         dust_emi_spectrum, _mdust, _tduste = self.dust_emi.compute_dust_emission(
@@ -470,6 +496,5 @@ class CSPBasis_afe(CSPBasis):
     def get_spectrum_nodattn_nodem_noneb(self, theta, *, include_lines=None):
         """Stellar continuum only."""
         _ = include_lines
-        flux     = self._flux_at_afe(theta)           # (n_z, n_age, n_wave)
         weights  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
-        return jnp.einsum("za,zaw->w", weights, flux)
+        return self._contract(theta, weights)
