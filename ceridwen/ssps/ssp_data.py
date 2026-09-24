@@ -443,8 +443,11 @@ class SSPData:
                       "mass unavailable; everything else works)",
                       f"    {self.stellar_mass_refused}"]
         elif self.ssp_stellar_mass is None:
-            lines += ["  surviving stellar mass   : not in this grid (written before SSP "
-                      "schema 3.0; mfrac unavailable)"]
+            name = published_grid_name(self.chash)
+            which = (f"the published grid {name!r} has none yet" if name is not None
+                     else "no ssp_stellar_mass table")
+            lines += [f"  surviving stellar mass   : not available ({which}): mfrac and the "
+                      "surviving mass are unavailable; everything else works"]
         else:
             m = self.ssp_stellar_mass
             lines += [f"  surviving stellar mass   : [{m.min():.4g}, {m.max():.4g}] M_sun per "

@@ -89,7 +89,8 @@ def test_schema2_file_loads_without_table(tmp_path):
         assert "ssp_stellar_mass" not in f
     back = SSPData.load(p)
     assert back.ssp_stellar_mass is None and back.schema_version == "2.0"
-    assert "not in this grid" in back.display(return_str=True)
+    txt = back.display(return_str=True)
+    assert "not available (no ssp_stellar_mass table)" in txt and "everything else works" in txt
     with pytest.raises(ValueError, match="from_fsps records the surviving-mass table") as e:
         back.require_stellar_mass()                   # not a published grid: rebuild it
     assert "scripts/" not in str(e.value)
@@ -140,6 +141,36 @@ def test_load_refuses_table_above_formed_mass(tmp_path):
     with pytest.warns(UserWarning, match="refused"):
         prom = SSPDataAfe.load(p, zsun=0.01)                 # the alpha loader shares _read_h5
     assert prom.ssp_stellar_mass is None and prom.stellar_mass_refused
+
+
+def test_published_grid_without_table_is_described_plainly(monkeypatch):
+    """Q2-004: the alpha grid has no table YET.  display() and require_stellar_mass() say so,
+    say everything else works, and never call the grid wrong or old."""
+    import ceridwen.ssps.ssp_data as sd
+    monkeypatch.setattr(sd, "published_grid_name", lambda chash: "amist_c3k_hr_krou_afe")
+    g = _tiny()
+    txt = g.display(return_str=True)
+    line = next(x for x in txt.splitlines() if "surviving stellar mass" in x)
+    assert "the published grid 'amist_c3k_hr_krou_afe' has none yet" in line
+    assert "mfrac and the surviving mass are unavailable; everything else works" in line
+    with pytest.raises(ValueError, match="does not carry one yet; fit it with mfrac=False"):
+        g.require_stellar_mass()
+    for word in ("wrong", "predates", "written before", "before v1.0", "old copy"):
+        assert word not in txt
+
+
+def test_published_alpha_grid_display_if_fetched():
+    """The same on the real published file, when it is in the fetch cache (612 MB; skipped
+    otherwise: never downloaded by the suite)."""
+    from ceridwen.ssps.grid_fetch import grid_cache_dir
+    path = grid_cache_dir() / "amist_c3k_hr_krou_afe.h5"
+    if not path.is_file():
+        pytest.skip(f"{path} not fetched")
+    g = SSPDataAfe.load(path)
+    txt = g.display(return_str=True)
+    assert "the published grid 'amist_c3k_hr_krou_afe' has none yet" in txt
+    for word in ("wrong", "predates", "written before", "before v1.0", "old copy"):
+        assert word not in txt
 
 
 def test_with_stellar_mass_needs_source():
