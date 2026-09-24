@@ -50,7 +50,7 @@ every grid. Before v1.0.5 the keys were `theta["Z"]` / `theta["zh"]` and held `l
   prior that lies entirely below `logzsol = -1.2` warns that it looks like an old absolute
   `log10 Z`; a *bounded* prior wider than the grid raises, and so does a constant transform
   outside it. The one route that cannot be checked at construction is a transform whose value
-  depends on sampled parameters: it is warned about, and the forward model still clamps at the
+  depends on sampled parameters: it is not checked (no warning), and the forward model clamps at the
   grid edge (`csp.check_param_ranges(theta)` on your own draws is the check).
 - The FSPS manual (`$SPS_HOME/doc/sps.tex`) still prints `Z_sun = 0.0191` for MIST, which
   contradicts its own source (0.0185). CERIDWEN follows the source and the grid axis.
@@ -184,11 +184,12 @@ prefer `predict`/`get_spectrum_components`.
   BPASS install (15000 points) differ in shape, so a raw ceridwen-vs-FSPS
   comparison would mismatch.
 - **Only one `fsps.StellarPopulation` per process.** FSPS keeps global Fortran
-  state; constructing a second `StellarPopulation` corrupts the first. (CERIDWEN
-  itself makes none — the nebular model reads grid *files*.)
+  state; constructing a second `StellarPopulation` corrupts the first. CERIDWEN makes them
+  only when it builds grids (`SSPData.from_fsps`, `SSPDataAfe`, `SSPBasis`, and the AGB-dust
+  shell, which makes two); fitting reads grid *files*, and the nebular model reads files too.
 - **Apple Metal / GPU float32:** x64 is unsupported on Metal. The package enables
   `jax_enable_x64=True`; on Metal force `JAX_PLATFORMS=cpu` for float64 parity.
-- Pin **`jax>=0.4.30`** (uses `jnp.trapezoid`, modern tree-util/PRNG).
+- **`jax>=0.9.0`** (as `pyproject.toml` pins it).
 
 ## 7. Broadening: where the widths come from (2026-09-03)
 
@@ -202,8 +203,8 @@ prefer `predict`/`get_spectrum_components`.
   Before this pass a `Spectrum(sigma_losvd=...)` was applied **on top of** the
   CSP's hidden 300 km/s, so a fitted width was a residual, not the dispersion.
 - `Kinematics(sigma_gal=...)` has no default; `SedModel` defaults to
-  `DEFAULT_KINEMATICS = Kinematics(sigma_gal=300.0)` (stars and gas) and prints
-  it. A float is fixed, a string is a theta key. **Guards:** a key missing from
+  `DEFAULT_KINEMATICS = Kinematics(sigma_gal=300.0)` (stars and gas); `SedModel.summary()`
+  and the `fitSED` banner show it. A float is fixed, a string is a theta key. **Guards:** a key missing from
   `theta` → `KeyError` (no prior → the usual warning); a fixed width that is
   *also* in `theta` → `ValueError`; a bounded prior reaching above `sigma_max`
   (2000 km/s) → `ValueError`; a sampled value above `sigma_max` is clipped
