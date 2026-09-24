@@ -64,3 +64,16 @@ def test_detect_bounds_per_element_and_nuts_transform():
     lo, hi, isb = _build_transforms(b, {"x": jnp.zeros(3), "s": jnp.zeros(1)})
     np.testing.assert_array_equal(np.asarray(lo), [-1.0, -2.0, -3.0, -1.0])
     np.testing.assert_array_equal(np.asarray(hi), [1.0, 2.0, 3.0, 1.0])
+
+
+def test_build_adapter_does_not_mutate_sampler_kwargs():
+    """B2-004: fitSED popped 'bounds' out of the caller's dict, so a second fit with the same
+    dict silently used auto-detected bounds."""
+    from ceridwen.fit import _build_adapter
+    model = types.SimpleNamespace(priors={"a": Uniform(low=0.0, high=1.0)},
+                                  theta_init={"a": jnp.array([0.5])})
+    skw = {"bounds": {"a": (0.2, 0.3)}, "num_samples": 10}
+    ad1 = _build_adapter("nuts", model, skw, verbose=False)
+    assert skw == {"bounds": {"a": (0.2, 0.3)}, "num_samples": 10}
+    ad2 = _build_adapter("nuts", model, skw, verbose=False)
+    assert ad1.bounds == ad2.bounds == {"a": (0.2, 0.3)}

@@ -228,6 +228,7 @@ def _resolve_fit_mfrac(model, mfrac) -> bool:
 def _build_adapter(sampler: str, model, sampler_kwargs: dict, verbose: bool,
                    vi=None, vi_kwargs=None):
     sampler = sampler.lower().strip()
+    sampler_kwargs = dict(sampler_kwargs or {})     # never mutate the caller's dict
 
     if sampler in ("nested", "ns", "nss"):
         if vi is not None:
