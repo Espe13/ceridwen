@@ -79,8 +79,9 @@ sample with the highest log-likelihood, not a draw.
 **Star formation.** After the transforms `theta['sfh']` is the SFH shape in
 the CSP's convention. The physical SFR is that shape × 10^logmass when
 `logmass` is a parameter: the CSP scales the spectrum, not the SFH, so
-`logmass` is the formed mass and the shape integrates to one solar mass
-under `logsfr_ratios_to_sfh`. `sfrW` is the mean SFR over the last W Myr of
+`logmass` is the formed mass when the shape integrates to one solar mass, as
+under `logsfr_ratios_to_sfh(..., sfh_times_yr=t)` (a directly sampled `sfh`
+carries its own normalisation). `sfrW` is the mean SFR over the last W Myr of
 the same piecewise function the weight kernel integrates: constant per bin
 for `sfh_interp="step"`, linear between nodes for `"linear"`; beyond the
 oldest node the SFR is zero. `ssfrW` divides by the formed mass, with no

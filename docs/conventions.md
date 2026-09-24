@@ -55,7 +55,10 @@ safe".
 | Marginalised line fluxes (`marginalize_elines=True`: `/elines` in the result, `extras["elines"]`) | erg s⁻¹ cm⁻², observed frame, IGM-transmitted at the line, **not** divided by the spectrum calibration; lines named as in `$SPS_HOME/data/emlines_info.dat`, vacuum rest-frame Å |
 | Stellar mass | `logmass` = log10(M⋆/M☉) |
 
-The forward model is evaluated at unit mass and scaled by `10**logmass`.
+The spectrum of `theta['sfh']` is scaled by `10**logmass`. It is unit mass, and `logmass`
+the formed mass, only when `theta['sfh']` integrates to 1 M☉, as
+`logsfr_ratios_to_sfh(..., sfh_times_yr=t)` arranges (below); a directly sampled `sfh`
+carries its own normalisation.
 
 ## SFH mass normalisation
 

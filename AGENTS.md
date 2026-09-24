@@ -44,8 +44,10 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
    redshifted by (1 + zred) onto the data pixels, never the other way. Model
    spectra are `F_nu` (per unit frequency). Broadband fluxes are AB maggies.
    Emission-line fluxes are erg s⁻¹ cm⁻². Stellar mass is supplied as
-   `logmass` = log10(M⋆/M_sun); the forward model is evaluated at unit mass
-   and scaled by `10**logmass`.
+   `logmass` = log10(M⋆/M_sun); the spectrum of `theta['sfh']` is scaled by `10**logmass`.
+   That is unit mass, and `logmass` the formed mass, only when `theta['sfh']` integrates
+   to 1 M_sun, as `logsfr_ratios_to_sfh(..., sfh_times_yr=t)` arranges (trapezoidal rule,
+   item 4); a directly sampled `sfh` carries its own normalisation.
 
 4. **SFH mass normalisation is mass-weighted (trapezoidal), not mean-SFR.** See
    `model/transforms.py` (`logsfr_ratios_to_sfh`). Getting this wrong biases
