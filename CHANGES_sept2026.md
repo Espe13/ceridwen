@@ -988,3 +988,13 @@ f_esc = fo, no dust heating by the clear light). Documented: in `runaway_bc` the
 `frac_obrun` of every age row skips that row's age-bin dust, so with several attenuated bins old
 stars brighten too (`docs/conventions.md`, GOTCHAS 21).
 
+**Nebular priors checked against the CLOUDY axis (T2-002, T4-002).** `SedModel` raises at
+construction when a bounded `gas_logz` or `gas_logu` prior reaches outside the nebular grid's
+axis (both Byler+17 grids, ZAU_ND and ZAU_WD: `gas_logz` [-1.3, +0.3], `gas_logu` [-4, -1]), or when
+a constant transform fixes either outside it; an unbounded prior warns. The message names the
+prior bounds, the axis, the grid file and the fix (`Uniform(low=-1.300, high=+0.300)`). Before,
+such a prior was accepted silently and the interpolation clamped at the edge (frozen lines, a flat
+posterior tail); e.g. U[-2, 0.5] on `gas_logz`, as in the JADES-like mock suite, now raises.
+Same rule as the logzsol guard. `tests/test_gas_prior_range.py`; two ERROR rows in
+`tests/regression/misuse_report.py`.
+
