@@ -426,10 +426,12 @@ result = fitSED(
     output_dir="./my_fit",
 )
 
-# VI convergence: -ELBO should drop and then plateau.
+# VI convergence: -ELBO should drop and then plateau.  It can be negative (the
+# likelihood is normalised), so the axis is linear.
 import matplotlib.pyplot as plt
-plt.figure(); plt.plot(result.raw["vi_losses"]); plt.yscale("log")   # -ELBO
+plt.figure(); plt.plot(result.raw["vi_losses"])                      # -ELBO
 plt.xlabel("VI iteration"); plt.ylabel(r"$-\mathrm{ELBO}$")
+plt.savefig("vi_losses.png")
 ```
 
 #### Starting NUTS at the MAP
