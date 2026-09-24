@@ -601,7 +601,7 @@ layer asserts, the command that runs it, and whether it runs on GitHub:
 
 | layer | command | what it asserts | on CI |
 |---|---|---|---|
-| Environment | `python -m ceridwen.check` | Python version, dependencies, bundled filter curves and attenuation laws, float64, nested sampling, `$SPS_HOME`; each problem with its fix | no |
+| Environment | `python -m ceridwen.check` | Python version, dependencies, bundled filter curves and attenuation laws, float64, nested sampling, `$SPS_HOME`; each problem with its fix | yes, in the wheel job (clean venv, no `$SPS_HOME`) |
 | Tests, FSPS-free | `pytest -m "not fsps and not gpu" -q -ra` | units, conventions, broadening, likelihood, samplers, post-processing, the misuse guards (25 test files) | every push and pull request |
 | Regression baselines | `pytest tests/regression/test_regression.py -q` | 9 blocks (SSP spectrum, IGM, cosmology, CSP components, dust attenuation, dust emission, nebular, CSP spectrum, likelihood) against stored arrays at `atol=1e-10, rtol=1e-7`, and a maximum relative residual of 1e-6; writes comparison figures to `tests/regression/figures/` | no, needs `$SPS_HOME` |
 | Golden spectra | `pytest tests/csp/test_lookback_flip_invariant.py -q` | 6 SFH / metallicity configurations against committed arrays: SSP weights at `rtol=1e-12`; spectra, line fluxes and photometry at `rtol=1e-6` (they pass through float32 contractions) | no, needs `$SPS_HOME` |
