@@ -254,9 +254,11 @@ bin, automatic parameter renaming when a law is reused); `@jit`/`vmap` throughou
   conventions above.
 - `examples/quickstart.py` — minimal runnable fit (mock photometry).
 - Tests live in `tests/`; they resolve an SSP grid via `tests/_gridfixture.py`
-  (`$CERIDWEN_TEST_SSP` → `tests/fixtures/<name>` → `ceridwen/data/test_data/`).
-  The main test grid is NOT committed: it is the published BPASS grid, fetched
-  with `fetch_grid("mist_bpass_v2")` (CI does this). Without a grid, or without
+  (`$CERIDWEN_TEST_SSP` → `tests/fixtures/<name>` → `ceridwen/data/test_data/` →
+  the `fetch_grid` cache, `$CERIDWEN_GRID_DIR` or `~/.ceridwen/grids`, checksum-verified,
+  never downloading). The main test grid is NOT committed: it is the published BPASS
+  grid; `fetch_grid("mist_bpass_v2")` once is enough (CI does this and also sets
+  `$CERIDWEN_TEST_SSP`). The MILES and alpha-enhanced grids are found the same way. Without a grid, or without
   `$SPS_HOME` for the nebular tests, tests *skip*, and a run with skips is not a
   pass: run `pytest -m "not fsps and not gpu" -ra` for the FSPS-free subset and
   read the skip summary. See "Verification" in `README.md`.

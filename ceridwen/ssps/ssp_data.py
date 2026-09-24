@@ -9,14 +9,16 @@ import jax.numpy as jnp
 from dataclasses import dataclass, field, InitVar
 from typing import Optional
 
-def _import_fsps():
+def _import_fsps(published="SSPData.load(ceridwen.ssps.fetch_grid('mist_miles_chab'))"):
+    """``import fsps``, or an ImportError that says how to install it and which published
+    grid (``published``, a load call) needs no FSPS."""
     try:
         import fsps
     except (ImportError, RuntimeError) as exc:
         raise ImportError(
             "FSPS is required for SSP data generation but is not available. "
             "See https://dfm.io/python-fsps/current/installation/ .  Without FSPS, load a "
-            "published grid instead: SSPData.load(ceridwen.ssps.fetch_grid('mist_miles_chab'))"
+            f"published grid instead: {published} (ceridwen.ssps.available_grids() lists them)"
             ) from exc
     return fsps
 

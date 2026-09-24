@@ -231,7 +231,8 @@ class SSPDataAfe(SSPData):
                 )
         kwargs = _validate_fsps_kwargs(fsps_kwargs)
 
-        fsps = _import_fsps()
+        fsps = _import_fsps(
+            "SSPDataAfe.load(ceridwen.ssps.fetch_grid('amist_c3k_hr_krou_afe'))")
 
         ssp = fsps.StellarPopulation(zcontinuous=0, sfh=0, **kwargs)
 

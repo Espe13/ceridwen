@@ -17,7 +17,7 @@ import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
-from _gridfixture import require_test_grid
+from _gridfixture import require_test_grid, require_named_grid
 
 from ceridwen.ssps.ssp_data import SSPData
 from ceridwen.csp.csp import CSPBasis
@@ -135,9 +135,7 @@ def test_convert_result_refuses_the_wrong_grid(tmp_path, model_and_result):
     """A grid of a different shape cannot be the grid of that fit, so its Z_sun would be wrong."""
     model, result = model_and_result
     old = _legacy_file(tmp_path / "old2.h5", model, result, model.csp.log10_zsun)
-    other = pathlib.Path(__file__).resolve().parents[1] / "ceridwen/data/test_data/ssp_data_mist_miles.h5"
-    if not other.is_file():
-        pytest.skip("second grid not present")
+    other = require_named_grid("ssp_data_mist_miles.h5")
     with pytest.raises(ValueError, match="not the grid of that fit"):
         convert_result(str(old), ssp_grid=str(other), out=str(tmp_path / "bad.h5"))
 

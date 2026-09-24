@@ -62,7 +62,11 @@ def _ssp_file():
     for c in cands:
         if c.is_file():
             return str(c)
-    pytest.skip("no SSP grid found (set $SSP_FILE)")
+    from _gridfixture import find_test_grid, missing_reason     # e.g. the fetch_grid cache
+    found = find_test_grid("ssp_data_bpass_agb_dust.h5")
+    if found is not None:
+        return str(found)
+    pytest.skip(f"no SSP grid found (set $SSP_FILE); {missing_reason()}")
 
 
 def _load_emline_info(sps_home):

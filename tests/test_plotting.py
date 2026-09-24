@@ -132,3 +132,57 @@ def test_corner_axes_include_the_truths():
     fig = P.corner_figure(out, truths={"logmass": 10.6, "logzsol": -0.2})
     lo, hi = fig.axes[0].get_xlim()
     assert lo < 10.6 < hi
+
+
+def test_summary_sfh_prior_band_linear_axis_and_full_width_sed(tmp_path):
+    """Q2-012: the SFH panel draws the prior 16-84 % band (logmass at its posterior median);
+    a uniform node grid gets a linear time axis starting at 0, so the youngest bin is whole;
+    without Lines the SED spans the top row instead of leaving the right half empty."""
+    import jax.numpy as jnp
+    from ceridwen.priors import TopHat
+    rng = np.random.default_rng(5)
+    N, n_time = 300, 5
+    wave = np.geomspace(100.0, 1e8, 2000)
+    spec = np.outer(10 ** rng.normal(10.5, 0.05, N), 1e-15 * (wave / 5000.0) ** -0.5)
+    lam_eff = np.array([3500.0, 6200.0, 12000.0])
+    phot = np.array([[np.interp(l, wave, s) for l in lam_eff] for s in spec]) / 3.631e-20
+    ph = O(); ph._kind = "photometry"; ph.name = "phot"; ph.wavelength = lam_eff
+    ph.flux = phot[0]; ph.uncertainty = phot[0] * 0.1; ph.mask = np.ones(3, bool); ph.upper_limit = None
+
+    def sfh_of(r):          # per-bin SFR per unit mass from n_time-2 log ratios (any map will do)
+        s = jnp.exp(jnp.concatenate([jnp.zeros(r.shape[:-1] + (1,)), jnp.cumsum(r, -1)], -1))
+        return s / s.sum(-1, keepdims=True)
+
+    model = O(); model.observations = [ph]
+    model.theta_init = {"logmass": np.zeros(1), "logsfr_ratios": np.zeros(n_time - 2)}
+    model.param_names = list(model.theta_init)
+    model.priors = {"logmass": TopHat(low=8.0, high=12.0), "logsfr_ratios": TopHat(low=-2.0, high=2.0)}
+    model.apply_transforms = lambda th: {**th, "sfh": sfh_of(th["logsfr_ratios"])}
+    model._zred_fixed = None
+    T = np.tile(np.linspace(0.0, 12.0, n_time), (N, 1))
+    theta = {"logmass": rng.normal(10.5, 0.05, N), "logsfr_ratios": rng.normal(0, 0.3, (N, n_time - 2))}
+    per_bin = np.asarray(sfh_of(jnp.asarray(theta["logsfr_ratios"]))) * 10 ** theta["logmass"][:, None]
+    out = {"theta": theta, "log_likelihood": rng.normal(size=N),
+           "extras": {"sfh": {"lookback_gyr": T, "sfr": per_bin, "sfr_per_bin": per_bin}},
+           "prediction": {"wave_rest": wave, "spectra_model": spec, "photometry": {"phot": phot},
+                          "lines": {}, "spectra": {}},
+           "bestfit": {"theta": {k: v[0] for k, v in theta.items()}, "extras": {"sfh": {"sfr": per_bin[0]}},
+                       "prediction": {"photometry": {"phot": phot[0]}, "lines": {}, "spectra": {}}},
+           "meta": {"zred_fixed": 0.0, "sampler": "x", "log_evidence": 0.0}}
+    fig = P.summary_figure(out, model, prior_draws=400, savepath=tmp_path / "s.pdf")
+    ax_sed, ax_sfh = fig.axes[0], fig.axes[2]
+    assert ax_sed.get_position().width > 0.8                     # the whole top row
+    assert ax_sfh.get_xscale() == "linear" and ax_sfh.get_xlim() == (0.0, 12.0)
+    assert ax_sfh.get_ylim()[0] > 8.0                            # no step down to log SFR = 0
+    labels = ax_sfh.get_legend_handles_labels()[1]
+    assert "prior 16$-$84% (at the median mass)" in labels
+    # the prior band, recomputed independently from the same prior draws
+    band = [p for p in ax_sfh.patches if p.get_label().startswith("prior")][0]
+    hi, edges, lo = band.get_data()
+    draws = P._prior_draws(model, 400)
+    m_med = np.median(theta["logmass"])
+    want = np.log10(np.asarray(sfh_of(jnp.asarray(draws["logsfr_ratios"])))) + m_med
+    np.testing.assert_allclose(lo, np.quantile(want, 0.16, axis=0), rtol=1e-10)
+    np.testing.assert_allclose(hi, np.quantile(want, 0.84, axis=0), rtol=1e-10)
+    np.testing.assert_allclose(edges, np.linspace(0.0, 12.0, n_time))
+    plt.close("all")

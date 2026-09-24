@@ -178,9 +178,12 @@ pp.figures("post_figs/", title="ID 1009077")      # summary.pdf, corner.pdf, dia
 `ceridwen.plotting` makes three per-galaxy figures from the output (plain
 matplotlib; `plotting.COLORS` holds the blue default palette and is the only
 styling): a **summary** page (observed-frame SED with the 16–84 % model band,
-data, posterior photometry and χ residuals; emission-line residuals with S/N;
-the SFH with prior and posterior bands and the best fit; 1-D marginals with
-median, 16–84 % and best fit; header with z, log M, log SFR10, χ²/ν of the best
+data, posterior photometry and χ residuals, across the full width when no lines
+were fitted; emission-line residuals with S/N; the SFH as per-bin SFR against
+lookback time, with the posterior 16–84 % and median, the prior 16–84 % at the
+median mass and the injected SFH when `truths` gives it, on a linear time axis
+for a uniform node grid and a log axis otherwise; 1-D marginals with
+median, 16–84 %, best fit and prior 16–84 %; header with z, log M, log SFR10, χ²/ν of the best
 fit and ln Z), a **corner** plot of all fitted parameters (median dashed,
 maximum-likelihood sample in red), and a **diagnostics** page (nested sampling:
 dead points in deletion order coloured by posterior weight, the log-likelihood

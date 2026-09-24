@@ -937,3 +937,32 @@ longer mutates `sampler_kwargs` (B2-004), `CSPBasis` no longer mutates `init_*_p
 weighted quantiles (B3-001); `fetch_grid` names a pre-re-deposit cache (B3-007);
 `ceridwen.check` verifies the FSPS data files (B3-002). Docs, README, tutorial, GOTCHAS,
 AGENTS and examples corrected per the B3/Q1/P findings (see `git log main..night/fixes`).
+
+## Unreleased
+
+### Tests, misuse report and newcomer output (day tab F6; Q2 findings)
+
+- **Tests find fetched grids** (Q2-006). `tests/_gridfixture.py` looks, after
+  `$CERIDWEN_TEST_SSP`, `tests/fixtures/` and `ceridwen/data/test_data/`, in the `fetch_grid`
+  cache (`$CERIDWEN_GRID_DIR` or `~/.ceridwen/grids`) for the published grids
+  (`mist_bpass_v2`, `mist_miles_chab`, `amist_c3k_hr_krou_afe`), checksum-verified by the
+  code `fetch_grid` uses (`grid_fetch.cached_grid`, new; never downloads). A cached file
+  that fails its checksum is not used and the skip says so. `fetch_grid('mist_bpass_v2')`
+  once is now enough for the grid-dependent tests; the MILES and alpha tests of
+  `test_logzsol_convention.py`, the second-grid test of `test_result_metallicity.py` and the
+  regression categories `logzsol_mist` / `logzsol_afe` run from the cache too.
+- **`misuse_report.py`** run as a script without a grid exits 1 with one line naming
+  `fetch_grid('mist_bpass_v2')` (or the checksum failure) instead of a pytest `Skipped`
+  traceback (Q2-008).
+- **A clone folder named `ceridwen` no longer shadows the package** (Q2-009). Started from
+  the folder that contains the clone, Python imported the clone as an empty namespace
+  package. The repository's top-level `__init__.py` (not in the wheel) loads the installed
+  package in its place, or raises one `ImportError` saying what happened.
+- `Spectrum.display()` prints 10 pixel rows by default (was 80), says how many it skipped,
+  and names its mask column `used` like the other tables (Q2-010). `print(map_fit(...))`
+  shows the summary, not every start (Q2-015). `SSPDataAfe.from_fsps` without FSPS names the
+  alpha grid to fetch instead (Q2-013).
+- **Summary figure** (Q2-012): the SFH panel draws the prior 16-84 % (logmass at its
+  posterior median); a uniform SFH node grid gets a linear time axis from 0, so the youngest
+  bin is drawn whole; without `Lines` the SED spans the top row; the SFH y-axis no longer
+  stretches to log SFR = 0.

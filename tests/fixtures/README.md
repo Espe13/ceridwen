@@ -8,19 +8,20 @@ pointer files and the tests that need them skip cleanly rather than erroring.
   (`tests/test_losvd_no_lyman_spike.py`).
 
 The suite's **main** test grid is no longer committed here: the former LFS
-fixture `ssp_data_test.h5` was retired (2026-08-17). Tests resolve the local
-developer grid `ceridwen/data/test_data/ssp_data_bpass.h5` instead (untracked;
-see `tests/_gridfixture.py`). On a machine without it, either build one
-(`python scripts/make_test_fixture_grid.py`, needs a BPASS python-fsps), or
-download the BPASS release grid from Zenodo
-([doi:10.5281/zenodo.21221634](https://doi.org/10.5281/zenodo.21221634)) and
-place it at that path (convert with `scripts/convert_grids_schema2.py` if it
-predates schema 2.0), or point the suite anywhere:
+fixture `ssp_data_test.h5` was retired (2026-08-17). It is the published BPASS
+grid. Fetch it once and the tests find it in the `fetch_grid` cache
+(`$CERIDWEN_GRID_DIR` or `~/.ceridwen/grids`; checksum-verified, never downloaded
+by the tests; see `tests/_gridfixture.py`):
 
 ```bash
-export CERIDWEN_TEST_SSP=/path/to/ssp_data.h5
+python -c "from ceridwen.ssps import fetch_grid; fetch_grid('mist_bpass_v2')"
 pytest
 ```
+
+`fetch_grid('mist_miles_chab')` and `fetch_grid('amist_c3k_hr_krou_afe')` enable the
+tests on those grids the same way. Before the cache, the tests look at
+`$CERIDWEN_TEST_SSP` (any grid file; CI sets it), this directory and
+`ceridwen/data/test_data/` (untracked developer grids).
 
 All grids loaded by the strict schema-2.x loaders must carry the
 `ssp_resolution` dataset — convert older files with
