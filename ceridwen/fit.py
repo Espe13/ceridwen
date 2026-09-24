@@ -414,8 +414,10 @@ def _check_noise_setup(model):
 
 
 #: above this many pixels fitSED warns that the GP likelihood is expensive (dense Cholesky,
-#: O(n^3) per call and O(n^2) memory per vmap lane); see docs/gp_likelihood.md for the timings
-GP_WARN_NPIX = 2000
+#: O(n^3) per call and O(n^2) memory per vmap lane).  CPU, value + gradient per vmap lane at
+#: W = 32 (docs/gp_likelihood.md): 26 ms at 1000 pixels, 182 ms at 2000, i.e. ~2 h vs ~13 h
+#: of GP alone for the ~2.5e5 gradient calls of a NUTS run
+GP_WARN_NPIX = 1000
 
 
 def _check_gp_setup(model):
@@ -561,7 +563,8 @@ def _likelihood_for(obs, param_names=(), model=None):
             warnings.warn(
                 f"Spectrum {obs.name!r}: the GP likelihood factorises a dense "
                 f"{n_pix} x {n_pix} matrix at every likelihood call (O(n^3) time, O(n^2) "
-                f"memory per vmap lane); above {GP_WARN_NPIX} pixels this dominates the fit.  "
+                f"memory per vmap lane); on a laptop CPU the value and gradient already cost "
+                f"~26 ms per lane at 1000 pixels and ~180 ms at 2000.  "
                 "See docs/gp_likelihood.md for the timings; consider binning or fitting "
                 "a wavelength window", stacklevel=2)
         return GPGaussianLikelihood(noise_model=nm, sqdist=gp_sqdist(obs.wavelength),

@@ -101,6 +101,21 @@ def _outlier_model(names, priors, n_spec=1):
                            theta_init={n: jnp.array([0.1]) for n in names})
 
 
+def _gp_setup(sampled, n_spec=1, transforms=None, **spec_kw):
+    """fit._likelihood_for on the first of ``n_spec`` spectra with the GP names ``sampled``."""
+    from ceridwen.fit import _likelihood_for
+    specs = [Spectrum(wavelength=jnp.linspace(5000, 5600, 40), flux=jnp.ones(40),
+                      uncertainty=jnp.ones(40), name=f"s{i}", **(spec_kw if i == 0 else {}))
+             for i in range(n_spec)]
+    m = SimpleNamespace(observations=specs, param_names=list(sampled),
+                        transforms=dict(transforms or {}), priors={},
+                        theta_init={n: jnp.array([0.1]) for n in sampled})
+    return _likelihood_for(specs[0], m.param_names, model=m)
+
+
+_GP = ["log_gp_amp_spec", "log_gp_length_spec"]
+
+
 def _short_csp(**over):
     """A CSP whose oldest node fits inside the Universe at zred = 0.5 (8.59 Gyr)."""
     lb = jnp.linspace(0.0, 8.0, 10)
@@ -297,6 +312,21 @@ def run_scenarios():
         ("unbounded prior on f_outlier_spec", {"ERROR"},
          lambda: _check_outlier_setup(_outlier_model(["f_outlier_spec"],
                                                      {"f_outlier_spec": Normal(mean=0.1, sigma=0.1)}))),
+        ("GP: plain log_gp_amp_spec with two spectra", {"ERROR"},
+         lambda: _gp_setup(_GP, n_spec=2)),
+        ("GP: log_gp_amp_spec without log_gp_length_spec", {"ERROR"},
+         lambda: _gp_setup(_GP[:1])),
+        ("GP: GaussianProcess object and sampled GP names", {"ERROR"},
+         lambda: _gp_setup(_GP, noise=__import__("ceridwen.observation", fromlist=["x"])
+                           .GaussianProcess(1.0, 10.0))),
+        ("GP: log_gp_amp_phot (only spectra take a GP)", {"ERROR"},
+         lambda: _gp_setup(_GP + ["log_gp_amp_phot"])),
+        ("GP + outlier mixture on one spectrum", {"ERROR"},
+         lambda: _gp_setup(_GP, transforms={"f_outlier_spec": lambda th: jnp.array([0.1])})),
+        ("GP + profiled calibration polynomial", {"ERROR"},
+         lambda: _gp_setup(_GP, polynomial_order=2)),
+        ("GP + marginalize_elines", {"ERROR"},
+         lambda: _gp_setup(_GP, marginalize_elines=True, instrument=Instrument.R_fwhm(2000.0))),
         ("IGM damping wing (x_HI > 0) without Ob0", {"ERROR"},
          lambda: __import__("ceridwen.igm", fromlist=["x"]).MadauDampingDLA(x_HI=0.5)),
         ("sampled x_HI on a DLA model without Ob0", {"ERROR"}, _sampled_x_hi_without_ob0),
