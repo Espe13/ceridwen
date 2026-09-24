@@ -9,10 +9,27 @@ from typing import Callable, Sequence
 
 
 def make_law_wrapper(f, param_names, defaults=None):
-    """Return ``wrapped(wave, fit_params)`` calling ``f(wave, *params)``; missing keys fall back to ``defaults``."""
+    """Return ``wrapped(wave, fit_params)`` calling ``f(wave, *params)``; missing keys fall back
+    to ``defaults`` with a warning (once per law), and without a default raise a KeyError that
+    names the law and the key."""
     defaults = defaults or {}
+    warned = []
 
     def wrapped(wave, fit_params):
+        missing = [n for n in param_names if n not in fit_params]
+        if missing:
+            nodef = [n for n in missing if n not in defaults]
+            if nodef:
+                raise KeyError(
+                    f"attenuation law {getattr(f, '__name__', f)!r}: theta has no {nodef} "
+                    "(csp.theta_init lists every key the forward model reads)")
+            if not warned:
+                import warnings
+                warnings.warn(
+                    f"attenuation law {getattr(f, '__name__', f)!r}: theta has no {missing}; "
+                    f"using the registry default(s) {[defaults[n] for n in missing]}",
+                    stacklevel=2)
+                warned.append(True)
         args = tuple(fit_params[name] if name in fit_params else defaults[name]
                      for name in param_names)
         return f(wave, *args)
