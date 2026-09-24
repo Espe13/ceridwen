@@ -314,7 +314,7 @@ prefer `predict`/`get_spectrum_components`.
 - `Lines(sigma_v=)` is a constructor argument.
 - `fitSED` honours `noise_floor`, `sky`, `calibration` and `upper_limit` and logs
   them; `logify_spectrum` is refused (`NotImplementedError`) instead of ignored. A
-  `GaussianProcess` noise model is part of the fit (section 18).
+  `GaussianProcess` noise model is part of the fit (section 20).
 - Sampled noise terms are switched on by NAME, **per observation** (v1.0.7):
   `log_err_scale` (sigma^2 x exp(2 log_err_scale), a common rescaling of the
   quoted errors), `log_jitter` (+ exp(log_jitter)^2, data units), `log_f_calib`
@@ -496,7 +496,7 @@ same_as_prospector = LogNormal(mode=m_prosp + sigma**2, sigma=sigma)
 
 ---
 
-## 15. Instrumental LSF scale (2026-09-22)
+## 17. Instrumental LSF scale (2026-09-22)
 
 `Instrument.<unit>(..., scale=...)` multiplies the instrumental dispersion by `s`, in the
 continuum kernel and in the line widths (`docs/conventions.md`).
@@ -534,7 +534,7 @@ deliberately **not** placed in the jitted hot path — doing so would either bre
 JIT or slow every evaluation. Use the non-jitted `csp.check_param_ranges(theta)`
 on your priors/bounds once before sampling instead.
 
-## 16. MAP optimisation (`map_fit`, `fitSED(optimize=True)`) (2026-09-22)
+## 18. MAP optimisation (`map_fit`, `fitSED(optimize=True)`) (2026-09-22)
 
 - **The MAP is the maximum of `ln L + ln prior` in the parameters you sample**, not of the
   density NUTS explores: NUTS adds the log-Jacobian of its logit map for bounded priors, whose
@@ -551,7 +551,7 @@ on your priors/bounds once before sampling instead.
   own key. Several starts reaching the same `ln p` is the sign of a well-defined optimum; a
   spread in `MAPResult.lnp_starts` means local optima.
 
-## 17. Result files: resuming nested sampling, rebuilding the model (2026-09-22)
+## 19. Result files: resuming nested sampling, rebuilding the model (2026-09-22)
 
 - **`resume_from=` needs a periodic checkpoint written by this version**
   (`ns_checkpoint_<pid>.pkl`, which now carries the live state, dead list, rng key and
@@ -570,7 +570,7 @@ on your priors/bounds once before sampling instead.
   outside `csp_config`, or observation options not stored (noise floor, upper limits,
   calibration, sky): `ceridwen.resultfile.NOT_RECORDED` lists them.
 
-## 18. Gaussian-process likelihood for a spectrum
+## 20. Gaussian-process likelihood for a spectrum
 
 `log_gp_amp_spec` (ln a) and `log_gp_length_spec` (ln l) switch on a squared-exponential GP on
 the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I`

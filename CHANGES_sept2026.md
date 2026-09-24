@@ -1,10 +1,12 @@
-# ceridwen — changes (2026‑09‑07 → 2026‑09‑09)
+# ceridwen — changes (2026‑09‑07 → 2026‑09‑24)
 
 Changes made to the **ceridwen** package during the MIST/MILES JADES refit work,
 with rationale and verification. Two themes: (1) **speed** — undo a forward
 regression and then make the forward faster; (2) **correctness** — fix an SED
-flux-unit mislabel and two JAX tracer-leak bugs. All changes preserve the public
-API and give bit-comparable science (identical/near-identical logZ).
+flux-unit mislabel and two JAX tracer-leak bugs. The changes of 2026‑09‑07 → 09‑09
+preserve the public API and give bit-comparable science (identical/near-identical logZ);
+later entries (e.g. the v1.0.5 `logzsol` metallicity keys, the v1.0.7 per-observation
+noise names) change the API and say so in their own entry.
 
 > Scope note: this documents the edits from *this* work. The repo working tree
 > also carries other uncommitted changes that predate this session; `git diff`
@@ -111,7 +113,8 @@ NumPy constant, never `jnp.asarray`.* Audited all of `csp.py`: only these two ar
 lazy‑in‑`predict`; every other cache (`_age_bin_mix`, `_losvd_idx`,
 `_losvd_kernel_fft`, the `self._*` grid arrays) is built in `__init__`/setup
 (`_init_age_bin_operator`, `_setup_losvd_kernel`) — concrete, outside any trace,
-and safe as jax arrays.
+and safe as jax arrays. *(Later superseded: the LOSVD helpers named here no longer
+exist; the broadening moved to `ceridwen/broadening.py`.)*
 
 **Impact / verification:** cold two‑trace `jit(vmap(predict))` test → no leak;
 `_neb_cube_rows` is an `ndarray`; vmap forward finite; line/predictive/misuse
@@ -123,7 +126,7 @@ tests pass. Identical numerical results (only the cache backend changed).
 
 ### 3.1 Removed vestigial `tuniv` argument  (`csp/csp.py`)
 **What:** dropped the `tuniv` constructor parameter (and `self.tuniv`); `describe()`
-now reports `self.age_at(0.0)`. The forward already used `age_gyr(z, self.cosmo)`.
+(now `__repr__`) reports `self.age_at(0.0)`. The forward already used `age_gyr(z, self.cosmo)`.
 **Why:** unused after the revert; keeps the constructor clean. `CSPBasis` still
 accepts `cosmo`, `track_zred_age`, `fesc_geometry`, etc. — API otherwise unchanged.
 
@@ -482,7 +485,8 @@ own `tau_damping` / `voigt_profile`); new `igm_dla` configuration in
 
 **Not done.** `fit.py` does not record the IGM model or its fixed arguments in
 `ceridwen_result.h5` (it records no IGM information at all, for any model); sampled keys are
-stored like any other parameter.
+stored like any other parameter. *(Later superseded: `/model@csp_config` records the IGM
+model and `igm_factor`.)*
 
 ## 2026-09-22 — Gordon+03 SMC bar and Reddy+15 attenuation laws (`dust/attenuation_laws.py`)
 
@@ -560,7 +564,7 @@ Analytic `jnp` logpdf (`-inf` outside), CDF, ppf and sampling; `tfp_dist()` is `
 Uniform in `ln x`. Raises unless `0 < mini < maxi < inf`. `fit._detect_bounds` gives it
 `(mini, maxi)`, so NUTS samples it through the logit map; `SedModel.display()` labels it.
 `scripts/check_api_usage.py` now checks prior keyword arguments against `prior_params`.
-`GOTCHAS.md` section 14 documents it and the `LogNormal` `mode` difference from Prospector
+`GOTCHAS.md` section 16 documents it and the `LogNormal` `mode` difference from Prospector
 (`mode_ceridwen = mode_prospector + sigma**2`). No forward-model change.
 
 **Verification.** `tests/test_loguniform_prior.py` (values vs a Prospector golden table and
