@@ -79,6 +79,18 @@ all outlier fractions default to 0, switch the mixture on explicitly
 
 ::: ceridwen.likelihood.poly_calibration.PolynomialCalibration
 
+The GP likelihood of a spectrum is off by default; `fitSED` builds it from
+`log_gp_amp_spec` / `log_gp_length_spec` or `Spectrum(noise=GaussianProcess(...))`
+([GP likelihood](gp_likelihood.md)).
+
+::: ceridwen.likelihood.GPGaussianLikelihood
+
+::: ceridwen.likelihood.lnlike_gp_gaussian
+
+::: ceridwen.likelihood.gp_conditional_mean
+
+::: ceridwen.observation.GaussianProcess
+
 ::: ceridwen.model.obs_params.check_names
 
 ## Fitting

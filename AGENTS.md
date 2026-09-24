@@ -165,7 +165,7 @@ projection → likelihood → sampler.
   `PhotometricBroadener` and static line basis), `spectrum.py` (`Instrument`
   + `SpectralProjector` built by `setup_for_model`), `lines.py` (line fluxes
   read from the nebular grid by `CSPBasis`; Gaussian aperture matrix `W` for
-  `Lines.predict` alone), `gp.py` (GP residuals). `observation.py` is a re-export shim so
+  `Lines.predict` alone), `gp.py` (`GaussianProcess`, host-side GP likelihood for `Spectrum.log_likelihood`; `fitSED` uses its values as fixed hyperparameters of `GPGaussianLikelihood`). `observation.py` is a re-export shim so
   `from ceridwen.observation.observation import Photometry, Spectrum, Lines`
   still works.
 - `model/` — `model.py`: `SedModel` (`predict`, `apply_transforms`, `ln_prior`,
@@ -180,7 +180,11 @@ projection → likelihood → sampler.
   Prospector-style outlier mixture `f_outlier` / `nsigma_outlier` per observation
   (`f_outlier_spec/_phot/_lines[_<obs.name>]` in `fitSED`, all default 0 = off: switch on
   explicitly), applied by the likelihood kernels `lnlike_diag_outlier[_with_upper_limits]`;
-  `docs/outlier_model.md`).
+  `docs/outlier_model.md`). `gp_likelihood.py`: `GPGaussianLikelihood` /
+  `lnlike_gp_gaussian`, the squared-exponential GP on a spectrum's whitened residuals
+  (dense Cholesky, static mask as identity rows), built by `fit._likelihood_for` when
+  `log_gp_amp_spec[_<obs.name>]` and `log_gp_length_spec[_<obs.name>]` are set or the
+  Spectrum has `noise=GaussianProcess(...)` (`docs/gp_likelihood.md`).
 - `sampler/` — `priors.py` (TFP-JAX priors with logpdf/sample/unit_transform),
   `nested.py` (BlackJAX nested sampling; periodic checkpoints carry the sampler state, and
   `resume_from=` continues a killed run bit for bit), `nuts.py` (NUTS, VI-preconditioned),

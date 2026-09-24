@@ -302,8 +302,8 @@ prefer `predict`/`get_spectrum_components`.
 - `Photometry.predict` before `setup_for_model` raises (no rest-frame fallback).
 - `Lines(sigma_v=)` is a constructor argument.
 - `fitSED` honours `noise_floor`, `sky`, `calibration` and `upper_limit` and logs
-  them; `logify_spectrum` and a `GaussianProcess` noise model are refused
-  (`NotImplementedError`) instead of ignored.
+  them; `logify_spectrum` is refused (`NotImplementedError`) instead of ignored. A
+  `GaussianProcess` noise model is part of the fit (section 18).
 - Sampled noise terms are switched on by NAME, **per observation** (v1.0.7):
   `log_err_scale` (sigma^2 x exp(2 log_err_scale), a common rescaling of the
   quoted errors), `log_jitter` (+ exp(log_jitter)^2, data units), `log_f_calib`
@@ -558,3 +558,25 @@ on your priors/bounds once before sampling instead.
   instrument). It cannot see a transform whose body changed under the same name, CSP options
   outside `csp_config`, or observation options not stored (noise floor, upper limits,
   calibration, sky): `ceridwen.resultfile.NOT_RECORDED` lists them.
+
+## 18. Gaussian-process likelihood for a spectrum
+
+`log_gp_amp_spec` (ln a) and `log_gp_length_spec` (ln l) switch on a squared-exponential GP on
+the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I`
+(`docs/gp_likelihood.md`). Off by default.
+
+- **Natural logs, and units.** a is in units of sigma_eff (dimensionless). l is in
+  **observed-frame** Angstrom, not rest-frame: the same galaxy at higher z needs a larger l
+  for the same rest-frame correlation.
+- **Both or neither.** Sample (or fix with constant transforms) both names; one alone
+  raises. `Spectrum(noise=GaussianProcess(a, l))` fixes them instead. It takes a and l
+  themselves, not logs. Giving the object and the names for one spectrum raises.
+- **One GP per spectrum.** With several spectra use `log_gp_amp_spec_<obs.name>`; the plain
+  name is then ambiguous and raises. Only spectra take a GP (`log_gp_amp_phot` raises).
+- **Refused at setup:** the GP with the outlier mixture, upper limits, `marginalize_elines`,
+  `logify_spectrum` or `polynomial_order > 0` on the same spectrum. The sampled
+  `spectrum_scaling` / `spectrum_calib` and every diagonal noise term combine with it.
+- **Cost is O(n^3) per call** (dense Cholesky) and 8 n^2 bytes per vmap lane; `fitSED` warns
+  above `fit.GP_WARN_NPIX` pixels. Timings are in the docs.
+- **chi^2 is diagonal.** `Spectrum.chi_sq` and the summary figure's chi^2/nu do not include
+  the GP; `Spectrum.log_likelihood` and the sampled log-likelihoods do.

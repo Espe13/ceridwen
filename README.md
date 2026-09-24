@@ -40,6 +40,7 @@ emission does need the FSPS data files** — a `git clone`, no compiler; see
 - [x] Nebular continuum + emission lines (CLOUDY grids)
 - [x] Analytic marginalisation over emission-line fluxes, jointly across spectrum, photometry and line fluxes (`Spectrum(marginalize_elines=True)`, [docs](https://github.com/Espe13/ceridwen/blob/main/docs/eline_marginalisation.md))
 - [x] Observation input (broadband photometry, emission-line fluxes, spectra)
+- [x] Correlated spectral residuals: a squared-exponential Gaussian-process likelihood per spectrum, its amplitude and length scale fixed or sampled (`log_gp_amp_spec`, `log_gp_length_spec`; [docs](https://github.com/Espe13/ceridwen/blob/main/docs/gp_likelihood.md))
 - [x] Redshift-aware forward model with cosmological flux normalisation
 - [x] IGM attenuation (Madau 1995), optionally with an IGM damping wing (`x_HI`) and a damped Ly-α absorber (`logN_HI`, `z_dla`) as fixed or sampled parameters (`MadauDampingDLA`); extensible via `IGMModel` ABC
 - [x] NUTS / nested sampling / variational-inference preconditioned NUTS
@@ -723,7 +724,7 @@ table yet, so fit it with `fitSED(..., mfrac=False)` and quote the formed mass.
 | `ceridwen.observation`  | `Photometry`, `Spectrum`, `Lines` data containers + projection matrices |
 | `ceridwen.broadening`   | `Kinematics` (galaxy sigma_gal / sigma_gas), `Instrument` (LSF), `DEFAULT_KINEMATICS`: the one place spectral widths are set |
 | `ceridwen.priors`       | `Uniform`, `Normal`, `ClippedNormal`, `LogNormal`, `LogUniform`, `StudentT` |
-| `ceridwen.likelihood`   | `DiagonalGaussianLikelihood`, `MultiObservationLikelihood` (honours `sky`, `calibration`, `upper_limit`, `noise_floor`; optional per-observation outlier mixture `f_outlier_spec` / `f_outlier_phot` / `f_outlier_lines`, default 0 = off, see `docs/outlier_model.md`) |
+| `ceridwen.likelihood`   | `DiagonalGaussianLikelihood`, `MultiObservationLikelihood` (honours `sky`, `calibration`, `upper_limit`, `noise_floor`; optional per-observation outlier mixture `f_outlier_spec` / `f_outlier_phot` / `f_outlier_lines`, default 0 = off, see `docs/outlier_model.md`); `GPGaussianLikelihood` (squared-exponential GP on a spectrum's whitened residuals, `log_gp_amp_spec` / `log_gp_length_spec`, off by default, see `docs/gp_likelihood.md`) |
 | `ceridwen.model`        | `SedModel` parameter + prediction layer |
 | `ceridwen.sampler`      | priors, nested sampling, NUTS, VI transport maps |
 | `ceridwen.cosmology`    | `Cosmology` (Planck18/Planck15/WMAP9 presets, `flat`, `from_astropy`), JAX-native distances and ages |
