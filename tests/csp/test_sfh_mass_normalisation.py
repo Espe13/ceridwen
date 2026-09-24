@@ -24,7 +24,7 @@ import jax.numpy as jnp
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from _gridfixture import TEST_DATA_DIR, find_test_grid                    # noqa: E402
+from _gridfixture import TEST_DATA_DIR, find_named_grid, find_test_grid                    # noqa: E402
 
 from ceridwen import SSPData, CSPBasis, SedModel, Cosmology               # noqa: E402
 from ceridwen.model.transforms import logsfr_ratios_to_sfh               # noqa: E402
@@ -279,8 +279,9 @@ GRIDS_016 = [("ssp_data_bpass.h5", 13.0), ("ssp_data_bpass.h5", 12.0),
 
 @pytest.mark.parametrize("grid,T_max", GRIDS_016)
 def test_linear_weights_match_brute_force_quadrature(grid, T_max):
-    path = TEST_DATA_DIR / grid
-    if not path.exists():
+    # the BPASS cases run on the test grid wherever it is found ($CERIDWEN_TEST_SSP on CI)
+    path = find_test_grid() if grid == "ssp_data_bpass.h5" else find_named_grid(grid)
+    if path is None:
         pytest.skip(f"{grid} not present")
     T = np.array([0.0, 0.01, 0.1, 0.5, 1.0, 3.0, 8.0, T_max])
     sfh = np.array([3.0, 2.5, 2.0, 1.5, 1.2, 1.0, 1.0, 1.0])
