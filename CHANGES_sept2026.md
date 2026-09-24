@@ -832,3 +832,28 @@ data only, and the SFH axes are log-Gyr / log10 SFR. CI mirror in a clean clone
 (`-m "not fsps and not gpu"`, no `$SPS_HOME`, the new BPASS grid): 441 passed, 0 failed;
 the changed tests on the final tree 40 passed; `check_api_usage` 0; misuse 0 SILENT. The
 quickstart rerun: photometry on the spectrum, chi^2/nu = 0.36.
+
+## 2026-09-23 — GP likelihood for correlated spectral residuals (`likelihood/gp_likelihood.py`, `fit.py`)
+
+**What.** The squared-exponential Gaussian process of `ceridwen.observation.GaussianProcess`
+is now part of the compiled likelihood every sampler uses (nested sampling, NUTS, VI,
+`map_fit`), no longer only `Spectrum.log_likelihood` after a fit. The residuals are whitened
+by the diagonal noise model (every noise term enters σ_eff), then
+`ln L = −½ rᵀK⁻¹r − ½ ln|K| − Σ ln √(2π σ_eff²)` with
+`K = I + a² exp(−Δλ²/2ℓ²) + 1e-6 I` over the unmasked pixels, λ the observed-frame pixel
+wavelength. New per-spectrum parameters `log_gp_amp_spec[_<obs.name>]` (ln a, a in units of
+σ_eff) and `log_gp_length_spec[_<obs.name>]` (ln ℓ, observed-frame Å), sampled or fixed by
+constant transforms; `Spectrum(noise=GaussianProcess(a, ℓ))` now fixes them in `fitSED`
+(before, `fitSED` refused it). Off by default.
+
+**Refused at setup** (current limitations): the GP together with the outlier mixture, upper
+limits, `marginalize_elines`, `logify_spectrum` or `polynomial_order > 0` on the same
+spectrum; a `GaussianProcess` object together with the names; one of the two names alone; a
+GP on photometry or lines. `fitSED` warns above 1000 pixels (`fit.GP_WARN_NPIX`).
+
+**Records.** The result file's `likelihood_json` has a `gp` block (kernel, `log_amp`,
+`log_len`, `eps`, `n_pix`, sampled names). `Spectrum.chi_sq` stays the diagonal χ²; the summary
+figure's χ²/ν says "diagonal, no GP" for a fit with a GP. `docs/gp_likelihood.md`,
+`examples/recipes/gp_likelihood.py`.
+
+**Verification.** `tests/likelihood/test_gp_likelihood.py` (39 passed, also without `$SPS_HOME`): the compiled value equals the independent numpy `GaussianProcess.log_likelihood` plus the normalisation to rtol 1e-10; ln a = −30 equals the diagonal Gaussian plus the analytic ε term; `check_grads`; `jit`/`vmap` = loop; every refusal; a mock with GP noise whose profile peaks at the truth and a short nested fit with a result-file round trip. New T2 category `gp_likelihood` (values = numpy to ≤ 2.2e-16 relative, gradients = finite differences to ~1e-9). GP off: T4 against 0590b54 byte-identical except the two known run-to-run items (random ln Z error estimate, a 1-ulp postprocess value); all 24 StableHLO digests of the compiled log-posterior equal. Full suite: 580 passed, 1 failed (the pre-existing `test_picket_frac_obrun_zero_equals_full_covering`, fails identically on 0590b54). `check_api_usage` 0 findings; misuse report 0 SILENT (7 new GP rows).
