@@ -95,8 +95,8 @@ class CSPBasis_afe(CSPBasis):
                 "lookback_time is in Gyr, monotonically increasing, index 0 = "
                 "today, >= 2 nodes."
             )
-        if init_dust_params is None:
-            init_dust_params = {'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']}
+        init_dust_params = ({'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']}
+                            if init_dust_params is None else dict(init_dust_params))
 
         _flux_in = jnp.asarray(SSPData.ssp_flux)
         _afe_in  = getattr(SSPData, "ssp_afe", None)

@@ -250,10 +250,11 @@ class CSPBasis:
                 "lookback_time is in Gyr, monotonically increasing, index 0 = "
                 "today, >= 2 nodes."
             )
-        if init_neb_params is None:
-            init_neb_params = {"cloudy_dust": True}
-        if init_dust_params is None:
-            init_dust_params = {'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']}
+        # copies: initialize_neb pops / adds keys, and the caller may reuse the dict (B1-015)
+        init_neb_params = ({"cloudy_dust": True} if init_neb_params is None
+                           else dict(init_neb_params))
+        init_dust_params = ({'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']}
+                            if init_dust_params is None else dict(init_dust_params))
 
         self.flux      = jnp.array(SSPData.ssp_flux, dtype=jnp.float32)  # (n_z, n_age, n_wave)
         self.wave      = jnp.array(SSPData.ssp_wave)       # (n_wave,)
