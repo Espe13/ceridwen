@@ -55,15 +55,20 @@ safe".
 | Marginalised line fluxes (`marginalize_elines=True`: `/elines` in the result, `extras["elines"]`) | erg s⁻¹ cm⁻², observed frame, IGM-transmitted at the line, **not** divided by the spectrum calibration; lines named as in `$SPS_HOME/data/emlines_info.dat`, vacuum rest-frame Å |
 | Stellar mass | `logmass` = log10(M⋆/M☉) |
 
-The spectrum of `theta['sfh']` is scaled by `10**logmass`. It is unit mass, and `logmass`
-the formed mass, only when `theta['sfh']` integrates to 1 M☉, as
-`logsfr_ratios_to_sfh(..., sfh_times_yr=t)` arranges (below); a directly sampled `sfh`
-carries its own normalisation.
+The spectrum of `theta['sfh']` is scaled by `10**logmass`. The SSP weights sum to the
+integral of `theta['sfh']` over the construction lookback grid (`csp.sfh_times`, or a
+predict-time `theta['lookback_time']`), at every redshift: with `track_zred_age=True` the
+grid is stretched to `age(zred)` and the SFR scaled by `T_grid / age(zred)`, so the
+stretched SFH forms the same mass. It is unit mass, and `logmass` the formed mass, whenever
+`theta['sfh']` integrates to 1 M☉ on the construction grid, as
+`logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)` arranges (below), with a fixed or
+a free redshift; a directly sampled `sfh` carries its own normalisation.
 
 ## SFH mass normalisation
 
 The `logsfr_ratios_to_sfh` transform normalises the SFH so the trapezoidal
-integral of SFR over the lookback grid equals 1 M☉, and `logmass` sets the
+integral of SFR over the lookback grid it is given (`sfh_times_yr=csp.sfh_times`, the
+construction grid, also for a free redshift) equals 1 M☉, and `logmass` sets the
 amplitude. Use the provided transform rather than hand-rolling it. Getting this
 wrong biases `logmass` by many dex.
 

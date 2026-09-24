@@ -676,9 +676,9 @@ class SedModel:
                 "-" * 40,
                 "  logmass ∈ free params → predicted flux × 10^logmass",
                 "  (SFH transform `logsfr_ratios_to_sfh` enforces "
-                "∫SFR dt = 1 M⊙;",
-                "   logmass therefore equals log10 of the total formed "
-                "stellar mass.)",
+                "∫SFR dt = 1 M⊙ on the construction grid;",
+                "   the CSP keeps that mass on a track_zred_age grid, so logmass",
+                "   equals log10 of the total formed stellar mass at any redshift.)",
             ]
 
         lines += ["", "Observations", "-" * 40]

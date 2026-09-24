@@ -33,7 +33,7 @@ unless you reassigned `model.observations` without calling
 |---|---|---|
 | `out['theta'][name]` | `(N,)` or `(N, k)` | equal-weight posterior draws of every sampled parameter |
 | `out['log_likelihood']`, `out['draw_index']` | `(N,)` | log-likelihood of each draw and its index in the raw samples |
-| `out['extras']['sfh']['lookback_gyr']` | `(N, n_time)` | lookback grid of each draw (follows a sampled `zred` when `track_zred_age`) |
+| `out['extras']['sfh']['lookback_gyr']` | `(N, n_time)` | lookback grid of each draw (follows a sampled `zred` when `track_zred_age`; the SFR is scaled with it so the formed mass is kept) |
 | `out['extras']['sfh']['sfr']` | `(N, n_time)` or `(N, n_time-1)` | SFR in M⊙/yr in the CSP's convention (per node, or per bin for `sfh_per_bin`) |
 | `out['extras']['sfh']['sfr_per_bin']` | `(N, n_time-1)` | the per-bin SFR the step kernel integrates |
 | `out['extras']['sfh']['mass_formed']` | `(N,)` | ∫ SFR dt, M⊙ |
@@ -79,9 +79,12 @@ sample with the highest log-likelihood, not a draw.
 **Star formation.** After the transforms `theta['sfh']` is the SFH shape in
 the CSP's convention. The physical SFR is that shape × 10^logmass when
 `logmass` is a parameter: the CSP scales the spectrum, not the SFH, so
-`logmass` is the formed mass when the shape integrates to one solar mass, as
-under `logsfr_ratios_to_sfh(..., sfh_times_yr=t)` (a directly sampled `sfh`
-carries its own normalisation). `sfrW` is the mean SFR over the last W Myr of
+`logmass` is the formed mass when the shape integrates to one solar mass on the
+construction grid, as under `logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)` (a
+directly sampled `sfh` carries its own normalisation). With `track_zred_age=True` the
+lookback grid of each draw ends at `age(zred)` and the SFR is the shape × 10^logmass ×
+`T_grid / age(zred)`, the SFR the forward model forms, so `mass_formed` is still
+10^logmass. `sfrW` is the mean SFR over the last W Myr of
 the same piecewise function the weight kernel integrates: constant per bin
 for `sfh_interp="step"`, linear between nodes for `"linear"`; beyond the
 oldest node the SFR is zero. `ssfrW` divides by the formed mass, with no

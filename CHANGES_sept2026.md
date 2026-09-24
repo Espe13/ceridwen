@@ -1021,3 +1021,40 @@ to earlier versions.
   autocorrelation of the concatenated chains, which counted offsets between chains as
   correlation (AR(1) test: 46.7 before, analytic 26 667). Samples are byte-identical.
   Dispersed per-chain warmups were not added (a design decision: F4-001).
+
+### `logmass` is the formed mass on the zred-tracked SFH grid (B1-001; P1-001/P1-002)
+With `CSPBasis(track_zred_age=True)` (a sampled `zred`, or a fixed non-zero one) the lookback grid
+is stretched to `age(zred)`, and `_ssp_weights` integrated `theta['sfh']` on the stretched grid,
+while `logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)` normalises it on the construction
+grid: the forward model formed `age(zred)/T_grid` x `10**logmass` (-0.37 dex at z = 1, -1.17 dex
+at z = 6 for a 0-13.8 Gyr grid). The stretch now keeps the formed mass: on the tracked grid the
+per-bin masses are scaled by M(construction grid)/M(tracked grid), i.e. the SFR by
+`T_grid / age(zred)` (`CSPBasis._sfh_grids`, used by `_ssp_weights` and `PostProcess`). So the SSP
+weights sum to the integral of `theta['sfh']` over the construction grid (or a predict-time
+`theta['lookback_time']`) on every path, and with the shipped transform `10**logmass` is the
+formed mass and `PostProcess` `mass_formed = 10**logmass` (to 1e-10) in both SFH schemes, per node
+and per bin, for `CSPBasis` and `CSPBasis_afe`, at every redshift. `PostProcess` reports the SFR
+the forward model forms (the shape x `10**logmass` x `T_grid / age(zred)`). `CSPBasis.display_sfh` and the
+summary figure's truth SFH (`plotting`) draw the same SFR on the tracked grid. The general case of
+P1-001/P1-002 is settled the same way: the weights are the formed mass of `theta['sfh']` on the
+construction grid, not renormalised to 1 M_sun inside the model, so a directly sampled `sfh`
+keeps its own normalisation (renormalising would change every non-unit-mass `theta['sfh']`,
+including all golden baselines, by its integral). Moves: every `track_zred_age` output (spectra,
+lines, photometry scale by `T_grid / age(zred)`; W shape unchanged); fixed-grid paths
+bit-identical. `tests/csp/test_sfh_mass_normalisation.py`; `SedModel.summary`, AGENTS item 3,
+docs/conventions.md, docs/postprocessing.md, the tutorial's free-z paragraph and GOTCHAS 4/9
+describe it.
+
+### `"linear"` SFH scheme: the second-oldest SSP node's share of the top interval (B1-016)
+`_ssp_weights` clipped `jmax` to `n_ssp - 1` with the mask `j < jmax`; the mask of node k+1 gates
+node k's share of SSP interval (k, k+1), so a bin reaching past the second-oldest SSP node lost
+node n-2's share of the top interval and its mass went to the bin's other nodes. Clipped to
+`n_ssp`. Affects only `sfh_interp="linear"` grids older than the second-oldest node (BPASS
+10^10.1 yr = 12.6 Gyr; MIST grids end at 20 Gyr and are never affected). Measured on BPASS (SFH
+3, 2.5, ..., 1 on nodes 0-13 Gyr): the 10^10.1 yr node had 0.843 of its weight, its neighbours
+1.083; at 13.8 Gyr 0.698 and 1.200; constant-SFR `mfrac` at 13.8 Gyr, 10 nodes, -4.2e-4.
+Formed mass unchanged. The weights now equal a brute-force quadrature of SFR(t) x log-age tents
+per bin to <= 1.4e-9 of the total (BPASS to 12, 13, 13.8 Gyr; MIST to 13.7 Gyr); the only
+difference from a whole-grid quadrature is the youngest-node effect (GOTCHAS 14). The
+`test_stellar_mass` xfail passes. Moves the `"linear"` golden W arrays and the T2 categories
+built on the linear 0-13.8 Gyr CSP (numbers in the F1 day report).

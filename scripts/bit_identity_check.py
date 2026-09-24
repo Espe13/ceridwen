@@ -57,16 +57,19 @@ def _flat(prefix, obj, out):
         out[prefix] = np.asarray(obj)
 
 
-def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False, lsf=None):
+def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False, lsf=None,
+           interp="step", track=False):
     path = find_test_grid()
     if path is None:
         sys.exit("no test SSP grid found (tests/_gridfixture.py)")
     ssp = SSPData.load(str(path))
     cosmo = Cosmology.planck18()
-    kw = dict(lookback_time=jnp.linspace(0.0, float(cosmo.age(ZRED)), N_TIME),
-              zh_const=True, sfh_interp="step", add_dust=True, add_diffuse_dust=True,
+    kw = dict(lookback_time=jnp.linspace(0.0, float(cosmo.age(0.0 if track else ZRED)), N_TIME),
+              zh_const=True, sfh_interp=interp, add_dust=True, add_diffuse_dust=True,
               add_neb=add_neb, add_igm=add_igm, add_dust_emission=dust_emission,
               verbose=False, cosmo=cosmo)
+    if track:                          # grid built to age(0), rescaled to age(ZRED) in the forward pass
+        kw["track_zred_age"] = True
     if gas_tied:
         kw["gas_tied"] = True          # v1.0.5 path: gas_logz := logzsol
     if igm_dla:                        # IGM damping wing + DLA with sampled theta keys
@@ -323,6 +326,10 @@ def collect(args):
                                         dust_emission=False, igm_dla=True)))
     except ImportError:
         print("  (package has no MadauDampingDLA: igm_dla configuration skipped)")
+    # the zred-tracked SFH grid (built to age(0), rescaled to age(ZRED) with its formed mass
+    # kept) under the "linear" scheme; last, for the same reason
+    configs.append(("tracked_linear", dict(add_neb=False, add_igm=True, sigma_losvd=250.0,
+                                           dust_emission=False, interp="linear", track=True)))
     for tag, cfg in configs:
         t0 = time.perf_counter()
         model = _build(**cfg)

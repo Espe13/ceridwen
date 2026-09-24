@@ -44,7 +44,9 @@ Conventions
   from ``log_likelihoods`` / ``log_likelihoods_birth``); uniform-weight results
   are used as they are.
 * ``logmass`` is the FORMED mass; the physical SFR is ``theta['sfh']`` times
-  ``10**logmass`` (the shape alone when there is no ``logmass``).  ``sfrW`` is the
+  ``10**logmass`` (the shape alone when there is no ``logmass``), and on a
+  ``track_zred_age`` grid also times ``T_grid / age(zred)``, the SFR the forward model
+  forms (``CSPBasis._sfh_grids``), so ``mass_formed`` is the same at every redshift.  ``sfrW`` is the
   mean SFR over the last W Myr of lookback time on the ``sfh_interp`` piecewise
   function ("step" per bin, "linear" between nodes); ``ssfrW = sfrW / mass_formed``
   with no return fraction.
@@ -469,16 +471,13 @@ class PostProcess:
         return out
 
     def _sfh_one(self, free_theta):
-        """(lookback_yr (n_time,), sfh shape) for one draw."""
+        """(lookback_yr (n_time,), the grid whose formed mass the SFH keeps, sfh shape) for one
+        draw (``CSPBasis._sfh_grids``)."""
         csp = self.csp
         t = self._model_theta(free_theta)
-        if "lookback_time" in t:
-            T = jnp.atleast_1d(jnp.asarray(t["lookback_time"], dtype=float)) * 1e9
-        elif csp.track_zred_age and "zred" in t:
-            T = csp._lookback_from_zred(t["zred"])
-        else:
-            T = csp.sfh_times
-        out = {"T_yr": T, "sfh": jnp.ravel(jnp.asarray(t["sfh"], dtype=float))}
+        T, T_ref = csp._sfh_grids(t)
+        out = {"T_yr": T, "T_ref_yr": T if T_ref is None else T_ref,
+               "sfh": jnp.ravel(jnp.asarray(t["sfh"], dtype=float))}
         if self.want["mfrac"] and self._mfrac_stored is None:
             out["mfrac"] = csp.surviving_mass_fraction(t)
         return out
@@ -616,6 +615,12 @@ class PostProcess:
         for i in range(n):
             bars[i], nodes[i] = _per_bin_and_nodes(sfh[i], n_time)
         bars *= mass_scale[:, None]; nodes *= mass_scale[:, None]
+        T_ref = np.asarray(raw["sfh"]["T_ref_yr"], dtype=float)
+        for i in range(n):
+            if not np.array_equal(T_ref[i], T_yr[i]):   # zred-tracked grid: the SFR the forward model forms
+                f = (_formed_mass(T_ref[i], bars[i], nodes[i], interp)
+                     / _formed_mass(T_yr[i], bars[i], nodes[i], interp))
+                bars[i] *= f; nodes[i] *= f
         mass_formed = np.array([_formed_mass(T_yr[i], bars[i], nodes[i], interp) for i in range(n)])
         sfr_native = (nodes if sfh.shape[1] == n_time else bars)
         blk = {"lookback_gyr": T_yr / 1e9, "sfr": sfr_native, "sfr_per_bin": bars,

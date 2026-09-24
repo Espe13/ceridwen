@@ -389,7 +389,12 @@ prints so that it is never a hidden number.
 To fit redshift instead of fixing it, add `"zred"` to `free_param_init` with a
 bounded prior (`Uniform` / `ClippedNormal`) and, for a non-parametric SFH,
 build the CSP with `track_zred_age=True` so the SFH age-bin grid tracks the
-sampled redshift. Every observation type follows the sampled value: the flux
+sampled redshift: the grid is stretched so its oldest node is `age(zred)`, and the SFR
+is scaled by `T_grid / age(zred)` so the SFH still forms the mass it forms on the
+construction grid. Keep the transform above,
+`logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)`: `logmass` is then the formed mass
+at every sampled redshift, and `PostProcess` reports each draw's SFR on its own
+`age(zred)` grid with `mass_formed = 10**logmass`. Every observation type follows the sampled value: the flux
 factor, the IGM and the line fluxes are evaluated at `theta["zred"]`;
 `Photometry` is projected through the filters per sample; a `Spectrum` gets
 a redshift-aware projector whose log-wavelength window covers the prior's
