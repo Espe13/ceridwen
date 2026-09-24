@@ -8,9 +8,11 @@ __all__ = ["nested_log_weights", "log_evidence_from_weights"]
 
 def nested_log_weights(log_likelihoods, log_likelihoods_birth) -> np.ndarray:
     """Log posterior weights, one per point, aligned with the inputs; -inf for
-    non-finite logL or logL <= logL_birth."""
+    non-finite logL or logL <= logL_birth.  A NaN birth (BlackJAX's mark for the
+    prior-drawn initial live points) is a birth at -inf, as anesthetic reads it."""
     logL = np.asarray(log_likelihoods, dtype=float).ravel()
     logLb = np.asarray(log_likelihoods_birth, dtype=float).ravel()
+    logLb = np.where(np.isnan(logLb), -np.inf, logLb)
     if logL.shape != logLb.shape:
         raise ValueError(f"log_likelihoods {logL.shape} and log_likelihoods_birth "
                          f"{logLb.shape} differ in length")

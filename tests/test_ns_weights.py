@@ -79,3 +79,14 @@ def test_invalid_points_get_minus_inf():
         nested_log_weights(lL, lB[:-1])
     with pytest.raises(ValueError, match="no point"):
         nested_log_weights([-np.inf, 1.0], [-np.inf, 1.0])
+
+
+def test_nan_birth_is_born_at_minus_inf():
+    """B2-016: BlackJAX gives the prior-drawn initial live points a NaN birth likelihood
+    (anesthetic reads it with logzero=nan as born at -inf); the weights must equal those
+    of -inf births, not drop those points."""
+    lL, lB = _toy_run(300, 20, 5)
+    lw = nested_log_weights(lL, lB)
+    lB_nan = np.where(np.isneginf(lB), np.nan, lB)
+    assert np.isnan(lB_nan).sum() == 300
+    np.testing.assert_array_equal(nested_log_weights(lL, lB_nan), lw)
