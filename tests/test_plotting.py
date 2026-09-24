@@ -104,3 +104,19 @@ def test_ns_diagnostic_titles_use_weighted_quantiles():
                                 log_evidence=0.0, log_evidence_err=0.0)
     title = P.diagnostic_figure(res).axes[0].get_title()
     assert "posterior $3.01^{+0.10}_{-0.10}$" in title, title
+
+
+def test_ns_diagnostic_labels_logzsol_like_the_summary():
+    """B3-021: with a PostProcess output from an [Fe/H] grid the diagnostic panels label
+    logzsol [Fe/H], as the summary and corner figures do."""
+    import types
+    import numpy as np
+    from ceridwen import plotting as P
+    rng = np.random.default_rng(0)
+    x = rng.uniform(-1, 0, 500)
+    res = types.SimpleNamespace(samples={"logzsol": x}, log_likelihoods=-x ** 2,
+                                log_weights=-x ** 2, log_likelihoods_birth=None, raw=None,
+                                log_evidence=0.0, log_evidence_err=0.0)
+    out = {"meta": {"metallicity": {"axis_meaning": "feh"}}}
+    assert P.diagnostic_figure(res, out).axes[0].get_title().startswith(
+        P._label("logzsol", True))

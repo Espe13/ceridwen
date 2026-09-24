@@ -585,6 +585,7 @@ def diagnostic_figure(result, out=None, *, params=None, savepath=None, max_point
     cumulative evidence.  MCMC: per-chain traces with split-R-hat and ESS."""
     import matplotlib.pyplot as plt
     C = COLORS
+    feh = _feh_axis(out) if out is not None else False     # label logzsol as the others do
     theta = {k: np.asarray(v) for k, v in result.samples.items()}
     if params:
         theta = {k: theta[k] for k in params}
@@ -607,7 +608,7 @@ def diagnostic_figure(result, out=None, *, params=None, savepath=None, max_point
             for c in range(n_chains):
                 ax.plot(ch[c], color=C["chains"][c % len(C["chains"])], lw=0.4, alpha=0.8)
             rhat = _split_rhat(ch); ess = sum(_ess(ch[c]) for c in range(n_chains))
-            ax.set_title(f"{_label(name)}    $\\hat R$ = {rhat:.3f}    ESS = {ess:.0f}", fontsize=8)
+            ax.set_title(f"{_label(name, feh)}    $\\hat R$ = {rhat:.3f}    ESS = {ess:.0f}", fontsize=8)
             ax.tick_params(labelsize=7)
         ax = axes[-1, 0]
         for c in range(n_chains):
@@ -634,7 +635,7 @@ def diagnostic_figure(result, out=None, *, params=None, savepath=None, max_point
             ax.scatter(sel, cols[name][sel], c=np.clip(lw[sel] - lw[fin].max(), -12, 0), cmap=_LazyCmap()(),
                        s=3, vmin=-12, vmax=0, rasterized=True)
             qs = _weighted_quantiles(cols[name], w, (0.16, 0.5, 0.84))
-            ax.set_title(f"{_label(name)}    posterior " + _fmt_q(*qs), fontsize=8)
+            ax.set_title(f"{_label(name, feh)}    posterior " + _fmt_q(*qs), fontsize=8)
             ax.tick_params(labelsize=7)
         ax = axes[-1, 0]
         ax.plot(order, ll, color=C["posterior"], lw=0.6)
