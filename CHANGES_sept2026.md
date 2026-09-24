@@ -832,3 +832,48 @@ data only, and the SFH axes are log-Gyr / log10 SFR. CI mirror in a clean clone
 (`-m "not fsps and not gpu"`, no `$SPS_HOME`, the new BPASS grid): 441 passed, 0 failed;
 the changed tests on the final tree 40 passed; `check_api_usage` 0; misuse 0 SILENT. The
 quickstart rerun: photometry on the spectrum, chi^2/nu = 0.36.
+
+## 2026-09-24 — calibration polynomial marginalised analytically (`likelihood/poly_marginal.py`)
+
+**What.** A third calibration mode for a `Spectrum`, next to the sampled
+(`spectrum_scaling` / `spectrum_calib`) and the profiled (`polynomial_order > 0`) ones:
+`Spectrum(polynomial_order=M, polynomial_mode="marginalize", polynomial_prior_sigma=s)`. The
+coefficients of the response `1 + sum_m c_m T_m` (the profiled mode's Chebyshev basis) get the
+prior `c ~ N(0, diag(s^2))` and are integrated out in closed form:
+`ln L = ln L_diag(y - mu) + 1/2 b^T M^-1 b - 1/2 ln|M| - 1/2 ln|Lambda|`, `M = D^T W D +
+Lambda^-1`, `b = D^T W (y - mu)`, `D = diag(mu) A` (Woodbury + determinant lemma; derivation in
+`docs/dev/poly_marginalisation_design.md`). O(n k^2), no sampled dimension, and the
+calibration uncertainty enters the posterior and the evidence (the profile conditions on the
+best polynomial). `PolyMarginalGaussianLikelihood` (`ceridwen.likelihood`) is a separate class
+built by `fit._likelihood_for`, so `fitSED`, `run_sampler`, `MultiObservationLikelihood` and
+`map_fit` use it unchanged.
+
+**Default unchanged.** `polynomial_mode="profile"` is the default; the profile and
+no-polynomial paths are byte-identical to 0590b54 (T4). The profile mode's `likelihood_json`
+gains `"mode": "profile"` (additive key).
+
+**Refused, with teaching errors.** At construction: no or infinite `polynomial_prior_sigma`
+(flat prior: undefined marginal), negative/NaN widths, wrong length,
+`polynomial_regularization` in marginalize mode (`s = 1/reg` is its analogue),
+`polynomial_prior_sigma` in profile mode (would be ignored), `polynomial_order=0`,
+`logify_spectrum=True`, a GP `noise`, `marginalize_elines=True` on the same spectrum (bilinear
+in the two coefficient sets). At setup (`fit._poly_marginal_for`): the outlier mixture and
+upper limits on the spectrum, a sampled `spectrum_calib`, and a sampled `spectrum_scaling`
+unless `T_0` is pinned (`s_0 = 0`: then the scaling is the grey level and the polynomial the
+shape; with `s_0 > 0` the two enter only as a product).
+
+**Outputs.** `PostProcess` applies each draw's conditional-mean response
+(`prediction["calibration"][name]`, included in `spectra[name]`) and returns
+`extras["calibration"][name]` = `mean`, `sd`, `cov` per draw and `draws` (one draw from each
+conditional Gaussian). `calibrated_prediction` handles the mode. The result file records mode,
+order and prior widths in `likelihood_json` (`read_result_h5(...)["obs"][name]["likelihood"]`).
+
+**Verification.** `tests/likelihood/test_poly_marginal.py`: the closed form equals the dense
+`N(y - mu; 0, C + D Lambda D^T)` (numpy slogdet/solve) to rel 1e-10 on three random masked
+problems and with pinned/loose widths, conditional mean and covariance equal the dense
+posterior; k = 1 equals a Gauss-Hermite integral to 1e-8; s = 0 equals the uncalibrated
+likelihood (rel 1e-14); the conditional mean equals the profiled solve with `reg = 1/s`;
+`check_grads` order 1 (fwd, rev) with a sampled jitter and NaN under the mask; jit/vmap equal
+the loop; every refusal; a mock with an injected order-3 calibration recovered by a short nested
+fit, consistent with the sampled route; result-file round trip. New regression category
+`poly_marginal` (asserts the dense brute force at capture); new T4 variant `polymarg`.

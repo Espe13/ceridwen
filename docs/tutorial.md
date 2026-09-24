@@ -293,6 +293,31 @@ rather than predicting zeros for it.
       marginal posterior of `c`). The result file records mode, order and prior widths
       (`read_result_h5(path)["obs"][name]["likelihood"]["poly_calibration"]`).
 
+    **Cost.** Per call the marginal costs the same as the profile (both O(n k^2)); the sampled
+    route is cheaper per call but adds M + 1 dimensions to the sampler. Measured on CPU
+    (Apple, shared machine, +-20 %; `scripts/bench_poly_marginal.py`), jitted, float64, a batch
+    of W draws under `vmap`, microseconds per batch:
+
+    | | W | M | profile | marginalize | sampled |
+    |---|---|---|---|---|---|
+    | spectrum likelihood only (2000 px), value + grad | 32 | 1 | 916 | 905 | 177 |
+    | | 32 | 3 | 900 | 943 | 294 |
+    | | 32 | 6 | 2249 | 2298 | 288 |
+    | | 32 | 10 | 3521 | 3878 | 297 |
+    | | 32 | 20 | 5006 | 6328 | 356 |
+    | full log-posterior (forward model, 1000 px), value + grad | 1 | 3 | 2372 | 2173 | 2591 |
+    | | 1 | 20 | 2262 | 2616 | 2160 |
+    | | 32 | 1 | 65090 | 65246 | 64855 |
+    | | 32 | 3 | 67722 | 66507 | 69782 |
+    | | 32 | 6 | 71060 | 70132 | 70526 |
+    | | 32 | 10 | 70523 | 70375 | 81709 |
+    | | 32 | 20 | 66412 | 65540 | 65974 |
+
+    The forward model dominates the log-posterior: the three modes cost the same there at
+    every order, so a high order costs nothing per call in the profiled or marginalised mode,
+    while in the sampled mode it costs sampler dimensions. GPU timing at the production width
+    W = 100 is not measured yet.
+
     Derivation: `docs/dev/poly_marginalisation_design.md`; code:
     `ceridwen/likelihood/poly_marginal.py`.
 
