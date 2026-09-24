@@ -112,6 +112,17 @@ def _quantiles(x, q=(0.16, 0.5, 0.84)):
     return np.nanquantile(np.asarray(x, dtype=float), q, axis=0)
 
 
+def _weighted_quantiles(x, w, q=(0.16, 0.5, 0.84)):
+    """Quantiles of ``x`` under the normalised weights ``w`` (points with w = 0 or a
+    non-finite x carry no mass)."""
+    x = np.asarray(x, dtype=float); w = np.asarray(w, dtype=float)
+    ok = np.isfinite(x) & (w > 0)
+    x, w = x[ok], w[ok]
+    o = np.argsort(x, kind="stable")
+    c = np.cumsum(w[o]); c /= c[-1]
+    return x[o][np.minimum(np.searchsorted(c, q), x.size - 1)]
+
+
 def _fmt_q(lo, med, hi, nd=2):
     return rf"${med:.{nd}f}^{{+{hi - med:.{nd}f}}}_{{-{med - lo:.{nd}f}}}$"
 
@@ -618,7 +629,7 @@ def diagnostic_figure(result, out=None, *, params=None, savepath=None, max_point
             ax = axes[i // ncol, i % ncol]
             ax.scatter(sel, cols[name][sel], c=np.clip(lw[sel] - lw[fin].max(), -12, 0), cmap=_LazyCmap()(),
                        s=3, vmin=-12, vmax=0, rasterized=True)
-            qs = _quantiles(cols[name][fin], (0.16, 0.5, 0.84))
+            qs = _weighted_quantiles(cols[name], w, (0.16, 0.5, 0.84))
             ax.set_title(f"{_label(name)}    posterior " + _fmt_q(*qs), fontsize=8)
             ax.tick_params(labelsize=7)
         ax = axes[-1, 0]

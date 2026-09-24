@@ -87,3 +87,20 @@ def test_zred0_photometry_on_the_spectrum_and_data_range(tmp_path):
     assert ax_sfh.get_xscale() == "log" and "Gyr" in ax_sfh.get_xlabel()
     assert "log" in ax_sfh.get_ylabel() and ax_sfh.get_yscale() == "linear"
     plt.close("all")
+
+
+def test_ns_diagnostic_titles_use_weighted_quantiles():
+    """B3-001: the nested-sampling panels title 'posterior' quantiles; they must be the
+    importance-weighted ones, not the quantiles of the unweighted dead points."""
+    import types
+    import numpy as np
+    from ceridwen import plotting as P
+    rng = np.random.default_rng(0)
+    x = rng.uniform(-10, 10, 5000)
+    logl = -0.5 * ((x - 3.0) / 0.1) ** 2
+    lw = logl - np.logaddexp.reduce(logl)
+    res = types.SimpleNamespace(samples={"x": x}, log_likelihoods=logl, log_weights=lw,
+                                log_likelihoods_birth=None, raw=None,
+                                log_evidence=0.0, log_evidence_err=0.0)
+    title = P.diagnostic_figure(res).axes[0].get_title()
+    assert "posterior $3.01^{+0.10}_{-0.10}$" in title, title
