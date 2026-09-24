@@ -77,6 +77,24 @@ def observation_data(obs) -> tuple:
     return (y, sigma, obs.mask, getattr(obs, "calibration", None), ul)
 
 
+def single_observation_data(observations, what: str, upper_limits: bool = False) -> tuple:
+    """:func:`observation_data` for a single-observation ``make_lnprobfn``: sky subtracted,
+    finite data; returns ``(y, sigma, mask, calibration, upper_limit)``.  An observation that
+    flags upper limits is refused unless the likelihood handles them (``upper_limits``)."""
+    y, sigma, mask, calib, ul = observation_data(observations)
+    if ul is not None and not upper_limits:
+        raise ValueError(
+            f"{what}.make_lnprobfn: the observation flags upper limits, which this likelihood "
+            "would treat as detections.  Use DiagonalGaussianLikelihoodWithUpperLimits, or "
+            "MultiObservationLikelihood / fitSED, which pick the one-sided kernel")
+    return y, sigma, mask, calib, ul
+
+
+def calibrated_mu(mu, calibration):
+    """The prediction times the observation's fixed ``calibration`` vector (None: unchanged)."""
+    return mu if calibration is None else mu * calibration
+
+
 def lnlike_diag_gaussian(
     y       : Array,
     mu      : Array,
@@ -355,16 +373,19 @@ class DiagonalGaussianLikelihood(LikelihoodBase):
         model        : Any,
         prior        : Any,
     ) -> Callable[[dict[str, Array]], Array]:
-        """Return a jitted log-posterior for one observation (needs ``.flux``, ``.uncertainty``, ``.mask``)."""
-        y, sigma_obs = finite_data(observations.flux, observations.uncertainty)
-        mask      : Array = observations.mask
+        """Return a jitted log-posterior for one observation (needs ``.flux``, ``.uncertainty``,
+        ``.mask``; honours ``sky`` and ``calibration`` as MultiObservationLikelihood does, and
+        refuses flagged upper limits)."""
+        y, sigma_obs, mask, calib, _ = single_observation_data(
+            observations, "DiagonalGaussianLikelihood")
         noise_model       = self.noise_model
         calibrate         = self._calibrated
 
         if getattr(noise_model, "use_outlier", False):
             @jax.jit
             def lnprobfn_outlier(theta: dict[str, Array]) -> Array:
-                mu = calibrate(y, model.predict(theta), sigma_obs, mask, theta)
+                mu = calibrate(y, calibrated_mu(model.predict(theta), calib), sigma_obs, mask,
+                               theta)
                 noise_out = noise_model.compute(sigma_obs, mu, mask, theta, data=y)
                 f, nsigma = noise_model.outlier_params(theta)
                 lnl, _    = lnlike_diag_outlier(
@@ -376,7 +397,8 @@ class DiagonalGaussianLikelihood(LikelihoodBase):
 
         @jax.jit
         def lnprobfn(theta: dict[str, Array]) -> Array:
-            mu = calibrate(y, model.predict(theta), sigma_obs, mask, theta)
+            mu = calibrate(y, calibrated_mu(model.predict(theta), calib), sigma_obs, mask,
+                               theta)
             noise_out = noise_model.compute(sigma_obs, mu, mask, theta, data=y)
             lnl, _    = lnlike_diag_gaussian(
                 y, mu, noise_out.inv_var, noise_out.log_det, mask
@@ -451,9 +473,10 @@ class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
         model        : Any,
         prior        : Any,
     ) -> Callable[[dict[str, Array]], Array]:
-        """Return a jitted log-posterior using ``observations.upper_limit`` (all-False if absent)."""
-        y, sigma_obs = finite_data(observations.flux, observations.uncertainty)
-        mask      : Array = observations.mask
+        """Return a jitted log-posterior using ``observations.upper_limit`` (all-False if absent);
+        honours ``sky`` and ``calibration`` as MultiObservationLikelihood does."""
+        y, sigma_obs, mask, calib, _ = single_observation_data(
+            observations, "DiagonalGaussianLikelihoodWithUpperLimits", upper_limits=True)
         is_ul = getattr(observations, "upper_limit", None)
         if is_ul is None:
             is_ul = jnp.zeros_like(mask, dtype=bool)
@@ -465,7 +488,8 @@ class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
         if getattr(noise_model, "use_outlier", False):
             @jax.jit
             def lnprobfn_outlier(theta: dict[str, Array]) -> Array:
-                mu = calibrate(y, model.predict(theta), sigma_obs, mask, theta)
+                mu = calibrate(y, calibrated_mu(model.predict(theta), calib), sigma_obs, mask,
+                               theta)
                 noise_out = noise_model.compute(sigma_obs, mu, mask, theta, data=y)
                 f, nsigma = noise_model.outlier_params(theta)
                 lnl, _    = lnlike_diag_outlier_with_upper_limits(
@@ -477,7 +501,8 @@ class DiagonalGaussianLikelihoodWithUpperLimits(LikelihoodBase):
 
         @jax.jit
         def lnprobfn(theta: dict[str, Array]) -> Array:
-            mu = calibrate(y, model.predict(theta), sigma_obs, mask, theta)
+            mu = calibrate(y, calibrated_mu(model.predict(theta), calib), sigma_obs, mask,
+                               theta)
             noise_out = noise_model.compute(sigma_obs, mu, mask, theta, data=y)
             lnl, _    = lnlike_diag_gaussian_with_upper_limits(
                 y, mu, noise_out.inv_var, noise_out.log_det, mask, is_ul,

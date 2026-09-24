@@ -24,7 +24,8 @@ import jax.numpy as jnp
 import numpy as np
 from jax.scipy.linalg import solve_triangular
 
-from .likelihood import LikelihoodBase, LikelihoodOutput, finite_data
+from .likelihood import (LikelihoodBase, LikelihoodOutput, calibrated_mu,
+                         single_observation_data)
 from .noise_model import DiagonalNoiseModel, NoiseModelOutput
 
 Array = jax.Array
@@ -209,13 +210,13 @@ class GPGaussianLikelihood(LikelihoodBase):
     ) -> Callable[[dict[str, Array]], Array]:
         """Return a jitted log-posterior for one Spectrum (``.flux``, ``.uncertainty``,
         ``.mask``)."""
-        y, sigma_obs = finite_data(observations.flux, observations.uncertainty)
-        mask = observations.mask
+        y, sigma_obs, mask, calib, _ = single_observation_data(observations, "GPGaussianLikelihood")
         lhood = self
 
         @jax.jit
         def lnprobfn_gp(theta: dict[str, Array]) -> Array:
-            lnl, _ = lhood(y, model.predict(theta), sigma_obs, mask, theta)
+            lnl, _ = lhood(y, calibrated_mu(model.predict(theta), calib), sigma_obs, mask,
+                           theta)
             return lnl + prior.log_prob(theta)
 
         return lnprobfn_gp
