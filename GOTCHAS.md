@@ -263,7 +263,8 @@ prefer `predict`/`get_spectrum_components`.
   ages.
 - `zred = 0` means **no flux factor** (predictions in `L_sun/Hz x
   10^logmass`), not "a source at 10 pc" and not physical maggies. For a
-  nearby object pass `lumdist_mpc=` to `SedModel`. The summary and the
+  nearby object pass `lumdist_mpc=` to `SedModel`; a negative (blueshifted) `zred` without
+  `lumdist_mpc` raises. The summary and the
   `fitSED` log print which case is in force; check them. `lumdist_mpc`
   makes `SedModel` inject `zred` (even 0) into theta, so with
   `track_zred_age=True` the SFH grid is rescaled to `age(zred)` exactly as

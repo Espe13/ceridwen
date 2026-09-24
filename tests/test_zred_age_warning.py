@@ -35,3 +35,20 @@ def test_sampled_zred_grid_older_than_universe_warns():
 
     assert any("at every zred" in m for m in build(4.0, 6.0))
     assert build(0.0, 0.0001) == []
+
+
+@pytest.mark.skipif(GRID is None, reason="no test SSP grid")
+def test_negative_zred_needs_a_distance():
+    """B1-026: SedModel(zred<0) put the source at 10 pc silently."""
+    from ceridwen import CSPBasis, Cosmology, SedModel, SSPData
+    from ceridwen.observation import Photometry
+    csp = CSPBasis(SSPData.load(str(GRID)), lookback_time=np.linspace(0.0, 10.0, 6),
+                   zh_const=True, add_neb=False, add_dust=False, add_diffuse_dust=False,
+                   verbose=False, cosmo=Cosmology.planck18())
+
+    def p():
+        return Photometry(filters=["sdss_g0", "sdss_r0"], flux=np.ones(2),
+                          uncertainty=np.ones(2), name="p")
+    with pytest.raises(ValueError, match="negative redshift"):
+        SedModel(csp, [p()], zred=-0.001)
+    SedModel(csp, [p()], zred=-0.001, lumdist_mpc=0.78)

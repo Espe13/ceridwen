@@ -138,6 +138,12 @@ class SedModel:
                 | set(self.kinematics.free_keys) | set(self._instrument_scale_keys())
             )
 
+        if float(self.zred) < 0.0 and self.lumdist_mpc is None and "zred" not in self.transforms:
+            raise ValueError(
+                f"SedModel(zred={float(self.zred):g}): a negative redshift has no luminosity "
+                "distance (the flux factor would put the source at 10 pc).  For a nearby, "
+                "blueshifted galaxy give its distance, SedModel(zred=..., lumdist_mpc=D), or "
+                "use its cosmological redshift")
         self._zred_fixed = None
         self._lumdist_fixed = None
         if (self.zred != 0.0 or self.lumdist_mpc is not None) and "zred" not in self.transforms:
