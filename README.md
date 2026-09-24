@@ -265,7 +265,9 @@ compiler. Only `SSPData.from_fsps` needs `python-fsps` itself. See
 
 A self-contained, copy-paste-runnable joint fit. It makes a mock galaxy from
 known truth **with the same forward model it then fits**, so the data is always
-consistent with the SSP grid you built and the fit recovers the truth. No data
+consistent with the SSP grid you built and the fit recovers the truth within its
+posterior (with a 5-ratio SFH, `logmass` trades against the SFH shape, so it can sit
+1-2 sigma off at small sampler settings). No data
 files needed.
 
 ```python

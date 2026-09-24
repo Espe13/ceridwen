@@ -120,3 +120,15 @@ def test_ns_diagnostic_labels_logzsol_like_the_summary():
     out = {"meta": {"metallicity": {"axis_meaning": "feh"}}}
     assert P.diagnostic_figure(res, out).axes[0].get_title().startswith(
         P._label("logzsol", True))
+
+
+def test_corner_axes_include_the_truths():
+    """Q1-008: a truth outside the 0.1-99.9 % posterior range was silently not drawn."""
+    import numpy as np
+    from ceridwen import plotting as P
+    rng = np.random.default_rng(2)
+    th = {"logmass": rng.normal(10.42, 0.03, 400), "logzsol": rng.normal(-0.2, 0.03, 400)}
+    out = {"theta": th, "bestfit": {"theta": {"logmass": [10.42], "logzsol": [-0.2]}}}
+    fig = P.corner_figure(out, truths={"logmass": 10.6, "logzsol": -0.2})
+    lo, hi = fig.axes[0].get_xlim()
+    assert lo < 10.6 < hi

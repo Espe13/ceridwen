@@ -496,6 +496,12 @@ def corner_figure(out, *, params=None, truths=None, savepath=None, bins=30, pane
     axes = np.atleast_2d(axes)
     lims = [(np.quantile(X[:, i], 0.001), np.quantile(X[:, i], 0.999)) for i in range(K)]
     lims = [(a - 0.05 * (b - a), b + 0.05 * (b - a)) if b > a else (a - 1, a + 1) for a, b in lims]
+    for i in range(K):                   # a supplied truth is always inside its panel
+        t = truth_pt.get(names[i])
+        if t is not None and np.isfinite(t):
+            a, b = lims[i]
+            pad = 0.05 * (b - a)
+            lims[i] = (min(a, float(t) - pad), max(b, float(t) + pad))
     for i in range(K):
         for j in range(K):
             ax = axes[i, j]
