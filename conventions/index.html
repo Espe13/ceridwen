@@ -13,10 +13,10 @@
         <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/conventions/">
       
       
-        <link rel="prev" href="../tutorial/">
+        <link rel="prev" href="../afe/">
       
       
-        <link rel="next" href="../eline_marginalisation/">
+        <link rel="next" href="../troubleshooting/">
       
       
         
@@ -371,6 +371,195 @@
       
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../samplers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Samplers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../noise_calibration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Noise and calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gp_likelihood/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GP likelihood (correlated residuals)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../outlier_model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outlier mixture likelihood
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eline_marginalisation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Emission-line marginalisation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../afe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    [α/Fe]
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
     
   
   
@@ -434,10 +623,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#metallicity-is-log10-of-absolute-z" class="md-nav__link">
+  <a href="#metallicity-is-solar-relative-logzsol-log10zz_sun" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Metallicity is log10 of ABSOLUTE Z
+        Metallicity is solar-relative: logzsol = log10(Z/Z_sun)
       
     </span>
   </a>
@@ -520,6 +709,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="The instrument: Instrument">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-free-lsf-scale-instrument-scale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A free LSF scale: Instrument(..., scale=...)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -561,6 +767,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#nebular-grid-cloudy-without-dust-in-the-h-ii-region" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Nebular grid: CLOUDY without dust in the H II region
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dust-geometry-and-the-escape-fraction-frac_obrun" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dust geometry and the escape fraction frac_obrun
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#fsps-at-runtime" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -586,14 +814,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../eline_marginalisation/" class="md-nav__link">
+      <a href="../troubleshooting/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Emission-line marginalisation
+    Troubleshooting
   
 
     
@@ -613,14 +841,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../postprocessing/" class="md-nav__link">
+      <a href="../development/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Post-processing
+    Development and verification
   
 
     
@@ -684,26 +912,36 @@
 <p>A few conventions cause silent mistakes if you get them wrong. Read them before
 fitting real data. The repository also ships a fuller misuse guide in
 <code>GOTCHAS.md</code>.</p>
-<h2 id="metallicity-is-log10-of-absolute-z">Metallicity is log10 of ABSOLUTE Z<a class="headerlink" href="#metallicity-is-log10-of-absolute-z" title="Permanent link">&para;</a></h2>
-<p>The parameter <code>Z</code> (and <code>ssp_lgmet</code>) is <code>log10(Z)</code> in <strong>absolute</strong> units, not
-<code>log10(Z/Z☉)</code>. Solar is roughly <code>-1.85</code> (Z☉ ≈ 0.014), not <code>0.0</code>.</p>
-<p>The MIST grids span about <code>[-4.35, -1.35]</code> (<code>log10(0.0142) + logzsol</code>; print
-<code>csp.zmet</code> for your grid). Values outside it are silently
-clamped to the nearest grid edge, so a "solar" guess of <code>Z = 0.0</code> is off the
-grid and gets clamped.</p>
+<h2 id="metallicity-is-solar-relative-logzsol-log10zz_sun">Metallicity is solar-relative: <code>logzsol = log10(Z/Z_sun)</code><a class="headerlink" href="#metallicity-is-solar-relative-logzsol-log10zz_sun" title="Permanent link">&para;</a></h2>
+<p>The stellar metallicity is <code>theta["logzsol"]</code> (constant) or <code>theta["logzsol_hist"]</code>
+(one value per lookback node), in <code>log10(Z / Z_sun)</code> with the <strong>Z_sun of the grid you
+loaded</strong>: <code>0.0</code> is solar everywhere. The keys <code>Z</code> / <code>zh</code> (<code>log10</code> of the <em>absolute</em> metallicity)
+are not accepted: they raise, printing the converted value.</p>
+<p>Typical ranges: BPASS <code>[-2.30, +0.30]</code> (Z_sun = 0.020); MIST and aMIST <code>[-2.50, +0.50]</code>
+(Z_sun = 0.0185, or 0.0142 for grids built with python-fsps &lt;= 0.4.7). Print the axis of
+your own grid with <code>print(csp.zmet.min(), csp.zmet.max(), csp.zsun_nominal)</code>.</p>
+<p>Z_sun comes from the grid, never from <code>isoc_type</code> (FSPS versions give MIST different values
+under the same name): an explicit <code>zsun=</code>, the file's <code>log10_zsun</code> provenance, or the
+content-hash table in <code>ceridwen.ssps.grid_metadata</code>. A grid whose Z_sun cannot be
+established raises at load.</p>
+<p>On MIST and aMIST grids <code>logzsol</code> <strong>is <code>[Fe/H]</code></strong>; the total metallicity <code>[Z/H]</code> is the
+derived <code>logzsol_total</code> (see <code>grid_metadata.logzsol_total</code>). The gas-phase <code>gas_logz</code> is
+solar-relative on the CLOUDY grid's own reference, and <code>CSPBasis(gas_tied=True)</code> sets
+<code>gas_logz := logzsol</code> — the same number on two axes whose solar references are not identical
+(the SSP grid's Z_sun vs the CLOUDY grid's), which is what FSPS and Prospector mean by tying
+the gas to the stars.</p>
 <div class="admonition danger">
 <p class="admonition-title">Common mistake</p>
-<p>A prior like <code>Uniform(low=-2.5, high=0.2)</code> puts most of its mass off the
-grid. Use something like <code>ClippedNormal(mean=-2.0, sigma=0.5, low=-4.0, high=-1.4)</code>. If
-you are unsure of your grid bounds, print them with
-<code>print(float(csp.zmet.min()), float(csp.zmet.max()))</code>, or call
-<code>csp.check_param_ranges(theta)</code> to warn about out-of-grid values.</p>
+<p>Passing an absolute <code>log10 Z</code> such as <code>-1.85</code> as <code>logzsol</code>: on BPASS that is inside the
+grid (0.014 Z_sun), so it cannot be an error — it warns instead. A <em>bounded</em> prior wider
+than the grid raises; <code>Uniform(low=-2.0, high=0.2)</code> is a safe default on every shipped
+grid. <code>csp.check_param_ranges(theta)</code> reports in logzsol and names the grid's Z_sun.</p>
 </div>
 <h2 id="lookback-time-increases-with-index-index-0-today">Lookback time increases with index (index 0 = today)<a class="headerlink" href="#lookback-time-increases-with-index-index-0-today" title="Permanent link">&para;</a></h2>
 <p><code>lookback_time</code> element 0 is the present; the last element is the oldest bin,
-near the age of the universe. The <code>sfh</code> array is indexed the same way. The old
+near the age of the universe. The <code>sfh</code> array is indexed the same way. A
 decreasing convention (<code>lookback = T_univ - t_grid</code>) is rejected at construction
-with a <code>ValueError</code>, so do not reintroduce it, and do not reverse arrays "to be
+with a <code>ValueError</code>, so do not use it, and do not reverse arrays "to be
 safe".</p>
 <h2 id="units">Units<a class="headerlink" href="#units" title="Permanent link">&para;</a></h2>
 <table>
@@ -724,7 +962,7 @@ safe".</p>
 </tr>
 <tr>
 <td><code>Lines</code> wavelengths / <code>mask_lines</code> centres</td>
-<td>Å, vacuum, <strong>rest frame</strong> (redshifted internally)</td>
+<td>Å, vacuum, <strong>rest frame</strong> (<code>Lines</code>: redshifted internally; <code>Spectrum.mask_lines(..., zred=z)</code>: by the <code>zred</code> you pass, default 0)</td>
 </tr>
 <tr>
 <td><code>csp.get_spectrum(theta)</code> (model grid)</td>
@@ -740,7 +978,7 @@ safe".</p>
 </tr>
 <tr>
 <td>Emission-line fluxes</td>
-<td>erg s⁻¹ cm⁻²</td>
+<td>erg s⁻¹ cm⁻², observed frame; with an IGM, its transmission averaged over the line's profile on the model grid</td>
 </tr>
 <tr>
 <td>Marginalised line fluxes (<code>marginalize_elines=True</code>: <code>/elines</code> in the result, <code>extras["elines"]</code>)</td>
@@ -752,10 +990,18 @@ safe".</p>
 </tr>
 </tbody>
 </table>
-<p>The forward model is evaluated at unit mass and scaled by <code>10**logmass</code>.</p>
+<p>The spectrum of <code>theta['sfh']</code> is scaled by <code>10**logmass</code>. The SSP weights sum to the
+integral of <code>theta['sfh']</code> over the construction lookback grid (<code>csp.sfh_times</code>, or a
+predict-time <code>theta['lookback_time']</code>), at every redshift: with <code>track_zred_age=True</code> the
+grid is stretched to <code>age(zred)</code> and the SFR scaled by <code>T_grid / age(zred)</code>, so the
+stretched SFH forms the same mass. It is unit mass, and <code>logmass</code> the formed mass, whenever
+<code>theta['sfh']</code> integrates to 1 M☉ on the construction grid, as
+<code>logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)</code> arranges (below), with a fixed or
+a free redshift; a directly sampled <code>sfh</code> carries its own normalisation.</p>
 <h2 id="sfh-mass-normalisation">SFH mass normalisation<a class="headerlink" href="#sfh-mass-normalisation" title="Permanent link">&para;</a></h2>
 <p>The <code>logsfr_ratios_to_sfh</code> transform normalises the SFH so the trapezoidal
-integral of SFR over the lookback grid equals 1 M☉, and <code>logmass</code> sets the
+integral of SFR over the lookback grid it is given (<code>sfh_times_yr=csp.sfh_times</code>, the
+construction grid, also for a free redshift) equals 1 M☉, and <code>logmass</code> sets the
 amplitude. Use the provided transform rather than hand-rolling it. Getting this
 wrong biases <code>logmass</code> by many dex.</p>
 <h2 id="theta-is-a-dict-so-typos-are-silently-ignored"><code>theta</code> is a dict, so typos are silently ignored<a class="headerlink" href="#theta-is-a-dict-so-typos-are-silently-ignored" title="Permanent link">&para;</a></h2>
@@ -765,10 +1011,6 @@ is simply not read, so the parameter takes its default. <code>predict()</code> a
 time, at no cost to the hot path. Model-level free parameters like
 <code>logsfr_ratios</code> are registered automatically and do not warn.</p>
 <h2 id="broadening-one-kernel-three-widths">Broadening: one kernel, three widths<a class="headerlink" href="#broadening-one-kernel-three-widths" title="Permanent link">&para;</a></h2>
-<!-- 2026-09-03 broadening pass: describes ceridwen/broadening.py (Kinematics,
-     Instrument, SpectralProjector, PhotometricBroadener) and the SedModel /
-     Spectrum wiring of BROADENING_DESIGN.md section 7. -->
-
 <p>Every width a spectral feature acquires is a Gaussian in <code>ln λ</code>, so the
 projection of the model onto a spectrum applies a single kernel per pixel:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>continuum:  σ_cont² = σ_gal² + σ_inst²(λ) − σ_lib²(λ)
@@ -801,6 +1043,12 @@ projection of the model onto a spectrum applies a single kernel per pixel:</p>
 </tr>
 </tbody>
 </table>
+<p>The IGM acts between the galaxy and the instrument, in the order the light meets them:
+galaxy kinematics (rest frame), redshift, IGM, instrument. A <code>Spectrum</code> smooths the model by
+<code>σ_gal</code>, multiplies by the IGM transmission, then applies the instrument (and library) part of
+the kernel; broadened photometry multiplies by the transmission after the <code>σ_gal</code> broadening.
+So the Ly-α break is as sharp as the IGM model and the instrument make it. (With <code>σ_gal</code> fixed
+at 0 the IGM is applied on the model grid, as without broadening.)</p>
 <p>There is no other place where a width enters. In particular the model spectrum
 (<code>csp.get_spectrum</code>) is <strong>not</strong> broadened by the galaxy any more, and emission
 lines are painted onto a spectrum's pixels from their luminosities with
@@ -851,6 +1099,34 @@ and must cover the spectrum's pixels. The LSF is taken as <em>measured on the
 detector</em> (from arc lines), so it already contains the pixel width and the
 model profiles are sampled at pixel centres, not integrated over the pixel a
 second time.</p>
+<h4 id="a-free-lsf-scale-instrument-scale">A free LSF scale: <code>Instrument(..., scale=...)</code><a class="headerlink" href="#a-free-lsf-scale-instrument-scale" title="Permanent link">&para;</a></h4>
+<p>When the quoted LSF is uncertain, every constructor takes <code>scale=</code>: the width in
+force is <code>s · σ_inst(λ)</code>, in the continuum kernel <em>and</em> in the line widths
+(<code>σ_cont² = σ_gal² + s² σ_inst² − σ_lib²</code>, <code>σ_line² = σ_gas² + s² σ_inst²</code>).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">Instrument</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.priors</span><span class="w"> </span><span class="kn">import</span> <span class="n">Uniform</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">Instrument</span><span class="o">.</span><span class="n">R_fwhm</span><span class="p">(</span><span class="mi">2700</span><span class="p">)</span>                        <span class="c1"># scale=1.0: the nominal LSF, the unscaled code path</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">Instrument</span><span class="o">.</span><span class="n">R_fwhm</span><span class="p">(</span><span class="mi">2700</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1.1</span><span class="p">)</span>             <span class="c1"># fixed: identical to Instrument.R_fwhm(2700 / 1.1)</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">Instrument</span><span class="o">.</span><span class="n">R_fwhm</span><span class="p">(</span><span class="mi">2700</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="s2">&quot;lsf_scale&quot;</span><span class="p">)</span>     <span class="c1"># sampled: needs free_param_init and a BOUNDED prior</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">priors</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;lsf_scale&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">1.3</span><span class="p">)}</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">Instrument</span><span class="o">.</span><span class="n">R_fwhm</span><span class="p">(</span><span class="mi">2700</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="s2">&quot;lsf_scale&quot;</span><span class="p">,</span> <span class="n">scale_range</span><span class="o">=</span><span class="p">(</span><span class="mf">0.8</span><span class="p">,</span> <span class="mf">1.3</span><span class="p">))</span>  <span class="c1"># range given explicitly</span>
+</code></pre></div>
+<p>A fixed scale is folded into the static response at setup (no runtime cost). A
+sampled scale recomputes the response weights per call on a band sized for the top
+of its range: exact for any wavelength dependence of <code>σ_inst</code>, and differentiable.
+The range comes from the prior's finite bounds (or <code>scale_range=</code>, required when the
+key is a transform); it must satisfy <code>0 &lt; lo &lt; hi</code>, a prior reaching beyond an
+explicit <code>scale_range</code> is refused, and a sampled value outside it is clipped. The
+instrument-below-library warning is evaluated at the lower end of the range, and a
+second warning names the pixels whose continuum kernel crosses half a log-grid pixel
+inside the range, where the response switches from linear interpolation to a
+Gaussian and the prediction takes a small step in <code>s</code>. Photometry and <code>Lines</code> never
+see the instrument, so neither depends on the scale.</p>
+<p>Prospector's <code>resolution_jitter_parameter</code> (<code>prospect/models/sedmodel.py:289-295</code>)
+multiplies the resolution too, but only the continuum's (the line widths are cached
+from the unscaled resolution just before, <code>sedmodel.py:283</code>), by overwriting
+<code>obs.padded_resolution</code> on every call, and without validation.</p>
 <h3 id="the-library-subtracted-automatically">The library: subtracted automatically<a class="headerlink" href="#the-library-subtracted-automatically" title="Permanent link">&para;</a></h3>
 <p>The SSP library's own resolution curve is subtracted in quadrature from the
 instrumental width, pixel by pixel, at the rest-frame wavelength of each
@@ -877,7 +1153,8 @@ model-grid resolution and any emission lines enter at the grid's pixel-floor
 width, independent of <code>σ_gas</code>. Generate mocks and fit them with the same
 setting.</p>
 <p>How the lines reach the filters depends on whether <code>σ_gas</code> is fixed or
-sampled. With a <strong>fixed</strong> <code>σ_gas</code> the emission lines are not painted onto the
+sampled. With a <strong>fixed</strong> <code>σ_gas</code> (and a fixed redshift: a sampled <code>zred</code> on
+free-z photometry always takes the painted path) the emission lines are not painted onto the
 model grid at all: each <code>Photometry</code> holds a static line-to-band basis
 <code>G = T · Γ(σ_gas)</code> (the line profiles at <code>σ_gas</code> in quadrature with the
 two-pixel grid floor, times the IGM transmission), and the band fluxes are
@@ -899,16 +1176,16 @@ the per-sample flux factor, Jacobian and IGM, and a <code>Spectrum</code> is pro
 a redshift-aware projector built for the prior's support (<code>Spectrum(zred_range=)</code>
 when that support is not given by a bounded prior). So the cosmology is a required argument of
 <code>CSPBasis</code> / <code>CSPBasis_afe</code>, there is no default and no global to patch:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">Cosmology</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">planck18</span><span class="p">()</span>                <span class="c1"># Planck 2018 VI, the usual choice</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">planck15</span><span class="p">()</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">wmap9</span><span class="p">()</span>                   <span class="c1"># what prospector hard-codes</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">flat</span><span class="p">(</span><span class="n">H0</span><span class="o">=</span><span class="mf">70.0</span><span class="p">,</span> <span class="n">Om0</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span>    <span class="c1"># the two numbers a paper quotes</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">from_name</span><span class="p">(</span><span class="s2">&quot;Planck15&quot;</span><span class="p">)</span>     <span class="c1"># from a string (config file)</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">from_astropy</span><span class="p">(</span><span class="n">astropy_cosmo</span><span class="p">)</span>   <span class="c1"># any flat astropy cosmology</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="n">lookback_time</span><span class="o">=...</span><span class="p">,</span> <span class="n">cosmo</span><span class="o">=</span><span class="n">cosmo</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">Cosmology</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">planck18</span><span class="p">()</span>                <span class="c1"># Planck 2018 VI, the usual choice</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">planck15</span><span class="p">()</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">wmap9</span><span class="p">()</span>                   <span class="c1"># what prospector hard-codes</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">flat</span><span class="p">(</span><span class="n">H0</span><span class="o">=</span><span class="mf">70.0</span><span class="p">,</span> <span class="n">Om0</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span>    <span class="c1"># the two numbers a paper quotes</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">from_name</span><span class="p">(</span><span class="s2">&quot;Planck15&quot;</span><span class="p">)</span>     <span class="c1"># from a string (config file)</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">from_astropy</span><span class="p">(</span><span class="n">astropy_cosmo</span><span class="p">)</span>   <span class="c1"># any flat astropy cosmology</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="n">lookback_time</span><span class="o">=...</span><span class="p">,</span> <span class="n">cosmo</span><span class="o">=</span><span class="n">cosmo</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
 </code></pre></div>
 <p>Everything downstream reads it from the CSP: <code>model.cosmo</code> is a read-only
 view, <code>SedModel(cosmo=...)</code> is accepted only when it equals <code>csp.cosmo</code>
@@ -918,8 +1195,8 @@ log print it, and <code>fitSED</code> writes it into the HDF5 result (<code>/mod
 <code>cosmo_name</code>), from which <code>ceridwen.result_cosmology(path)</code> or
 <code>Cosmology.from_dict(attrs)</code> rebuilds the same object.</p>
 <p>Ages and distances come from the same object: <code>cosmo.age(z)</code> and
-<code>csp.age_at(z)</code> give the age of the universe in Gyr (JAX-differentiable for
-array input, a float for a scalar), <code>cosmo.luminosity_distance(z)</code> the
+<code>csp.age_at(z)</code> give the age of the universe in Gyr (<code>cosmo.age</code> always returns a JAX
+array, 0-d for a scalar; <code>csp.age_at</code> returns a float for a scalar), <code>cosmo.luminosity_distance(z)</code> the
 luminosity distance in Mpc. There is no <code>tuniv</code> argument any more; size the
 SFH grid from the cosmology, <code>jnp.linspace(0.0, cosmo.age(z), n)</code>, and
 <code>SedModel</code> refuses (with both numbers in the message) a grid whose oldest
@@ -943,6 +1220,40 @@ them.</p>
 <code>model.observations</code> later requires <code>model.setup_observations()</code> (called for
 you by <code>fitSED(model, observations)</code>); a <code>Spectrum</code> therefore needs its
 <code>wavelength=</code> at construction even if the flux is attached later.</p>
+<h2 id="nebular-grid-cloudy-without-dust-in-the-h-ii-region">Nebular grid: CLOUDY without dust in the H II region<a class="headerlink" href="#nebular-grid-cloudy-without-dust-in-the-h-ii-region" title="Permanent link">&para;</a></h2>
+<p><code>CSPBasis</code> reads the Byler et al. (2017) CLOUDY grids from <code>$SPS_HOME/nebular</code>. By default it
+uses the grids <strong>without dust inside the H II region</strong> (<code>ZAU_ND_&lt;isochrones&gt;</code>), the default of
+FSPS, python-fsps and Prospector, so the nebular lines match theirs.
+<code>init_neb_params={"cloudy_dust": True}</code> selects the grids with dust (<code>ZAU_WD_&lt;isochrones&gt;</code>),
+whose lines are fainter in hydrogen and Ly-alpha. The factor depends on the grid: for a constant
+SFR over 0-1 Gyr at solar metallicity and logU = -2.5, WD/ND is 0.78 (H-alpha), 0.79 (H-beta),
+0.17 (Ly-alpha) and 1.13 ([O III] 5007) on MIST, and 0.95, 0.95, 0.40 and 0.99 on BPASS. The
+result file records the choice (<code>csp_config['cloudy_dust']</code>); a file that does not record it
+was made with <code>cloudy_dust=True</code>, and <code>rebuild_model</code> asks for that CSP.</p>
+<h2 id="dust-geometry-and-the-escape-fraction-frac_obrun">Dust geometry and the escape fraction <code>frac_obrun</code><a class="headerlink" href="#dust-geometry-and-the-escape-fraction-frac_obrun" title="Permanent link">&para;</a></h2>
+<p>The CSP attenuates each SSP age row by its age bin's dust (<code>init_dust_params['bin_edges']</code>,
+log10 age/Gyr; by default one "birth-cloud" bin, ages below 10^-1.97 Gyr = 10.7 Myr) and then
+everything by the diffuse dust. <code>theta['frac_obrun']</code> opens an escape channel, and
+<code>fesc_geometry</code> (on <code>CSPBasis</code>) chooses what escapes:</p>
+<ul>
+<li><strong><code>'runaway_bc'</code></strong> (default). A fraction <code>frac_obrun</code> of the light of <strong>every age row</strong> skips
+  that row's age-bin attenuation; it is still attenuated by the diffuse dust. The nebular ages
+  also emit a fraction <code>frac_obrun</code> of their ionising photons (free of the age-bin dust) and
+  power <code>1 - frac_obrun</code> of the nebular emission. With the default single bin only the ages
+  below 10.7 Myr are attenuated by a bin, so only they are affected. With several attenuated
+  age bins, old stars escape their own bin's dust too: an old-only population (two power-law
+  bins, <code>tau_pow1 = 1</code>, <code>tau_pow2 = 0.5</code>, SFR zero below 2.6 Gyr) is 1.19x brighter at 5500 A
+  for <code>frac_obrun = 0.3</code> and 1.65x for <code>frac_obrun = 1</code>.</li>
+<li><strong><code>'picket'</code></strong>. A fraction <code>frac_obrun</code> of the <strong>young</strong> light (the ages of the nebular CLOUDY
+  grid, log age &lt;= 7.3, 20 Myr, on the shipped grids), ionising photons included, is not
+  attenuated by any dust or gas: no age-bin dust, no diffuse dust, no nebular reprocessing
+  (the nebular emission scales with <code>1 - frac_obrun</code> and the escape fraction of ionising
+  photons is <code>frac_obrun</code>), and it is not counted as absorbed in the dust-emission energy
+  balance. Requires <code>add_neb=True</code>. The picket's "young" (to 20 Myr) is wider than the default
+  birth-cloud bin (to 10.7 Myr): the 11-20 Myr ages get no birth-cloud dust, but a fraction
+  <code>frac_obrun</code> of their light still skips the diffuse dust.</li>
+</ul>
+<p><code>frac_obrun = 0</code> is the model without the key in both geometries.</p>
 <h2 id="fsps-at-runtime">FSPS at runtime<a class="headerlink" href="#fsps-at-runtime" title="Permanent link">&para;</a></h2>
 <p>With <code>add_neb=True</code> or <code>add_dust_emission=True</code>, the forward model reads CLOUDY
 nebular grids and Draine &amp; Li templates from <code>$SPS_HOME</code>. FSPS must be installed

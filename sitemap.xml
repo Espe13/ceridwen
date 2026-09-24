@@ -2,34 +2,62 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/</loc>
-         <lastmod>2026-09-22</lastmod>
+         <lastmod>2026-09-24</lastmod>
+    </url>
+    <url>
+         <loc>https://www.amanda-stoffers.de/ceridwen/afe/</loc>
+         <lastmod>2026-09-24</lastmod>
     </url>
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/api/</loc>
-         <lastmod>2026-09-22</lastmod>
+         <lastmod>2026-09-24</lastmod>
     </url>
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/conventions/</loc>
-         <lastmod>2026-09-22</lastmod>
+         <lastmod>2026-09-24</lastmod>
+    </url>
+    <url>
+         <loc>https://www.amanda-stoffers.de/ceridwen/development/</loc>
+         <lastmod>2026-09-24</lastmod>
     </url>
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/eline_marginalisation/</loc>
-         <lastmod>2026-09-22</lastmod>
+         <lastmod>2026-09-24</lastmod>
+    </url>
+    <url>
+         <loc>https://www.amanda-stoffers.de/ceridwen/gp_likelihood/</loc>
+         <lastmod>2026-09-24</lastmod>
     </url>
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/installation/</loc>
-         <lastmod>2026-09-22</lastmod>
+         <lastmod>2026-09-24</lastmod>
+    </url>
+    <url>
+         <loc>https://www.amanda-stoffers.de/ceridwen/noise_calibration/</loc>
+         <lastmod>2026-09-24</lastmod>
+    </url>
+    <url>
+         <loc>https://www.amanda-stoffers.de/ceridwen/outlier_model/</loc>
+         <lastmod>2026-09-24</lastmod>
     </url>
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/postprocessing/</loc>
-         <lastmod>2026-09-22</lastmod>
+         <lastmod>2026-09-24</lastmod>
     </url>
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/quickstart/</loc>
-         <lastmod>2026-09-22</lastmod>
+         <lastmod>2026-09-24</lastmod>
+    </url>
+    <url>
+         <loc>https://www.amanda-stoffers.de/ceridwen/samplers/</loc>
+         <lastmod>2026-09-24</lastmod>
+    </url>
+    <url>
+         <loc>https://www.amanda-stoffers.de/ceridwen/troubleshooting/</loc>
+         <lastmod>2026-09-24</lastmod>
     </url>
     <url>
          <loc>https://www.amanda-stoffers.de/ceridwen/tutorial/</loc>
-         <lastmod>2026-09-22</lastmod>
+         <lastmod>2026-09-24</lastmod>
     </url>
 </urlset>

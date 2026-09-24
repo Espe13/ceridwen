@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/installation/">
+        <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/afe/">
       
       
-        <link rel="prev" href="..">
+        <link rel="prev" href="../eline_marginalisation/">
       
       
-        <link rel="next" href="../quickstart/">
+        <link rel="next" href="../conventions/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Installation - CERIDWEN</title>
+        <title>[α/Fe] - CERIDWEN</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#installation" class="md-skip">
+        <a href="#fitting-fe" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Installation
+              [α/Fe]
             
           </span>
         </div>
@@ -290,37 +290,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Installation
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
         
   
   
@@ -336,92 +309,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#1-the-package" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. The package
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#2-fsps-and-sps_home" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. FSPS and $SPS_HOME
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#3-check-the-installation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Check the installation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#ssp-grids" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        SSP grids
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#building-your-own-ssp-grid" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Building your own SSP grid
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#building-this-documentation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Building this documentation
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -646,10 +533,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../afe/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    [α/Fe]
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -665,6 +579,48 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-grid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The grid
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-differs-from-cspbasis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What differs from CSPBasis
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -797,105 +753,75 @@
   
 
 
-<h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
-<p>CERIDWEN needs Python 3.11 or newer (<code>jax</code> &gt;= 0.9 and <code>blackjax</code> &gt;= 1.6 require it).</p>
-<h2 id="1-the-package">1. The package<a class="headerlink" href="#1-the-package" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>ceridwen<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.11<span class="w"> </span>-y<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>conda<span class="w"> </span>activate<span class="w"> </span>ceridwen
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pip<span class="w"> </span>install<span class="w"> </span>ceridwen
+<h1 id="fitting-fe">Fitting [α/Fe]<a class="headerlink" href="#fitting-fe" title="Permanent link">&para;</a></h1>
+<p>The α-enhanced grid (FSPS v4.0, aMIST isochrones + C3K spectra,
+[α/Fe] ∈ {−0.2, 0.0, +0.2, +0.4, +0.6}) adds α-element enhancement as a sampled stellar axis:
+a chemical clock for the formation timescale, measured jointly with, and degenerate with, the
+total metallicity. <code>SSPDataAfe</code> and <code>CSPBasis_afe</code> are subclasses of <code>SSPData</code> and
+<code>CSPBasis</code>. The [α/Fe] axis and its interpolation are the only additions, the nebular
+arguments are dropped, and everything else (SFH weights, dust, projection, flux factor,
+cosmology) is inherited.</p>
+<h2 id="the-grid">The grid<a class="headerlink" href="#the-grid" title="Permanent link">&para;</a></h2>
+<p>Download it by name (612 MB, cached and SHA-256 verified like every published grid).
+Building it yourself needs python-fsps compiled from source with <code>AFE_FLAG=1</code> against the
+FSPS v4.0 data tree, which is easy to get silently wrong.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.ssps</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_grid</span><span class="p">,</span> <span class="n">SSPDataAfe</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.csp</span><span class="w"> </span><span class="kn">import</span> <span class="n">CSPBasis_afe</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">Cosmology</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPDataAfe</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">fetch_grid</span><span class="p">(</span><span class="s2">&quot;amist_c3k_hr_krou_afe&quot;</span><span class="p">))</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">ssp</span><span class="o">.</span><span class="n">display</span><span class="p">()</span>                       <span class="c1"># (n_afe, n_Z, n_age, n_wave) = (5, 13, 107, 10992)</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis_afe</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="n">lookback_time</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">12.0</span><span class="p">,</span> <span class="mi">9</span><span class="p">),</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                   <span class="n">cosmo</span><span class="o">=</span><span class="n">Cosmology</span><span class="o">.</span><span class="n">planck18</span><span class="p">(),</span> <span class="n">zh_const</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="n">theta</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="s2">&quot;lookback_time&quot;</span><span class="p">:</span>      <span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">12.0</span><span class="p">,</span> <span class="mi">9</span><span class="p">),</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="s2">&quot;sfh&quot;</span><span class="p">:</span>                <span class="n">jnp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">12.0</span><span class="p">,</span> <span class="mi">9</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1.0</span><span class="p">),</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="s2">&quot;logzsol&quot;</span><span class="p">:</span>            <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">0.3</span><span class="p">]),</span>   <span class="c1"># = [Fe/H] on an aMIST grid</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="s2">&quot;afe&quot;</span><span class="p">:</span>                <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.4</span><span class="p">]),</span>    <span class="c1"># [α/Fe]: re-partitions that Z</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="s2">&quot;tau_pow&quot;</span><span class="p">:</span>            <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.3</span><span class="p">]),</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="s2">&quot;alpha_pow&quot;</span><span class="p">:</span>          <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">1.0</span><span class="p">]),</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="s2">&quot;diffuse_tau_kc&quot;</span><span class="p">:</span>     <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.2</span><span class="p">]),</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>    <span class="s2">&quot;diffuse_dust_index&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">]),</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="p">}</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="n">wave</span><span class="p">,</span> <span class="n">fnu</span> <span class="o">=</span> <span class="n">csp</span><span class="o">.</span><span class="n">wave</span><span class="p">,</span> <span class="n">csp</span><span class="o">.</span><span class="n">get_spectrum</span><span class="p">(</span><span class="n">theta</span><span class="p">)</span>   <span class="c1"># rest-frame Lsun/Hz per Msun</span>
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="nb">print</span><span class="p">(</span><span class="n">csp</span><span class="p">)</span>                                      <span class="c1"># grids, [Fe/H] axis, Z_sun, parameters</span>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="n">i</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">wave</span> <span class="o">-</span> <span class="mf">5500.0</span><span class="p">)))</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">fnu</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> pixels, L_nu(5500 A) = </span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">fnu</span><span class="p">[</span><span class="n">i</span><span class="p">])</span><span class="si">:</span><span class="s2">.3e</span><span class="si">}</span><span class="s2"> Lsun/Hz per Msun&quot;</span><span class="p">)</span>
 </code></pre></div>
-<p>This installs JAX, the samplers, the filter curves and attenuation laws, posterior plotting
-and the test runner. On Linux it installs the CUDA 12 JAX wheels, with the CUDA libraries
-bundled: JAX uses an NVIDIA GPU when one is present and needs only a recent NVIDIA driver
-(see <a href="https://docs.jax.dev/en/latest/installation.html">JAX's install page</a> for the minimum).
-On macOS, and on Linux without a GPU, JAX runs on the CPU with the same results. On Windows,
-use WSL2. Every <code>fitSED</code> call prints the device it runs on:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>ceridwen.fitSED
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  Device      : GPU  (CudaDevice(id=0))
-</code></pre></div>
-<h2 id="2-fsps-and-sps_home">2. FSPS and <code>$SPS_HOME</code><a class="headerlink" href="#2-fsps-and-sps_home" title="Permanent link">&para;</a></h2>
-<p>CERIDWEN reads the nebular CLOUDY grids (<code>nebular/</code>), the dust-emission templates
-(<code>dust/dustem/</code>) and the FSPS emission-line list (<code>data/emlines_info.dat</code>) from the
-<a href="https://github.com/cconroy20/fsps">FSPS</a> data files at <code>$SPS_HOME</code>. FSPS itself is not run
-during a fit, so this step is a clone (3.4 GB), not a compile:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SPS_HOME</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/fsps&quot;</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>git<span class="w"> </span>clone<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/cconroy20/fsps.git<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SPS_HOME</span><span class="s2">&quot;</span>
-</code></pre></div>
-<p><code>$SPS_HOME</code> can be any path. Make it permanent in your shell startup file, with the same path:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export SPS_HOME=&quot;$HOME/fsps&quot;&#39;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.zshrc<span class="w">    </span><span class="c1"># zsh, the macOS default</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export SPS_HOME=&quot;$HOME/fsps&quot;&#39;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.bashrc<span class="w">   </span><span class="c1"># bash, most Linux</span>
-</code></pre></div>
-<p>Open a new terminal and check that <code>echo $SPS_HOME</code> prints the path.</p>
-<h2 id="3-check-the-installation">3. Check the installation<a class="headerlink" href="#3-check-the-installation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>python<span class="w"> </span>-m<span class="w"> </span>ceridwen.check
-</code></pre></div>
-<p>It prints an <code>ok</code> / <code>warn</code> / <code>FAIL</code> line per component (dependencies, filters and attenuation
-laws, float64, nested sampling, python-fsps, <code>$SPS_HOME</code> and the data files in it), with the
-fix for anything missing. The <code>python-fsps</code> line is a warning until you compile it (below),
-and that is expected.</p>
-<h2 id="ssp-grids">SSP grids<a class="headerlink" href="#ssp-grids" title="Permanent link">&para;</a></h2>
-<p>Fitting needs an SSP grid (an HDF5 file). The published grids are on Zenodo
-(<a href="https://doi.org/10.5281/zenodo.22937956">doi:10.5281/zenodo.22937956</a>) and registered by
-name. <code>fetch_grid</code> downloads a grid once into <code>~/.ceridwen/grids</code> (or <code>$CERIDWEN_GRID_DIR</code>),
-checks its SHA-256 on every call, and returns the path:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.ssps</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_grid</span><span class="p">,</span> <span class="n">available_grids</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">available_grids</span><span class="p">(</span><span class="n">published_only</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>        <span class="c1"># name -&gt; description</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">fetch_grid</span><span class="p">(</span><span class="s2">&quot;mist_miles_chab&quot;</span><span class="p">))</span>
-</code></pre></div>
-<table>
-<thead>
-<tr>
-<th>name</th>
-<th>contents</th>
-<th>size</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>mist_miles_chab</code></td>
-<td>MIST isochrones + MILES spectra, Chabrier IMF</td>
-<td>67 MB</td>
-</tr>
-<tr>
-<td><code>mist_bpass_v2</code></td>
-<td>BPASS v2 binary populations, Chabrier IMF</td>
-<td>62 MB</td>
-</tr>
-<tr>
-<td><code>amist_c3k_hr_krou_afe</code></td>
-<td>aMIST + C3K, Kroupa IMF, five [α/Fe] planes, for <code>CSPBasis_afe</code> (<a href="../afe/">α/Fe</a>)</td>
-<td>612 MB</td>
-</tr>
-</tbody>
-</table>
-<p>The two solar-scaled grids carry the surviving-mass table that <code>fitSED</code> and <code>PostProcess</code> use
-for <code>mfrac</code>; the α grid does not yet, so fit it with <code>mfrac=False</code>. A copy fetched before the
-2026-09 re-deposit fails the checksum: <code>fetch_grid(name, force=True)</code> replaces it.</p>
-<h2 id="building-your-own-ssp-grid">Building your own SSP grid<a class="headerlink" href="#building-your-own-ssp-grid" title="Permanent link">&para;</a></h2>
-<p>To use a different IMF, isochrone set or spectral library, build a grid with FSPS. This is
-the one step that needs the compiled <a href="https://dfm.io/python-fsps"><code>python-fsps</code></a> wrapper,
-which compiles Fortran against <code>$SPS_HOME</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>brew<span class="w"> </span>install<span class="w"> </span>gcc<span class="w">                       </span><span class="c1"># macOS (Homebrew); or:</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>gfortran<span class="w">          </span><span class="c1"># Debian/Ubuntu; or:</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>conda<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>conda-forge<span class="w"> </span>gfortran<span class="w">  </span><span class="c1"># any OS, inside your conda env</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;fsps&gt;=0.4.4&quot;</span>
-</code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">from_fsps</span><span class="p">(</span><span class="n">imf_type</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">save_to</span><span class="o">=</span><span class="s2">&quot;ssp_data.h5&quot;</span><span class="p">)</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># later: ssp = SSPData.load(&quot;ssp_data.h5&quot;)</span>
-</code></pre></div>
-<p><code>from_fsps</code> accepts only the keyword arguments that define the stellar library and IMF
-(<code>imf_type</code> and its parameters, isochrone-phase switches); dust, SFH, nebular emission, IGM,
-redshift and a fixed metallicity are rejected, because the forward model applies them. The
-file records its provenance (isochrones, spectral library, <code>imf_type</code>, FSPS version, build
-arguments), <code>CSPBasis</code> reads the isochrone library from it, and <code>ssp.display()</code> prints it.</p>
-<h2 id="building-this-documentation">Building this documentation<a class="headerlink" href="#building-this-documentation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;.[docs]&quot;</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>mkdocs<span class="w"> </span>build
-</code></pre></div>
+<p><code>amist_c3k_hr_krou_afe</code> is built from the alpha-MC C3K high-resolution SSPs (MIST v2.5 +
+C3K v2.3) of M. J. Park, with a Kroupa IMF. The C3K spectra are resampled onto pixels of
+λ/Δλ = 6000 between 3000 and 9000 Å, so the file resolves R ≈ 3000 at the two-pixel floor
+there; <code>ssp.display()</code> reports the floor. Its native axis is the FSPS label
+log10 Z = [Fe/H] + log10(0.0185), i.e. <code>logzsol</code> = [Fe/H].</p>
+<h2 id="what-differs-from-cspbasis">What differs from <code>CSPBasis</code><a class="headerlink" href="#what-differs-from-cspbasis" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>theta["afe"]</code> is interpolated linearly between the two bracketing grid planes, so it works
+  under <code>jit</code>, <code>grad</code> and <code>vmap</code> and in every sampler.</li>
+<li><code>logzsol</code> is [Fe/H]: every [α/Fe] plane shares one [Fe/H] axis (FSPS <code>AFE_FLAG=1</code>). The
+  total metallicity [Z/H] is the derived <code>logzsol_total</code>
+  = <code>logzsol + log10(1 - x + x 10^[α/Fe])</code>, x = 0.687490 (MIST v2.5, GS98).</li>
+<li>There is no nebular model (no α-enhanced CLOUDY grids exist): <code>Lines</code> observations are
+  refused, and the basis reads nothing from <code>$SPS_HOME</code> unless <code>add_dust_emission=True</code>.</li>
+<li><code>CSPBasis_afe</code> accepts only α-aware 4-D grids; a solar-scaled 3-D grid raises a <code>TypeError</code>
+  that points to <code>CSPBasis</code>. <code>ssp_afe=</code> is keyword-only when you construct a grid by hand.</li>
+<li><code>logzsol</code> above +0.25 together with [α/Fe] above +0.4 is refused: FSPS ships the same
+  isochrone file for [α/Fe] = +0.4 and +0.6 at [Fe/H] = +0.5, and <code>display()</code> lists the cell.
+  A prior that reaches it raises at construction.</li>
+<li>The grid does not carry a surviving-mass table yet, so fit it with
+  <code>fitSED(..., mfrac=False)</code> and quote the formed mass.</li>
+<li>Memory: a sampled <code>afe</code> enters the contraction as interpolation weights over the [α/Fe]
+  axis, so no interpolated flux plane is built per sample and vectorised evaluation
+  (<code>jax.vmap</code>, as nested sampling does over its live points) costs about as much memory as
+  without <code>afe</code>. XLA's temporary memory for <code>jit(vmap(csp.get_spectrum))</code> on
+  <code>amist_c3k_hr_krou_afe</code> (CPU, compile-time <code>memory_analysis</code>): 0.005 GB at W = 1, 0.002 GB
+  at W = 80, 0.011 GB at W = 400. The basis keeps two copies of the flux cube (2 × 306 MB for
+  this grid, float32).</li>
+</ul>
+<p>A full fit of a quiescent galaxy with [α/Fe], including a fitted spectrophotometric
+normalisation, is <code>examples/demo_afe_quiescent.py</code>.</p>
 
 
 

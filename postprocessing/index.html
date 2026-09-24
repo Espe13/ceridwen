@@ -13,10 +13,10 @@
         <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/postprocessing/">
       
       
-        <link rel="prev" href="../eline_marginalisation/">
+        <link rel="prev" href="../samplers/">
       
       
-        <link rel="next" href="../api/">
+        <link rel="next" href="../noise_calibration/">
       
       
         
@@ -374,41 +374,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../conventions/" class="md-nav__link">
+      <a href="../samplers/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Conventions & gotchas
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../eline_marginalisation/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Emission-line marginalisation
+    Samplers
   
 
     
@@ -557,6 +530,222 @@
   
   
     <li class="md-nav__item">
+      <a href="../noise_calibration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Noise and calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gp_likelihood/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GP likelihood (correlated residuals)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../outlier_model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outlier mixture likelihood
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eline_marginalisation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Emission-line marginalisation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../afe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    [α/Fe]
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conventions & gotchas
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development and verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../api/" class="md-nav__link">
         
   
@@ -644,7 +833,7 @@ unless you reassigned <code>model.observations</code> without calling
 <tr>
 <td><code>out['extras']['sfh']['lookback_gyr']</code></td>
 <td><code>(N, n_time)</code></td>
-<td>lookback grid of each draw (follows a sampled <code>zred</code> when <code>track_zred_age</code>)</td>
+<td>lookback grid of each draw (follows a sampled <code>zred</code> when <code>track_zred_age</code>; the SFR is scaled with it so the formed mass is kept)</td>
 </tr>
 <tr>
 <td><code>out['extras']['sfh']['sfr']</code></td>
@@ -670,6 +859,21 @@ unless you reassigned <code>model.observations</code> without calling
 <td><code>out['extras']['sfh']['ssfr10']</code>, ...</td>
 <td><code>(N,)</code></td>
 <td><code>sfrW / mass_formed</code>, 1/yr</td>
+</tr>
+<tr>
+<td><code>out['extras']['sfh']['mfrac']</code></td>
+<td><code>(N,)</code></td>
+<td>surviving / formed mass (stars + remnants); only with a grid that carries a mass table (below)</td>
+</tr>
+<tr>
+<td><code>out['extras']['sfh']['mass_surviving']</code></td>
+<td><code>(N,)</code></td>
+<td><code>mfrac * mass_formed</code>, M⊙</td>
+</tr>
+<tr>
+<td><code>out['extras']['sfh']['ssfr10_surviving']</code>, ...</td>
+<td><code>(N,)</code></td>
+<td><code>sfrW / mass_surviving</code>, 1/yr</td>
 </tr>
 <tr>
 <td><code>out['extras']['uv']['MUV']</code>, <code>LUV</code></td>
@@ -749,20 +953,19 @@ unless you reassigned <code>model.observations</code> without calling
 <tr>
 <td><code>out['meta']</code></td>
 <td></td>
-<td><code>n_samples</code>, <code>n_raw</code>, <code>seed</code>, <code>resampled</code>, <code>windows_myr</code>, <code>param_names</code>, <code>zred_fixed</code>, <code>cosmology</code>, <code>sampler</code>, <code>weights</code> (source), <code>log_evidence</code>, <code>log_evidence_err</code>, <code>observations</code>, <code>sfh_interp</code>, <code>sfh_per_bin</code></td>
+<td><code>n_samples</code>, <code>n_raw</code>, <code>seed</code>, <code>resampled</code>, <code>windows_myr</code>, <code>param_names</code>, <code>zred_fixed</code>, <code>cosmology</code>, <code>sampler</code>, <code>weights</code> (source), <code>log_evidence</code>, <code>log_evidence_err</code>, <code>observations</code>, <code>sfh_interp</code>, <code>sfh_per_bin</code>, <code>metallicity</code> (convention and grid Z_sun), <code>mfrac</code> (read from the file's <code>/derived/mfrac</code>, computed from the grid's table, or not computed)</td>
 </tr>
 </tbody>
 </table>
 <p>Blocks can be switched off: <code>PostProcess(..., sfr=False, ssfr=False,
-uv=False, ionizing=False, predictions=False)</code>.</p>
+uv=False, ionizing=False, predictions=False, mfrac=False)</code>.</p>
 <h2 id="conventions-you-should-know">Conventions you should know<a class="headerlink" href="#conventions-you-should-know" title="Permanent link">&para;</a></h2>
 <p><strong>Draws.</strong> A nested-sampling result carries importance weights. They are
 recomputed from the dead points' log-likelihoods and birth contours
 (<code>ceridwen.sampler.ns_weights.nested_log_weights</code>, exact n_live counting,
-in the order of the samples) rather than read from the file: the
-<code>log_weights</code> stored by fits before 2026-09-03 were sorted by likelihood
-and misaligned with the sample arrays for the final live points (a warning
-tells you when the stored weights differ). The draws are then resampled to
+in the order of the samples) rather than read from the file (a result
+without birth contours uses its stored <code>log_weights</code>; a warning tells you
+when the stored weights differ from the recomputed ones, which are then used). The draws are then resampled to
 equal weight (<code>n_samples</code>, default 2000, <code>seed</code> fixed), so a histogram or
 a median of any array is the posterior. A NUTS result has uniform weights
 and is used as it is (<code>n_samples</code> subsamples it). <code>bestfit</code> is the raw
@@ -770,12 +973,53 @@ sample with the highest log-likelihood, not a draw.</p>
 <p><strong>Star formation.</strong> After the transforms <code>theta['sfh']</code> is the SFH shape in
 the CSP's convention. The physical SFR is that shape × 10^logmass when
 <code>logmass</code> is a parameter: the CSP scales the spectrum, not the SFH, so
-<code>logmass</code> is the formed mass and the shape integrates to one solar mass
-under <code>logsfr_ratios_to_sfh</code>. <code>sfrW</code> is the mean SFR over the last W Myr of
+<code>logmass</code> is the formed mass when the shape integrates to one solar mass on the
+construction grid, as under <code>logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)</code> (a
+directly sampled <code>sfh</code> carries its own normalisation). With <code>track_zred_age=True</code> the
+lookback grid of each draw ends at <code>age(zred)</code> and the SFR is the shape × 10^logmass ×
+<code>T_grid / age(zred)</code>, the SFR the forward model forms, so <code>mass_formed</code> is still
+10^logmass. <code>sfrW</code> is the mean SFR over the last W Myr of
 the same piecewise function the weight kernel integrates: constant per bin
 for <code>sfh_interp="step"</code>, linear between nodes for <code>"linear"</code>; beyond the
-oldest node the SFR is zero. <code>ssfrW</code> divides by the formed mass; no stellar
-return fraction is applied, because the SSP grid carries none.</p>
+oldest node the SFR is zero. <code>ssfrW</code> divides by the formed mass, with no
+stellar return fraction, and keeps that meaning.</p>
+<p><strong>Surviving mass.</strong> <code>mfrac</code> is the fraction of the formed mass still in
+stars and remnants: the SSP grid's surviving-mass table (<code>ssp_stellar_mass</code>, FSPS's
+<code>stellar_mass</code> per SSP, SSP schema 3; on MIST below ~2.5 Myr with FSPS's lowest IMF bin
+counted by mass instead of by number, GOTCHAS section 14) weighted by the draw's SSP weights, the same
+weights that make its spectrum. <code>mass_surviving = mfrac * mass_formed</code> and
+<code>ssfrW_surviving = sfrW / mass_surviving</code> are the Prospector-style stellar mass and
+sSFR. The published <code>mist_miles_chab</code> and <code>mist_bpass_v2</code> grids carry the table (the α grid
+<code>amist_c3k_hr_krou_afe</code> does not: use <code>mfrac=False</code> there) and <code>SSPData.from_fsps</code> records it
+in every grid it builds. For a grid without the table, <code>PostProcess</code> warns once that <code>mfrac</code> is
+unavailable and reports <code>mass_formed</code> only (<code>mfrac=True</code> makes the missing table an error
+that says how to get a grid with the table: <code>fetch_grid(&lt;name&gt;, force=True)</code> for a published grid,
+a rebuild with <code>from_fsps</code> for your own; <code>mfrac=False</code> skips the block silently). A table
+with values above 1 M_sun per M_sun formed is refused when the grid is loaded (one warning;
+the grid works without it). The composite <code>mfrac</code> follows CERIDWEN's
+SFH integration, not FSPS's <code>csp_gen</code>: against python-fsps for constant and rising
+SFHs of 0.1-10 Gyr it agrees to 4.2e-4 (step) and 6.3e-3 (linear, young populations on
+MIST, whose youngest node is 10^5 yr); GOTCHAS section 14.</p>
+<p><strong><code>mfrac</code> in the result file.</strong> When the grid has the table, <code>fitSED</code> evaluates
+<code>mfrac</code> for every stored sample (SFH weights times the table, no spectrum; well under a
+second for thousands of samples) and writes it as <code>/derived/mfrac</code>, aligned with
+<code>/samples</code>, with the attributes <code>stellar_mass_source</code>, <code>grid_chash</code> and <code>sfh_interp</code> that
+say which table and SFH scheme produced it. So a stellar mass needs no post-processing:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">read_result_h5</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">r</span> <span class="o">=</span> <span class="n">read_result_h5</span><span class="p">(</span><span class="s2">&quot;out/ceridwen_result.h5&quot;</span><span class="p">)</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">mass_surviving</span> <span class="o">=</span> <span class="n">r</span><span class="p">[</span><span class="s2">&quot;derived&quot;</span><span class="p">][</span><span class="s2">&quot;mfrac&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="mi">10</span> <span class="o">**</span> <span class="n">r</span><span class="p">[</span><span class="s2">&quot;samples&quot;</span><span class="p">][</span><span class="s2">&quot;logmass&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">ravel</span><span class="p">()</span>   <span class="c1"># per sample, M_sun</span>
+</code></pre></div>
+<p>(weight the samples with <code>r["samples"]["log_weights"]</code>, or use <code>PostProcess</code>, which does the
+resampling). <code>PostProcess(model, "out/ceridwen_result.h5")</code> reads the stored array instead
+of recomputing it, so it does not need the table, and raises when the recorded
+<code>grid_chash</code> or <code>sfh_interp</code> differ from the model's. Without a file (a <code>SamplingResult</code>),
+or for a file without <code>/derived</code>, it computes <code>mfrac</code> from the table.
+<code>fitSED(mfrac=False)</code> skips the group; <code>mfrac=True</code> refuses a grid without a table before
+sampling; the default writes it when it can and otherwise logs one line.</p>
+<p>The rule for <code>/derived</code>: it holds only quantities that are a pure function of theta and the
+model, cheap for every sample, and exactly reproducible from the file plus the model.
+<code>mfrac</code> qualifies. Spectra, SFR windows and UV / ionising quantities do not, and stay in
+<code>PostProcess</code>.</p>
 <p><strong>Model-grid spectra</strong> are rest-frame luminosity densities: no distance, no
 (1+z), no IGM. To compare with an observation use the per-observation
 predictions, which are what the likelihood saw.</p>
@@ -788,43 +1032,47 @@ of <code>NebularGridModel.compute_log_qq</code>, so it is the Q the fit itself u
 <p>A <code>derived</code> function receives one <code>SpectrumSample</code> and returns a float or a
 1-D array; it is evaluated per draw (a Python loop, so keep it cheap) and
 for the best fit:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">A_V</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>                                   <span class="c1"># V-band attenuation from the two spectra</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">i</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">index_of</span><span class="p">(</span><span class="mf">5500.0</span><span class="p">)</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="k">return</span> <span class="mf">2.5</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">dustfree</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">/</span> <span class="n">s</span><span class="o">.</span><span class="n">full</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="k">def</span><span class="w"> </span><span class="nf">L_optical</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>                             <span class="c1"># erg/s in 4000-7000 A rest, dust-attenuated</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">luminosity</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">full</span><span class="p">,</span> <span class="mf">4000.0</span><span class="p">,</span> <span class="mf">7000.0</span><span class="p">)</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="k">def</span><span class="w"> </span><span class="nf">beta_UV</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>                               <span class="c1"># UV slope of the full model</span>
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    <span class="n">m</span> <span class="o">=</span> <span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span> <span class="o">&gt;</span> <span class="mi">1300</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span> <span class="o">&lt;</span> <span class="mi">2600</span><span class="p">)</span>
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="n">flam</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">full</span><span class="p">[</span><span class="n">m</span><span class="p">]</span> <span class="o">/</span> <span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span><span class="p">[</span><span class="n">m</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span>
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">polyfit</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span><span class="p">[</span><span class="n">m</span><span class="p">]),</span> <span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">flam</span><span class="p">),</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="n">pp</span> <span class="o">=</span> <span class="n">PostProcess</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">derived</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;A_V&quot;</span><span class="p">:</span> <span class="n">A_V</span><span class="p">,</span> <span class="s2">&quot;L_opt&quot;</span><span class="p">:</span> <span class="n">L_optical</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">:</span> <span class="n">beta_UV</span><span class="p">})</span>
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="n">out</span> <span class="o">=</span> <span class="n">pp</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="n">out</span><span class="p">[</span><span class="s2">&quot;derived&quot;</span><span class="p">][</span><span class="s2">&quot;A_V&quot;</span><span class="p">]</span>                         <span class="c1"># (N,)</span>
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="n">out</span><span class="p">[</span><span class="s2">&quot;bestfit&quot;</span><span class="p">][</span><span class="s2">&quot;derived&quot;</span><span class="p">][</span><span class="s2">&quot;A_V&quot;</span><span class="p">]</span>              <span class="c1"># float</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">A_V</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>                                   <span class="c1"># V-band attenuation from the two spectra</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">i</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">index_of</span><span class="p">(</span><span class="mf">5500.0</span><span class="p">)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="k">return</span> <span class="mf">2.5</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">dustfree</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">/</span> <span class="n">s</span><span class="o">.</span><span class="n">full</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="k">def</span><span class="w"> </span><span class="nf">L_optical</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>                             <span class="c1"># erg/s in 4000-7000 A rest, dust-attenuated</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">luminosity</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">full</span><span class="p">,</span> <span class="mf">4000.0</span><span class="p">,</span> <span class="mf">7000.0</span><span class="p">)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="k">def</span><span class="w"> </span><span class="nf">beta_UV</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>                               <span class="c1"># UV slope of the full model</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">m</span> <span class="o">=</span> <span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span> <span class="o">&gt;</span> <span class="mi">1300</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span> <span class="o">&lt;</span> <span class="mi">2600</span><span class="p">)</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">flam</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">full</span><span class="p">[</span><span class="n">m</span><span class="p">]</span> <span class="o">/</span> <span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span><span class="p">[</span><span class="n">m</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">polyfit</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span><span class="p">[</span><span class="n">m</span><span class="p">]),</span> <span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">flam</span><span class="p">),</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="n">pp</span> <span class="o">=</span> <span class="n">PostProcess</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">derived</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;A_V&quot;</span><span class="p">:</span> <span class="n">A_V</span><span class="p">,</span> <span class="s2">&quot;L_opt&quot;</span><span class="p">:</span> <span class="n">L_optical</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">:</span> <span class="n">beta_UV</span><span class="p">})</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="n">out</span> <span class="o">=</span> <span class="n">pp</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="n">out</span><span class="p">[</span><span class="s2">&quot;derived&quot;</span><span class="p">][</span><span class="s2">&quot;A_V&quot;</span><span class="p">]</span>                         <span class="c1"># (N,)</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="n">out</span><span class="p">[</span><span class="s2">&quot;bestfit&quot;</span><span class="p">][</span><span class="s2">&quot;derived&quot;</span><span class="p">][</span><span class="s2">&quot;A_V&quot;</span><span class="p">]</span>              <span class="c1"># float</span>
 </code></pre></div>
 <p><code>SpectrumSample</code> carries <code>wave_rest</code>, <code>full</code>, <code>intrinsic</code>, <code>dustfree</code> (all
 L⊙/Hz × 10^logmass), <code>theta</code> (this draw after the transforms, numpy), <code>zred</code>,
 <code>logmass</code>, <code>sfr</code>, <code>lookback_gyr</code>, <code>cosmo</code>, and the helpers <code>index_of(λ)</code>,
 <code>mean_lnu(spec, lo, hi)</code> and <code>luminosity(spec, lo, hi)</code>.</p>
 <h2 id="figures">Figures<a class="headerlink" href="#figures" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">pp</span><span class="o">.</span><span class="n">figures</span><span class="p">(</span><span class="s2">&quot;post_figs/&quot;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">&quot;ID 1009077&quot;</span><span class="p">)</span>      <span class="c1"># summary.pdf, corner.pdf, diagnostics.pdf</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">pp</span><span class="o">.</span><span class="n">figures</span><span class="p">(</span><span class="s2">&quot;post_figs/&quot;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">&quot;ID 1009077&quot;</span><span class="p">)</span>      <span class="c1"># summary.pdf, corner.pdf, diagnostics.pdf</span>
 </code></pre></div>
 <p><code>ceridwen.plotting</code> makes three per-galaxy figures from the output (plain
 matplotlib; <code>plotting.COLORS</code> holds the blue default palette and is the only
 styling): a <strong>summary</strong> page (observed-frame SED with the 16–84 % model band,
-data, posterior photometry and χ residuals; emission-line residuals with S/N;
-the SFH with prior and posterior bands and the best fit; 1-D marginals with
-median, 16–84 % and best fit; header with z, log M, log SFR10, χ²/ν of the best
+data, posterior photometry and χ residuals, across the full width when no lines
+were fitted; emission-line residuals with S/N; the SFH as per-bin SFR against
+lookback time, with the posterior 16–84 % and median, the prior 16–84 % at the
+median mass and the injected SFH when <code>truths</code> gives it, on a linear time axis
+for a uniform node grid and a log axis otherwise; 1-D marginals with
+median, 16–84 %, best fit and prior 16–84 %; header with z, log M, log SFR10, χ²/ν of the best
 fit and ln Z), a <strong>corner</strong> plot of all fitted parameters (median dashed,
 maximum-likelihood sample in red), and a <strong>diagnostics</strong> page (nested sampling:
 dead points in deletion order coloured by posterior weight, the log-likelihood
 run and the cumulative posterior weight with ln Z and the effective sample size;
-MCMC: per-chain traces with split-R̂ and ESS). The functions
+MCMC: per-chain traces with split-R̂ and ESS; without <code>vi</code> all NUTS chains start from one
+warmup end state, so R̂ there measures within-run mixing only). The functions
 <code>summary_figure(out, model)</code>, <code>corner_figure(out)</code> and
 <code>diagnostic_figure(result, out)</code> return the matplotlib figures for further
 editing.</p>

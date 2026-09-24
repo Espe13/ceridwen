@@ -10,25 +10,31 @@
       
       
       
+        <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/noise_calibration/">
       
+      
+        <link rel="prev" href="../postprocessing/">
+      
+      
+        <link rel="next" href="../gp_likelihood/">
       
       
         
       
       
-      <link rel="icon" href="/ceridwen/assets/images/favicon.png">
+      <link rel="icon" href="../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>CERIDWEN</title>
+        <title>Noise and calibration - CERIDWEN</title>
       
     
     
-      <link rel="stylesheet" href="/ceridwen/assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="/ceridwen/assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -47,11 +53,11 @@
       
     
     
-      <link rel="stylesheet" href="/ceridwen/assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
     
-      <link rel="stylesheet" href="/ceridwen/stylesheets/extra.css">
+      <link rel="stylesheet" href="../stylesheets/extra.css">
     
-    <script>__md_scope=new URL("/ceridwen/",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -75,6 +81,11 @@
     <label class="md-overlay" for="__drawer"></label>
     <div data-md-component="skip">
       
+        
+        <a href="#noise-and-calibration" class="md-skip">
+          Skip to content
+        </a>
+      
     </div>
     <div data-md-component="announce">
       
@@ -87,7 +98,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="/ceridwen/." title="CERIDWEN" class="md-header__button md-logo" aria-label="CERIDWEN" data-md-component="logo">
+    <a href=".." title="CERIDWEN" class="md-header__button md-logo" aria-label="CERIDWEN" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -107,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              
+              Noise and calibration
             
           </span>
         </div>
@@ -225,7 +236,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="/ceridwen/." title="CERIDWEN" class="md-nav__button md-logo" aria-label="CERIDWEN" data-md-component="logo">
+    <a href=".." title="CERIDWEN" class="md-nav__button md-logo" aria-label="CERIDWEN" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -255,7 +266,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/." class="md-nav__link">
+      <a href=".." class="md-nav__link">
         
   
   
@@ -282,7 +293,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/installation/" class="md-nav__link">
+      <a href="../installation/" class="md-nav__link">
         
   
   
@@ -309,7 +320,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/quickstart/" class="md-nav__link">
+      <a href="../quickstart/" class="md-nav__link">
         
   
   
@@ -336,7 +347,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/tutorial/" class="md-nav__link">
+      <a href="../tutorial/" class="md-nav__link">
         
   
   
@@ -363,7 +374,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/samplers/" class="md-nav__link">
+      <a href="../samplers/" class="md-nav__link">
         
   
   
@@ -390,7 +401,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/postprocessing/" class="md-nav__link">
+      <a href="../postprocessing/" class="md-nav__link">
         
   
   
@@ -414,10 +425,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="/ceridwen/noise_calibration/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Noise and calibration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -433,6 +471,59 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#fixed-terms-set-on-the-observation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed terms, set on the observation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sampled-noise-terms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sampled noise terms
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#calibrating-a-spectrum" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calibrating a spectrum
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -444,7 +535,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/gp_likelihood/" class="md-nav__link">
+      <a href="../gp_likelihood/" class="md-nav__link">
         
   
   
@@ -471,7 +562,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/outlier_model/" class="md-nav__link">
+      <a href="../outlier_model/" class="md-nav__link">
         
   
   
@@ -498,7 +589,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/eline_marginalisation/" class="md-nav__link">
+      <a href="../eline_marginalisation/" class="md-nav__link">
         
   
   
@@ -525,7 +616,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/afe/" class="md-nav__link">
+      <a href="../afe/" class="md-nav__link">
         
   
   
@@ -552,7 +643,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/conventions/" class="md-nav__link">
+      <a href="../conventions/" class="md-nav__link">
         
   
   
@@ -579,7 +670,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/troubleshooting/" class="md-nav__link">
+      <a href="../troubleshooting/" class="md-nav__link">
         
   
   
@@ -606,7 +697,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/development/" class="md-nav__link">
+      <a href="../development/" class="md-nav__link">
         
   
   
@@ -633,7 +724,7 @@
   
   
     <li class="md-nav__item">
-      <a href="/ceridwen/api/" class="md-nav__link">
+      <a href="../api/" class="md-nav__link">
         
   
   
@@ -666,8 +757,94 @@
               
               <article class="md-content__inner md-typeset">
                 
-  <h1>404 - Not found</h1>
+                  
 
+
+  
+  
+
+
+<h1 id="noise-and-calibration">Noise and calibration<a class="headerlink" href="#noise-and-calibration" title="Permanent link">&para;</a></h1>
+<p>The default likelihood is Gaussian with the uncertainties you pass to each observation. This
+page lists the terms that change it: error floors and inflated errors, upper limits, and the
+calibration of a spectrum. The outlier mixture and the Gaussian-process likelihood have their
+own pages (<a href="../outlier_model/">Outlier model</a>, <a href="../gp_likelihood/">GP likelihood</a>).
+<a href="https://github.com/Espe13/ceridwen/blob/main/GOTCHAS.md"><code>GOTCHAS.md</code></a> (section 5) lists
+the combinations that are refused.</p>
+<h2 id="fixed-terms-set-on-the-observation">Fixed terms, set on the observation<a class="headerlink" href="#fixed-terms-set-on-the-observation" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>Spectrum(noise_floor=f)</code>: a fractional floor, sigma_eff² = sigma² + (f |model|)².</li>
+<li><code>Photometry(upper_limit=mask)</code>: bands where <code>mask</code> is True get a one-sided penalty (only a
+  model above the data is penalised).</li>
+</ul>
+<h2 id="sampled-noise-terms">Sampled noise terms<a class="headerlink" href="#sampled-noise-terms" title="Permanent link">&para;</a></h2>
+<p>Four terms inflate an observation's variance. Each is switched on by giving its parameter a
+prior (and a <code>free_param_init</code>) in <code>SedModel</code>:</p>
+<table>
+<thead>
+<tr>
+<th>parameter</th>
+<th>variance becomes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>log_err_scale_&lt;kind&gt;</code></td>
+<td>sigma² exp(2 log_err_scale): a common rescaling of the quoted errors</td>
+</tr>
+<tr>
+<td><code>log_jitter_&lt;kind&gt;</code></td>
+<td>+ exp(log_jitter)², in data units</td>
+</tr>
+<tr>
+<td><code>log_f_calib_&lt;kind&gt;</code></td>
+<td>+ (exp(log_f_calib) |model|)²</td>
+</tr>
+<tr>
+<td><code>log_f_data_&lt;kind&gt;</code></td>
+<td>+ (exp(log_f_data) |data|)²</td>
+</tr>
+</tbody>
+</table>
+<p><code>&lt;kind&gt;</code> is <code>phot</code>, <code>spec</code> or <code>lines</code>. With several observations of one kind, each has its
+own term, <code>&lt;root&gt;_&lt;kind&gt;_&lt;obs.name&gt;</code> (for example <code>log_jitter_spec_nirspec</code>); the plain name
+then raises. A constant transform fixes a term at a value. These names are read by <code>fitSED</code>;
+with <code>run_sampler</code> you build the <code>DiagonalNoiseModel</code> yourself. <code>log_jitter</code> is the natural
+log of a flux in the observation's units (maggies, cgs F_nu or erg s⁻¹ cm⁻²), so set its prior
+from the size of your uncertainties.</p>
+<h2 id="calibrating-a-spectrum">Calibrating a spectrum<a class="headerlink" href="#calibrating-a-spectrum" title="Permanent link">&para;</a></h2>
+<p>A spectrum's flux calibration rarely matches the photometry. Keep the photometry in the fit:
+it anchors the absolute level, and without it the continuum shape is degenerate with dust and
+age. Three ways to model the calibration, one per spectrum:</p>
+<ul>
+<li><strong>Sampled level and shape.</strong> <code>spectrum_scaling</code> multiplies the whole <code>Spectrum</code> prediction.
+  <code>spectrum_calib</code>, shape <code>(order,)</code>, multiplies it by <code>1 + sum_k c_k P_k(x)</code>, Legendre
+  polynomials of the observed wavelength mapped onto [-1, 1] over all pixels (no P_0 term:
+  the level is <code>spectrum_scaling</code>). With several spectra, use <code>spectrum_scaling_&lt;obs.name&gt;</code>
+  and <code>spectrum_calib_&lt;obs.name&gt;</code>.</li>
+<li><strong>Profiled polynomial.</strong> <code>Spectrum(polynomial_order=M)</code> solves for the Chebyshev coefficients
+  c_0..c_M inside the likelihood at every step, as Prospector's <code>PolyOptCal</code> does. The
+  posterior is conditional on the best-fit polynomial: its uncertainty is not propagated.</li>
+<li><strong>Marginalised polynomial.</strong> <code>Spectrum(polynomial_order=M, polynomial_mode="marginalize",
+  polynomial_prior_sigma=s)</code> integrates the coefficients out analytically under a Gaussian
+  prior of width <code>s</code> (in units of the fractional response). The calibration uncertainty then
+  reaches the posterior and the evidence, with no extra sampled dimension.</li>
+</ul>
+<p><code>eline_scaling</code> is a different parameter: it scales the model emission lines of a <code>Lines</code>
+observation only, not the spectrum.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
               </article>
             </div>
           
@@ -710,10 +887,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "/ceridwen/", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "/ceridwen/assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="/ceridwen/assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

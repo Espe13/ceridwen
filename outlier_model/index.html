@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/eline_marginalisation/">
+        <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/outlier_model/">
       
       
-        <link rel="prev" href="../outlier_model/">
+        <link rel="prev" href="../gp_likelihood/">
       
       
-        <link rel="next" href="../afe/">
+        <link rel="next" href="../eline_marginalisation/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Emission-line marginalisation - CERIDWEN</title>
+        <title>Outlier mixture likelihood - CERIDWEN</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#emission-line-marginalisation" class="md-skip">
+        <a href="#outlier-mixture-likelihood" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Emission-line marginalisation
+              Outlier mixture likelihood
             
           </span>
         </div>
@@ -479,33 +479,6 @@
       
   
   
-  
-  
-    <li class="md-nav__item">
-      <a href="../outlier_model/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Outlier mixture likelihood
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-    
-      
-      
-  
-  
     
   
   
@@ -525,7 +498,7 @@
   <span class="md-ellipsis">
     
   
-    Emission-line marginalisation
+    Outlier mixture likelihood
   
 
     
@@ -543,7 +516,7 @@
   <span class="md-ellipsis">
     
   
-    Emission-line marginalisation
+    Outlier mixture likelihood
   
 
     
@@ -569,10 +542,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#what-is-computed" class="md-nav__link">
+  <a href="#the-likelihood" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What is computed
+        The likelihood
       
     </span>
   </a>
@@ -580,10 +553,71 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#options" class="md-nav__link">
+  <a href="#using-it-with-fitsed" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Options
+        Using it with fitSED
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Using it with fitSED">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#line-fluxes-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Line fluxes (Lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#upper-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upper limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#emission-line-marginalisation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Emission-line marginalisation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-prior-at-f-0-and-its-gradient" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The prior at f = 0 and its gradient
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagnostics
       
     </span>
   </a>
@@ -591,10 +625,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#requirements-each-refused-before-sampling-with-the-fix-in-the-message" class="md-nav__link">
+  <a href="#not-supported" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Requirements (each refused before sampling, with the fix in the message)
+        Not supported
       
     </span>
   </a>
@@ -602,10 +636,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#without-a-nebular-model-add_nebfalse-cspbasis_afe" class="md-nav__link">
+  <a href="#non-finite-data" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Without a nebular model (add_neb=False, CSPBasis_afe)
+        Non-finite data
       
     </span>
   </a>
@@ -613,76 +647,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#choosing-the-prior" class="md-nav__link">
+  <a href="#cost" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Choosing the prior
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#evidence" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Evidence
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#speed" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Speed
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#noise-terms" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Noise terms
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#outputs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Outputs
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#masking-versus-marginalising" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Masking versus marginalising
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#differences-from-prospector" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Differences from Prospector
+        Cost
       
     </span>
   </a>
@@ -693,6 +661,33 @@
   
 </nav>
       
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eline_marginalisation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Emission-line marginalisation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -852,194 +847,202 @@
   
 
 
-<h1 id="emission-line-marginalisation">Emission-line marginalisation<a class="headerlink" href="#emission-line-marginalisation" title="Permanent link">&para;</a></h1>
-<p>Fit a spectrum with the nebular model on, but with the <strong>fluxes of the emission
-lines set free</strong>: they are integrated out analytically instead of being fixed at
-the CLOUDY prediction, so the stellar absorption underneath (Balmer series,
-Ca II H+K, Mg b, the 4000 Å break) still constrains the stellar population while
-the lines can take whatever strength the data demand. This is the alternative to
-<code>Spectrum.mask_lines</code>, which throws the line pixels (and the absorption in them)
-away.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SedModel</span><span class="p">,</span> <span class="n">Kinematics</span><span class="p">,</span> <span class="n">Instrument</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.observation</span><span class="w"> </span><span class="kn">import</span> <span class="n">Spectrum</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">spec</span> <span class="o">=</span> <span class="n">Spectrum</span><span class="p">(</span><span class="n">wavelength</span><span class="o">=</span><span class="n">w_obs</span><span class="p">,</span> <span class="n">flux</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">uncertainty</span><span class="o">=</span><span class="n">e</span><span class="p">,</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>                <span class="n">instrument</span><span class="o">=</span><span class="n">Instrument</span><span class="o">.</span><span class="n">R_fwhm</span><span class="p">(</span><span class="mf">1000.0</span><span class="p">),</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                <span class="n">marginalize_elines</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>               <span class="c1"># flat prior on every covered line</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">model</span> <span class="o">=</span> <span class="n">SedModel</span><span class="p">(</span><span class="n">csp</span><span class="p">,</span> <span class="p">[</span><span class="n">spec</span><span class="p">,</span> <span class="n">phot</span><span class="p">],</span> <span class="n">priors</span><span class="o">=</span><span class="n">priors</span><span class="p">,</span> <span class="n">zred</span><span class="o">=</span><span class="mf">3.2</span><span class="p">,</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                 <span class="n">transforms</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;sfh&quot;</span><span class="p">:</span> <span class="n">sfh_transform</span><span class="p">,</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                             <span class="s2">&quot;gas_logu&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">2.5</span><span class="p">]),</span>   <span class="c1"># nebular model fixed</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                             <span class="s2">&quot;gas_logz&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">0.3</span><span class="p">])},</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>                 <span class="n">kinematics</span><span class="o">=</span><span class="n">Kinematics</span><span class="p">(</span><span class="n">sigma_gal</span><span class="o">=</span><span class="mf">150.0</span><span class="p">,</span> <span class="n">sigma_gas</span><span class="o">=</span><span class="mf">80.0</span><span class="p">))</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="nb">print</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>                                 <span class="c1"># lists the marginalised lines</span>
+<h1 id="outlier-mixture-likelihood">Outlier mixture likelihood<a class="headerlink" href="#outlier-mixture-likelihood" title="Permanent link">&para;</a></h1>
+<p>A few bad pixels (cosmic rays, detector artefacts, sky residuals) or a mis-calibrated band
+can drag a Gaussian fit a long way, because a 20σ residual costs 200 in ln L. The outlier
+mixture (Hogg, Bovy &amp; Lang 2010, arXiv:1008.4686) lets each datum come either from the
+ordinary noise model or, with probability <code>f</code>, from a Gaussian <code>nsigma</code> times broader. It
+is Prospector's outlier model (<code>prospect.likelihood.NoiseModel</code>, branch <code>f_outlier &gt; 0</code>),
+reproduced to machine precision.</p>
+<div class="admonition note">
+<p class="admonition-title">All outlier fractions default to 0; switch the mixture on explicitly.</p>
+<p>Every <code>f_outlier_*</code> is 0 (off) unless your model samples it or fixes it to a non-zero
+value. With no outlier parameter, or one fixed at 0, the likelihood is the ordinary
+Gaussian, compiled to the same program as a model without the mixture.</p>
+</div>
+<h2 id="the-likelihood">The likelihood<a class="headerlink" href="#the-likelihood" title="Permanent link">&para;</a></h2>
+<p>Per unmasked datum <em>i</em>, with σ_eff,i the uncertainty after <strong>every</strong> noise term
+(<code>noise_floor</code>, <code>log_err_scale_*</code>, <code>log_jitter_*</code>, <code>log_f_calib_*</code>, <code>log_f_data_*</code>, named
+per observation like the outlier fractions), χ_i =
+(y_i − μ_i)/σ_eff,i and <code>log_det_i = ½ ln(2π σ_eff,i²)</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>ln p_good,i = −½ χ_i²          − log_det_i
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>ln p_bad,i  = −½ χ_i² / n²     − log_det_i − ln n
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>ln L_i      = logaddexp( ln(1 − f) + ln p_good,i ,  ln f + ln p_bad,i )
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>ln L        = Σ_i ln L_i          (masked data contribute 0)
 </code></pre></div>
-<h2 id="what-is-computed">What is computed<a class="headerlink" href="#what-is-computed" title="Permanent link">&para;</a></h2>
-<p>The line fluxes α (erg s⁻¹ cm⁻², observed frame, IGM-transmitted at the line)
-enter every observation linearly: the marginalising <code>Spectrum</code> through the
-line profiles (the same painter profile as every other line, width
-√(σ_gas² + σ_inst²), times the spectrum calibration), every <code>Photometry</code>
-through the static line-to-band basis, and every <code>Lines</code> observation through
-its blend matrix. With independent Gaussian noise the likelihood integrated
-over α is a closed form: one weighted least-squares solve and one Cholesky
-factorisation of an n_line × n_line matrix per likelihood call. It is the exact
-marginal likelihood, for</p>
-<ul>
-<li>a <strong>flat prior</strong> (default, <code>eline_prior_width=0</code>), or</li>
-<li>a <strong>Gaussian prior</strong> centred on the CLOUDY flux with a fractional width,
-  <code>eline_prior_width=0.2</code> meaning 20 % (Prospector's convention). Ly-α always
-  has a flat prior (resonant scattering makes its grid flux unreliable).</li>
-</ul>
-<h2 id="options">Options<a class="headerlink" href="#options" title="Permanent link">&para;</a></h2>
+<p>This is Prospector's expression term by term: its <code>var_bad = var n²</code> gives
+<code>−½ ln(2π var n²) = −½ ln(2π var) − ln n</code>, and its <code>var</code> is the noise model's diagonal
+<code>Sigma</code> (σ² for the default <code>NoiseModel</code>, the kernel sum when kernels are attached), which
+is CERIDWEN's σ_eff². <code>tests/test_outlier_model.py</code> checks equality with a NumPy
+transcription of Prospector's code for every noise-term combination (rtol 1e-12) and with
+values written by Prospector itself (<code>tests/reference/prospector_outlier.npz</code>).</p>
+<p><strong>One deliberate difference.</strong> Prospector's plain branch (<code>f_outlier == 0</code>,
+<code>NoiseModel.lnlikelihood</code>, <code>noise_model.py:90</code> at commit a78d153) computes
+<code>−½[ln(2π) χ² + Σ ln σ²]</code>: the χ² is multiplied by ln 2π and <code>n ln 2π</code> is missing. Its
+outlier branch is correct. CERIDWEN follows the outlier branch for f &gt; 0 and, at f = 0,
+uses its ordinary (correct) Gaussian. Prospector's value at exactly <code>f = 0</code> is therefore
+<strong>not</strong> a reference, and as f → 0 CERIDWEN tends to the correct Gaussian, not to
+Prospector's number.</p>
+<h2 id="using-it-with-fitsed">Using it with <code>fitSED</code><a class="headerlink" href="#using-it-with-fitsed" title="Permanent link">&para;</a></h2>
+<p>The mixture is switched on per observation by <strong>name</strong>, like the other noise terms. Each
+observation gets its own fraction; nothing is shared between observations.</p>
 <table>
 <thead>
 <tr>
-<th><code>Spectrum(...)</code> argument</th>
-<th>Meaning</th>
+<th>parameter</th>
+<th>observation</th>
+<th>CERIDWEN default</th>
+<th>Prospector template (reference only, <code>TemplateLibrary["outlier_model"]</code>)</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>marginalize_elines</code></td>
-<td>switch it on (default <code>False</code>: every line keeps its CLOUDY flux, nothing changes)</td>
+<td><code>f_outlier_spec</code></td>
+<td>the <code>Spectrum</code></td>
+<td><strong>0 (off)</strong></td>
+<td>free, init 0.01, <code>TopHat(1e-5, 0.5)</code></td>
 </tr>
 <tr>
-<td><code>eline_prior_width</code></td>
-<td>0 = flat; &gt; 0 = Gaussian, fractional width about the CLOUDY flux</td>
+<td><code>nsigma_outlier_spec</code></td>
+<td>the <code>Spectrum</code></td>
+<td><strong>50</strong></td>
+<td>fixed at 50</td>
 </tr>
 <tr>
-<td><code>elines_to_fit</code></td>
-<td>FSPS names (<code>$SPS_HOME/data/emlines_info.dat</code>, e.g. <code>"[O III] 5007"</code>); default: every line the spectrum covers</td>
+<td><code>f_outlier_phot</code></td>
+<td>the <code>Photometry</code></td>
+<td><strong>0 (off)</strong></td>
+<td>fixed at 0; <code>TopHat(0.0, 0.5)</code> when freed</td>
 </tr>
 <tr>
-<td><code>elines_to_fix</code></td>
-<td>lines kept at their CLOUDY flux</td>
+<td><code>nsigma_outlier_phot</code></td>
+<td>the <code>Photometry</code></td>
+<td><strong>50</strong></td>
+<td>fixed at 50</td>
 </tr>
 <tr>
-<td><code>elines_to_ignore</code></td>
-<td>lines removed from every observation</td>
+<td><code>f_outlier_lines</code></td>
+<td>the <code>Lines</code></td>
+<td><strong>0 (off)</strong></td>
+<td>no template (see below)</td>
+</tr>
+<tr>
+<td><code>nsigma_outlier_lines</code></td>
+<td>the <code>Lines</code></td>
+<td><strong>50</strong></td>
+<td>—</td>
 </tr>
 </tbody>
 </table>
-<p><code>theta["eline_delta_zred"]</code> (a sampled parameter or a transform) shifts every
-painted line to (1 + zred + eline_delta_zred) λ_rest, as in Prospector.</p>
-<p>A line is fitted when its centre lies inside the spectrum at every redshift the
-projector serves, more than 3σ from the edges, with at least 3 unmasked pixels
-within 2σ. Covered lines that miss this stay at their CLOUDY flux and are listed
-by <code>model.summary()</code>; a line you name in <code>elines_to_fit</code> that misses it is an
-error.</p>
-<h2 id="requirements-each-refused-before-sampling-with-the-fix-in-the-message">Requirements (each refused before sampling, with the fix in the message)<a class="headerlink" href="#requirements-each-refused-before-sampling-with-the-fix-in-the-message" title="Permanent link">&para;</a></h2>
+<p>The per-observation names below have the same defaults: 0 (off) and 50.</p>
+<p><strong>Small photometric sets: keep <code>f_outlier_phot</code> at 0.</strong> On a clean mock with 8 NIRCam bands
+and <code>f_outlier_phot</code> free (<code>TopHat(0.0, 0.5)</code>), the current SFR came out
+0.592 [−0.344, 0.753] (median [16, 84 %]) against 0.770 [0.580, 0.965] for the Gaussian
+fit: with few bands the fit can treat a rest-UV band as a possible outlier and the SFR
+constraint loosens (A100 recovery test). Free it only when a bad band is
+suspected and the photometry has enough bands to tell.</p>
+<p><strong>Several observations of one kind</strong> (two spectra, say <code>"G140M"</code> and <code>"G395M"</code>): each takes
+its own <code>f_outlier_spec_G140M</code>, <code>f_outlier_spec_G395M</code> (and <code>nsigma_outlier_spec_&lt;name&gt;</code>),
+<code>&lt;name&gt;</code> being the observation's <code>name</code>. The plain <code>f_outlier_spec</code> is accepted only when the
+model has exactly one spectrum; with two it is an error, as is setting both the plain and the
+per-observation name of one observation. An <code>f_outlier_*</code> / <code>nsigma_outlier_*</code> name that
+matches no observation is an error (it would be sampled without entering the likelihood).</p>
+<p>To opt in, sample a fraction by giving it a prior and a <code>free_param_init</code> (this example
+switches the mixture on for the spectrum only; the photometry stays Gaussian):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.priors</span><span class="w"> </span><span class="kn">import</span> <span class="n">TopHat</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">model</span> <span class="o">=</span> <span class="n">SedModel</span><span class="p">(</span><span class="n">csp</span><span class="p">,</span> <span class="p">[</span><span class="n">phot</span><span class="p">,</span> <span class="n">spec</span><span class="p">],</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>                 <span class="n">priors</span><span class="o">=</span><span class="p">{</span><span class="o">**</span><span class="n">priors</span><span class="p">,</span> <span class="s2">&quot;f_outlier_spec&quot;</span><span class="p">:</span> <span class="n">TopHat</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)},</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>                 <span class="n">free_param_init</span><span class="o">=</span><span class="p">{</span><span class="o">**</span><span class="n">init</span><span class="p">,</span> <span class="s2">&quot;f_outlier_spec&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.01</span><span class="p">])},</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>                 <span class="n">transforms</span><span class="o">=</span><span class="n">transforms</span><span class="p">,</span> <span class="n">zred</span><span class="o">=</span><span class="n">zred</span><span class="p">)</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;out&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>The <code>fitSED</code> log names it: <code>spec: DiagonalGaussianLikelihood, outlier mixture f =
+f_outlier_spec (sampled), nsigma = 50 (fixed)</code>; every observation without it reads
+<code>outlier mixture off</code>.</p>
 <ul>
-<li>with a nebular model (<code>add_neb=True</code>), nebular parameters that are <strong>not sampled</strong>: with free line fluxes the lines cannot constrain <code>gas_logu</code> /
-  <code>gas_logz</code>. Fix them with constant transforms, as above, or tie them to
-  another parameter with a transform;</li>
-<li>an <code>Instrument</code> on the spectrum (the line width needs the LSF);</li>
-<li>one marginalising spectrum per model;</li>
-<li>no <code>logify_spectrum</code>, no GP likelihood (<code>noise=GaussianProcess(...)</code> or <code>log_gp_*</code>,
-  <a href="../gp_likelihood/">GP likelihood</a>), no upper limits and no outlier mixture
-  (<code>f_outlier_*</code>, <a href="../outlier_model/">outlier model</a>) in the jointly fitted observations
-  (a spectrum outside the system may carry one);</li>
-<li><code>Photometry</code> together with a sampled <code>zred</code>, or with a sampled <code>sigma_gas</code>
-  and <code>broaden_photometry=True</code>, is not supported yet (<code>NotImplementedError</code>);
-  a sampled <code>zred</code> works for a spectrum-only fit;</li>
-<li>there is no <code>eline_sigma</code>: the width is <code>Kinematics(sigma_gas=...)</code>, a
-  velocity <strong>dispersion</strong> in km/s.</li>
+<li><strong>Fixed values</strong> use the usual constant transform:
+  <code>transforms={"f_outlier_phot": lambda th: jnp.array([0.05])}</code>. It must be a constant
+  (checked at setup); a fixed <code>0.0</code> leaves the mixture off, so the likelihood is the
+  ordinary Gaussian, graph unchanged.</li>
+<li><strong><code>nsigma_outlier_*</code></strong> defaults to 50 (Prospector's). Sample it with a prior whose lower
+  bound is positive, or fix it with a transform. Setting it without the matching <code>f</code> is an
+  error.</li>
+<li><strong>Priors on <code>f</code></strong> must be bounded inside [0, 1] (<code>Uniform</code>, <code>TopHat</code>, <code>ClippedNormal</code>).</li>
+<li><strong>With <code>run_sampler</code></strong>, build the noise model yourself:
+  <code>DiagonalNoiseModel(f_outlier="f_outlier_spec", nsigma_outlier=50.0)</code> (a string is a
+  theta key, a float a fixed value).</li>
 </ul>
-<h2 id="without-a-nebular-model-add_nebfalse-cspbasis_afe">Without a nebular model (<code>add_neb=False</code>, <code>CSPBasis_afe</code>)<a class="headerlink" href="#without-a-nebular-model-add_nebfalse-cspbasis_afe" title="Permanent link">&para;</a></h2>
-<p>The marginalisation does not need a nebular grid when the prior is flat: the line
-list, the rest wavelengths and the names are FSPS's <code>$SPS_HOME/data/emlines_info.dat</code>,
-and the widths are √(σ_gas² + σ_inst²) as always; none of them depends on the
-metallicity or [α/Fe]. So with <code>CSPBasis(..., add_neb=False)</code> and with
-<code>CSPBasis_afe</code> (which has no nebular grid: there are no α-enhanced CLOUDY grids)</p>
+<h3 id="line-fluxes-lines">Line fluxes (<code>Lines</code>)<a class="headerlink" href="#line-fluxes-lines" title="Permanent link">&para;</a></h3>
+<p>Prospector's <code>Lines</code> is an ordinary <code>Observation</code> (<code>observation.py:495</code>), so it carries a
+noise model and <code>lnprobfn</code> sends it through the same <code>NoiseModel.lnlike</code>: the mixture works
+for line fluxes there, it just has no template name. CERIDWEN names it <code>f_outlier_lines</code>.
+With a handful of fluxes the data barely constrain f, so a fitted fraction mostly returns its
+prior; the mixture is then a heavy-tailed likelihood that stops one mismeasured line
+(blend, aperture, calibration) from dragging the fit, which is its main use here. A fixed
+small value (for example 0.05) is often the sensible choice.</p>
+<h3 id="upper-limits">Upper limits<a class="headerlink" href="#upper-limits" title="Permanent link">&para;</a></h3>
+<p>Data flagged as upper limits keep their one-sided penalty <code>−½ max(μ − y, 0)²/σ² − log_det</code>;
+the mixture applies to the detections only (<code>lnlike_diag_outlier_with_upper_limits</code>).
+Prospector has no one-sided kernel, so there is no reference for the limits; the detections
+are Prospector's outlier branch exactly.</p>
+<h3 id="emission-line-marginalisation">Emission-line marginalisation<a class="headerlink" href="#emission-line-marginalisation" title="Permanent link">&para;</a></h3>
+<p><code>Spectrum(marginalize_elines=True)</code> marginalises the line fluxes jointly over the
+marginalising spectrum, <strong>every</strong> <code>Photometry</code> and <strong>every</strong> <code>Lines</code> observation of the
+model; that closed-form marginal assumes a Gaussian likelihood. The mixture is therefore
+allowed only on observations outside that system — in practice a second spectrum that does
+not marginalise its lines — and refused (<code>NotImplementedError</code>) inside it.</p>
+<p>Prospector does it differently: with both on it fits the line amplitudes with the plain
+uncertainties (<code>sedmodel.py:324</code>, <code>spec_unc = None</code> → <code>obs["unc"]**2</code> at :686, ignoring even
+its noise kernels), adds a Gaussian Occam penalty, and then applies the mixture to the
+spectrum with the maximum-likelihood lines. That is not the marginal of the mixture over the
+line fluxes, and is not reproduced.</p>
+<h3 id="the-prior-at-f-0-and-its-gradient">The prior at f = 0 and its gradient<a class="headerlink" href="#the-prior-at-f-0-and-its-gradient" title="Permanent link">&para;</a></h3>
+<p>f is a fraction and the Gaussian is the mixture at f = 0, so the natural support is
+[0, 1), and a lower bound of 0 keeps "no outliers" inside the model. ln L is concave in f
+(a sum of logs of functions linear in f) and finite at 0, with the exact derivative
+<code>d ln L/df = Σ_i (p_bad,i − p_good,i)/L_i</code>, which at f = 0 is <code>Σ_i (p_bad,i/p_good,i − 1)</code>.
+That is finite unless a datum lies beyond ~38σ (for nsigma = 50) (then +∞ in float64: the likelihood really
+rises that steeply). CERIDWEN evaluates this derivative directly (a custom JVP,
+<code>ceridwen/likelihood/likelihood.py</code> <code>_mixture_jvp</code>), so a sampled f with lower bound 0 has a
+finite gradient at f = 0 (<code>test_gradient_in_f_is_exact_and_finite_at_zero</code>); computing it
+through <code>ln f</code> would give 0·∞ = NaN. Prospector's lower bound of 1e-5 for
+the spectrum is therefore not needed for numerical reasons; either bound works. The upper
+bound 0.5 keeps the inlier component the majority, which is what makes "inlier" and
+"outlier" identifiable (above 0.5 the two labels can swap).</p>
+<h2 id="diagnostics">Diagnostics<a class="headerlink" href="#diagnostics" title="Permanent link">&para;</a></h2>
+<p><code>LikelihoodOutput</code> with the mixture on: <code>lnl_pointwise</code> holds the per-datum mixture terms
+ln L_i (they sum to <code>lnl_total</code>); <code>chi</code> and <code>residuals</code> are those of the inlier Gaussian,
+(y − μ)/σ_eff. The posterior probability that a datum is an outlier,
+<code>p_i = exp(ln f + ln p_bad,i − ln L_i)</code>, is available off the sampling path:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">p</span> <span class="o">=</span> <span class="n">likelihood</span><span class="o">.</span><span class="n">outlier_probability</span><span class="p">(</span><span class="n">obs</span><span class="o">.</span><span class="n">flux</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">obs</span><span class="o">.</span><span class="n">uncertainty</span><span class="p">,</span> <span class="n">obs</span><span class="o">.</span><span class="n">mask</span><span class="p">,</span> <span class="n">theta</span><span class="p">)</span>
+</code></pre></div>
+<p>(<code>DiagonalGaussianLikelihood.outlier_probability</code>, or the function
+<code>ceridwen.likelihood.outlier_probability</code>). The sampled likelihood never computes it.</p>
+<h2 id="not-supported">Not supported<a class="headerlink" href="#not-supported" title="Permanent link">&para;</a></h2>
 <ul>
-<li>the lines the spectrum covers are fitted with a <strong>flat prior</strong> (the default);
-  <code>eline_prior_width &gt; 0</code> and <code>elines_to_fix</code> are refused, because both need the
-  CLOUDY fluxes;</li>
-<li>the model has no nebular continuum and no grid lines, so there are no fixed lines;</li>
-<li><code>$SPS_HOME</code> (or <code>sps_home=...</code> on the basis) must point at the FSPS data, for
-  <code>emlines_info.dat</code>;</li>
-<li><code>Photometry</code> is marginalised jointly as usual; <code>Lines</code> observations are refused
-  (they need the grid's line fluxes);</li>
-<li>the <code>cloudy</code> entries of the outputs are NaN.</li>
+<li><strong>Correlated noise.</strong> The mixture is diagonal only, as Prospector's
+  (<code>assert Sigma.ndim == 1</code>). On a spectrum with the GP likelihood
+  (<code>docs/gp_likelihood.md</code>) the mixture is refused at setup.</li>
+<li><strong>Inside the emission-line marginalisation</strong> (above).</li>
 </ul>
-<h2 id="choosing-the-prior">Choosing the prior<a class="headerlink" href="#choosing-the-prior" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>Flat (<code>eline_prior_width=0</code>, the default).</strong> Nothing about the lines is assumed:
-  they carry no information about the stellar population, whatever produced them
-  (star formation, an AGN, shocks, evolved stars). The safe choice whenever the lines
-  may not come from young stars, e.g. in quiescent galaxies.</li>
-<li><strong>Gaussian about the CLOUDY flux (<code>eline_prior_width=0.2</code>, Prospector's usual value).</strong>
-  Each fitted line gets a prior N(F_j(θ), (0.2 F_j(θ))²): the data may move a line by
-  about ±20 % from what the star-forming nebular model predicts for the current
-  stellar parameters, more only at a price. Because the centre and the width both
-  follow F_j(θ), the lines inform the stellar fit: a line much stronger than
-  predicted pulls the SFH towards more recent star formation, and where the model
-  predicts no line (F_j → 0, e.g. an old population) the width shrinks to zero and
-  the line is pinned at ~0 even if the data show one. Use it only when the lines are
-  known to come from star formation and the CLOUDY grid describes them to ~20 %. In
-  the injection test (lines rescaled by ×0.5 to ×3 from CLOUDY) it biased the line
-  fluxes towards CLOUDY by up to 3σ, and in 2 of 50 realisations the optimiser moved
-  to an SFH with no recent star formation.</li>
-</ul>
-<h2 id="evidence">Evidence<a class="headerlink" href="#evidence" title="Permanent link">&para;</a></h2>
-<p>With a flat prior the evidence is defined only up to the (infinite) prior volume of
-every fitted line, so <strong>ln Z of a flat-prior marginalised fit must not be compared
-with that of another model</strong> (another line set, a masked fit, a standard fit). Posteriors
-are unaffected. Compare evidences only between fits with the same fitted lines and the
-same prior, or use <code>eline_prior_width &gt; 0</code> (a proper prior) when evidences matter.</p>
-<h2 id="speed">Speed<a class="headerlink" href="#speed" title="Permanent link">&para;</a></h2>
-<p>When nothing the line solve depends on can change between likelihood calls (fixed
-<code>zred</code> and <code>sigma_gas</code>, no <code>eline_delta_zred</code>, no sampled <code>spectrum_scaling*</code>,
-<code>spectrum_calib*</code> or <code>eline_scaling</code>, and no sampled noise terms or <code>noise_floor</code>), the
-line profiles, the design matrices and, for a flat prior, the whole factorisation are
-computed once at setup. On an A100 at the nested sampler's batch width (100) a
-flat-prior marginalised likelihood then costs 0.99-1.00 times the ordinary one, and
-the 20 per cent prior 1.11 times; otherwise the per-call path costs about 1.2-1.25
-times. <code>model._eline_system.static</code> is <code>None</code> when the per-call path is in use.</p>
-<h2 id="noise-terms">Noise terms<a class="headerlink" href="#noise-terms" title="Permanent link">&para;</a></h2>
-<p>The weights of the line solve are the likelihood's own inverse variances, so the
-result is the exact marginal also with <code>log_err_scale_*</code>, <code>log_jitter_*</code> and
-<code>log_f_data_*</code>. <code>noise_floor</code> and <code>log_f_calib_*</code> scale with the model, which would
-include the lines being solved for; they are evaluated on the model <strong>without</strong>
-the fitted lines.</p>
-<h2 id="outputs">Outputs<a class="headerlink" href="#outputs" title="Permanent link">&para;</a></h2>
-<ul>
-<li><code>fitSED</code> writes <code>/elines</code> into <code>ceridwen_result.h5</code>: <code>names</code>, <code>wave_rest</code>,
-  and per posterior draw the line-flux posterior <code>mean</code>, <code>sd</code> and the <code>cloudy</code>
-  prediction; <code>read_result_h5(path)["elines"]</code> returns them.</li>
-<li><code>PostProcess</code> returns <code>out["extras"]["elines"]</code> (the same per draw), and its
-  posterior-predictive spectra, photometry and line fluxes carry each draw's
-  posterior-mean lines.</li>
-<li><code>ceridwen.likelihood.eline_marginal.eline_line_fluxes(model, theta,
-  likelihood)</code> evaluates the line posterior at one <code>theta</code>.</li>
-</ul>
-<p><code>model.predict(theta)</code> is unchanged and still predicts the CLOUDY lines; it is
-the forward model, not the fit.</p>
-<h2 id="masking-versus-marginalising">Masking versus marginalising<a class="headerlink" href="#masking-versus-marginalising" title="Permanent link">&para;</a></h2>
-<p>Masking removes the information in the line pixels, including the stellar
-absorption the lines sit on. Marginalising keeps it: the continuum model must
-fit those pixels, and only the part a Gaussian of the right width and position
-can absorb is attributed to the line. Where emission fills in an absorption
-line of similar width the two are partly degenerate, and the marginalisation
-reports that honestly as a larger line-flux uncertainty and a wider stellar
-posterior, where masking would simply lose the absorption.</p>
-<h2 id="differences-from-prospector">Differences from Prospector<a class="headerlink" href="#differences-from-prospector" title="Permanent link">&para;</a></h2>
-<p>The algebra with a prior is the same (tested to 1e-10 against Prospector
-2.0a2.dev42 on identical inputs). Different by design:</p>
-<ul>
-<li>the flat-prior penalty is the correct marginal, +½(n ln 2π + ln|Σ̂|);
-  Prospector's no-prior penalty has the opposite sign;</li>
-<li>the profile is the analytic one every other line uses (unit area, exact c),
-  on all unmasked pixels; Prospector renormalises numerically with c = 3e18
-  inside 5σ windows, which makes its likelihood jump when a pixel enters a
-  window;</li>
-<li>the photometry and <code>Lines</code> are marginalised jointly with the spectrum;
-  Prospector plugs the spectrum's fitted fluxes into the photometry, and only
-  when the spectrum is listed first;</li>
-<li>the calibration used to convert amplitudes is the current one (Prospector
-  uses the previous likelihood call's).</li>
-</ul>
+<h2 id="non-finite-data">Non-finite data<a class="headerlink" href="#non-finite-data" title="Permanent link">&para;</a></h2>
+<p>Observations mask non-finite flux and non-finite or non-positive uncertainties at
+construction and <strong>warn</strong> when those points were not already in your mask. The sampled
+likelihood reads the data with the masked non-finite values replaced by finite
+placeholders, so they reach neither the value nor the gradient (a NaN left in a masked
+slot would otherwise give 0·NaN = NaN in the gradient, for the Gaussian likelihood as well).
+<code>obs.flux</code> itself is kept as given.</p>
+<h2 id="cost">Cost<a class="headerlink" href="#cost" title="Permanent link">&para;</a></h2>
+<p>The mixture replaces one <code>−½χ² − log_det</code> per datum by two Gaussians and a <code>logaddexp</code>.
+Measured on one A100 (production spectrum of 3065 pixels + 8 bands, nebular on, fractions
+sampled for spectrum and photometry, 240 interleaved calls): +0.6 % at the nested-sampling
+batch width W = 100 (value and gradient, and value only), −0.1 % to +0.8 % at W = 1 and
+500, and +1.9 % (+49 µs of 2.59 ms) for value and gradient at W = 4 (NUTS with four
+chains), the one case above the 1 % target.
+With it off (no outlier parameter, or <code>f</code> fixed at 0), the compiled likelihood is byte for
+byte the one before the feature: the lowered StableHLO of <code>jit(value_and_grad(lnprob))</code>
+is identical in all four <code>scripts/bit_identity_check.py</code> configurations.</p>
 
 
 
