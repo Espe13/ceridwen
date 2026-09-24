@@ -89,6 +89,10 @@ class MAPResult:
         """``theta`` as JAX float64 arrays, for ``SedModel(..., free_param_init=...)``."""
         return {k: jnp.asarray(v, dtype=jnp.float64) for k, v in self.theta.items()}
 
+    def __repr__(self) -> str:
+        """Short: the best point, not every start (the per-start arrays stay attributes)."""
+        return self.summary() + "\n  (per start: .lnp_starts, .theta_starts, .n_steps, .grad_norm)"
+
     def summary(self) -> str:
         ok = np.isfinite(self.lnp_starts)
         lines = [f"MAP: ln p = {self.lnp:.4f} (start {self.best_start} of "
