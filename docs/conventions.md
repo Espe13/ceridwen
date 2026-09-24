@@ -47,7 +47,7 @@ safe".
 |---|---|
 | Model wavelength grid (`csp.wave`) | Å, vacuum, rest frame |
 | `Spectrum` pixel wavelengths (data) | Å, vacuum, **observed frame** (model is redshifted onto them) |
-| `Lines` wavelengths / `mask_lines` centres | Å, vacuum, **rest frame** (redshifted internally) |
+| `Lines` wavelengths / `mask_lines` centres | Å, vacuum, **rest frame** (`Lines`: redshifted internally; `Spectrum.mask_lines(..., zred=z)`: by the `zred` you pass, default 0) |
 | `csp.get_spectrum(theta)` (model grid) | rest-frame L_ν in L☉ Hz⁻¹ per M☉ (no mass, distance or IGM) |
 | `Spectrum` predictions (`model.predict`) | observed-frame F_ν in erg s⁻¹ cm⁻² Hz⁻¹ (cgs; × 1e32 for nJy), only with a redshift or `lumdist_mpc` in force |
 | Broadband fluxes | AB maggies |
@@ -217,7 +217,8 @@ width, independent of `σ_gas`. Generate mocks and fit them with the same
 setting.
 
 How the lines reach the filters depends on whether `σ_gas` is fixed or
-sampled. With a **fixed** `σ_gas` the emission lines are not painted onto the
+sampled. With a **fixed** `σ_gas` (and a fixed redshift: a sampled `zred` on
+free-z photometry always takes the painted path) the emission lines are not painted onto the
 model grid at all: each `Photometry` holds a static line-to-band basis
 `G = T · Γ(σ_gas)` (the line profiles at `σ_gas` in quadrature with the
 two-pixel grid floor, times the IGM transmission), and the band fluxes are
@@ -264,8 +265,8 @@ log print it, and `fitSED` writes it into the HDF5 result (`/model` attrs
 `Cosmology.from_dict(attrs)` rebuilds the same object.
 
 Ages and distances come from the same object: `cosmo.age(z)` and
-`csp.age_at(z)` give the age of the universe in Gyr (JAX-differentiable for
-array input, a float for a scalar), `cosmo.luminosity_distance(z)` the
+`csp.age_at(z)` give the age of the universe in Gyr (`cosmo.age` always returns a JAX
+array, 0-d for a scalar; `csp.age_at` returns a float for a scalar), `cosmo.luminosity_distance(z)` the
 luminosity distance in Mpc. There is no `tuniv` argument any more; size the
 SFH grid from the cosmology, `jnp.linspace(0.0, cosmo.age(z), n)`, and
 `SedModel` refuses (with both numbers in the message) a grid whose oldest

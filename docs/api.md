@@ -153,7 +153,7 @@ The GP likelihood of a spectrum is off by default; `fitSED` builds it from
 
 ::: ceridwen.dust.DiffuseDust
 
-::: ceridwen.dust.DustEmission
+::: ceridwen.dust.DustEmission.DustEmission
 
 ::: ceridwen.neb.NebularModel
 

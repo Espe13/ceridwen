@@ -17,8 +17,8 @@
     posteriors are broad and can sit ~1 dex off truth. That is expected, not a
     broken install; add spectroscopy or emission lines to pin them down.
 
-    The two steps below are what the example does internally, shown so you can
-    adapt them to your own observations.
+    The steps below show the same workflow through `fitSED`, adapted to a z = 6.5 JWST
+    fit (the example itself calls `run_sampler` on GALEX-WISE mock photometry).
 
 ## Step 0: build the SSP grid (once per FSPS configuration)
 
