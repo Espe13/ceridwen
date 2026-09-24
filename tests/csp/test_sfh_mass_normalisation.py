@@ -314,3 +314,30 @@ def test_display_sfh_on_the_tracked_grid(interp):
         assert x_max == pytest.approx(float(COSMO.age(z)), rel=1e-6)
         assert "M_total = 1.000e+00 M_sun" in ax.get_title()
         plt.close(ax.figure)
+
+
+def test_golden_linear_weights_match_brute_force_quadrature():
+    """The golden "linear" configuration (tests/baselines/manifest.json: psi = exp(-t / 1 Gyr) on
+    0-13.79 Gyr, BPASS, log Z = -2.0 = grid node 7): the code's weights equal the quadrature at
+    every node, and the stored W_linear_*.npy equal it at every node younger than 10^10 yr (the
+    three oldest nodes are the ones B1-016 moves; after their re-capture all nodes agree)."""
+    import json
+    base = pathlib.Path(__file__).resolve().parents[1] / "baselines"
+    man = json.loads((base / "manifest.json").read_text())
+    ssp = _bpass()
+    T = np.asarray(man["lb_old_gyr"], float)            # increasing, index 0 = today
+    psi = np.asarray(man["psi_old"], float)
+    csp = CSPBasis(ssp, lookback_time=T, zh_const=True, add_neb=False, add_dust=False,
+                   add_diffuse_dust=False, sfh_interp="linear", verbose=False, cosmo=COSMO)
+    iz = 7
+    th = {"sfh": jnp.asarray(psi), "logzsol": jnp.array([float(np.asarray(ssp.ssp_lgmet)[iz])
+                                                          - float(ssp.log10_zsun)])}
+    W = np.asarray(csp.calculate_ssp_weights(th), float)
+    assert np.all(np.delete(W, iz, axis=0) == 0.0)
+    la = np.asarray(csp.ssp_ages_lgyr, float)
+    B = _scheme_brute(la, T * 1e9, psi)
+    np.testing.assert_allclose(W[iz], B, rtol=1e-6, atol=1e-9 * B.sum())
+    young = la < 10.0
+    for tag in ("linear_constZ_pernode", "linear_varZ_pernode"):
+        Wg = np.load(base / f"W_{tag}.npy").sum(axis=0)
+        np.testing.assert_allclose(Wg[young], B[young], rtol=1e-6, atol=1e-9 * B.sum())
