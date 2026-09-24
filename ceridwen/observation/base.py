@@ -133,6 +133,10 @@ class Observation:
         if self.mask.shape != self.flux.shape:
             raise ValueError(f"{name}: mask shape {self.mask.shape} != flux shape "
                              f"{self.flux.shape}")
+        ul = getattr(self, "upper_limit", None)
+        if ul is not None and jnp.shape(ul) != self.flux.shape:
+            raise ValueError(f"{name}: upper_limit shape {jnp.shape(ul)} != flux shape "
+                             f"{self.flux.shape} (one flag per datum)")
 
         bad = self.mask & ~(jnp.isfinite(self.flux) & jnp.isfinite(self.uncertainty)
                             & (self.uncertainty > 0))
