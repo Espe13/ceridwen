@@ -160,7 +160,7 @@ model = build_model([phot, spec])
 
 **4. Fit with nested sampling.** These settings are sized for a laptop CPU: the fit took
 **21-29 min** (67 800 likelihood calls) in two runs on an 11-core Apple M3 Pro shared with
-other jobs (2026-09-24). It prints its progress and writes `./my_fit/ceridwen_result.h5`. For production, raise `num_live` (fitSED's default
+other jobs. It prints its progress and writes `./my_fit/ceridwen_result.h5`. For production, raise `num_live` (fitSED's default
 is 500) and lower `logZ_tol`; for NUTS, see [Samplers](https://www.amanda-stoffers.de/ceridwen/samplers/).
 
 ```python

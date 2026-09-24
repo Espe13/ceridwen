@@ -107,7 +107,7 @@ def test_old_result_is_refused_by_both_readers(tmp_path, model_and_result):
     model, result = model_and_result
     old = _legacy_file(tmp_path / "old.h5", model, result, model.csp.log10_zsun)
     for reader in (load_result_h5, read_result_h5):
-        with pytest.raises(ValueError, match="written before v1.0.5"):
+        with pytest.raises(ValueError, match="ABSOLUTE Z"):
             reader(str(old))
 
 

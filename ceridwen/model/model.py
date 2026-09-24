@@ -435,7 +435,7 @@ class SedModel:
         return self.csp.cosmo
 
     def _check_calibration_names(self):
-        """spectrum_scaling / spectrum_calib (v1.0.7): the plain name only with a single
+        """spectrum_scaling / spectrum_calib: the plain name only with a single
         Spectrum, ``<name>_<obs.name>`` for each of several; ambiguous, doubled or unmatched
         names raise (they would be applied to every spectrum, or sampled and never used)."""
         from .obs_params import CALIB_FAMILIES, check_names

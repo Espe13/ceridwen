@@ -31,15 +31,14 @@ classifiers = [
 # Every dependency is a normal PyPI requirement (no direct git references), so
 # ceridwen itself can be published on PyPI.  Notably:
 #   * blackjax>=1.6 -- the first release with nested sampling (blackjax.nss /
-#                     blackjax.ns). Its blackjax/ns/ is byte-identical to the
-#                     commit ceridwen used to pin (f73e12956). It sets the floors
-#                     below.
+#                     blackjax.ns). Its blackjax/ns/ is byte-identical to
+#                     blackjax commit f73e12956. It sets the floors below.
 #   * jax/jaxlib>=0.9.0, scipy>=1.13, optax>=0.2.3 -- required by blackjax 1.6;
 #                     numpy>=2.0 and scipy>=1.13 -- required by jax 0.9 itself
 #                     (jax 0.9.0 setup.py).
 #
 # Floors policy: a lower bound is a version we have RUN, not a guess.  jax 0.9.0
-# and blackjax 1.6 were tested from the built wheel in a clean venv on 2026-09-23
+# and blackjax 1.6 were tested from the built wheel in a clean venv
 # (FSPS-free suite + T3); the remaining floors below are the versions of the
 # validated ceridwen311 environment (see the reference-state note), rounded down
 # to the minor.  They were NOT exercised at their floor -- they are declared as
@@ -105,9 +104,8 @@ exclude = ["tests*", "scripts*", "notebooks*", "animation*", "presentations*", "
 
 [tool.setuptools.package-data]
 # Do NOT bundle the 178 MB ceridwen/data/test_data/*.h5 grids into the wheel.
-# The filter curves and the two reference spectra ARE required: since v1.0.0
-# the filter and attenuation machinery is part of ceridwen (vendored from
-# sedpy-jax, which is no longer a dependency), and FilterSet cannot resolve a
+# The filter curves and the two reference spectra ARE required: the filter
+# and attenuation machinery is part of ceridwen, and FilterSet cannot resolve a
 # filter name without them.  ~14 MB over 293 .par files.
 ceridwen = [
     "data/filters/*.par",

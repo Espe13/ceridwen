@@ -204,7 +204,7 @@ class TestInstrumentConvention:
     def test_removed_keywords_raise(self):
         for kw in ({"resolution": 1000.0, "smoothtype": "R"}, {"res_convention": "sigma"},
                    {"sigma_losvd": 200.0}, {"fit_sigma_smooth": True}, {"inres": 0.0}):
-            with pytest.raises(TypeError, match="was removed"):
+            with pytest.raises(TypeError, match="is not an argument"):
                 self._spec(**kw)
 
     def test_non_instrument_raises(self):

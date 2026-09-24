@@ -20,7 +20,7 @@ What it does
    ``log_gp_amp_spec_<obs.name>``.  To FIX the hyperparameters instead, give
    ``Spectrum(noise=GaussianProcess(a, l))`` and do not sample the names.
 4. Prints the posterior of a, l and log M, and the diagonal-likelihood fit for comparison.
-   Run on 2026-09-24 (nested sampling, defaults below): GP fit log M = 10.498 [10.496, 10.500],
+   One run (nested sampling, defaults below): GP fit log M = 10.498 [10.496, 10.500],
    a = 0.73 [0.64, 0.84], l = 23.6 [20.1, 27.5] A; diagonal fit log M = 10.498
    [10.497, 10.499], half as wide.  This noise draw (seed 42) sits low in (a, l): its
    maximum-likelihood values from the independent numpy GaussianProcess are 0.72 and 23.6 A,

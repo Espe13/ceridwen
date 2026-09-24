@@ -277,7 +277,7 @@ def _build_adapter(sampler: str, model, sampler_kwargs: dict, verbose: bool,
 
 # Per-observation parameter names (ceridwen.model.obs_params): the outlier mixture
 # (Prospector's TemplateLibrary["outlier_model"]: f_outlier_spec / f_outlier_phot +
-# nsigma_outlier_*; Lines follow the same pattern) and, since v1.0.7, the noise nuisance terms
+# nsigma_outlier_*; Lines follow the same pattern) and the noise nuisance terms
 # log_err_scale / log_jitter / log_f_calib / log_f_data.  Never shared between observations:
 # with several observations of one kind each takes its own ``<stem>_<obs.name>``; the plain
 # stem is accepted only when the model has exactly one observation of that kind.
@@ -365,10 +365,10 @@ def _removed_noise_name_error(model, old) -> ValueError:
     new = [names_for(o, fam)[0] if len(by_kind[o.kind]) == 1 else names_for(o, fam)[1]
            for o in obs]
     return ValueError(
-        f"{old!r} was removed in v1.0.7: a noise term is no longer one value shared by every "
-        "observation, it is set per observation like the outlier mixture, "
+        f"{old!r} is not a parameter name: a noise term is not one value "
+        "shared by every observation, it is set per observation like the outlier mixture, "
         f"'{old}_<kind>' (one observation of that kind) or '{old}_<kind>_<obs.name>', kind = "
-        f"phot / spec / lines.  For this model: {new}.  One shared value was never right: an "
+        f"phot / spec / lines.  For this model: {new}.  One shared value would be wrong: an "
         "additive log_jitter in maggies and in cgs F_nu is not the same quantity (and "
         "log_err_scale / log_f_* rescale different instruments).  Rename the key in priors, "
         "free_param_init and transforms; nothing is reinterpreted silently.")
@@ -408,8 +408,8 @@ def _check_outlier_setup(model):
 
 
 def _check_noise_setup(model):
-    """Setup-time checks of the noise-term names (fitSED, v1.0.7): the old shared names are
-    refused with the new ones, and every per-observation name must match one observation."""
+    """Setup-time checks of the noise-term names (fitSED): the shared names are
+    refused with the per-observation ones, and every per-observation name must match one observation."""
     given, _t = _given_names(model, model.param_names)
     for old in NOISE_ROOTS:
         if old in given:
@@ -1160,7 +1160,7 @@ def _legacy_metallicity_keys(param_names, extra=()) -> list:
 
 
 def _require_logzsol_result(path, f) -> None:
-    """Refuse a pre-v1.0.5 result whose metallicity samples are absolute log10 Z."""
+    """Refuse a result whose metallicity samples are absolute log10 Z."""
     mod = f["model"]
     if str(mod.attrs.get("metallicity_convention", "")) == METALLICITY_CONVENTION:
         return
@@ -1172,8 +1172,8 @@ def _require_logzsol_result(path, f) -> None:
     if not legacy:
         return
     raise ValueError(
-        f"{path}: this result was written before v1.0.5 and its metallicity parameter(s) "
-        f"{legacy} are log10 of ABSOLUTE Z, not logzsol = log10(Z/Z_sun); reading it as "
+        f"{path}: this result stores its metallicity parameter(s) "
+        f"{legacy} as log10 of ABSOLUTE Z, not logzsol = log10(Z/Z_sun); reading it as "
         "logzsol would silently misstate the metallicity by log10 Z_sun (0.15-0.85 dex).  "
         "Convert it with\n"
         "    from ceridwen.fit import convert_result\n"
@@ -1183,7 +1183,7 @@ def _require_logzsol_result(path, f) -> None:
 
 
 def convert_result(path, ssp_grid, out=None, *, overwrite=False):
-    """Convert a pre-v1.0.5 result file to the logzsol convention, writing a NEW file.
+    """Convert a result file with absolute log10 Z metallicity to the logzsol convention, writing a NEW file.
 
     ``ssp_grid`` is the grid the fit used (``SSPData``/``SSPDataAfe`` or a path); its shape is
     checked against the file, and every absolute metallicity (samples, theta_init, priors) is
@@ -1250,7 +1250,7 @@ def convert_result(path, ssp_grid, out=None, *, overwrite=False):
             mod.attrs["grid_chash"] = str(grid.chash)
         mod.attrs["converted_from"] = str(path)
         mod.attrs["converted_note"] = (
-            f"metallicity samples/priors shifted by -log10 Z_sun = {-l0!r} (v1.0.5 conversion)")
+            f"metallicity samples/priors shifted by -log10 Z_sun = {-l0!r} (logzsol conversion)")
     return out
 
 
@@ -1378,7 +1378,7 @@ def read_derived_h5(path: str | Path) -> dict:
 
 def read_result_h5(path: str | Path) -> dict:
     """Read a result HDF5 file into a nested dict with keys ``'obs'``, ``'model'``,
-    ``'samples'``, ``'provenance'`` (files written by fitSED since v1.0.6), ``'elines'``
+    ``'samples'``, ``'provenance'``, ``'elines'``
     (when the fit marginalised the emission lines), ``'map'`` (when it ran with
     ``optimize=True``) and ``'derived'`` (``read_derived_h5``; when fitSED wrote
     ``/derived/mfrac``)."""

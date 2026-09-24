@@ -67,10 +67,9 @@ uv=False, ionizing=False, predictions=False, mfrac=False)`.
 **Draws.** A nested-sampling result carries importance weights. They are
 recomputed from the dead points' log-likelihoods and birth contours
 (`ceridwen.sampler.ns_weights.nested_log_weights`, exact n_live counting,
-in the order of the samples) rather than read from the file: the
-`log_weights` stored by fits before 2026-09-03 were sorted by likelihood
-and misaligned with the sample arrays for the final live points (a warning
-tells you when the stored weights differ). The draws are then resampled to
+in the order of the samples) rather than read from the file (a result
+without birth contours uses its stored `log_weights`; a warning tells you
+when the stored weights differ from the recomputed ones, which are then used). The draws are then resampled to
 equal weight (`n_samples`, default 2000, `seed` fixed), so a histogram or
 a median of any array is the posterior. A NUTS result has uniform weights
 and is used as it is (`n_samples` subsamples it). `bestfit` is the raw
@@ -90,17 +89,17 @@ for `sfh_interp="step"`, linear between nodes for `"linear"`; beyond the
 oldest node the SFR is zero. `ssfrW` divides by the formed mass, with no
 stellar return fraction, and keeps that meaning.
 
-**Surviving mass (v1.0.6).** `mfrac` is the fraction of the formed mass still in
+**Surviving mass.** `mfrac` is the fraction of the formed mass still in
 stars and remnants: the SSP grid's surviving-mass table (`ssp_stellar_mass`, FSPS's
 `stellar_mass` per SSP, SSP schema 3; on MIST below ~2.5 Myr with FSPS's lowest IMF bin
 counted by mass instead of by number, GOTCHAS section 14) weighted by the draw's SSP weights, the same
 weights that make its spectrum. `mass_surviving = mfrac * mass_formed` and
 `ssfrW_surviving = sfrW / mass_surviving` are the Prospector-style stellar mass and
 sSFR. The published `mist_miles_chab` and `mist_bpass_v2` grids carry the table (the α grid
-`amist_c3k_hr_krou_afe` not yet: use `mfrac=False` there) and `SSPData.from_fsps` records it
-in every grid it builds. An older copy has none: `PostProcess` then warns once that `mfrac` is
+`amist_c3k_hr_krou_afe` does not: use `mfrac=False` there) and `SSPData.from_fsps` records it
+in every grid it builds. For a grid without the table, `PostProcess` warns once that `mfrac` is
 unavailable and reports `mass_formed` only (`mfrac=True` makes the missing table an error
-that says how to get a current grid: `fetch_grid(<name>, force=True)` for a published grid,
+that says how to get a grid with the table: `fetch_grid(<name>, force=True)` for a published grid,
 a rebuild with `from_fsps` for your own; `mfrac=False` skips the block silently). A table
 with values above 1 M_sun per M_sun formed is refused when the grid is loaded (one warning;
 the grid works without it). The composite `mfrac` follows CERIDWEN's
@@ -108,7 +107,7 @@ SFH integration, not FSPS's `csp_gen`: against python-fsps for constant and risi
 SFHs of 0.1-10 Gyr it agrees to 4.2e-4 (step) and 6.3e-3 (linear, young populations on
 MIST, whose youngest node is 10^5 yr); GOTCHAS section 14.
 
-**`mfrac` in the result file (2026-09-23).** When the grid has the table, `fitSED` evaluates
+**`mfrac` in the result file.** When the grid has the table, `fitSED` evaluates
 `mfrac` for every stored sample (SFH weights times the table, no spectrum; well under a
 second for thousands of samples) and writes it as `/derived/mfrac`, aligned with
 `/samples`, with the attributes `stellar_mass_source`, `grid_chash` and `sfh_interp` that
@@ -122,9 +121,9 @@ mass_surviving = r["derived"]["mfrac"] * 10 ** r["samples"]["logmass"].ravel()  
 
 (weight the samples with `r["samples"]["log_weights"]`, or use `PostProcess`, which does the
 resampling). `PostProcess(model, "out/ceridwen_result.h5")` reads the stored array instead
-of recomputing it, so it no longer needs the table, and raises when the recorded
+of recomputing it, so it does not need the table, and raises when the recorded
 `grid_chash` or `sfh_interp` differ from the model's. Without a file (a `SamplingResult`),
-or for a file without `/derived`, it computes `mfrac` from the table as before.
+or for a file without `/derived`, it computes `mfrac` from the table.
 `fitSED(mfrac=False)` skips the group; `mfrac=True` refuses a grid without a table before
 sampling; the default writes it when it can and otherwise logs one line.
 

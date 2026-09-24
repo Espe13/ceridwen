@@ -58,9 +58,9 @@ def check_environment(verbose: bool = True) -> bool:
                    "disabled; `import ceridwen` enables it. Evidence/gradients "
                    "need it.")
 
-    # Filters and attenuation curves are part of ceridwen itself since v1.0.0
-    # (vendored from sedpy-jax, which is no longer a dependency), so what is
-    # worth checking is that the data files came along with the install.
+    # Filters and attenuation curves are part of ceridwen itself (vendored
+    # from sedpy-jax, which is not a dependency), so what is worth checking is
+    # that the data files came along with the install.
     try:
         from ceridwen.observation.filters import list_available_filters
         from ceridwen.dust.attenuation_laws import ATTENUATION_LAWS

@@ -1,25 +1,24 @@
 # CERIDWEN — gotchas & user-error guide
 
-A practical guide to the ways CERIDWEN can be *mis-used* and what now happens
-when you do. The dominant historical hazard was **silent wrong results**: the
-dict-valued `theta` plus JAX's clamp/NaN semantics let bad input through and
-returned a plausible-looking number. The hardening pass (see
-`tests/regression/misuse_report.py` for a live status figure) turns these into
-**loud errors or warnings**. Every guard lives in non-jitted construction/setup
-code or runs only at JIT *trace* time, so the compiled hot path is unchanged and
-just as fast.
+A practical guide to the ways CERIDWEN can be *mis-used* and what happens
+when you do. The main hazard is **silent wrong results**: the dict-valued
+`theta` plus JAX's clamp/NaN semantics can let bad input through and return a
+plausible-looking number. CERIDWEN turns these into **loud errors or
+warnings** (see `tests/regression/misuse_report.py` for a live status figure).
+Every guard lives in non-jitted construction/setup code or runs only at JIT
+*trace* time, so the compiled hot path carries no extra cost.
 
 Run `python tests/regression/misuse_report.py` to regenerate
 `tests/regression/figures/misuse_report.png` (a green/red status board).
 
 ---
 
-## 1. Metallicity is SOLAR-RELATIVE (v1.0.5) — and Z_sun is per grid
+## 1. Metallicity is SOLAR-RELATIVE — and Z_sun is per grid
 
 `theta["logzsol"]` (constant) and `theta["logzsol_hist"]` (time-varying) are
 **`log10(Z / Z_sun)`**, with the Z_sun **of the SSP grid you loaded**. `0.0` is solar on
-every grid. Before v1.0.5 the keys were `theta["Z"]` / `theta["zh"]` and held `log10` of the
-*absolute* metallicity; both now raise a `ValueError` that prints the converted value.
+every grid. The keys `theta["Z"]` / `theta["zh"]` (`log10` of the *absolute* metallicity)
+raise a `ValueError` that prints the converted value.
 
 - Z_sun is never guessed from `isoc_type`: FSPS changed MIST's `zsol` from 0.0142 to 0.0191
   to 0.0185 (commits `0498750`, `c8752a1`, `1c9d876`) under the same name, so two grids
@@ -39,7 +38,7 @@ every grid. Before v1.0.5 the keys were `theta["Z"]` / `theta["zh"]` and held `l
   grid the total metallicity is the derived `logzsol_total`
   = `[Z/H]` = `logzsol + log10(1 - x + x 10^[alpha/Fe])`, `x = 0.687490`
   (`ceridwen.ssps.grid_metadata.logzsol_total`).
-- The **gas** metallicity `theta["gas_logz"]` was already solar-relative and is unchanged:
+- The **gas** metallicity `theta["gas_logz"]` is solar-relative too:
   `log10(Z_gas / Z_sun,neb)` on the CLOUDY axis (Byler+2017), which spans `[-1.98, +0.20]`
   for the MIST/Padova/PARSEC grids and `[-1.3, +0.3]` for BPASS. `CSPBasis(gas_tied=True)`
   ties it to the stars, `gas_logz := logzsol` (Prospector's convention); `gas_logz` is then
@@ -47,7 +46,7 @@ every grid. Before v1.0.5 the keys were `theta["Z"]` / `theta["zh"]` and held `l
   with different solar references (the SSP grid's Z_sun, the CLOUDY grid's); that is the
   FSPS/Prospector meaning of "gas metallicity = stellar metallicity", not equal absolute Z.
 - **Guards:** out-of-grid values warn at construction and name the grid's Z_sun; a value or
-  prior that lies entirely below `logzsol = -1.2` warns that it looks like an old absolute
+  prior that lies entirely below `logzsol = -1.2` warns that it looks like an absolute
   `log10 Z`; a *bounded* prior wider than the grid raises, and so does a constant transform
   outside it. The one route that cannot be checked at construction is a transform whose value
   depends on sampled parameters: it is not checked (no warning), and the forward model clamps at the
@@ -59,7 +58,7 @@ every grid. Before v1.0.5 the keys were `theta["Z"]` / `theta["zh"]` and held `l
 
 A mistyped key (`logmas` for `logmass`, `gas_logU` for `gas_logu`, `dust2` for
 `diffuse_tau_kc`, …) is simply not read, so the parameter silently takes its
-default. **Guard:** `predict()` / `get_spectrum_components()` now emit a
+default. **Guard:** `predict()` / `get_spectrum_components()` emit a
 `warning` listing unrecognized keys (computed from the dict *keys* at trace
 time → zero hot-path cost). Direct `get_spectrum(theta)` calls bypass this —
 prefer `predict`/`get_spectrum_components`.
@@ -69,31 +68,26 @@ prefer `predict`/`get_spectrum_components`.
 - `zh_const=True` needs `theta["logzsol"]` (shape `(1,)`); `zh_const=False` needs
   `theta["logzsol_hist"]` (shape `(n_time,)`, index 0 = today).
 - A mismatch raises a clear `ValueError` at construction naming the fix, and supplying
-  *both* keys now raises as well (it warned before v1.0.5).
+  *both* keys raises as well.
 - `theta["Z"]` / `theta["zh"]` raise wherever they appear — theta, `priors`,
   `free_param_init`, `transforms` — with the converted value in the message.
 
 ## 4. SFH pitfalls
 
-- **NaN/Inf SFH** → was a silent NaN spectrum; **now a `ValueError` at
-  construction.**
+- **NaN/Inf SFH** → **`ValueError` at construction.**
 - **Negative SFR** (e.g. from an unconstrained sampler — sample `log SFR`!) is
-  clipped to ≥0 internally → ~zero flux. **Now warned at construction.**
+  clipped to ≥0 internally → ~zero flux. **Warned at construction.**
 - **`sfh` length** is overloaded: `(n_time,)` = node-based, `(n_time-1,)` =
   per-bin/FastStepBasis. Wrong lengths raise a clear `AssertionError`; the two
   valid lengths switch interpretation silently — make sure you know which you
   mean.
-- **Metallicity & SFR units are now identical across all four
+- **Metallicity & SFR units are identical across all four
   `calculate_ssp_weights_*` calculations.** Metallicity (`theta["logzsol"]` for
   constant-Z, `theta["logzsol_hist"]` for time-varying) is `log10(Z/Z_sun)` on the
   `self.zmet` logzsol axis in **every** variant; the
   SFR history `theta["sfh"]` is a linear rate floored identically at `1e-30`
-  everywhere. Previously `var_zh` floored SFR with `self.tiny_logt = -70` (a
-  log10-time constant), so it weighted the same SFR history differently from
-  `const_zh` and returned **NaN** for (near-)zero SFR nodes. That is fixed:
-  `const_zh` output is unchanged (it already used `1e-30`), `var_zh` now shares
-  the floor, and `const_zh == var_zh` for a constant metallicity history
-  (regression-tested in `test_misuse.py`).
+  everywhere, so `const_zh == var_zh` for a constant metallicity history, also
+  for (near-)zero SFR nodes (regression-tested in `test_misuse.py`).
 - `lookback_time` fixes the number of nodes and the bin structure at
   construction and is not a free parameter, but a `theta['lookback_time']`
   supplied at predict time (a registered `lookback_time` transform, in Gyr)
@@ -113,7 +107,7 @@ prefer `predict`/`get_spectrum_components`.
 ## 5. Observations must be set up before `predict`
 
 - Call `obs.setup_for_model(wave_model[, …])` once before the first
-  `predict`/JIT trace. **Guard:** `Spectrum.predict` / `Lines.predict` now raise
+  `predict`/JIT trace. **Guard:** `Spectrum.predict` / `Lines.predict` raise
   a clear `RuntimeError` instead of a cryptic `AttributeError`.
 - `Photometry.predict` before `setup_for_model` raises `RuntimeError` (no
   rest-frame fallback).
@@ -129,22 +123,20 @@ prefer `predict`/`get_spectrum_components`.
   `Spectrum` needs `wavelength=` at construction for this (flux may come later).
 - `eline_scaling` is a **fraction / direct multiplier** on the model emission
   lines: `1.0` = no aperture loss, `0.65` = lines at 65%, `2.0` = lines doubled.
-  (It was previously a percentage where 100 = no loss; changed to 1.0 for
-  intuitiveness.)
 - `eline_scaling` vs `spectrum_scaling` — **two different calibrations, do not
   conflate.** `eline_scaling` scales the emission-**LINE** component only
   (the `Lines` observation). `spectrum_scaling` scales the whole **`Spectrum`**
   prediction onto the photometric flux scale. Neither touches the photometry,
-  and the two are independent. Before 2026-08 the spectrum's lines were also
-  scaled by `eline_scaling`; now the spectrum is governed solely by
-  `spectrum_scaling`, so a joint Spectrum + Lines fit that previously leaned on
-  `eline_scaling` to set the spectrum level must add a `spectrum_scaling` prior.
+  and the two are independent. The lines inside the `Spectrum` prediction are
+  not scaled by `eline_scaling`: the spectrum is governed solely by
+  `spectrum_scaling`, so a joint Spectrum + Lines fit that needs a free spectrum
+  level must give `spectrum_scaling` a prior.
   Sampling `eline_scaling` in a model whose observations include no `Lines` raises at
   `SedModel` construction (it would be sampled without being used).
 - `spectrum_scaling` acts on `Spectrum` **only** (a no-op for pure photometry/line
   fits). In the nebular-free `CSPBasis_afe` it is the *only* spectrum
   level knob (there are no lines, so `eline_scaling` is inert there).
-- `spectrum_calib` (2026-08-31) is the wavelength-dependent companion of
+- `spectrum_calib` is the wavelength-dependent companion of
   `spectrum_scaling`: Legendre coefficients `c_1..c_order` (shape `(order,)`)
   multiplying the `Spectrum` prediction by `1 + sum_k c_k P_k(x)`, `x` = observed
   pixel wavelength mapped onto [-1, 1] over **all** pixels of `obs.wavelength`
@@ -154,11 +146,10 @@ prefer `predict`/`get_spectrum_components`.
   with dust and age — always keep the photometry in. Order too high eats real
   features; look at the recovered curve (`legendre_design_matrix` rebuilds it
   from the posterior).
-- **One calibration per spectrum (v1.0.7).** With several spectra use
+- **One calibration per spectrum.** With several spectra use
   `spectrum_scaling_<obs.name>` / `spectrum_calib_<obs.name>`; the plain names then raise
-  (they used to scale every spectrum with one value). With a single spectrum the plain
-  names still work.
-- **Profiled polynomial (v1.0.7).** `Spectrum(polynomial_order=M)` solves the calibration
+  (ambiguous). With a single spectrum the plain names work.
+- **Profiled polynomial.** `Spectrum(polynomial_order=M)` solves the calibration
   (Chebyshev c_0..c_M, level included) inside the likelihood instead of sampling it
   (Prospector's `PolyOptCal`, weights from the noise model). It cannot be combined with a
   sampled `spectrum_scaling` / `spectrum_calib` of the same spectrum (degenerate: refused),
@@ -185,12 +176,12 @@ prefer `predict`/`get_spectrum_components`.
   when `add_neb=True` or `add_dust_emission=True` and neither `sps_home=` nor
   `$SPS_HOME` is set), and at a full python-fsps install for
   `SSPBasis`/`FastStepBasis`.
-- **SSP grid ↔ nebular library — now auto-enforced (was a silent trap).**
+- **SSP grid ↔ nebular library — auto-enforced.**
   CERIDWEN records the isochrone library in the SSP grid's provenance, and
   `CSPBasis` picks the matching CLOUDY nebular grid automatically; a conflicting
-  `isoc_type` passed in `init_neb_params` now **raises** instead of silently
-  loading the wrong grid. (Grids built before provenance tracking warn and fall
-  back to `'mist'`.) You still must build the SSP grid from the *same* FSPS you
+  `isoc_type` passed in `init_neb_params` **raises** rather than loading the
+  wrong grid. (A grid without that provenance warns and falls back to
+  `'mist'`.) You still must build the SSP grid from the *same* FSPS you
   directly compare against — a MILES grid (`ssp_data.h5`, 5994 λ-points) and a
   BPASS install (15000 points) differ in shape, so a raw ceridwen-vs-FSPS
   comparison would mismatch.
@@ -206,17 +197,14 @@ prefer `predict`/`get_spectrum_components`.
   `CERIDWEN_MATMUL_PRECISION=<value>` sets JAX's default matmul precision (e.g. `high`:
   TF32 on GPU). Check your shell does not carry them over.
 
-## 7. Broadening: where the widths come from (2026-09-03)
+## 7. Broadening: where the widths come from
 
 - There are exactly three widths and each is set once: the galaxy's
   `sigma_gal` / `sigma_gas` in `Kinematics` (on `SedModel`), the instrument's
   LSF in `Instrument` (on each `Spectrum`), the library resolution in the SSP
-  grid (read automatically). Nothing else broadens anything: `get_spectrum` is
-  no longer velocity-broadened, and the old `sigma_losvd_kms` (CSP),
-  `sigma_losvd` / `fit_sigma_smooth` / `resolution` / `smoothtype` /
-  `res_convention` / `inres` (Spectrum) and `theta["sigma_smooth"]` are gone.
-  Before this pass a `Spectrum(sigma_losvd=...)` was applied **on top of** the
-  CSP's hidden 300 km/s, so a fitted width was a residual, not the dispersion.
+  grid (read automatically). Nothing else broadens anything: `get_spectrum`
+  applies no velocity broadening, and neither the CSP nor `Spectrum` takes a
+  width argument of its own.
 - `Kinematics(sigma_gal=...)` has no default; `SedModel` defaults to
   `DEFAULT_KINEMATICS = Kinematics(sigma_gal=300.0)` (stars and gas); `SedModel.summary()`
   and the `fitSED` banner show it. A float is fixed, a string is a theta key. **Guards:** a key missing from
@@ -259,12 +247,12 @@ prefer `predict`/`get_spectrum_components`.
   `agebins` (log10 yr) without validating the bin spacing; use increasing,
   non-overlapping bins or FSPS rejects the table ("Ages must be increasing").
 
-## 9. Cosmology and distances (2026-09-03)
+## 9. Cosmology and distances
 
 - `CSPBasis(cosmo=...)` is **required** (`TypeError` otherwise). Use the
   presets `Cosmology.planck18()`, `planck15()`, `wmap9()`, or
-  `Cosmology.flat(H0, Om0)`, `from_name`, `from_astropy`. `tuniv` is gone;
-  passing it is a `TypeError`. Use `csp.age_at(z)` / `cosmo.age(z)` instead.
+  `Cosmology.flat(H0, Om0)`, `from_name`, `from_astropy`. Ages come from the
+  cosmology, `csp.age_at(z)` / `cosmo.age(z)`; a `tuniv=` argument is a `TypeError`.
 - `SedModel` refuses a fixed-`zred` fit whose oldest SFH node is more than
   0.5 % older than the universe at that redshift; the message gives both
   numbers. `linspace(0, 13.8, n)` still passes at `z = 0` (13.787 Gyr under
@@ -284,14 +272,13 @@ prefer `predict`/`get_spectrum_components`.
   for any fixed non-zero redshift. The rescaling keeps the formed mass
   (section 4): `logmass` stays the formed mass at every `zred`.
 - The cosmology is written to the HDF5 result (`cosmo_*` attrs).
-  `ceridwen.result_cosmology(path)` reads it back; files written before
-  2026-09-03 carry none (KeyError).
+  `ceridwen.result_cosmology(path)` reads it back; a file without them raises
+  `KeyError`.
 - `csp.cosmo` is read-only: assigning it after construction raises, because
   compiled predictions would keep the old one. Build a new basis.
-- `CSPBasis`/`CSPBasis_afe` now refuse unknown keyword arguments
-  (`TypeError`). Before, `**kwargs` swallowed anything — `tuniv=`, a
-  misspelt `cosmolgy=`, or `add_neb=True` on `CSPBasis_afe`, which has no
-  nebular module — without a word.
+- `CSPBasis`/`CSPBasis_afe` refuse unknown keyword arguments
+  (`TypeError`): `tuniv=`, a misspelt `cosmolgy=`, or `add_neb=True` on
+  `CSPBasis_afe`, which has no nebular module, all raise.
 - Two warnings you will see and should read: `SedModel(zred=0)` with
   observations ("NO flux factor"), and `lumdist_mpc` together with
   `zred > 0` ("replaces D_L(zred)"). `Cosmology.flat(0.3, 0.7)` is a
@@ -299,29 +286,28 @@ prefer `predict`/`get_spectrum_components`.
 - With a redshift (or `lumdist_mpc`) in force the predictions are physical:
   `Photometry` in AB maggies, `Spectrum` in observed-frame F_nu
   [erg s^-1 cm^-2 Hz^-1] (cgs), `Lines` in erg s^-1 cm^-2. The flux factor is
-  `ceridwen.cosmology.flux_factor_cgs` (`flux_factor_maggies` is a
-  backwards-compatible alias of the same function; it does not return maggies).
+  `ceridwen.cosmology.flux_factor_cgs` (`flux_factor_maggies` is an alias of
+  the same function; despite its name it does not return maggies).
 
-## 10. Nested-sampling weights are aligned with the samples (2026-09-03)
+## 10. Nested-sampling weights are aligned with the samples
 
-- `result.log_weights` of a BlackJAX NSS fit are now computed by
+- `result.log_weights` of a BlackJAX NSS fit are computed by
   `ceridwen.sampler.ns_weights.nested_log_weights(logL, logL_birth)` in the
-  order of `result.samples`. Before, they came from anesthetic's `logw()`,
-  which sorts by likelihood (and drops `logL <= logL_birth`), so the stored
-  weights of older `.h5` files are misaligned with the sample arrays for the
-  final live points. Do not zip `samples[p]` with `log_weights` from an old
-  file; `PostProcess` recomputes the weights from `log_likelihoods_birth`
-  (stored in every NSS file) and warns when the stored ones differ.
+  order of `result.samples`, so `samples[p]` and `log_weights` zip directly
+  (anesthetic's `logw()` sorts by likelihood and drops `logL <= logL_birth`,
+  so its weights are not in sample order). `PostProcess` recomputes the
+  weights from `log_likelihoods_birth` (stored in every NSS file) and warns
+  when the stored ones differ.
 - `result.log_evidence` and its error bar come from anesthetic's
   `NestedSamples.logZ()` when anesthetic is installed (it is a core
   dependency); without it, `log_evidence = logsumexp(log_weights)` and the
   error is NaN. Either way `log_weights` are the aligned per-point weights.
 
-## 11. Behaviour changes of the 2026-09-04 optimisation pass
+## 11. Sampled redshift, noise terms and fit-time checks
 
-- A sampled `zred` now routes `Photometry` through the per-sample filter
-  projection automatically (before, the projection stayed at the fixed setup
-  redshift while the flux factor moved: silently wrong). A `Spectrum` with a
+- A sampled `zred` routes `Photometry` through the per-sample filter
+  projection automatically, so the band projection and the flux factor move
+  together. A `Spectrum` with a
   sampled `zred` uses a redshift-aware projector built for the prior's support
   (`Spectrum(zred_range=...)` when the prior is unbounded or `zred` is a
   transform): the model is read at `theta["zred"]` per call and the lines are
@@ -333,18 +319,18 @@ prefer `predict`/`get_spectrum_components`.
 - `fitSED` honours `noise_floor`, `sky`, `calibration` and `upper_limit` and logs
   them; `logify_spectrum` is refused (`NotImplementedError`) instead of ignored. A
   `GaussianProcess` noise model is part of the fit (section 20).
-- Sampled noise terms are switched on by NAME, **per observation** (v1.0.7):
+- Sampled noise terms are switched on by NAME, **per observation**:
   `log_err_scale` (sigma^2 x exp(2 log_err_scale), a common rescaling of the
   quoted errors), `log_jitter` (+ exp(log_jitter)^2, data units), `log_f_calib`
   (+ (exp(log_f_calib) |model|)^2) and `log_f_data` (+ (exp(log_f_data) |data|)^2) are
   named like the outlier mixture: `log_jitter_<kind>` for the single observation of a
   kind (kind = `phot` / `spec` / `lines`) or `log_jitter_<kind>_<obs.name>` for each of
-  several. The old shared `log_jitter` etc. raise with the new names: one additive
-  jitter shared between maggies and cgs F_nu was dimensionally meaningless. A constant
-  transform now fixes a term (before, `fitSED` ignored a transform-fixed noise term).
+  several. The plain shared names (`log_jitter` etc.) raise and print the per-observation
+  names: one additive jitter shared between maggies and cgs F_nu would be dimensionally
+  meaningless. A constant transform fixes a term.
   Give them a prior and a `free_param_init`. This is a `fitSED` feature: with
   `run_sampler` you build the `DiagonalNoiseModel(use_jitter=True,
-  jitter_key="log_jitter_spec", ...)` yourself (the key defaults to the historical
+  jitter_key="log_jitter_spec", ...)` yourself (the key defaults to
   `log_jitter`), otherwise the parameter is sampled from its prior and never enters the
   likelihood, with no warning. The outlier mixture (section 13) uses the same names.
 - `SedModel` raises for a prior on a name that is not sampled and warns for
@@ -355,7 +341,7 @@ prefer `predict`/`get_spectrum_components`.
 - `pp.figures(dir)` writes the summary / corner / diagnostics figures
   (`ceridwen.plotting`).
 
-## 12. Emission-line marginalisation (2026-09-21)
+## 12. Emission-line marginalisation
 
 `Spectrum(marginalize_elines=True)` integrates the line fluxes out analytically
 (`docs/eline_marginalisation.md`).
@@ -399,7 +385,7 @@ prefer `predict`/`get_spectrum_components`.
   the fitted lines are in `/elines`, `PostProcess` `extras["elines"]` and its
   predictions.
 
-## 13. Outlier mixture likelihood (2026-09-22)
+## 13. Outlier mixture likelihood
 
 `f_outlier_spec` / `f_outlier_phot` / `f_outlier_lines` (with `nsigma_outlier_*`, default 50)
 switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Lines`
@@ -420,7 +406,7 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
   branch for f > 0 and the correct Gaussian at f = 0.
 - **Fixed means a constant transform**, `transforms={"f_outlier_phot": lambda th:
   jnp.array([0.05])}`; a transform that depends on sampled parameters raises. Fixed at
-  0.0 = off (the unchanged Gaussian).
+  0.0 = off (the plain Gaussian).
 - **Upper limits** keep the one-sided penalty; the mixture acts on the detections.
 - **With `marginalize_elines`** the mixture is refused on the marginalised system (the
   marginalising spectrum, all photometry, all line fluxes) and allowed outside it.
@@ -429,18 +415,18 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
 - `lnl_pointwise` holds the mixture terms; `chi` stays the inlier (y - mu)/sigma_eff. The
   per-datum outlier probability comes from `likelihood.outlier_probability(...)`.
 
-## 14. Formed mass vs surviving mass (v1.0.6)
+## 14. Formed mass vs surviving mass
 
 - `logmass` and `PostProcess` `mass_formed` are the mass **formed**; `ssfrW` divides by it.
   The Prospector-style stellar mass is `mass_surviving = mfrac * mass_formed` (stars +
   remnants), with `ssfrW_surviving`. Say which one you quote: they differ by 20-40 %.
 - `mfrac` needs a grid with the surviving-mass table (SSP schema 3.0, `ssp_stellar_mass`).
   The published `mist_miles_chab` and `mist_bpass_v2` grids carry it and `SSPData.from_fsps`
-  records it; the α grid `amist_c3k_hr_krou_afe` does not yet (fit it with
-  `mfrac=False`). An older copy loads as
-  before; `fitSED` then writes no `/derived` group (one log line) and `PostProcess` warns once
-  and skips the block. `fetch_grid(<name>, force=True)` replaces an old copy of a published
-  grid; a grid you built is rebuilt with `from_fsps`.
+  records it; the α grid `amist_c3k_hr_krou_afe` does not (fit it with
+  `mfrac=False`). A grid without the table loads normally; `fitSED` then writes no
+  `/derived` group (one log line) and `PostProcess` warns once and skips the block.
+  `fetch_grid(<name>, force=True)` replaces a local copy of a published grid that lacks the
+  table; a grid you built is rebuilt with `from_fsps`.
 - `fitSED` writes `mfrac` of every sample to `/derived/mfrac` when the grid has the table
   (`fitSED(mfrac=False)` skips it), so `mfrac * 10**logmass` per sample is the surviving mass
   without post-processing. `PostProcess` given the file path uses that array and refuses it
@@ -455,9 +441,9 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
   ages and equals FSPS bit for bit at every other age. BPASS (FSPS reads `bpass.mass`) is
   <= 1 and not corrected. A table above `STELLAR_MASS_MAX` (1.01) is refused: a constructor
   raises, and a file loads **without** its table, with one warning (mfrac unavailable,
-  everything else unchanged). The first Zenodo copy of `mist_miles_chab` (sha256 `2f6777a8…`)
-  carries FSPS's raw table and is refused this way; `fetch_grid('mist_miles_chab',
-  force=True)` fetches the corrected copy once it is published.
+  everything else unaffected). A `mist_miles_chab` file with sha256 `2f6777a8…` carries
+  FSPS's raw table and is refused this way; `fetch_grid('mist_miles_chab', force=True)`
+  fetches the corrected copy.
 - CERIDWEN's composite `mfrac` uses its own SFH weights (the ones behind the spectrum), not
   FSPS's `csp_gen`. Versus python-fsps for 0.1-10 Gyr constant/rising SFHs: <= 4.2e-4 (step),
   <= 6.3e-3 (linear). Each SFH bin keeps its formed mass in both schemes. In the `"linear"`
@@ -468,7 +454,7 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
   quadrature of SFR(t) times the log-age tents to 1e-9, including bins older than the
   second-oldest SSP node (`tests/csp/test_sfh_mass_normalisation.py`).
 
-## 15. IGM damping wing / DLA and attenuation-law names (2026-09-22)
+## 15. IGM damping wing / DLA and attenuation-law names
 
 - **`igm_factor` is not the neutral fraction.** It scales the Madau (1995) forest only.
   `MadauDampingDLA` reads its own theta keys `x_HI`, `logN_HI`, `z_dla` (constructor values
@@ -482,14 +468,14 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
   when `z_dla > zred`. A foreground DLA sits at rest `1215.67 (1+z_dla)/(1+zred)` Å; Prospector
   divides the other way (`sedmodel.py:816`), which only agrees at `z_dla = zred`.
 - **Attenuation-law parameter names are the function-signature names.** `Dust` passes a law
-  only the names that are both in the signature and in its registry `params`; since
-  2026-09-22 every built-in entry is tested for this (`tests/test_dust_laws.py`). `noll`'s bump
-  is `Ebump` (was silently dropped in an age-bin `Dust`); `drude` now takes Å; `smc` / `lmc`
+  only the names that are both in the signature and in its registry `params`; every
+  built-in entry is tested for this (`tests/test_dust_laws.py`). `noll`'s bump
+  is `Ebump`; `drude` takes Å; `smc` / `lmc`
   are Pei (1992), normalised at 5500 Å; the Gordon et al. (2003) SMC bar is
   `gordon03_smcbar`, and Reddy et al. (2015) is `reddy15` (its `tau_reddy` is FSPS's `dust2`,
   so tau(5500 Å) = 0.997 `tau_reddy`).
 
-## 16. Priors ported from Prospector: `LogNormal` and `LogUniform` (2026-09-22)
+## 16. Priors ported from Prospector: `LogNormal` and `LogUniform`
 
 - **`LogNormal(mode, sigma)` does not mean what Prospector's does.** Same class name, same
   argument names, different distribution for the same numbers:
@@ -501,11 +487,11 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
     `ln x ~ N(mode + sigma**2, sigma)`, so its `mode` is **ln of the peak** of the pdf in x.
   - Conversion, same `sigma`: `mode_ceridwen = mode_prospector + sigma**2`
     (and `mode_prospector = mode_ceridwen - sigma**2`).
-  - Checked (22 Sep 2026, CPU): Prospector `LogNormal(mode=ln 2, sigma=0.5)` vs CERIDWEN
+  - Checked (CPU): Prospector `LogNormal(mode=ln 2, sigma=0.5)` vs CERIDWEN
     `LogNormal(mode=ln 2 + 0.25, sigma=0.5)` on 20001 points in [0.05, 50]: max |d ln p| =
     1.07e-14; without the conversion 3.81. Prospector's pdf peaks at x = 2.000 = exp(mode);
     CERIDWEN's `LogNormal(mode=ln 2)` peaks at 1.558 = exp(mode - sigma**2).
-  - `LogNormal.scale` still returns Prospector's `exp(mode + sigma**2)`, which is not the
+  - `LogNormal.scale` returns Prospector's `exp(mode + sigma**2)`, which is not the
     scale of the distribution CERIDWEN samples; nothing in the package reads it.
 - **`LogUniform(mini, maxi)`** is Prospector's `LogUniform` (`scipy.stats.reciprocal`):
   pdf `1 / (x ln(maxi/mini))` on `[mini, maxi]`, uniform in `log x`. It needs
@@ -526,7 +512,7 @@ same_as_prospector = LogNormal(mode=m_prosp + sigma**2, sigma=sigma)
 
 ---
 
-## 17. Instrumental LSF scale (2026-09-22)
+## 17. Instrumental LSF scale
 
 `Instrument.<unit>(..., scale=...)` multiplies the instrumental dispersion by `s`, in the
 continuum kernel and in the line widths (`docs/conventions.md`).
@@ -564,7 +550,7 @@ deliberately **not** placed in the jitted hot path — doing so would either bre
 JIT or slow every evaluation. Use the non-jitted `csp.check_param_ranges(theta)`
 on your priors/bounds once before sampling instead.
 
-## 18. MAP optimisation (`map_fit`, `fitSED(optimize=True)`) (2026-09-22)
+## 18. MAP optimisation (`map_fit`, `fitSED(optimize=True)`)
 
 - **The MAP is the maximum of `ln L + ln prior` in the parameters you sample**, not of the
   density NUTS explores: NUTS adds the log-Jacobian of its logit map for bounded priors, whose
@@ -586,12 +572,12 @@ on your priors/bounds once before sampling instead.
   own key. Several starts reaching the same `ln p` is the sign of a well-defined optimum; a
   spread in `MAPResult.lnp_starts` means local optima.
 
-## 19. Result files: resuming nested sampling, rebuilding the model (2026-09-22)
+## 19. Result files: resuming nested sampling, rebuilding the model
 
-- **`resume_from=` needs a periodic checkpoint written by this version**
-  (`ns_checkpoint_<pid>.pkl`, which now carries the live state, dead list, rng key and
-  iteration). A rescue pickle (`ns_raw_dead_*`) or an older checkpoint holds only the finalised
-  dead points: it still loads with `load_checkpoint`, but resuming from it raises.
+- **`resume_from=` needs a periodic checkpoint**
+  (`ns_checkpoint_<pid>.pkl`, which carries the live state, dead list, rng key and
+  iteration). A rescue pickle (`ns_raw_dead_*`) holds only the finalised
+  dead points: it loads with `load_checkpoint`, but resuming from it raises.
 - **Resume with the same model, settings and `rng_key`.** `num_live`, `num_delete`,
   `num_inner_steps` and the parameter names/shapes must match, and the live points' saved
   `ln L` must equal this model's (rtol 1e-9); anything else raises before sampling. A resumed
@@ -651,8 +637,8 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
 - **`gas_logz` / `gas_logu` priors must stay on the CLOUDY axis** (`gas_logz` [-1.3, +0.3],
   `gas_logu` [-4, -1] on both grids). A bounded prior reaching outside, or a fixed value outside,
   raises when the `SedModel` is built; an unbounded prior warns.
-- A result file without `csp_config['cloudy_dust']` was fitted with `cloudy_dust=True`. To
-  rebuild it, build the CSP with `init_neb_params={"cloudy_dust": True}`; the default CSP is
+- A result file without `csp_config['cloudy_dust']` is read as `cloudy_dust=True` (for a
+  nebular model). To rebuild it, build the CSP with `init_neb_params={"cloudy_dust": True}`; the default CSP is
   reported as a different model.
 
 ## 23. Dust emission, and the IGM on lines and breaks

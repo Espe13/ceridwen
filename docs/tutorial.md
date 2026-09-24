@@ -234,10 +234,10 @@ rather than predicting zeros for it.
     Implementation: `ceridwen/csp/spectrum_calibration.py`, applied in
     `_project_observations` of both `CSPBasis` and `CSPBasis_afe`.
 
-    **Several spectra (v1.0.7).** Each spectrum has its own calibration:
+    **Several spectra.** Each spectrum has its own calibration:
     `spectrum_scaling_<obs.name>` / `spectrum_calib_<obs.name>`. The plain names are
     accepted only when the model has exactly one `Spectrum`; with two they are
-    ambiguous and `SedModel` raises (before v1.0.7 one value silently scaled both).
+    ambiguous and `SedModel` raises.
 
 !!! tip "Profiled calibration polynomial: `Spectrum(polynomial_order=M)`"
     Instead of sampling the calibration, let the likelihood solve it:
@@ -319,8 +319,7 @@ rather than predicting zeros for it.
     while in the sampled mode it costs sampler dimensions. GPU timing at the production width
     W = 100 is not measured yet.
 
-    Derivation: `docs/dev/poly_marginalisation_design.md`; code:
-    `ceridwen/likelihood/poly_marginal.py`.
+    Code: `ceridwen/likelihood/poly_marginal.py`.
 
 ## 5. Priors and the model
 

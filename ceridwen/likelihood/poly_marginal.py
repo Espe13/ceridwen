@@ -7,7 +7,7 @@ design matrix T_0..T_M of :func:`~ceridwen.likelihood.poly_calibration.chebyshev
 ``c ~ N(0, diag(s^2))``.  The residual ``r = y - mu = D c + n``, ``D = diag(mu) A``,
 ``n ~ N(0, C)`` with ``C^-1 = W`` the noise model's inverse variance at the UNCALIBRATED ``mu``
 (as the profiled mode), is linear in ``c``, so ``c`` integrates out in closed form (Woodbury and
-the matrix determinant lemma, ``docs/dev/poly_marginalisation_design.md``):
+the matrix determinant lemma):
 
     ln L = ln L_diag(r) + 1/2 b^T M^-1 b - 1/2 ln|M| - 1/2 ln|Lambda|,
     M = D^T W D + Lambda^-1,   b = D^T W r,   Lambda = diag(s^2),

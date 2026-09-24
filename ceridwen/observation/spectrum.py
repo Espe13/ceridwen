@@ -120,7 +120,7 @@ class Spectrum(Observation):
         for k in list(kwargs):
             if k in self._removed_kwargs:
                 raise TypeError(
-                    f"Spectrum(): '{k}' was removed; use {self._removed_kwargs[k]}")
+                    f"Spectrum(): '{k}' is not an argument; use {self._removed_kwargs[k]}")
         if "eline_sigma" in kwargs:
             raise TypeError(
                 "Spectrum(): there is no eline_sigma. The marginalised lines have the same "

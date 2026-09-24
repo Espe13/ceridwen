@@ -7,8 +7,7 @@ pointer files and the tests that need them skip cleanly rather than erroring.
 - `ssp_data_bpass_agb_dust.h5` — used by the BPASS+AGB regression test
   (`tests/test_losvd_no_lyman_spike.py`).
 
-The suite's **main** test grid is no longer committed here: the former LFS
-fixture `ssp_data_test.h5` was retired (2026-08-17). It is the published BPASS
+The suite's **main** test grid is not committed here: it is the published BPASS
 grid. Fetch it once and the tests find it in the `fetch_grid` cache
 (`$CERIDWEN_GRID_DIR` or `~/.ceridwen/grids`; checksum-verified, never downloaded
 by the tests; see `tests/_gridfixture.py`):

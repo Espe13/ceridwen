@@ -1,7 +1,7 @@
 """
 Multiplicative spectrophotometric calibration of ``Spectrum`` predictions from the
 optional theta keys ``spectrum_scaling`` (grey level) and ``spectrum_calib`` (Legendre shape),
-one pair per spectrum since v1.0.7 (``spectrum_scaling_<obs.name>`` with several spectra).
+one pair per spectrum (``spectrum_scaling_<obs.name>`` with several spectra).
 """
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def _design(obs, order: int):
 
 def calibration_keys(obs, theta):
     """``(level key, shape key)`` of ``obs`` in ``theta`` (either may be None): the
-    per-spectrum ``spectrum_scaling_<obs.name>`` / ``spectrum_calib_<obs.name>`` (v1.0.7)
+    per-spectrum ``spectrum_scaling_<obs.name>`` / ``spectrum_calib_<obs.name>``
     before the plain ``spectrum_scaling`` / ``spectrum_calib``.  Which names a model may use
     (the plain one only with a single Spectrum) is checked by ``SedModel`` at construction."""
     name = getattr(obs, "name", None)
