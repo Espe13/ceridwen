@@ -185,6 +185,7 @@ def check_model_against_result(model, path, *, raise_on_difference: bool = False
         _require_logzsol_result(path, f)
     in_file = _read_record(path)
     in_model = _model_record(model)
+    _csp_config_old_default(in_file)
     cmp = ResultComparison(path=path)
     for key in sorted(set(in_file) | set(in_model)):
         if key.split("@")[-1] in _IGNORED_MODEL_KEYS:
@@ -202,8 +203,40 @@ def check_model_against_result(model, path, *, raise_on_difference: bool = False
         else:
             cmp.differences.append(entry)
     if raise_on_difference and not cmp.ok:
-        raise ValueError(str(cmp))
+        msg = str(cmp)
+        cd = [_cfg(r.get("/model@csp_config")).get("cloudy_dust") for r in (in_file, in_model)]
+        if cd[0] is not None and cd[0] != cd[1]:
+            msg += (f"\n  csp_config['cloudy_dust']: the fit used {cd[0]}, this CSP {cd[1]}. "
+                    f"Build the CSP with init_neb_params={{'cloudy_dust': {cd[0]}}} "
+                    "(True: CLOUDY grids with dust in the H II region; the default is False).")
+        raise ValueError(msg)
     return cmp
+
+
+def _cfg(raw) -> dict:
+    if raw is None:
+        return {}
+    return json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+
+
+def _csp_config_old_default(record) -> None:
+    """A csp_config written before 'cloudy_dust' was recorded was made with the nebular default
+    of the time, cloudy_dust=True: fill it in (for a nebular spectrum model) so it compares."""
+    key = "/model@csp_config"
+    raw = record.get(key)
+    if raw is None:
+        return
+    cfg = _cfg(raw)
+    if "cloudy_dust" in cfg:
+        return
+    has_neb = str(cfg.get("spectrum_model") or "").endswith("_neb")
+    new = {}
+    for k, v in cfg.items():            # the key order _write_csp_config writes
+        new[k] = v
+        if k == "fesc_geometry":
+            new["cloudy_dust"] = True if has_neb else None
+    new.setdefault("cloudy_dust", True if has_neb else None)
+    record[key] = json.dumps(new, default=str)
 
 
 def priors_from_result(path) -> dict:

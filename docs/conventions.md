@@ -296,6 +296,18 @@ them.
 you by `fitSED(model, observations)`); a `Spectrum` therefore needs its
 `wavelength=` at construction even if the flux is attached later.
 
+## Nebular grid: CLOUDY without dust in the H II region
+
+`CSPBasis` reads the Byler et al. (2017) CLOUDY grids from `$SPS_HOME/nebular`. By default it
+uses the grids **without dust inside the H II region** (`ZAU_ND_<isochrones>`), the default of
+FSPS, python-fsps and Prospector, so the nebular lines match theirs.
+`init_neb_params={"cloudy_dust": True}` selects the grids with dust (`ZAU_WD_<isochrones>`),
+whose lines are fainter in hydrogen and Ly-alpha. The factor depends on the grid: for a constant
+SFR over 0-1 Gyr at solar metallicity and logU = -2.5, WD/ND is 0.78 (H-alpha), 0.79 (H-beta),
+0.17 (Ly-alpha) and 1.13 ([O III] 5007) on MIST, and 0.95, 0.95, 0.40 and 0.99 on BPASS. The
+result file records the choice (`csp_config['cloudy_dust']`); a file that does not record it
+was made with `cloudy_dust=True`, and `rebuild_model` asks for that CSP.
+
 ## Dust geometry and the escape fraction `frac_obrun`
 
 The CSP attenuates each SSP age row by its age bin's dust (`init_dust_params['bin_edges']`,

@@ -130,7 +130,8 @@ class NebularModel:
 
     Parameters
     ----------
-    cloudy_dust : bool -- ``ZAU_WD`` (True) or ``ZAU_ND`` (False) grids.
+    cloudy_dust : bool -- CLOUDY grids with dust inside the H II region, ``ZAU_WD`` (True), or
+        without, ``ZAU_ND`` (False, the default, as in FSPS / python-fsps / Prospector).
     csp_lambda : (nspec,) -- model wavelength grid [A].
     ssp_flux : (n_z, n_age, n_wave) -- SSP L_nu [L_sun/Hz]; gives ``log_qq`` (n_z, n_age).
     ssp_ages_lgyr : (n_age,) -- log10(age/yr) of the SSPs; ages inside both cubes are "young".
@@ -147,9 +148,9 @@ class NebularModel:
     """
 
     def __init__(self,
-                 cloudy_dust,
-                 sps_home,
-                 csp_lambda,
+                 cloudy_dust=False,
+                 sps_home=None,
+                 csp_lambda=None,
                  ssp_flux=None,
                  ssp_ages_lgyr=None,
                  isoc_type='mist',
@@ -172,7 +173,10 @@ class NebularModel:
         self.nebnage = int(nebnage)
         self.nebnip  = int(nebnip)
 
-        suffix = 'WD' if cloudy_dust else 'ND'
+        if sps_home is None or csp_lambda is None:
+            raise TypeError("NebularModel needs sps_home= and csp_lambda=")
+        self.cloudy_dust = bool(cloudy_dust)
+        suffix = 'WD' if self.cloudy_dust else 'ND'
         base = Path(sps_home) / 'nebular' / f'ZAU_{suffix}_{isoc_type}'
         self.cont_file = base.with_suffix('.cont')
         self.line_file = base.with_suffix('.lines')

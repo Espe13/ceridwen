@@ -264,3 +264,54 @@ def test_vector_uniform_prior_round_trips(setup, tmp_path):
     # scalar bounds serialise exactly as before (floats)
     assert Uniform(low=0.0, high=1.0).serialize() == {"type": "Uniform", "low": 0.0,
                                                       "high": 1.0, "name": ""}
+
+
+def _drop_cloudy_dust(path):
+    """Make ``path`` look like a file written before csp_config recorded cloudy_dust."""
+    import h5py
+    import json
+    with h5py.File(path, "a") as f:
+        cfg = json.loads(f["model"].attrs["csp_config"])
+        cfg.pop("cloudy_dust")
+        f["model"].attrs["csp_config"] = json.dumps(cfg, default=str)
+
+
+@needs_grid
+def test_old_file_without_cloudy_dust_means_the_dusty_grid(setup, tmp_path):
+    """B1-024: the nebular default became cloudy_dust=False.  A result file that does not
+    record cloudy_dust was made with the old default, True: rebuilding it needs a CSP with
+    cloudy_dust=True, and the default CSP is named as different."""
+    import os
+    from ceridwen import CSPBasis, SSPData, SedModel
+    from ceridwen.cosmology import Cosmology
+    from ceridwen.resultfile import check_model_against_result, rebuild_model
+    if not os.environ.get("SPS_HOME"):
+        pytest.skip("SPS_HOME not set (CLOUDY grids)")
+    # the no-nebular setup model: the missing key is irrelevant
+    path0 = _write(setup["build"](), tmp_path / "noneb.h5")
+    _drop_cloudy_dust(path0)
+    assert check_model_against_result(setup["build"](), path0).ok
+
+    def neb_model(cloudy_dust):
+        kw = {} if cloudy_dust is None else {"init_neb_params": {"cloudy_dust": cloudy_dust}}
+        csp = CSPBasis(SSPData.load(str(GRID)), lookback_time=jnp.linspace(0.0, 10.0, 5),
+                       zh_const=True, sfh_interp="step", add_dust=False, add_diffuse_dust=True,
+                       add_neb=True, verbose=False, cosmo=Cosmology.planck18(), **kw)
+        m = setup["build"]()
+        return csp, SedModel(csp, setup["observations"](), priors=m.priors,
+                             transforms=m.transforms,
+                             free_param_init={k: m.theta_init[k] for k in
+                                              ("logsfr_ratios", "logmass", "sigma_gal")},
+                             zred=m.zred, kinematics=m.kinematics)
+
+    csp_nd, m_nd = neb_model(None)
+    assert csp_nd.neb.cloudy_dust is False and "ZAU_ND" in str(csp_nd.neb.line_file)
+    path = _write(m_nd, tmp_path / "neb.h5")
+    assert check_model_against_result(m_nd, path).ok
+    _drop_cloudy_dust(path)
+    keys = {d[0] for d in check_model_against_result(m_nd, path).differences}
+    assert keys == {"/model@csp_config"}, keys
+    with pytest.raises(ValueError, match=r"cloudy_dust': True"):
+        rebuild_model(path, csp_nd, setup["observations"](), transforms={"sfh": setup["sfh"]})
+    csp_wd, m_wd = neb_model(True)
+    assert check_model_against_result(m_wd, path).ok

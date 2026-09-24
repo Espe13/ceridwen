@@ -167,7 +167,11 @@ class CSPBasis:
         mass-fraction nodes x 100/2.2), DL07's 0.47-4.58.
     sps_home : str -- data directory for the nebular and dust-emission grids; defaults to $SPS_HOME.
     init_neb_params, init_dust_params : dict -- forwarded to NebularModel / Dust.  ``isoc_type`` is
-        taken from the SSP grid's provenance when recorded.
+        taken from the SSP grid's provenance when recorded.  ``cloudy_dust`` (default False) picks
+        the CLOUDY grids without dust in the H II region (``ZAU_ND``, the FSPS / Prospector
+        default); True the dusty ones (``ZAU_WD``), whose lines differ from ND by a grid-dependent
+        factor (constant SFH 0-1 Gyr, solar, logU -2.5: MIST H-alpha x0.78, Ly-alpha x0.17,
+        [O III] 5007 x1.13; BPASS x0.95, x0.40, x0.99).
     sfh_interp : {'step', 'linear'} -- piecewise-constant (non-negative weights) or
         piecewise-linear (analytic log-age integral, small negative weights clipped) SFH.
     track_zred_age : bool -- with a sampled ``zred``, rescale the lookback grid so its oldest node
@@ -257,8 +261,7 @@ class CSPBasis:
                 "today, >= 2 nodes."
             )
         # copies: initialize_neb pops / adds keys, and the caller may reuse the dict (B1-015)
-        init_neb_params = ({"cloudy_dust": True} if init_neb_params is None
-                           else dict(init_neb_params))
+        init_neb_params = {"cloudy_dust": False, **(init_neb_params or {})}
         init_dust_params = ({'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']}
                             if init_dust_params is None else dict(init_dust_params))
 

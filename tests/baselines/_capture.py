@@ -83,6 +83,7 @@ def _build_csp(ssp, theta, *, sfh_interp, zh_const):
         add_diffuse_dust  = False,
         add_dust_emission = False,
         add_neb           = True,
+        init_neb_params   = {"cloudy_dust": True},   # the grid the goldens were captured with
         nebemlineinspec   = True,
         verbose           = False,
         sfh_interp        = sfh_interp,

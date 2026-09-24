@@ -615,3 +615,13 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
   11-20 Myr ages are young for the picket but outside the default birth-cloud bin.
 - `frac_obrun = 0` is exactly the model without the key (both geometries).
 
+## 22. Nebular grid: `cloudy_dust` defaults to False
+
+- The CLOUDY grids **without** dust in the H II region (`ZAU_ND`) are the default, as in FSPS,
+  python-fsps and Prospector. `init_neb_params={"cloudy_dust": True}` gives the dusty grids
+  (`ZAU_WD`): on MIST, H-alpha x0.78, Ly-alpha x0.17, [O III] 5007 x1.13 relative to ND (BPASS:
+  x0.95, x0.40, x0.99). Compare with Prospector at the same setting.
+- A result file without `csp_config['cloudy_dust']` was fitted with `cloudy_dust=True`. To
+  rebuild it, build the CSP with `init_neb_params={"cloudy_dust": True}`; the default CSP is
+  reported as a different model.
+

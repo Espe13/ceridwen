@@ -8,6 +8,13 @@ preserve the public API and give bit-comparable science (identical/near-identica
 later entries (e.g. the v1.0.5 `logzsol` metallicity keys, the v1.0.7 per-observation
 noise names) change the API and say so in their own entry.
 
+> **Nebular default changed (Unreleased, 1.0.12): `cloudy_dust=False`.** `CSPBasis` now
+> reads the CLOUDY grids without dust in the H II region (`ZAU_ND`, the FSPS / Prospector
+> default) instead of `ZAU_WD`. Nebular line fluxes change: on MIST, Balmer x1/0.78,
+> Ly-alpha x1/0.17, [O III] 5007 x1/1.13 relative to before (BPASS: x1/0.95, x1/0.40,
+> x1/0.99). `init_neb_params={"cloudy_dust": True}` restores the old grid; result files that
+> do not record `cloudy_dust` are read as `True`. See "Unreleased" below.
+
 > Scope note: this documents the edits from *this* work. The repo working tree
 > also carries other uncommitted changes that predate this session; `git diff`
 > is the authoritative full record. Line numbers drift — references are by
@@ -937,3 +944,16 @@ longer mutates `sampler_kwargs` (B2-004), `CSPBasis` no longer mutates `init_*_p
 weighted quantiles (B3-001); `fetch_grid` names a pre-re-deposit cache (B3-007);
 `ceridwen.check` verifies the FSPS data files (B3-002). Docs, README, tutorial, GOTCHAS,
 AGENTS and examples corrected per the B3/Q1/P findings (see `git log main..night/fixes`).
+
+## Unreleased — dust, nebular and IGM fixes (branch day/F2; finding IDs from the night audit)
+
+**Nebular default: `cloudy_dust=False` (B1-024).** `CSPBasis` / `NebularModel` default to the
+CLOUDY grids without dust in the H II region (`ZAU_ND`), as FSPS, python-fsps and Prospector
+do. Lines change by the WD/ND factors in the note at the top. `init_neb_params` no longer has to
+carry `cloudy_dust` (it merges over the default). `fitSED` records it in `csp_config`;
+`check_model_against_result` / `rebuild_model` read a file without it as `cloudy_dust=True`
+and name the setting in the error. Checked against python-fsps 0.5.0 (default FSPS grid, one
+3 Myr population): six lines at 1e-6 in ratio and 2e-3 absolute
+(`tests/test_nebular_default_grid.py`). The golden spectra and the `eline_marginal` /
+`lsf_scale` regression categories pin `cloudy_dust=True`, the grid they were captured with.
+
