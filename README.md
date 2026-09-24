@@ -639,7 +639,8 @@ whoever or whatever proposes it:
   [`AGENTS.md`](https://github.com/Espe13/ceridwen/blob/main/AGENTS.md) holds the conventions that are easy to get wrong
   (solar-relative `logzsol` metallicity, lookback-time ordering, units and frames),
   the hard requirements and the module map; [`GOTCHAS.md`](https://github.com/Espe13/ceridwen/blob/main/GOTCHAS.md) is the
-  misuse guide. Both are checked against the code by the static API check.
+  misuse guide. The Python blocks of `GOTCHAS.md` (not `AGENTS.md`) are checked against the
+  code by the static API check.
 - **A change has to say what it is.** A refactor or optimisation must be
   byte-identical on CPU. An intended change to the physics must come with its
   predicted size, and a new feature must add a golden configuration of its
