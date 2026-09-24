@@ -34,6 +34,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from .sampler.priors import sample_for_parameter
+
 __all__ = ["map_fit", "MAPResult", "build_lnprob", "laplace_sigma"]
 
 
@@ -102,7 +104,7 @@ def _prior_starts(model, n_starts, rng_key, include_init):
                              "needs one to draw starting points")
         rng_key, sub = jax.random.split(rng_key)
         init = jnp.asarray(init, dtype=jnp.float64)
-        draws = jnp.asarray(model.priors[name].sample(sub, shape=(n_starts, *init.shape)),
+        draws = jnp.asarray(sample_for_parameter(model.priors[name], sub, n_starts, init.shape),
                             dtype=jnp.float64)
         starts[name] = jnp.concatenate([init[None], draws]) if include_init else draws
     return starts

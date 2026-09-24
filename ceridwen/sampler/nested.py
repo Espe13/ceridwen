@@ -11,6 +11,7 @@ import jax
 import jax.numpy as jnp
 
 from .runner import SamplerAdapter, SamplingResult
+from .priors import sample_for_parameter
 
 Array = jax.Array
 
@@ -87,7 +88,11 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
             rng_key, sub   = jax.random.split(rng_key)
             expected_shape = init_val.shape
 
-            particles[name] = prior.sample(sub, shape=(self.num_live, *expected_shape))
+            try:
+                particles[name] = sample_for_parameter(prior, sub, self.num_live,
+                                                       expected_shape)
+            except ValueError as exc:
+                raise ValueError(f"prior of {name!r}: {exc}") from None
 
         return particles
 

@@ -22,6 +22,24 @@ def _scalar_or_list(v):
     return a.tolist() if a.ndim else float(a)
 
 
+def sample_for_parameter(prior, key, n, param_shape):
+    """``n`` draws of a parameter of shape ``param_shape`` from ``prior``: shape
+    ``(n, *param_shape)``.  A prior with scalar parameters is broadcast over the parameter's
+    elements; a prior whose own batch/event shape is the parameter's shape (per-element
+    bounds, a MultivariateNormalPrior) is drawn ``n`` times; anything else is refused."""
+    param_shape = tuple(int(d) for d in param_shape)
+    dist = prior.tfp_dist()
+    own = tuple(int(d) for d in dist.batch_shape) + tuple(int(d) for d in dist.event_shape)
+    if own == ():
+        return prior.sample(key, shape=(n, *param_shape))
+    if own == param_shape:
+        return prior.sample(key, shape=(n,))
+    raise ValueError(
+        f"a {type(prior).__name__} prior of shape {own} on a parameter of shape "
+        f"{param_shape}: give the prior scalar parameters (broadcast over the elements) or "
+        f"parameters of the parameter's shape {param_shape}")
+
+
 @dataclass(frozen=True)
 class Prior(abc.ABC):
     """Prior base class delegating to a TFP-JAX distribution; subclasses define

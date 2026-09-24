@@ -137,7 +137,11 @@ def _prior_draws(model, n, seed=0):
             return None
         key, sub = jax.random.split(key)
         shape = tuple(np.shape(model.theta_init[name]))
-        draws[name] = np.asarray(model.priors[name].sample(sub, shape=(n,) + shape))
+        from .sampler.priors import sample_for_parameter
+        try:
+            draws[name] = np.asarray(sample_for_parameter(model.priors[name], sub, n, shape))
+        except ValueError:                 # prior shape does not fit the parameter
+            return None
     return draws
 
 
