@@ -110,7 +110,8 @@ The published `mist_miles_chab` and `mist_bpass_v2` grids carry the surviving-ma
 `fitSED` and `PostProcess` use for `mfrac` (SSP schema 3), and `SSPData.from_fsps` records it
 in any grid you build. The α grid does not carry one yet: fit it with `mfrac=False` (the
 default only skips it with a notice), which reports the formed mass. A copy of a solar-scaled
-grid fetched before the table was added reports `mfrac` as unavailable;
+grid fetched before the table was added (before the 2026-09 re-deposit) no longer matches the
+registry checksum: `fetch_grid(<name>)` raises and says so, and
 `fetch_grid(<name>, force=True)` replaces it with the current one.
 
 `CSPBasis_afe` accepts only α-aware (4-D) grids; passing a solar-scaled 3-D
