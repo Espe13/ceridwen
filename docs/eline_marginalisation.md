@@ -64,7 +64,7 @@ within 2σ. Covered lines that miss this stay at their CLOUDY flux and are liste
 by `model.summary()`; a line you name in `elines_to_fit` that misses it is an
 error.
 
-## Requirements (each refused at construction, with the fix in the message)
+## Requirements (each refused before sampling, with the fix in the message)
 
 - with a nebular model (`add_neb=True`), nebular parameters that are **not sampled**: with free line fluxes the lines cannot constrain `gas_logu` /
   `gas_logz`. Fix them with constant transforms, as above, or tie them to

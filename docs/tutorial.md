@@ -361,7 +361,7 @@ sfh_times_yr = np.array(csp.sfh_times)
 def logsfr_to_sfh(free_theta, _t=sfh_times_yr):
     return logsfr_ratios_to_sfh(free_theta["logsfr_ratios"], sfh_times_yr=_t)
 
-N_RATIOS = 4   # number of SFH bins - 1
+N_RATIOS = 4   # number of SFH nodes - 1
 model = SedModel(
     csp,
     observations=observations,
