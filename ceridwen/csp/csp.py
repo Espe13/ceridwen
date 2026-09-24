@@ -743,7 +743,8 @@ class CSPBasis:
             self.ion_mask    = self.wave < 912.0
             self.kill_ion    = self.young_mask[:, None] & self.ion_mask[None, :]
 
-            self._neb_line_profile_w, self._neb_line_on_grid = self._line_profile_weights()
+            if self.igm is not None:     # only the IGM needs it (n_lines x n_wave, float64)
+                self._neb_line_profile_w, self._neb_line_on_grid = self._line_profile_weights()
 
             young_idx = self.neb.young_idx
             self._neb_young_idx   = young_idx
