@@ -48,3 +48,18 @@ def test_eline_scaling_without_lines_is_refused():
         SedModel._check_calibration_names(fake(["photometry", "spectrum"]))
     SedModel._check_calibration_names(fake(["photometry", "lines"]))
     SedModel._check_calibration_names(fake([]))          # predict-only model
+
+
+def test_tied_gas_prior_outside_the_cloudy_axis_warns():
+    """B1-019: gas_tied with a logzsol prior reaching below the CLOUDY axis froze the lines
+    silently."""
+    def fake(prior):
+        csp = types.SimpleNamespace(gas_tied=True,
+                                    neb=types.SimpleNamespace(nebem_logz=np.linspace(-1.3, 0.3, 5)))
+        return types.SimpleNamespace(csp=csp, priors={"logzsol": prior},
+                                     _transform_value=lambda n: None)
+    with pytest.warns(UserWarning, match="leaves the CLOUDY gas axis"):
+        SedModel._check_tied_gas_range(fake(Uniform(low=-2.3, high=0.3)))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        SedModel._check_tied_gas_range(fake(Uniform(low=-1.3, high=0.3)))

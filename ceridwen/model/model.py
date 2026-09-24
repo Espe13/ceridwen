@@ -266,8 +266,36 @@ class SedModel:
                     f"absolute-log10-Z prior?  logzsol = log10(Z/Z_sun) is 0 at solar; the "
                     f"absolute bounds [{lo:+.3f}, {hi:+.3f}] convert to "
                     f"[{lo - l0:+.3f}, {hi - l0:+.3f}].", stacklevel=3)
+        self._check_tied_gas_range()
         self._check_afe_range()
         self._check_refused_alpha_cell()
+
+    def _check_tied_gas_range(self):
+        """gas_tied=True (B1-019): the gas metallicity is the stellar logzsol, and a logzsol
+        prior / fixed value reaching outside the CLOUDY gas axis freezes the lines there (the
+        stellar part is still valid, so this warns)."""
+        from ..csp.csp import LOGZSOL_KEYS, prior_support
+        neb = getattr(self.csp, "neb", None)
+        if not getattr(self.csp, "gas_tied", False) or neb is None \
+                or getattr(neb, "nebem_logz", None) is None:
+            return
+        g = np.asarray(neb.nebem_logz, dtype=float)
+        glo, ghi = float(g.min()), float(g.max())
+        for name in LOGZSOL_KEYS:
+            prior = self.priors.get(name)
+            if prior is not None:
+                lo, hi = prior_support(prior)
+            else:
+                fixed = self._transform_value(name)
+                if fixed is None:
+                    continue
+                lo, hi = float(np.min(fixed)), float(np.max(fixed))
+            if lo < glo - 1e-12 or hi > ghi + 1e-12:
+                warnings.warn(
+                    f"gas_tied=True: the gas metallicity is {name!r}, whose range "
+                    f"[{lo:+.3f}, {hi:+.3f}] leaves the CLOUDY gas axis [{glo:+.3f}, {ghi:+.3f}]; "
+                    "outside it the emission lines are frozen at the edge value (the stellar "
+                    "continuum still follows logzsol)", stacklevel=4)
 
     def _check_afe_range(self):
         """The logzsol rule for [alpha/Fe] on an alpha grid (B1-011): a bounded prior or a
