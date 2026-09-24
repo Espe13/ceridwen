@@ -387,6 +387,14 @@ print("[model] ready, handing over to fitSED")
 Now pick a sampler. Both fill the same `result` object, so everything after the
 fit (reporting, plotting) is identical.
 
+**How long it takes.** The sampler settings below are sized for a GPU. Measured on a shared
+11-core laptop CPU (2026-09-24) with this Step 1 model: Option A with `num_live=100,
+num_delete=20, logZ_tol=-2.0` took 25 min (67 800 likelihood calls); at the 400 live points
+shown it advances ~1.3 dead points per second, i.e. hours. Option B spent 10 min in its 200
+warmup steps, and plain NUTS after the MAP had not finished after 80 min. NUTS prints nothing
+while it warms up and samples (each is one compiled loop) and does not see Ctrl-C there; stop
+it with `kill`. For a first look on a CPU, use the smaller nested-sampling settings above.
+
 #### Option A: nested sampling
 
 Gradient-free, and also returns the Bayesian evidence (log Z) for model
