@@ -456,9 +456,12 @@ def test_postprocess_conditional_polynomial_and_result_file(fits):
     spread = np.std(1.0 + blk["draws"] @ A.T, axis=0)
     assert np.max(np.abs(np.median(resp, axis=0) - true_resp) / spread) < 4.0
     # the grey level T_0 trades against logmass within the photometric level (3 % in 4 bands;
-    # measured: a ~1.8 % level offset), so the shape is checked with the level divided out
+    # measured: a ~1.8 % level offset), so the shape is checked with the level divided out,
+    # within one posterior sd of the response (measured 0.60 sd: 1.5 % at the red edge, where
+    # the sd is 2.5 %; an absolute 1 % bound was tighter than the posterior, B2-016)
     ratio = np.median(resp, axis=0) / true_resp
-    assert np.max(np.abs(ratio / np.mean(ratio) - 1.0)) < 0.01
+    dev = np.abs(ratio / np.mean(ratio) - 1.0)
+    assert np.max(dev / (spread / true_resp)) < 1.0
     # the prediction carries the response, recomputed from the likelihood at draw 0
     th = {k: jnp.asarray(np.asarray(out["theta"][k])[0]).reshape(np.shape(m.theta_init[k]))
           for k in m.param_names}
