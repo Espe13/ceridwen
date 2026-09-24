@@ -1604,14 +1604,16 @@ class CSPBasis:
         tau_age  = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age = jnp.exp(-tau_age)
 
+        attn_star = attn_age
         if "frac_obrun" in theta:
             fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
             attn_age = (jnp.float32(1.0) - fo) * attn_age + fo   # runaway fraction skips the birth cloud
-            attn_age = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)   # escaped LyC: no birth-cloud dust at all
+            # escaped stellar LyC: no birth-cloud dust at all; the nebular term keeps attn_age
+            attn_star = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)
 
         W_f32 = W.astype(jnp.float32)
         spectrum = jnp.einsum("za,zaw,aw->w", W_f32, self.flux,
-                              ion_mult * attn_age)
+                              ion_mult * attn_star)
         spectrum = spectrum + self._neb_spectrum_term(
             W_f32, theta, include_lines=include_lines,
             attn_age=attn_age, amplitude=neb_amp)
@@ -1636,10 +1638,12 @@ class CSPBasis:
         attn_age      = jnp.exp(-tau_age)
         diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
 
+        attn_star = attn_age
         if "frac_obrun" in theta:
             fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
             attn_age = (jnp.float32(1.0) - fo) * attn_age + fo   # runaway fraction skips the birth cloud
-            attn_age = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)   # escaped LyC: no birth-cloud dust at all
+            # escaped stellar LyC: no birth-cloud dust at all; the nebular term keeps attn_age
+            attn_star = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)
 
         W_f32 = W.astype(jnp.float32)
         neb_v, neb_base = self._neb_weights_and_base(
@@ -1649,7 +1653,7 @@ class CSPBasis:
             jnp.einsum("za,zaw,aw->w", W_f32, self.flux, ion_mult)
             + jnp.einsum("y,yw->w", neb_v, neb_base))
         attenuated = (
-            jnp.einsum("za,zaw,aw->w", W_f32, self.flux, ion_mult * attn_age)
+            jnp.einsum("za,zaw,aw->w", W_f32, self.flux, ion_mult * attn_star)
             + jnp.einsum("y,yw,yw->w", neb_v, neb_base, attn_age[yi, :]))
         attenuated         = attenuated * diffuse_curve
 
