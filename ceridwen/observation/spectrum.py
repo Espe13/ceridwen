@@ -346,13 +346,15 @@ class Spectrum(Observation):
             subtract_library=self.subtract_library, zred_range=zred_range,
             inst_scale_range=inst_scale_range)
 
-    def predict(self, spectrum, wave_model=None, line_flux=None, theta=None):
+    def predict(self, spectrum, wave_model=None, line_flux=None, theta=None, transmission=None):
         """Model F_nu on the observed pixels (n_pix,): the rest-frame CONTINUUM
         ``spectrum`` (n_wave,) broadened by sigma_gal, the instrument LSF (library
         width removed) and resampled, plus the emission lines painted from their
         observed-frame integrated fluxes ``line_flux`` (all grid lines, or None)
         with sigma_gas + instrument.  ``theta`` supplies the free widths and, for a
-        projector built with ``zred_range``, the redshift."""
+        projector built with ``zred_range``, the redshift.  ``transmission`` (a callable of the
+        rest wavelength, the IGM): applied after the galaxy's sigma_gal and before the
+        instrument; ``spectrum`` is then the continuum before the IGM."""
         if self._proj is None:
             raise RuntimeError(
                 "Spectrum.predict() called before setup_for_model(): the "
@@ -360,7 +362,8 @@ class Spectrum(Observation):
                 "spec.setup_for_model(wave_model, zred=..., kinematics=...) once "
                 "(before the first predict / JIT trace)."
             )
-        return self._proj.predict(spectrum, line_flux, {} if theta is None else theta)
+        return self._proj.predict(spectrum, line_flux, {} if theta is None else theta,
+                                  transmission=transmission)
 
     def synthetic_photometry(self, filterset):
         """Synthetic maggies (n_filters,) of this F_nu spectrum through

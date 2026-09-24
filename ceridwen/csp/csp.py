@@ -140,6 +140,12 @@ def _check_duste_model(duste_model, add_dust_emission):
     return duste_model
 
 
+def _fixed_zero(width) -> bool:
+    """A kinematic width fixed at 0 km/s (a float, not a theta key): the kernel is the identity,
+    so the IGM is applied on the model grid as before (bit-identical)."""
+    return not isinstance(width, str) and float(width) == 0.0
+
+
 class CSPBasis:
     """Composite stellar population basis.  ``predict(theta, observations)`` projects the model onto observations.
 
@@ -898,14 +904,24 @@ class CSPBasis:
             )
         )
         cont, lines = self._assemble_components(theta, paint_lines)
-        cont, lines_s = self._apply_mass_redshift_igm(
-            cont, cont if lines is None else lines, theta)
+        # mass and flux factor first; the IGM separately, so the kinematic kernels can act
+        # before it (galaxy kinematics -> redshift -> IGM -> instrument)
+        cont0, lines0 = self._apply_mass_redshift_igm(
+            cont, cont if lines is None else lines, theta, igm=False)
+        trans = None
+        if self.igm is not None and "zred" in theta:
+            trans = self._igm_transmission(
+                jnp.ravel(theta["zred"])[0], theta).astype(cont0.dtype)
+            cont, lines_s = cont0 * trans, lines0 * trans
+        else:
+            cont, lines_s = cont0, lines0
         return self._project_observations(
             cont if lines is None else cont + lines_s, cont,
             observations, theta, paint_lines=paint_lines,
             line_component=None if lines is None else lines_s,
             kinematics=kinematics, broaden_photometry=broaden_photometry,
             eline_system=eline_system,
+            before_igm=None if trans is None else (cont0, None if lines is None else lines0),
         )
 
     def _assemble_components(self, theta, paint_lines):
@@ -921,8 +937,9 @@ class CSPBasis:
         cont, lines = self._assemble_components(theta, paint_lines)
         return (cont if lines is None else cont + lines), cont
 
-    def _apply_mass_redshift_igm(self, spectrum_phot, spectrum_slit, theta):
-        """Multiply both spectra by 10**logmass, the cgs flux factor and the IGM transmission, each only when its key is present."""
+    def _apply_mass_redshift_igm(self, spectrum_phot, spectrum_slit, theta, *, igm=True):
+        """Multiply both spectra by 10**logmass, the cgs flux factor and (``igm``) the IGM
+        transmission, each only when its key is present."""
         if "logmass" in theta:
             mass_scale = jnp.float32(10.0 ** jnp.ravel(theta["logmass"])[0])
             spectrum_phot = spectrum_phot * mass_scale
@@ -933,7 +950,7 @@ class CSPBasis:
             ff = jnp.float32(self._flux_factor(theta))
             spectrum_phot = spectrum_phot * ff
             spectrum_slit = spectrum_slit * ff
-            if self.igm is not None:
+            if igm and self.igm is not None:
                 transmission = self._igm_transmission(
                     z_scalar, theta).astype(spectrum_phot.dtype)
                 spectrum_phot = spectrum_phot * transmission
@@ -944,10 +961,12 @@ class CSPBasis:
     def _project_observations(self, spectrum_phot, spectrum_slit,
                               observations, theta, *, paint_lines=True,
                               line_component=None, kinematics=None,
-                              broaden_photometry=False, eline_system=None):
+                              broaden_photometry=False, eline_system=None, before_igm=None):
         """``{obs.name: prediction}`` from the scaled observer-frame spectra: ``spectrum_phot`` is the
         continuum (+ painted lines), ``spectrum_slit`` the continuum alone (Spectrum projector input),
-        ``line_component`` the painted lines alone (or None).
+        ``line_component`` the painted lines alone (or None).  ``before_igm``: ``(continuum, lines
+        or None)`` before the IGM (None without IGM); a Spectrum or broadened Photometry whose
+        kinematic width is not a fixed zero smooths these and applies the IGM afterwards.
         """
         from ..observation.observation import (
             Photometry as _Photometry,
@@ -992,11 +1011,23 @@ class CSPBasis:
                 _line_fluxes_phot = _line_fluxes_phot * keep
         s_gal = s_gas = None
         gas_untied = False
+        kin_fixed_zero = True
         if kinematics is not None and broaden_photometry and _has_phot_obs:
             s_gal, s_gas = kinematics.resolve(theta)
             gas_untied = kinematics.sigma_gas is not TIED
+            kin_fixed_zero = (_fixed_zero(kinematics.sigma_gal)
+                              and _fixed_zero(kinematics.effective_sigma_gas))
         out = {}
         z_in_theta = "zred" in theta
+        igm_at = None
+        if before_igm is not None:
+            # on the model grid, as every other path samples it (a Spectrum's log grid reads
+            # it by the same linear interpolation as the spectrum, so a fixed-z and a free-z
+            # projector see the Ly-alpha jump at the same place)
+            trans_model = self._igm_transmission(jnp.ravel(theta["zred"])[0], theta)
+
+            def igm_at(wave_rest):
+                return jnp.interp(wave_rest, self.wave, trans_model)
         from .spectrum_calibration import spectrum_calibration_factor as _spec_calib
         for obs in observations:
             if isinstance(obs, _Lines):
@@ -1012,15 +1043,23 @@ class CSPBasis:
                 continue
             if isinstance(obs, _Spectrum):
                 A = None
+                slit, tr = spectrum_slit, None
+                proj = getattr(obs, "_proj", None)
+                if (igm_at is not None and proj is not None
+                        and not _fixed_zero(proj.kinematics.sigma_gal)):
+                    slit, tr = before_igm[0], igm_at      # IGM after the sigma_gal kernel
                 if es is not None and obs.name == es.spec_key:
                     pred, A = obs._proj.predict_with_line_basis(
-                        spectrum_slit, _line_fluxes_spec, theta, es.fit_pos,
-                        basis=None if es.static is None else es.static["basis"])
-                elif "eline_delta_zred" in theta and getattr(obs, "_proj", None) is not None:
+                        slit, _line_fluxes_spec, theta, es.fit_pos,
+                        basis=None if es.static is None else es.static["basis"],
+                        transmission=tr)
+                elif "eline_delta_zred" in theta and proj is not None:
                     pred, _ = obs._proj.predict_with_line_basis(
-                        spectrum_slit, _line_fluxes_spec, theta)
+                        slit, _line_fluxes_spec, theta, transmission=tr)
+                elif tr is not None:
+                    pred = obs.predict(slit, self.wave, _line_fluxes_spec, theta, transmission=tr)
                 else:
-                    pred = obs.predict(spectrum_slit, self.wave, _line_fluxes_spec, theta)
+                    pred = obs.predict(slit, self.wave, _line_fluxes_spec, theta)
                 calib = _spec_calib(obs, theta, dtype=pred.dtype)
                 if calib is not None:
                     pred = pred * calib
@@ -1033,7 +1072,15 @@ class CSPBasis:
             spec_for_obs = spectrum_phot
             pb = getattr(obs, "_broadener", None)
             if pb is not None and s_gal is not None:
-                if line_component is not None and gas_untied:
+                if before_igm is not None and not kin_fixed_zero:
+                    # galaxy / gas kernels on the spectrum before the IGM, then the IGM
+                    c0, l0 = before_igm
+                    trans_m = trans_model.astype(c0.dtype)
+                    if l0 is not None and gas_untied:
+                        spec_for_obs = (pb(c0, s_gal) + pb(l0, s_gas)) * trans_m
+                    else:
+                        spec_for_obs = pb(c0 if l0 is None else c0 + l0, s_gal) * trans_m
+                elif line_component is not None and gas_untied:
                     spec_for_obs = pb(spectrum_slit, s_gal) + pb(line_component, s_gas)
                 else:
                     spec_for_obs = pb(spectrum_phot, s_gal)
