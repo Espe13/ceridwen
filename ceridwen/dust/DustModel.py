@@ -165,7 +165,7 @@ class Dust:
             "Dust Model Configuration",
             "=" * 60,
             f"Number of bins          : {self.num_bins}",
-            f"Bin edges (Gyr)         : {format_array(self.bin_edges)}",
+            f"Bin edges (log10 Gyr)   : {format_array(self.bin_edges)}",
             f"Dust laws               : {', '.join(self.laws)}",
             f"Dust parameters         : {', '.join(map(str, self.law_params))}",
             "-" * 60,
@@ -187,7 +187,7 @@ class Dust:
 
     def display(self, fit_params=None):
         import matplotlib.pyplot as plt
-        wave = jnp.linspace(0, 10000, 1000)
+        wave = jnp.linspace(912.0, 10000.0, 1000)       # the laws are not finite at 0 A
         if fit_params is None:
             fit_params = self.get_default_fit_params()
         curves = self.compute_attenuation(wave, fit_params=fit_params)
@@ -195,7 +195,7 @@ class Dust:
         for i in range(len(curves)):
             law = self.law_names_resolved[i]
             t_start, t_end = self.bin_edges[i]
-            ax.plot(wave, curves[i], label=f"Bin {i+1}: {law} ({t_start:.0f}–{t_end:.0f} Myr)")
+            ax.plot(wave, curves[i], label=f"Bin {i+1}: {law} (log10 age/Gyr {t_start:.2f} to {t_end:.2f})")
         ax.set_xlabel("Wavelength (Angstroms)")
         ax.set_ylabel("Attenuation")
         ax.set_yscale("log")
