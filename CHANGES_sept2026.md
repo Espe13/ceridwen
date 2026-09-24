@@ -952,7 +952,8 @@ weights sum to the integral of `theta['sfh']` over the construction grid (or a p
 `theta['lookback_time']`) on every path, and with the shipped transform `10**logmass` is the
 formed mass and `PostProcess` `mass_formed = 10**logmass` (to 1e-10) in both SFH schemes, per node
 and per bin, for `CSPBasis` and `CSPBasis_afe`, at every redshift. `PostProcess` reports the SFR
-the forward model forms (the shape x `10**logmass` x `T_grid / age(zred)`). The general case of
+the forward model forms (the shape x `10**logmass` x `T_grid / age(zred)`). `CSPBasis.display_sfh` and the
+summary figure's truth SFH (`plotting`) draw the same SFR on the tracked grid. The general case of
 P1-001/P1-002 is settled the same way: the weights are the formed mass of `theta['sfh']` on the
 construction grid, not renormalised to 1 M_sun inside the model, so a directly sampled `sfh`
 keeps its own normalisation (renormalising would change every non-unit-mass `theta['sfh']`,
