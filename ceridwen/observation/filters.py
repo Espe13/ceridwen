@@ -9,6 +9,8 @@ import os
 import jax.numpy as jnp
 from typing import  List, Optional, Tuple
 from jax import vmap
+
+from ceridwen.constants import C_AA_S
 # Try to use rich for fancy table output
 try:
     from rich.table import Table
@@ -23,7 +25,7 @@ from pathlib import Path
 
 _PKGDIR = Path(__file__).resolve().parent.parent   # the ceridwen package root
 
-lightspeed = 2.998e18  # AA/s
+lightspeed = C_AA_S  # AA/s
 
 
 
@@ -38,7 +40,7 @@ class Filter:
 
     # Constants for AB system and speed of light in Angstrom/s
     ab_gnu = 3.631e-20
-    lightspeed = 2.998e18  # in AA/s
+    lightspeed = C_AA_S  # in AA/s
     npts = 0  # number of non-zero transmission points (set later)
 
     def __init__(

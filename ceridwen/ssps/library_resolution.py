@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 
-CKMS = 2.998e5
+from ..constants import C_KMS as CKMS
 FWHM_TO_SIGMA = 1.0 / (2.0 * np.sqrt(2.0 * np.log(2.0)))
 
 

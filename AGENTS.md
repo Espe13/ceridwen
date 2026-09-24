@@ -203,6 +203,9 @@ projection → likelihood → sampler.
   `vi.py` (VI transport maps: TriL, IAF/NeuTra), `runner.py` (`SamplerAdapter`
   protocol, `SamplingResult`, `run_sampler`, `to_anesthetic`).
 - `cosmology.py` — JAX-native flat ΛCDM (Planck 18) with an astropy fallback.
+- `constants.py` — the one set of physical constants: `C_AA_S` / `C_KMS` / `C_CMS` (exact c),
+  `LSUN_ERG_S = 3.839e33` (FSPS, the unit of every grid's L_sun/Hz), parsec, Planck, and the
+  10 pc flux constant derived from them. Import from here; never hard-code c or L_sun.
 - `igm.py` — IGM attenuation (`Madau1995`; `MadauDampingDLA` = Madau × damping wing × DLA,
   with theta keys `x_HI` / `logN_HI` / `z_dla` declared in `IGMModel.param_names` and passed
   as `attenuation(..., params=)` by `CSPBasis._igm_transmission`), extensible via the

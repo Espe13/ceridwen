@@ -78,7 +78,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from .constants import LSUN_ERG_S as _LSUN_ERG_S, HPLANCK_ERG_S as _HPLANCK_ERG_S, PC_TO_CM as _PC_CM
+from .constants import C_AA_S, LSUN_ERG_S as _LSUN_ERG_S, HPLANCK_ERG_S as _HPLANCK_ERG_S, PC_TO_CM as _PC_CM
 
 __all__ = ["PostProcess", "SpectrumSample", "load_postprocess"]
 
@@ -123,7 +123,7 @@ class SpectrumSample:
         m = (self.wave_rest >= lo_aa) & (self.wave_rest <= hi_aa)
         if m.sum() < 2:
             raise ValueError(f"fewer than two model pixels in [{lo_aa}, {hi_aa}] A")
-        nu = 2.99792458e18 / self.wave_rest[m]
+        nu = C_AA_S / self.wave_rest[m]
         return float(-_trapz(spectrum[m], nu) * _LSUN_ERG_S)
 
 

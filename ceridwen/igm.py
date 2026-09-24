@@ -11,6 +11,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from .constants import C_CMS
+
 Array = jax.Array
 
 
@@ -98,7 +100,7 @@ class Madau1995(IGMModel):
 # Ported from Prospector (prospect/models/sedmodel.py @ a78d153): DLA ``add_dla`` :808-819,
 # ``voigt_profile`` :1201-1245, ``H`` :1192-1198; damping wing ``add_damping_wing`` :821-827,
 # ``tau_damping`` :1261-1309, ``tau_gp`` :1312-1327, ``Ix`` :1330-1333.  Constants as there.
-_C_CMS = 2.99792e10            # :1233
+_C_CMS = C_CMS                 # :1233 has 2.99792e10 (1.5e-6 lower)
 _VOIGT_CONST = 0.0149736082    # :1234, sqrt(pi) e^2 / (m_e c) [cgs]
 _LYA = 1215.6696               # :1201, :1261
 _F_LYA = 4.16e-1               # :1201

@@ -7,6 +7,7 @@ formula with CERIDWEN's constant must reproduce ``fsps.StellarPopulation.get_mag
 """
 from __future__ import annotations
 
+import importlib
 import math
 import pathlib
 
@@ -37,7 +38,7 @@ def test_flux_factor_is_fsps_lsun_at_10pc():
 
 def test_one_lsun_everywhere():
     """Flux factor, nebular Q and PostProcess luminosities all use the same L_sun."""
-    from ceridwen.neb import NebularGridModel
+    NebularGridModel = importlib.import_module("ceridwen.neb.NebularGridModel")
     from ceridwen import postprocess
     assert NebularGridModel.LSUN_ERG_S == constants.LSUN_ERG_S == FSPS_LSUN
     assert postprocess._LSUN_ERG_S == constants.LSUN_ERG_S
@@ -93,3 +94,42 @@ def test_ssp_magnitudes_match_fsps():
     # edges (sdss_u).  The former constant was off by 3.67e-3 in every band.
     assert np.median(dev) < 5e-6
     assert np.max(dev) < 5e-5
+
+
+# ---- B1-020: one speed of light ---------------------------------------------------------
+
+C_SI = 299792458.0                                      # m/s, exact (SI definition)
+
+
+def test_every_module_uses_the_exact_speed_of_light():
+    from ceridwen import broadening, igm
+    DustEmission = importlib.import_module("ceridwen.dust.DustEmission")
+    NebularGridModel = importlib.import_module("ceridwen.neb.NebularGridModel")
+    from ceridwen.observation import filters
+    from ceridwen.ssps import library_resolution
+    assert constants.C_KMS == C_SI * 1e-3
+    assert constants.C_CMS == C_SI * 1e2
+    assert constants.C_AA_S == C_SI * 1e10
+    for v in (broadening.C_AA_S, NebularGridModel.CLIGHT_AA_S, DustEmission.CLIGHT_AA_S,
+              filters.lightspeed, filters.Filter.lightspeed):
+        assert v == constants.C_AA_S
+    for v in (broadening.CKMS, library_resolution.CKMS):
+        assert v == constants.C_KMS
+    assert igm._C_CMS == constants.C_CMS
+
+
+def test_no_hard_coded_speed_of_light_in_the_package():
+    """No numeric literal within 1e-3 of c (km/s, cm/s or A/s) outside ceridwen/constants.py."""
+    import ast
+    root = pathlib.Path(constants.__file__).resolve().parent
+    targets = (C_SI * 1e-3, C_SI * 1e2, C_SI * 1e10)
+    hits = []
+    for path in sorted(root.rglob("*.py")):
+        if path.name == "constants.py" or "tests" in path.relative_to(root).parts:
+            continue
+        for node in ast.walk(ast.parse(path.read_text(), str(path))):
+            if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) \
+                    and not isinstance(node.value, bool):
+                if any(abs(node.value / t - 1.0) < 1e-3 for t in targets):
+                    hits.append(f"{path.relative_to(root)}:{node.lineno} {node.value!r}")
+    assert not hits, hits
