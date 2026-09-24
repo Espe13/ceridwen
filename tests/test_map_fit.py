@@ -194,6 +194,12 @@ def test_fitsed_optimize_starts_nuts_at_the_map_and_records_it(mock, tmp_path, m
     assert rec["lnp"] == ref.lnp and rec["best_start"] == ref.best_start
     for k, v in ref.theta.items():
         assert np.array_equal(rec["theta"][k], v), k
+    # B2-011: the file records what reproduces the MAP (settings incl. the key, bounds)
+    import json
+    st = json.loads(rec["settings_json"])
+    assert st == ref.settings and st["n_starts"] == 1 and st["max_steps"] == 30
+    assert st["rng_key"] == np.asarray(jax.random.fold_in(jax.random.PRNGKey(5), 1)).tolist()
+    assert set(json.loads(rec["bounds_json"])) == set(ref.bounds)
 
     # without optimize the sampler starts at model.theta_init and no /map is written
     fitSED(mock["model"], output_dir=tmp_path / "plain", sampler="nuts", verbose=False)

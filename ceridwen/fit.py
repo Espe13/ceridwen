@@ -755,7 +755,8 @@ def write_result_h5(
 
         /map/               (only with ``map_result``, fitSED(optimize=True))
             theta/<param_name>, lnp_starts (n,), n_steps (n,)
-            attrs: lnp, best_start, wall_time_s
+            attrs: lnp, best_start, wall_time_s, settings_json (n_starts, include_init,
+                   max_steps, ftol, rng_key), bounds_json
 
         /derived/           (only with ``derived``: fitSED, grid with a surviving-mass table)
             mfrac          (n_samples,)  M_surviving / M_formed of each sample, aligned with
@@ -921,6 +922,11 @@ def write_result_h5(
             g.attrs["lnp"] = float(map_result.lnp)
             g.attrs["best_start"] = int(map_result.best_start)
             g.attrs["wall_time_s"] = float(map_result.wall_time)
+            # what reproduces the MAP the NUTS chains start from (B2-011)
+            g.attrs["settings_json"] = json.dumps(dict(getattr(map_result, "settings", {})))
+            g.attrs["bounds_json"] = json.dumps(
+                {k: [np.asarray(v).tolist() for v in lohi]
+                 for k, lohi in dict(getattr(map_result, "bounds", {})).items()})
 
     if derived:
         n = int(np.asarray(result.log_likelihoods).shape[0])

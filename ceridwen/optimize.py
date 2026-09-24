@@ -70,6 +70,8 @@ class MAPResult:
     best_start  : int  -- index of the winning start
     wall_time   : float -- seconds, compile included
     bounds      : dict -- the bounds used for the logit map
+    settings    : dict -- n_starts, include_init, max_steps, ftol, rng_key (key data) and
+                  whether a custom lnprob was passed: what reproduces the run
     """
     theta: dict
     lnp: float
@@ -80,6 +82,7 @@ class MAPResult:
     best_start: int
     wall_time: float
     bounds: dict = field(default_factory=dict)
+    settings: dict = field(default_factory=dict)
 
     @property
     def free_param_init(self) -> dict:
@@ -142,6 +145,12 @@ def map_fit(model, n_starts: int = 16, rng_key=None, *, include_init: bool = Tru
         raise ValueError(f"map_fit: max_steps must be >= 1, got {max_steps}")
     if rng_key is None:
         rng_key = jax.random.PRNGKey(0)
+    _key = rng_key
+    if jnp.issubdtype(jnp.asarray(_key).dtype, jax.dtypes.prng_key):
+        _key = jax.random.key_data(_key)
+    settings = {"n_starts": int(n_starts), "include_init": bool(include_init),
+                "max_steps": int(max_steps), "ftol": float(ftol),
+                "rng_key": np.asarray(_key).tolist(), "custom_lnprob": lnprob is not None}
     if lnprob is None:
         lnprob = build_lnprob(model)
     template = {k: jnp.asarray(v, dtype=jnp.float64) for k, v in model.theta_init.items()}
@@ -221,7 +230,7 @@ def map_fit(model, n_starts: int = 16, rng_key=None, *, include_init: bool = Tru
                      n_steps=np.array([int(o[2]) for o in out]),
                      grad_norm=np.array([float(o[3]) for o in out]),
                      best_start=best, wall_time=time.perf_counter() - t0,
-                     bounds=dict(bounds))
+                     bounds=dict(bounds), settings=settings)
 
 
 def laplace_sigma(lnprob, theta, template=None):
