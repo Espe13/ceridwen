@@ -894,7 +894,7 @@ class CSPBasis:
     def _apply_mass_redshift_igm(self, spectrum_phot, spectrum_slit, theta):
         """Multiply both spectra by 10**logmass, the cgs flux factor and the IGM transmission, each only when its key is present."""
         if "logmass" in theta:
-            mass_scale = jnp.float32(10.0 ** theta["logmass"][0])
+            mass_scale = jnp.float32(10.0 ** jnp.ravel(theta["logmass"])[0])
             spectrum_phot = spectrum_phot * mass_scale
             spectrum_slit = spectrum_slit * mass_scale
 
@@ -1158,7 +1158,7 @@ class CSPBasis:
         _continuum, line_only = self.get_spectrum_components(theta)
 
         if "logmass" in theta:
-            mass_scale = jnp.float32(10.0 ** theta["logmass"][0])
+            mass_scale = jnp.float32(10.0 ** jnp.ravel(theta["logmass"])[0])
             line_only = line_only * mass_scale
         if "zred" in theta:
             z_scalar = jnp.ravel(theta["zred"])[0]
