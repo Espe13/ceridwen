@@ -48,12 +48,17 @@ from ceridwen.model.obs_params import check_names, CALIB_FAMILIES
 from ceridwen.priors import LogUniform, Normal, TopHat, Uniform
 from types import SimpleNamespace
 
-from _gridfixture import require_test_grid
+from _gridfixture import find_test_grid, missing_reason, require_test_grid
 
 HERE = pathlib.Path(__file__).resolve().parent
 FIG_DIR = HERE / "figures"
 REPO = HERE.parent.parent
-SSP = str(require_test_grid())
+_grid = find_test_grid()
+if _grid is None:
+    if __name__ == "__main__":                 # a plain script: one line, not a pytest traceback
+        sys.exit(f"misuse_report: {missing_reason()}")
+    require_test_grid()                        # imported by test_misuse.py: skip that module
+SSP = str(_grid)
 
 _ssp = SSPData.load(SSP)
 _T = 13.8
