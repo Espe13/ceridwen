@@ -1,11 +1,19 @@
 import os
+import warnings as _warnings
 import jax
 jax.config.update("jax_enable_x64", os.environ.get("CERIDWEN_X64", "1") != "0")
+if os.environ.get("CERIDWEN_X64", "1") == "0":
+    _warnings.warn("CERIDWEN_X64=0: float64 is OFF for this process; evidences and gradients "
+                   "lose the precision CERIDWEN relies on.  Unset it for any real fit",
+                   stacklevel=2)
 
 # CERIDWEN_MATMUL_PRECISION=high: TF32 matmuls (off by default)
 _matmul_prec = os.environ.get("CERIDWEN_MATMUL_PRECISION")
 if _matmul_prec:
     jax.config.update("jax_default_matmul_precision", _matmul_prec)
+    _warnings.warn(f"CERIDWEN_MATMUL_PRECISION={_matmul_prec!r}: JAX's default matmul "
+                   "precision is changed for this process (e.g. TF32 on GPU); results are not "
+                   "byte-comparable with the default", stacklevel=2)
 
 
 def _patch_tfp_jax_compat():

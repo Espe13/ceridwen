@@ -192,6 +192,10 @@ prefer `predict`/`get_spectrum_components`.
 - **Apple Metal / GPU float32:** x64 is unsupported on Metal. The package enables
   `jax_enable_x64=True`; on Metal force `JAX_PLATFORMS=cpu` for float64 parity.
 - **`jax>=0.9.0`** (as `pyproject.toml` pins it).
+- **Two environment switches change the numerics of every fit** and warn at import:
+  `CERIDWEN_X64=0` turns float64 off (never for a real fit), and
+  `CERIDWEN_MATMUL_PRECISION=<value>` sets JAX's default matmul precision (e.g. `high`:
+  TF32 on GPU). Check your shell does not carry them over.
 
 ## 7. Broadening: where the widths come from (2026-09-03)
 
