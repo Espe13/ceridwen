@@ -173,7 +173,11 @@ def chevallard(wave, tau_chev=1.0, **kwargs):
     :param tau_v: Optical depth at 5500 Å.
     :returns: Optical depth at each wavelength.
     """
-    alpha_v = 2.8 / (1.0 + jnp.sqrt(tau_chev))  # Slope term
+    # sqrt guarded at 0: d sqrt/dtau is infinite there and the tau factor below would turn
+    # it into a NaN gradient; tau * d alpha/dtau -> 0, so the guarded gradient is the limit
+    pos = tau_chev > 0
+    sq = jnp.where(pos, jnp.sqrt(jnp.where(pos, tau_chev, 1.0)), 0.0)
+    alpha_v = 2.8 / (1.0 + sq)  # Slope term
     bb = 0.3 - 0.05 * tau_chev  # Slope modifier
     alpha = alpha_v + bb * (wave * 1e-4 - 0.55)  # Total slope
     tau_lambda = tau_chev * (wave / 5500.0) ** (-alpha)
