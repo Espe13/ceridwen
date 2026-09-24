@@ -961,3 +961,17 @@ lines, photometry scale by `T_grid / age(zred)`; W shape unchanged); fixed-grid 
 bit-identical. `tests/csp/test_sfh_mass_normalisation.py`; `SedModel.summary`, AGENTS item 3,
 docs/conventions.md, docs/postprocessing.md, the tutorial's free-z paragraph and GOTCHAS 4/9
 describe it.
+
+### `"linear"` SFH scheme: the second-oldest SSP node's share of the top interval (B1-016)
+`_ssp_weights` clipped `jmax` to `n_ssp - 1` with the mask `j < jmax`; the mask of node k+1 gates
+node k's share of SSP interval (k, k+1), so a bin reaching past the second-oldest SSP node lost
+node n-2's share of the top interval and its mass went to the bin's other nodes. Clipped to
+`n_ssp`. Affects only `sfh_interp="linear"` grids older than the second-oldest node (BPASS
+10^10.1 yr = 12.6 Gyr; MIST grids end at 20 Gyr and are never affected). Measured on BPASS (SFH
+3, 2.5, ..., 1 on nodes 0-13 Gyr): the 10^10.1 yr node had 0.843 of its weight, its neighbours
+1.083; at 13.8 Gyr 0.698 and 1.200; constant-SFR `mfrac` at 13.8 Gyr, 10 nodes, -4.2e-4.
+Formed mass unchanged. The weights now equal a brute-force quadrature of SFR(t) x log-age tents
+per bin to <= 1.4e-9 of the total (BPASS to 12, 13, 13.8 Gyr; MIST to 13.7 Gyr); the only
+difference from a whole-grid quadrature is the youngest-node effect (GOTCHAS 14). The
+`test_stellar_mass` xfail passes. Moves the `"linear"` golden W arrays and the T2 categories
+built on the linear 0-13.8 Gyr CSP (numbers in the F1 day report).

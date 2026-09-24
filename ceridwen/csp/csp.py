@@ -1390,7 +1390,7 @@ class CSPBasis:
             R = jnp.clip(logage_hi[None, :], log_t_young, log_t_old)
 
             jmin = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t_young)) - 1, 0, n_ssp - 1)
-            jmax = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t_old))   + 2, 0, n_ssp - 1)
+            jmax = jnp.clip(jnp.searchsorted(self.ssp_ages_lgyr, jnp.log10(t_old))   + 2, 0, n_ssp)
 
             mask    = (j[None, :] >= jmin[:, None]) & (j[None, :] < jmax[:, None])
             mask_lo = mask[:, 1:]

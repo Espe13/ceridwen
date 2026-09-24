@@ -1,10 +1,17 @@
-"""10**logmass is the formed stellar mass on every SFH path (B1-001).
+"""10**logmass is the formed stellar mass on every SFH path (B1-001), and the "linear" SFH
+scheme's SSP weights equal a brute-force quadrature of SFR(t) x log-age tent functions (B1-016).
 
 B1-001: with ``track_zred_age=True`` the lookback grid is rescaled to age(zred) inside the
 forward model.  The rescaling moves the SFH in time and keeps the mass theta["sfh"] forms on the
 construction grid, so under the unit-mass transform ``logsfr_ratios_to_sfh(..., sfh_times_yr=
 csp.sfh_times)`` sum(W) = 1 and PostProcess ``mass_formed`` = 10**logmass at every zred, in both
-schemes, per node and per bin, for CSPBasis and CSPBasis_afe.  The fixed-z path is unchanged."""
+schemes, per node and per bin, for CSPBasis and CSPBasis_afe.  The fixed-z path is unchanged.
+
+B1-016: independent reference = numerical quadrature on a fine log-time grid of SFR(t) times the
+tent function of each SSP node in log age.  ``_scheme_brute`` applies the scheme's one convention
+(each SFH bin keeps its formed mass, spread over the part of the bin inside the SSP node range),
+and must match to quadrature precision; ``_naive_brute`` puts SFR below the youngest node on that
+node, and differs only there (the youngest-node effect)."""
 from __future__ import annotations
 
 import pathlib
@@ -212,3 +219,67 @@ def test_afe_tracked_grid_forms_unit_mass(interp):
     got, want, _ = _pp_mass(_model(csp, True, 1.0), list(ZS))
     np.testing.assert_allclose(got, want, rtol=1e-10, atol=0)
 
+
+# ------------------------------------------------------ B1-016: linear-scheme weights --
+def _tents(la, lt):
+    """(n_ssp, n_t) tent functions in log age; zero outside [la[0], la[-1]]."""
+    T = np.zeros((la.size, lt.size))
+    for j in range(la.size):
+        if j > 0:
+            m = (lt >= la[j - 1]) & (lt <= la[j])
+            T[j, m] = (lt[m] - la[j - 1]) / (la[j] - la[j - 1])
+        if j < la.size - 1:
+            m = (lt >= la[j]) & (lt < la[j + 1])
+            T[j, m] = (la[j + 1] - lt[m]) / (la[j + 1] - la[j])
+    return T
+
+
+def _scheme_brute(la, T_yr, sfh, npts=20001):
+    """Per SFH bin: quadrature of SFR(t) x tent_j(log t) over the part of the bin inside the node
+    range, scaled so the bin keeps its trapezoidal formed mass."""
+    B = np.zeros(la.size)
+    for lo, hi, s0, s1 in zip(T_yr[:-1], T_yr[1:], sfh[:-1], sfh[1:]):
+        x0, x1 = max(np.log10(max(lo, 1.0)), la[0]), min(np.log10(hi), la[-1])
+        if x1 <= x0:
+            continue
+        lt = np.linspace(x0, x1, npts)
+        t = 10.0 ** lt
+        sfr = s0 + (s1 - s0) * (t - lo) / (hi - lo)
+        b = np.trapezoid(_tents(la, lt) * sfr * t * np.log(10.0), lt, axis=1)
+        B += b * (0.5 * (s0 + s1) * (hi - lo)) / b.sum()
+    return B
+
+
+def _naive_brute(la, T_yr, sfh, npts=400001):
+    """Whole-grid quadrature, SFR younger than the youngest node on the youngest node."""
+    t = np.geomspace(1e2, T_yr[-1], npts)
+    lt = np.log10(t)
+    tents = _tents(la, lt)
+    tents[0, lt < la[0]] = 1.0
+    return np.trapezoid(tents * np.interp(t, T_yr, sfh), t, axis=1)
+
+
+GRIDS_016 = [("ssp_data_bpass.h5", 13.0), ("ssp_data_bpass.h5", 12.0),
+             ("ssp_data_mist_miles.h5", 13.7), ("ssp_data_bpass.h5", 13.8)]
+
+
+@pytest.mark.parametrize("grid,T_max", GRIDS_016)
+def test_linear_weights_match_brute_force_quadrature(grid, T_max):
+    path = TEST_DATA_DIR / grid
+    if not path.exists():
+        pytest.skip(f"{grid} not present")
+    T = np.array([0.0, 0.01, 0.1, 0.5, 1.0, 3.0, 8.0, T_max])
+    sfh = np.array([3.0, 2.5, 2.0, 1.5, 1.2, 1.0, 1.0, 1.0])
+    csp = CSPBasis(SSPData.load(str(path)), lookback_time=T, zh_const=True, add_neb=False,
+                   add_dust=False, add_diffuse_dust=False, sfh_interp="linear", verbose=False,
+                   cosmo=COSMO)
+    W = np.asarray(csp.calculate_ssp_weights(
+        {"sfh": jnp.asarray(sfh), "logzsol": jnp.array([0.0])}), float).sum(0)
+    la = np.asarray(csp.ssp_ages_lgyr, float)            # log10(age / yr)
+    B = _scheme_brute(la, T * 1e9, sfh)
+    np.testing.assert_allclose(W, B, rtol=1e-6, atol=1e-9 * B.sum())
+    # vs the naive quadrature: equal but for the youngest node's share of the youngest bin
+    Bn = _naive_brute(la, T * 1e9, sfh)
+    d = np.abs(W / W.sum() - Bn / Bn.sum())
+    older = la > la[0] + 1.0          # nodes more than 1 dex older than the youngest
+    assert d[older].max() < 1e-4 * np.abs(W).max() / W.sum()

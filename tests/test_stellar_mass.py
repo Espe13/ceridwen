@@ -205,12 +205,10 @@ def test_constant_sfh_analytic(T, interp):
     assert got == pytest.approx(want, rel=1e-10, abs=0.0)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "pre-existing defect of the 'linear' SFH scheme (csp._ssp_weights): jmax is clipped to "
-    "n_ssp - 1 and the mask is j < jmax, so the OLDEST SSP node never gets weight; a bin "
-    "reaching past the second-oldest node (BPASS 10^10.1 yr = 12.6 Gyr) loses it.  Measured "
-    "mfrac -4.2e-4 relative at T = 13.8 Gyr, 10 nodes; 0.0 with jmax clipped to n_ssp.  A "
-    "fix changes the forward model (all four tiers, Amanda's approval)."))
+# B1-016: jmax in csp._ssp_weights was clipped to n_ssp - 1, so a bin reaching past the
+# second-oldest SSP node (BPASS 10^10.1 yr = 12.6 Gyr) lost node n-2's share of the top
+# SSP interval (constant SFR, 10 nodes: mfrac -1.15e-3 relative at this T, -4.2e-4 at
+# 13.8 Gyr); clipped to n_ssp since 2026-09-24.
 def test_linear_scheme_reaches_oldest_node():
     grid, _ = _grid_with_table()
     logage = np.asarray(grid.ssp_lg_age_gyr, dtype=np.float64) + 9.0

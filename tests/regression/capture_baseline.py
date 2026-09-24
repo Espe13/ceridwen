@@ -681,9 +681,8 @@ def _stellar_mass_baseline(p) -> dict:
         if tag is None:
             return {}
         grid = grid.with_stellar_mass(np.array(z[f"{tag}/mass"]), source=str(z[f"{tag}/source"]))
-    # 0-10 Gyr: every bin stays below the grid's second-oldest SSP age (BPASS 10^10.1 yr),
-    # clear of the pre-v1.0.6 "linear"-scheme defect that gives the oldest SSP node no weight
-    # (reported in REPORT_feat-mfrac-and-noise.md; not fixed here)
+    # 0-10 Gyr: every bin stays below the grid's second-oldest SSP age (BPASS 10^10.1 yr), where
+    # the "linear" scheme lost node n-2's share of the top SSP interval until B1-016 (2026-09-24)
     n = 10
     lb = jnp.linspace(0.0, 10.0, n)
     sfh = (jnp.exp(-0.5 * ((lb - 0.05) / 0.03) ** 2)
