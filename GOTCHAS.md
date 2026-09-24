@@ -568,8 +568,9 @@ on your priors/bounds once before sampling instead.
   file does record (priors, free parameters and shapes, transform names, zred, kinematics,
   cosmology, grid provenance, `csp_config`, `sfh_times_yr`, every observation's data and
   instrument). It cannot see a transform whose body changed under the same name, CSP options
-  outside `csp_config`, or observation options not stored (noise floor, upper limits,
-  calibration, sky): `ceridwen.resultfile.NOT_RECORDED` lists them.
+  outside `csp_config`, or observation options not stored (photometric broadener settings,
+  `Lines` `sigma_v` and components; noise floor, upper limits, calibration and sky are stored
+  and compared): `ceridwen.resultfile.NOT_RECORDED` lists them.
 
 ## 20. Gaussian-process likelihood for a spectrum
 

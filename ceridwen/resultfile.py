@@ -33,8 +33,8 @@ NOT_RECORDED = (
     "the bodies of the transform callables (only 'derived <- function name' is stored)",
     "CSP options beyond csp_config, sfh_times_yr and the grid provenance (dust-law choices "
     "and parameters fixed inside the CSP, nebular / dust-emission grid options)",
-    "observation options not stored in /obs (noise_floor, upper limits, calibration, sky, "
-    "PhotometricBroadener settings)",
+    "observation options not stored in /obs (PhotometricBroadener settings, Lines sigma_v and "
+    "line components; noise_floor, upper limits, calibration and sky ARE stored and compared)",
     "a Spectrum's fixed GaussianProcess noise= (its hyperparameters are in the obs' "
     "likelihood_json, but the observations you pass are not compared with them)",
 )
