@@ -445,7 +445,7 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
         # diagonal chi^2 with the quoted uncertainties; a spectrum fitted with a GP likelihood
         # is scored by the full covariance in the fit, which this number does not include
         diag = " diagonal, no GP;" if _has_gp(model) else ""
-        bits.append(rf"$\chi^2/\nu$ = {chi2 / max(ndata - nfree, 1):.2f} (best fit;{diag} $N_\mathrm{{data}}$ = {ndata})")
+        bits.append(rf"$\chi^2/\nu$ = {chi2 / max(ndata - nfree, 1):.2f} (best fit, quoted uncertainties;{diag} $N_\mathrm{{data}}$ = {ndata})")
     if "log_evidence" in meta and np.isfinite(meta["log_evidence"]):
         bits.append(rf"$\ln Z$ = {meta['log_evidence']:.1f}")
     fig.text(0.06, 0.965, title or "CERIDWEN fit", fontsize=14, weight="bold", va="top")
