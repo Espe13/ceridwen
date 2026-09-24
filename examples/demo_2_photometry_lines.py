@@ -51,11 +51,11 @@ FILTERS = ["galex_FUV", "galex_NUV",
            "sdss_u0", "sdss_g0", "sdss_r0", "sdss_i0", "sdss_z0",
            "twomass_J", "twomass_H", "twomass_Ks"]
 
-# Line identities: 1-based indices into $SPS_HOME/data/emlines_info.dat.
+# Line identities: 0-based row indices into $SPS_HOME/data/emlines_info.dat.
 # The names are labels for you; the physics is keyed on line_ind.
-LINE_IND   = [59, 62, 63, 71, 72]
+LINE_IND   = [59, 61, 62, 74, 75]
 LINE_NAMES = ["Hbeta", "[OIII]4959", "[OIII]5007", "Halpha", "[NII]6583"]
-LINE_WAVE  = [4861.3, 4958.9, 5006.8, 6562.8, 6583.4]   # vacuum rest [A]
+LINE_WAVE  = [4862.76, 4960.37, 5008.31, 6564.72, 6585.37]   # vacuum rest [A]
 
 TRUTH = {
     "logsfr_ratios":      jnp.array([+0.3, +0.2, -0.1, -0.4, -0.6]),

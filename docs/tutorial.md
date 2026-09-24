@@ -148,7 +148,7 @@ spec = Spectrum(
 
 # Optional: mask known emission lines from the *continuum* spectrum fit so they
 # do not double-count against the Lines object, redshifting line centres first.
-spec.mask_lines([4861.3, 5006.8, 6562.8], dv=500.0, zred=ZRED)
+spec.mask_lines([4862.76, 5008.31, 6564.72], dv=500.0, zred=ZRED)   # vacuum rest
 ```
 
 Other optional knobs: `calibration=` (per-pixel multiplicative flux-calibration
@@ -173,9 +173,9 @@ and warned about on disagreement.
 LINE_UNIT = 1.0e-20
 
 lines = Lines(
-    line_ind=[59, 62, 63, 71, 72],                         # Hβ, [OIII]4959/5007, Hα, [NII]6583
+    line_ind=[59, 61, 62, 74, 75],                         # Hβ, [OIII]4959/5007, Hα, [NII]6584
     line_names=["Hbeta", "[OIII]4959", "[OIII]5007", "Halpha", "[NII]6583"],
-    wavelength=[4861.3, 4958.9, 5006.8, 6562.8, 6583.4],   # Å, vacuum rest
+    wavelength=[4862.76, 4960.37, 5008.31, 6564.72, 6585.37],  # Å, vacuum rest
     flux=np.asarray(my_line_flux) * LINE_UNIT,             # erg s^-1 cm^-2
     uncertainty=np.asarray(my_line_unc) * LINE_UNIT,
     name="lines",
