@@ -501,7 +501,19 @@ def test_stored_table_is_fsps_stellar_mass():
     tabs = _tables_by_library()
     if lib not in tabs:
         pytest.skip(f"no stored table for this FSPS's isochrones {iso!r}")
-    _tag, m, _lgage, lz = tabs[lib]
+    tag, m, _lgage, lz = tabs[lib]
     iz = int(np.argmin(np.abs(lz)))
     sp.get_spectrum(tage=0.0, zmet=iz + 1, peraa=False)
-    np.testing.assert_array_equal(np.asarray(sp.stellar_mass, dtype=np.float64), m[iz])
+    raw = np.asarray(sp.stellar_mass, dtype=np.float64)
+    with np.load(REF_TABLES) as z:
+        stored_raw = np.array(z[f"{tag}/mass_fsps"]) if f"{tag}/mass_fsps" in z.files else None
+    if stored_raw is None:                              # BPASS: the table is FSPS's
+        np.testing.assert_array_equal(raw, m[iz])
+        return
+    # MIST: FSPS's raw row as stored, and the corrected row = CERIDWEN's correction of it
+    np.testing.assert_array_equal(raw, stored_raw[iz])
+    from ceridwen.ssps.stellar_mass import (isochrone_points_or_none, fsps_imf_params,
+                                            truncated_isochrone_correction)
+    iso = np.array([isochrone_points_or_none(sp)])
+    fixed, _rep = truncated_isochrone_correction(raw[None], iso, fsps_imf_params(sp))
+    np.testing.assert_array_equal(fixed[0], m[iz])
