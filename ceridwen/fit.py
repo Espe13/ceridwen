@@ -392,11 +392,12 @@ def _check_outlier_setup(model):
     bounds = _detect_bounds(model)
     for n in sorted(wanted & set(model.param_names)):
         lo, hi = bounds.get(n, (None, None))
-        if n.startswith("f_outlier_") and (lo is None or lo < 0.0 or hi > 1.0):
+        if n.startswith("f_outlier_") and (lo is None or np.any(np.asarray(lo) < 0.0)
+                                           or np.any(np.asarray(hi) > 1.0)):
             raise ValueError(
                 f"{n!r} needs a bounded prior inside [0, 1] (Prospector's template: "
                 f"TopHat(low=1e-5, high=0.5)), got {model.priors.get(n)!r}")
-        if n.startswith("nsigma_outlier_") and (lo is None or lo <= 0.0):
+        if n.startswith("nsigma_outlier_") and (lo is None or np.any(np.asarray(lo) <= 0.0)):
             raise ValueError(
                 f"{n!r} needs a bounded prior with a positive lower bound, got "
                 f"{model.priors.get(n)!r}")
@@ -678,24 +679,23 @@ def _describe_adapter(adapter, model) -> str:
     return cls + ": " + ", ".join(f"{k}={getattr(adapter, k)}" for k in keys if hasattr(adapter, k))
 
 
-def _detect_bounds(model) -> dict[str, tuple[float, float]]:
-    """(low, high) bounds of Uniform/TopHat/ClippedNormal/LogUniform priors, keyed by parameter name."""
+def _detect_bounds(model) -> dict[str, tuple]:
+    """(low, high) bounds of Uniform/TopHat/ClippedNormal/LogUniform priors, keyed by parameter
+    name: floats for scalar bounds, flat float arrays for per-element bounds."""
+    def _b(v):
+        a = np.asarray(v, dtype=float)
+        return float(a) if a.ndim == 0 else a.ravel()
+
     bounds = {}
     for name, prior in model.priors.items():
         cls_name = type(prior).__name__
         if cls_name in ("Uniform", "TopHat"):
-            lo = float(prior.params["low"])
-            hi = float(prior.params["high"])
-            bounds[name] = (lo, hi)
+            bounds[name] = (_b(prior.params["low"]), _b(prior.params["high"]))
         elif cls_name == "LogUniform":
-            lo = float(prior.params["mini"])
-            hi = float(prior.params["maxi"])
-            bounds[name] = (lo, hi)
+            bounds[name] = (_b(prior.params["mini"]), _b(prior.params["maxi"]))
         elif cls_name == "ClippedNormal":
             if "low" in prior.params and "high" in prior.params:
-                lo = float(prior.params["low"])
-                hi = float(prior.params["high"])
-                bounds[name] = (lo, hi)
+                bounds[name] = (_b(prior.params["low"]), _b(prior.params["high"]))
     return bounds
 
 

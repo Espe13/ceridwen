@@ -50,3 +50,17 @@ def test_nested_live_points_and_map_starts(kind):
     model = types.SimpleNamespace(theta_init={"x": jnp.zeros(3)}, priors={"x": PRIORS[kind]})
     starts = _prior_starts(model, 4, jax.random.PRNGKey(2), include_init=True)
     assert starts["x"].shape == (5, 3)
+
+
+def test_detect_bounds_per_element_and_nuts_transform():
+    """B2-005: per-element bounds are kept per element (was TypeError); scalar bounds stay
+    floats; the NUTS logit map takes them element by element."""
+    from ceridwen.fit import _detect_bounds
+    from ceridwen.sampler.nuts import _build_transforms
+    model = types.SimpleNamespace(priors={"x": PRIORS["per_element"], "s": PRIORS["scalar"]})
+    b = _detect_bounds(model)
+    assert b["s"] == (-1.0, 1.0) and type(b["s"][0]) is float
+    np.testing.assert_array_equal(b["x"][0], [-1.0, -2.0, -3.0])
+    lo, hi, isb = _build_transforms(b, {"x": jnp.zeros(3), "s": jnp.zeros(1)})
+    np.testing.assert_array_equal(np.asarray(lo), [-1.0, -2.0, -3.0, -1.0])
+    np.testing.assert_array_equal(np.asarray(hi), [1.0, 2.0, 3.0, 1.0])
