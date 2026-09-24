@@ -47,7 +47,7 @@ class _LazyCmap:
             _LazyCmap._cmap = _visible_blues()
         return _LazyCmap._cmap
 _LABELS = {
-    "logmass": r"$\log M_\ast/\mathrm{M}_\odot$", "zred": r"$z$",
+    "logmass": r"$\log M_\mathrm{formed}/\mathrm{M}_\odot$", "zred": r"$z$",
     "logzsol": r"$\log(Z_\star/\mathrm{Z}_\odot)$",
     "logzsol_hist": r"$\log(Z_\star/\mathrm{Z}_\odot)$",
     "logzsol_total": r"$[Z/\mathrm{H}]$",
@@ -433,7 +433,7 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
     else:
         bits.append(rf"$z$ = {meta.get('zred_fixed', 0.0):.3f} (fixed)")
     if "logmass" in theta:
-        bits.append(r"$\log M_\ast/\mathrm{M}_\odot$ = " + _fmt_q(*_quantiles(theta["logmass"])))
+        bits.append(r"$\log M_\mathrm{formed}/\mathrm{M}_\odot$ = " + _fmt_q(*_quantiles(theta["logmass"])))
     if "sfr10" in sfh:
         with np.errstate(divide="ignore"):
             s10 = np.log10(np.asarray(sfh["sfr10"]))
