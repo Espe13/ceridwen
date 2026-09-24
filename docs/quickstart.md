@@ -1,181 +1,156 @@
 # Quick start
 
-!!! tip "Run the bundled example first"
-    The fastest way to confirm your whole setup works end to end. It loads an
-    SSP grid (building it from FSPS only if none is found; see
-    [Installation: Getting the SSP grid](installation.md#getting-the-ssp-grid)),
-    generates mock UV-to-IR photometry, fits it with nested sampling, and
-    post-processes the fit with `PostProcess`, writing the summary, corner and
-    sampling-diagnostic figures to `examples/quickstart_figures/`:
+This fits a mock galaxy (twelve photometric bands from GALEX to WISE and an optical spectrum)
+made with the same forward model, so you can compare the fit with the truth. Run the blocks
+in order in one Python session, after the [installation](installation.md).
 
-    ```bash
-    python examples/quickstart.py
-    ```
-
-    `logmass` should land near the injected truth. `logzsol` and the dust parameters
-    are only weakly constrained by broadband photometry alone, so their
-    posteriors are broad and can sit ~1 dex off truth. That is expected, not a
-    broken install; add spectroscopy or emission lines to pin them down.
-
-    The steps below show the same workflow through `fitSED`, adapted to a z = 6.5 JWST
-    fit (the example itself calls `run_sampler` on GALEX-WISE mock photometry).
-
-## Step 0: build the SSP grid (once per FSPS configuration)
-
-CERIDWEN's forward model consumes an HDF5 cache of SSP spectra precomputed with
-FSPS. Build it once (a few minutes on CPU); subsequent runs reload it.
+**1. Get an SSP grid.** The published MIST + MILES grid (Chabrier IMF) is downloaded once
+(67 MB) into `~/.ceridwen/grids` (or `$CERIDWEN_GRID_DIR`), and its SHA-256 is checked on
+every call. `available_grids()` lists the others.
 
 ```python
 from ceridwen import SSPData
+from ceridwen.ssps import fetch_grid
 
-ssp = SSPData.from_fsps(imf_type=1, save_to="ssp_data.h5")
-# later: ssp = SSPData.load("ssp_data.h5")
+ssp = SSPData.load(fetch_grid("mist_miles_chab"))
+ssp.display()                                      # library, IMF, grid coverage
 ```
 
-`from_fsps` accepts only stellar-library / IMF kwargs (`imf_type` and friends);
-dust, SFH, nebular, IGM, redshift, or a fixed metallicity are rejected, because
-the forward model owns those. The grid records its provenance (isochrone/spectral
-library, `imf_type`, FSPS version, build kwargs) and `CSPBasis` picks up the
-isochrone library automatically, so **`isoc_type` never has to be set by hand**
-and the nebular grid always matches the SSP isochrones.
-
-!!! tip "No FSPS? Download a published grid"
-    The canonical grids are on Zenodo and registered in
-    `ceridwen.ssps.grid_fetch`:
-    `ssp = SSPData.load(fetch_grid("mist_miles_chab"))`. For
-    [α/Fe] fitting with `CSPBasis_afe` the download is the *recommended*
-    route — the α grids need a custom FSPS v4.0 build to generate, but
-    none at all to fit, since the α variant has no nebular model. See
-    [Installation: α-enhanced grids](installation.md#alpha-enhanced-grids).
-
-## Step 1: build a model and fit
-
-A minimal photometry-only fit. For a full runnable joint
-photometry + spectroscopy example that generates its own self-consistent mock,
-see the README's "fit a galaxy end-to-end" section; for lines and nebular
-emission see the [tutorial](tutorial.md).
+**2. Build the model.** `lookback_time` holds the SFH nodes in Gyr, increasing from 0
+(today). The SFH is sampled as `logsfr_ratios` and turned into a star formation rate per node
+by a transform. `logzsol` is log10(Z/Z_sun) of the grid.
 
 ```python
 import jax, jax.numpy as jnp
 import numpy as np
-from ceridwen import SSPData, CSPBasis, SedModel, fitSED, Kinematics, Cosmology
-from ceridwen.observation import Photometry
+from ceridwen import CSPBasis, SedModel, Instrument, Cosmology
+from ceridwen.observation import Photometry, Spectrum
 from ceridwen.model import logsfr_ratios_to_sfh
 from ceridwen.priors import Uniform, ClippedNormal, StudentT
 
-ssp = SSPData.load("ssp_data.h5")
+ZRED = 0.1                                         # fixed spectroscopic redshift
+FILTERS = ["galex_FUV", "galex_NUV", "sdss_u0", "sdss_g0", "sdss_r0",
+           "sdss_i0", "sdss_z0", "twomass_J", "twomass_H", "twomass_Ks",
+           "wise_w1", "wise_w2"]
+SPEC_WAVE = np.linspace(4000.0, 8000.0, 600)       # observed-frame vacuum Angstrom
+LSF = Instrument.sigma_kms(150.0)                  # instrumental line-spread function
 
-# Cosmology: set once, here, on the object that computes distances and ages.
-# Cosmology.planck18() / planck15() / wmap9() / flat(H0, Om0) / from_name(...)
-# / from_astropy(...).  It is printed by every summary and stored in the result.
-cosmo = Cosmology.planck18()
+csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6),
+               cosmo=Cosmology.planck18(),
+               zh_const=True, sfh_interp="step",
+               add_dust=False, add_diffuse_dust=True, add_neb=False, verbose=False)
 
-# Composite-stellar-population forward model. lookback_time is the static SFH
-# node grid (Gyr, increasing, index 0 = today-at-z, >= 2 nodes); its oldest
-# node must not exceed the age of the universe at the fit redshift,
-# cosmo.age(6.5) = 0.84 Gyr here (SedModel refuses a grid that does).
-# sps_home defaults to $SPS_HOME (needed because add_neb=True).
-lookback = jnp.linspace(0.0, 0.8, 6)         # 6 nodes -> 5 free logsfr_ratios
-csp = CSPBasis(
-    ssp,
-    lookback_time=lookback,
-    cosmo=cosmo,
-    zh_const=True, sfh_interp="step",
-    add_dust=False, add_diffuse_dust=True, add_neb=True, add_igm=True,
-)   # add_dust=True adds the birth-cloud parameters (tau_pow, alpha_pow): give them priors too
-
-# Observations (any combination of Photometry / Spectrum / Lines, fit jointly).
-phot = Photometry(
-    filters=["jwst_f115w", "jwst_f200w", "jwst_f444w"],
-    flux=[1.2e-8, 2.7e-8, 3.1e-8],          # AB maggies
-    uncertainty=[6e-10, 1.4e-9, 1.5e-9],
-    name="phot",
-)
-phot.display()   # sanity-check the photometry you just built
-
-# The SFH is sampled as logsfr_ratios and transformed to per-node SFR.
 sfh_times_yr = np.array(csp.sfh_times)
-def logsfr_to_sfh(free_theta, _t=sfh_times_yr):
-    return logsfr_ratios_to_sfh(free_theta["logsfr_ratios"], sfh_times_yr=_t)
+def logsfr_to_sfh(free_theta):
+    return logsfr_ratios_to_sfh(free_theta["logsfr_ratios"], sfh_times_yr=sfh_times_yr)
 
-model = SedModel(
-    csp, observations=[phot],
-    priors={
-        # logzsol = log10(Z/Z_sun), 0.0 = solar; keep the prior inside your
-        # SSP grid. Print the allowed range with
-        #     print(float(csp.zmet.min()), float(csp.zmet.max()))
-        # and call csp.check_param_ranges() to warn about out-of-grid values.
-        "logzsol": ClippedNormal(mean=-0.3, sigma=0.5, low=-2.0, high=0.2),
-        "logmass": Uniform(low=6.0, high=12.5),
-        "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
-        "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
-        "gas_logz": Uniform(low=-1.3, high=0.2),
-        "gas_logu": Uniform(low=-4.0, high=-1.0),
-        "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=0.3),
-    },
-    transforms={"sfh": logsfr_to_sfh},
-    free_param_init={"logsfr_ratios": jnp.zeros(5),
-                     "logmass": jnp.array([10.0])},
-    zred=6.5,                                # fixed spec-z
-    # kinematics=Kinematics(sigma_gal=300.0) is the default: the galaxy's
-    # velocity dispersion, applied to the spectrum the filters integrate. For
-    # broad bands any value changes the photometry by < 5e-4 mag; pass
-    # Kinematics(sigma_gal="sigma_gal") plus a prior to sample it instead.
-)
+def build_model(observations):
+    return SedModel(
+        csp, observations=observations,
+        priors={
+            "logzsol": Uniform(low=-2.0, high=0.2),
+            "logmass": Uniform(low=9.0, high=12.0),
+            "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
+            "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
+            "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=1.0),
+        },
+        transforms={"sfh": logsfr_to_sfh},
+        free_param_init={"logsfr_ratios": jnp.zeros(5), "logmass": jnp.array([10.0])},
+        zred=ZRED,
+    )
+```
 
-# Pick ONE sampler. Option A, VI-preconditioned NUTS:
+`SedModel` also applies a galaxy velocity dispersion of 300 km/s by default. Pass
+`kinematics=Kinematics(sigma_gal=...)` to change it, or `Kinematics(sigma_gal="sigma_gal")`
+with a prior to fit it (see [Conventions](conventions.md)).
+
+**3. Make the mock data.** Push known parameters through the model and add noise
+(signal-to-noise 20 in the photometry, 25 in the spectrum).
+
+```python
+TRUTH = {
+    "logsfr_ratios":      jnp.array([0.3, 0.2, -0.1, -0.4, -0.6]),
+    "logzsol":            jnp.array([-0.2]),
+    "logmass":            jnp.array([10.5]),
+    "diffuse_tau_kc":     jnp.array([0.5]),
+    "diffuse_dust_index": jnp.array([-0.7]),
+}
+gen = build_model([Photometry(filters=FILTERS, name="phot"),
+                   Spectrum(wavelength=SPEC_WAVE, instrument=LSF, name="spec")])
+truth_pred = gen.predict(TRUTH)                    # AB maggies (phot), F_nu in cgs (spec)
+
+rng = np.random.default_rng(42)
+mag = np.asarray(truth_pred["phot"]); mag_unc = mag / 20.0
+sfx = np.asarray(truth_pred["spec"]); sfx_unc = np.abs(sfx) / 25.0
+phot = Photometry(filters=FILTERS, name="phot", uncertainty=mag_unc,
+                  flux=mag + mag_unc * rng.standard_normal(mag.shape))
+spec = Spectrum(wavelength=SPEC_WAVE, instrument=LSF, name="spec", uncertainty=sfx_unc,
+                flux=sfx + sfx_unc * rng.standard_normal(sfx.shape))
+model = build_model([phot, spec])
+```
+
+**4. Fit with nested sampling.** These settings are sized for a laptop CPU: the fit took
+**21-29 min** (67 800 likelihood calls) in two runs on an 11-core Apple M3 Pro shared with
+other jobs (2026-09-24). It prints its progress and writes `./my_fit/ceridwen_result.h5`. For production, raise `num_live` (fitSED's default
+is 500) and lower `logZ_tol`; for NUTS, see [Samplers](samplers.md).
+
+```python
+from ceridwen import fitSED
+
 result = fitSED(
     model,
-    sampler="nuts", vi="tril",
-    sampler_kwargs={"num_chains": 4, "num_samples": 2000},
+    sampler="nested",
+    sampler_kwargs={"num_live": 100, "num_delete": 20, "logZ_tol": -2.0},
     rng_key=jax.random.PRNGKey(42),
     output_dir="./my_fit",
 )
-
-# Option B, nested sampling (gradient-free; also returns the evidence log Z):
-# result = fitSED(
-#     model,
-#     sampler="ns",
-#     sampler_kwargs={"num_live": 400, "num_delete": 80, "logZ_tol": -5.0},
-#     rng_key=jax.random.PRNGKey(42),
-#     output_dir="./my_fit",
-# )
+print(f"log Z = {result.log_evidence:.2f} +/- {result.log_evidence_err:.2f}")
 ```
 
-`result` carries posterior samples keyed by parameter name, plus the VI trace and
-per-phase timings (nested sampling also returns `result.log_evidence`).
-
-Predictions and data are in physical units because `zred=6.5` is fixed: AB
-maggies for photometry, cgs F_nu (erg s^-1 cm^-2 Hz^-1) for spectra,
-erg s^-1 cm^-2 for lines. Omitting `zred` (and `lumdist_mpc`) leaves the model
-at `zred = 0`, where no flux factor is applied and `SedModel` warns; see
-[Conventions](conventions.md).
-
-## Step 2: post-process
-
-`PostProcess` resamples the draws to equal weight (nested-sampling weights are
-recomputed from the birth contours), pushes them through the fitted forward
-model, and writes three figures per galaxy:
+**5. Inspect and post-process.** `PostProcess` resamples the draws to equal weight, pushes
+them through the fitted model, and computes derived quantities and predictions.
 
 ```python
 from ceridwen import PostProcess
 
-pp  = PostProcess(model, result, n_samples=2000)
+pp  = PostProcess(model, result, n_samples=1000)
 out = pp.run()
-print(np.percentile(out["theta"]["logmass"], [16, 50, 84]))
-out["extras"]["sfh"]["sfr10"]              # derived quantities, see postprocessing.md
-pp.figures("./my_fit/figures", title="my galaxy")   # summary.pdf, corner.pdf, diagnostics.pdf
+
+truth = {p: float(TRUTH[p][0]) for p in ("logzsol", "logmass", "diffuse_tau_kc", "diffuse_dust_index")}
+for p, t in truth.items():
+    lo, med, hi = np.percentile(out["theta"][p], [16, 50, 84])
+    print(f"{p:>20}: true {t:+7.3f}   fit {med:+7.3f}  (-{med - lo:.3f}/+{hi - med:.3f})")
+
+print(np.percentile(out["extras"]["sfh"]["sfr100"], [16, 50, 84]))   # SFR over 100 Myr [Msun/yr]
+pp.figures("./my_fit/figures", title="mock galaxy", truths=truth)
 pp.save("./my_fit/post.npz")
 ```
 
-`truths={name: value}` marks injected values in the summary and corner
-figures of a mock test. The full output layout and the individual figure
-functions are described in [Post-processing](postprocessing.md).
+The table compares the posterior median and 16-84% range with the truth. At these settings
+the recovered values can sit 2-3 sigma from the truth: with a five-ratio SFH, `logmass`
+trades against the SFH shape, and the MAP of this mock lies at logmass 10.44, not at 10.50
+(the data and the degeneracy, not the sampler). `figures` writes `summary.pdf` (SED with
+residuals, SFH, marginals), `corner.pdf` and `diagnostics.pdf` (the sampler's diagnostics).
+`post.npz` holds every draw's predictions and is about 100 MB; `load_postprocess` reads it back.
+Everything `PostProcess` returns is described in
+[Post-processing](postprocessing.md).
 
-!!! warning "Read the conventions first"
-    The metallicity units and the lookback-time indexing are the two things most
-    likely to bite. See **[Conventions & gotchas](conventions.md)** before
-    fitting real data.
 
-See `examples/quickstart.py` for a complete, runnable script (it post-processes
-the fit and writes the truth-overlaid summary, corner and diagnostic figures).
+## Reloading a fit
+
+`load_result_h5("my_fit/ceridwen_result.h5")` (from `ceridwen`) returns the same result object
+in a later session. The model is not stored as code: rebuild it with the same grid, CSP,
+observations and transforms. `ceridwen.resultfile.rebuild_model(path, csp, observations,
+transforms=...)` takes the priors, free parameters, redshift and kinematics from the file and
+raises if the rebuilt model differs from the one recorded; `check_model_against_result(model,
+path)` lists every difference. `PostProcess(model, "my_fit/ceridwen_result.h5")` also accepts
+the file directly.
+
+## Units
+
+`Photometry` predictions are AB maggies, `Spectrum` predictions are observed-frame F_nu in
+erg s⁻¹ cm⁻² Hz⁻¹ (multiply by 1e32 for nJy), and `Lines` predictions are integrated fluxes in
+erg s⁻¹ cm⁻². All three need `zred=` (or `lumdist_mpc=`) on the `SedModel`: at `zred = 0`
+without `lumdist_mpc` no flux factor is applied, and `SedModel` warns. See
+[Conventions](conventions.md) before fitting real data, and the [Tutorial](tutorial.md) for
+emission lines and nebular emission (`add_neb=True`).

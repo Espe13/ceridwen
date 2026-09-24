@@ -14,10 +14,10 @@ This is a self-contained, runnable demo:
 
 Requirements
 ------------
-FSPS is NOT required to run this demo (``add_neb=False``: no CLOUDY data is
+This demo reads no FSPS data files (``add_neb=False``: no CLOUDY data is
 read). An SSP grid is resolved in this order: ``$SSP_FILE`` ->
-``examples/ssp_data.h5`` (build it with FSPS — recommended — or download it
-from Zenodo, see docs/installation.md "Getting the SSP grid") -> the local
+``examples/ssp_data.h5`` (build it with FSPS or download it from Zenodo, see
+docs/installation.md "SSP grids") -> the local
 developer grid ``ceridwen/data/test_data/ssp_data_bpass.h5`` (not shipped in
 the repository). Only if no grid is found
 does the script fall back to building one, which then does need FSPS +
