@@ -64,6 +64,13 @@ log10 Z = [Fe/H] + log10(0.0185), i.e. `logzsol` = [Fe/H].
   A prior that reaches it raises at construction.
 - The grid does not carry a surviving-mass table yet, so fit it with
   `fitSED(..., mfrac=False)` and quote the formed mass.
+- Memory: a sampled `afe` enters the contraction as interpolation weights over the [α/Fe]
+  axis, so no interpolated flux plane is built per sample and vectorised evaluation
+  (`jax.vmap`, as nested sampling does over its live points) costs about as much memory as
+  without `afe`. XLA's temporary memory for `jit(vmap(csp.get_spectrum))` on
+  `amist_c3k_hr_krou_afe` (CPU, compile-time `memory_analysis`): 0.005 GB at W = 1, 0.002 GB
+  at W = 80, 0.011 GB at W = 400. The basis keeps two copies of the flux cube (2 × 306 MB for
+  this grid, float32).
 
 A full fit of a quiescent galaxy with [α/Fe], including a fitted spectrophotometric
 normalisation, is `examples/demo_afe_quiescent.py`.

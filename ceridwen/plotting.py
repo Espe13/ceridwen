@@ -644,7 +644,9 @@ def _ess(x):
 def diagnostic_figure(result, out=None, *, params=None, savepath=None, max_points=4000):
     """Sampling diagnostics.  Nested sampling: every parameter's dead points in
     deletion order coloured by posterior weight, the log-likelihood run and the
-    cumulative evidence.  MCMC: per-chain traces with split-R-hat and ESS."""
+    cumulative evidence.  MCMC: per-chain traces with split-R-hat and ESS (summed over chains;
+    without ``vi`` the NUTS chains share one warmup end state, so the R-hat is within-run
+    mixing only)."""
     import matplotlib.pyplot as plt
     C = COLORS
     feh = _feh_axis(out) if out is not None else False     # label logzsol as the others do

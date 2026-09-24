@@ -563,6 +563,11 @@ on your priors/bounds once before sampling instead.
   sampler="nested")` records `/map` and says so in the log.
 - **Every free parameter needs a prior** (the starts are prior draws); a parameter at a bound
   of a `Uniform` stays strictly inside it (the logit map never reaches the edge).
+- **NUTS runs one warmup for all chains**, from `theta_init` (or the MAP): without `vi` every
+  chain starts from its end state, so the printed split R-hat (and the diagnostic figure's)
+  measures mixing within that run and cannot see a warmup that settled in one of several
+  modes; the log says so. To test for other modes, compare fits from different
+  `free_param_init` / `rng_key`, or use nested sampling. The printed ESS is summed over chains.
 - **Deterministic for a fixed `rng_key`** (checked byte for byte on CPU). The default key in
   `fitSED` is `fold_in(rng_key, 1)`, so switching `optimize` on does not change the sampler's
   own key. Several starts reaching the same `ln p` is the sign of a well-defined optimum; a
