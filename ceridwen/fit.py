@@ -223,7 +223,8 @@ def _resolve_fit_mfrac(model, mfrac) -> bool:
     if mfrac and not has_table:
         from .ssps.ssp_data import missing_stellar_mass_message
         raise ValueError(missing_stellar_mass_message(
-            "the model's SSP grid", chash=getattr(model.csp, "grid_chash", None)))
+            "the model's SSP grid", chash=getattr(model.csp, "grid_chash", None),
+            refused=getattr(model.csp, "stellar_mass_refused", None)))
     return bool(has_table and mfrac is not False)
 
 

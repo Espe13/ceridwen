@@ -141,7 +141,10 @@ projection → likelihood → sampler.
   surviving-mass table `ssp_stellar_mass`, carried by the published solar-scaled grids (not
   yet the α grid: `mfrac=False` there) and recorded by
   `from_fsps`, used only for `mfrac` (`fitSED`'s `/derived/mfrac`, `PostProcess`); an older
-  grid loads without it and its messages say to fetch the current copy or rebuild). `ssp_basis.py`:
+  grid loads without it and its messages say to fetch the current copy or rebuild; a table
+  above `STELLAR_MASS_MAX` is refused at load with a warning). `stellar_mass.py`: FSPS's
+  surviving mass with its lowest IMF bin corrected on truncated (pre-main-sequence MIST)
+  isochrones, used by `from_fsps` and `scripts/attach_stellar_mass.py`. `ssp_basis.py`:
   `SSPBasis`, `FastStepBasis` (thin FSPS wrappers + tabular SFH binning).
 - `csp/` — `csp.py`: `CSPBasis`, the core forward model. Holds the `get_spectrum_*`
   variants (stellar ± dust attenuation ± dust emission ± nebular), step/linear

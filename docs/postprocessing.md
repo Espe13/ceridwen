@@ -89,7 +89,8 @@ stellar return fraction, and keeps that meaning.
 
 **Surviving mass (v1.0.6).** `mfrac` is the fraction of the formed mass still in
 stars and remnants: the SSP grid's surviving-mass table (`ssp_stellar_mass`, FSPS's
-`stellar_mass` per SSP, SSP schema 3) weighted by the draw's SSP weights, the same
+`stellar_mass` per SSP, SSP schema 3; on MIST below ~2.5 Myr with FSPS's lowest IMF bin
+counted by mass instead of by number, GOTCHAS section 14) weighted by the draw's SSP weights, the same
 weights that make its spectrum. `mass_surviving = mfrac * mass_formed` and
 `ssfrW_surviving = sfrW / mass_surviving` are the Prospector-style stellar mass and
 sSFR. The published `mist_miles_chab` and `mist_bpass_v2` grids carry the table (the α grid
@@ -97,7 +98,9 @@ sSFR. The published `mist_miles_chab` and `mist_bpass_v2` grids carry the table 
 in every grid it builds. An older copy has none: `PostProcess` then warns once that `mfrac` is
 unavailable and reports `mass_formed` only (`mfrac=True` makes the missing table an error
 that says how to get a current grid: `fetch_grid(<name>, force=True)` for a published grid,
-a rebuild with `from_fsps` for your own; `mfrac=False` skips the block silently). The composite `mfrac` follows CERIDWEN's
+a rebuild with `from_fsps` for your own; `mfrac=False` skips the block silently). A table
+with values above 1 M_sun per M_sun formed is refused when the grid is loaded (one warning;
+the grid works without it). The composite `mfrac` follows CERIDWEN's
 SFH integration, not FSPS's `csp_gen`: against python-fsps for constant and rising
 SFHs of 0.1-10 Gyr it agrees to 4.2e-4 (step) and 6.3e-3 (linear, young populations on
 MIST, whose youngest node is 10^5 yr); GOTCHAS section 14.

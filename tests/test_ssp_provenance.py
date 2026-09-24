@@ -346,6 +346,12 @@ def test_from_fsps_records_provenance(tmp_path):
     assert ssp.fsps_version is not None
     assert ssp.fsps_kwargs == {"imf_type": 1}
     assert ssp.schema_version is not None
+    # the surviving-mass table: never above the formed mass (FSPS's MIST value reaches 4.62 at
+    # 10^5 yr; the lowest IMF bin of a truncated isochrone is counted by mass instead)
+    from ceridwen.ssps.ssp_data import STELLAR_MASS_MAX
+    assert ssp.ssp_stellar_mass.max() <= STELLAR_MASS_MAX
+    if ssp.isoc_type == "mist":
+        assert "lowest IMF bin mass-weighted" in ssp.stellar_mass_source
 
     reloaded = SSPData.load(path)
     assert reloaded.isoc_type == ssp.isoc_type

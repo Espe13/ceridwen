@@ -89,7 +89,8 @@ def test_schema2_file_loads_without_table(tmp_path):
         assert "ssp_stellar_mass" not in f
     back = SSPData.load(p)
     assert back.ssp_stellar_mass is None and back.schema_version == "2.0"
-    assert "not in this grid" in back.display(return_str=True)
+    txt = back.display(return_str=True)
+    assert "not available (no ssp_stellar_mass table)" in txt and "everything else works" in txt
     with pytest.raises(ValueError, match="from_fsps records the surviving-mass table") as e:
         back.require_stellar_mass()                   # not a published grid: rebuild it
     assert "scripts/" not in str(e.value)
@@ -104,6 +105,72 @@ def test_bad_table_rejected(bad, match):
         _tiny().with_stellar_mass(bad, source="x")
     with pytest.raises(ValueError, match=match):
         _tiny(ssp_stellar_mass=bad)
+
+
+def test_table_above_formed_mass_rejected():
+    """More mass cannot survive than was formed: a constructor refuses the table."""
+    bad = np.array([[1.0, 4.62, 0.5], [1.0, 0.7, 0.5]])
+    with pytest.raises(ValueError, match="more mass survives than was formed"):
+        _tiny().with_stellar_mass(bad, source="x")
+    with pytest.raises(ValueError, match="more mass survives than was formed"):
+        _tiny(ssp_stellar_mass=bad)
+    from ceridwen.ssps.ssp_data import STELLAR_MASS_MAX
+    ok = np.array([[STELLAR_MASS_MAX, 0.9, 0.5], [1.0, 0.7, 0.5]])
+    assert _tiny().with_stellar_mass(ok, source="x").ssp_stellar_mass.max() == STELLAR_MASS_MAX
+
+
+def test_load_refuses_table_above_formed_mass(tmp_path):
+    """A FILE whose table exceeds the bound (the first published mist_miles_chab: 4.62) loads
+    without the table, warns once naming the file, and every mfrac path says why."""
+    p = tmp_path / "g.h5"
+    _tiny().with_stellar_mass(np.array([[1.0, 0.8, 0.6], [1.0, 0.7, 0.5]]), source="t").save(p)
+    with h5py.File(p, "r+") as f:
+        f["ssp_stellar_mass"][0, 0] = 4.62
+    with pytest.warns(UserWarning, match="surviving stellar-mass table .* is refused") as rec:
+        back = SSPData.load(p)
+    msg = str(rec[0].message)
+    assert str(p) in msg and "4.62" in msg and "mfrac=False" in msg
+    assert "spectra and everything else are unaffected" in msg
+    assert back.ssp_stellar_mass is None and back.stellar_mass_source is None
+    assert "4.62" in back.stellar_mass_refused
+    assert "REFUSED" in back.display(return_str=True)
+    with pytest.raises(ValueError, match="refused when the grid was loaded"):
+        back.require_stellar_mass()
+    from ceridwen.ssps.ssp_data import missing_stellar_mass_message
+    assert "refused" in missing_stellar_mass_message("x", refused=back.stellar_mass_refused)
+    with pytest.warns(UserWarning, match="refused"):
+        prom = SSPDataAfe.load(p, zsun=0.01)                 # the alpha loader shares _read_h5
+    assert prom.ssp_stellar_mass is None and prom.stellar_mass_refused
+
+
+def test_published_grid_without_table_is_described_plainly(monkeypatch):
+    """Q2-004: the alpha grid has no table YET.  display() and require_stellar_mass() say so,
+    say everything else works, and never call the grid wrong or old."""
+    import ceridwen.ssps.ssp_data as sd
+    monkeypatch.setattr(sd, "published_grid_name", lambda chash: "amist_c3k_hr_krou_afe")
+    g = _tiny()
+    txt = g.display(return_str=True)
+    line = next(x for x in txt.splitlines() if "surviving stellar mass" in x)
+    assert "the published grid 'amist_c3k_hr_krou_afe' has none yet" in line
+    assert "mfrac and the surviving mass are unavailable; everything else works" in line
+    with pytest.raises(ValueError, match="does not carry one yet; fit it with mfrac=False"):
+        g.require_stellar_mass()
+    for word in ("wrong", "predates", "written before", "before v1.0", "old copy"):
+        assert word not in txt
+
+
+def test_published_alpha_grid_display_if_fetched():
+    """The same on the real published file, when it is in the fetch cache (612 MB; skipped
+    otherwise: never downloaded by the suite)."""
+    from ceridwen.ssps.grid_fetch import grid_cache_dir
+    path = grid_cache_dir() / "amist_c3k_hr_krou_afe.h5"
+    if not path.is_file():
+        pytest.skip(f"{path} not fetched")
+    g = SSPDataAfe.load(path)
+    txt = g.display(return_str=True)
+    assert "the published grid 'amist_c3k_hr_krou_afe' has none yet" in txt
+    for word in ("wrong", "predates", "written before", "before v1.0", "old copy"):
+        assert word not in txt
 
 
 def test_with_stellar_mass_needs_source():
@@ -299,6 +366,25 @@ def test_table_reproduces_reference_burst(lib):
         assert m[iz, ia] == pytest.approx(ref[T]["burst"]["mfrac"], rel=BURST_RTOL[lib], abs=0.0)
 
 
+def test_mist_table_is_fsps_except_the_truncated_isochrones():
+    """The stored MIST table (as published after the 2026-09-24 correction) equals FSPS's raw
+    stellar_mass bit for bit at every age >= 10^6.45 yr; below, where FSPS reaches 4.62, it
+    lies in [0.97, STELLAR_MASS_MAX] (nothing has died yet: ~1 minus wind losses)."""
+    from ceridwen.ssps.ssp_data import STELLAR_MASS_MAX
+    if not REF_TABLES.is_file():
+        pytest.skip("tests/reference/ssp_stellar_mass.npz missing")
+    with np.load(REF_TABLES) as z:
+        if "mist_miles/mass_fsps" not in z.files:
+            pytest.skip("no raw FSPS MIST table stored")
+        fix, raw = np.array(z["mist_miles/mass"]), np.array(z["mist_miles/mass_fsps"])
+        lgyr = np.array(z["mist_miles/log_age_gyr"]) + 9.0
+    old = lgyr >= 6.45 - 1e-9
+    np.testing.assert_array_equal(fix[:, old], raw[:, old])
+    assert raw[:, ~old].max() > 4.6 and (raw > 1.0).sum() == 360
+    young = fix[:, ~old]
+    assert young.min() >= 0.97 and fix.max() <= STELLAR_MASS_MAX
+
+
 @pytest.mark.parametrize("interp", ["linear", "step"])
 def test_csp_matches_reference_within_scheme_difference(interp):
     """The json's constant and rising SFHs (201-node FSPS tables) through CSPBasis on the
@@ -308,12 +394,20 @@ def test_csp_matches_reference_within_scheme_difference(interp):
     ref = _ref_json()["libraries"].get(lib)
     if ref is None:
         pytest.skip(f"no json reference for isochrones {grid.isoc_type}")
+    # FSPS's composite used FSPS's raw table; on MIST that exceeds 1 below 10^6.45 yr and the
+    # grid's table is corrected there (ceridwen.ssps.stellar_mass), which lowers mfrac by
+    # 0.9 % (constant) / 1.8 % (rising) at T = 0.1 Gyr.  This test checks the SFH integration
+    # against FSPS, so it puts FSPS's raw table on the CSP (bypassing the grid's bound).
+    with np.load(REF_TABLES) as z:
+        raw = np.array(z[f"{_tag}/mass_fsps"]) if f"{_tag}/mass_fsps" in z.files else None
     worst = 0.0
     for T in (0.1, 1.0, 10.0):
         t = np.linspace(0.0, T, 201)
         for name, sfr in (("constant", np.ones_like(t)), ("rising", t / T)):
             lb, s = (T - t)[::-1], sfr[::-1]         # forward time -> lookback, index 0 = today
             csp, th = _csp(grid, lb, s, interp)
+            if raw is not None:
+                csp.ssp_stellar_mass = raw
             got = float(csp.surviving_mass_fraction(th))
             worst = max(worst, abs(got / ref["mfrac"][f"{T:.1f}"][name]["mfrac"] - 1.0))
     assert worst < CSP_RTOL[(lib, interp)], worst
@@ -407,7 +501,19 @@ def test_stored_table_is_fsps_stellar_mass():
     tabs = _tables_by_library()
     if lib not in tabs:
         pytest.skip(f"no stored table for this FSPS's isochrones {iso!r}")
-    _tag, m, _lgage, lz = tabs[lib]
+    tag, m, _lgage, lz = tabs[lib]
     iz = int(np.argmin(np.abs(lz)))
     sp.get_spectrum(tage=0.0, zmet=iz + 1, peraa=False)
-    np.testing.assert_array_equal(np.asarray(sp.stellar_mass, dtype=np.float64), m[iz])
+    raw = np.asarray(sp.stellar_mass, dtype=np.float64)
+    with np.load(REF_TABLES) as z:
+        stored_raw = np.array(z[f"{tag}/mass_fsps"]) if f"{tag}/mass_fsps" in z.files else None
+    if stored_raw is None:                              # BPASS: the table is FSPS's
+        np.testing.assert_array_equal(raw, m[iz])
+        return
+    # MIST: FSPS's raw row as stored, and the corrected row = CERIDWEN's correction of it
+    np.testing.assert_array_equal(raw, stored_raw[iz])
+    from ceridwen.ssps.stellar_mass import (isochrone_points_or_none, fsps_imf_params,
+                                            truncated_isochrone_correction)
+    iso = np.array([isochrone_points_or_none(sp)])
+    fixed, _rep = truncated_isochrone_correction(raw[None], iso, fsps_imf_params(sp))
+    np.testing.assert_array_equal(fixed[0], m[iz])

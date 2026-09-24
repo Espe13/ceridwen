@@ -436,9 +436,18 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
   without post-processing. `PostProcess` given the file path uses that array and refuses it
   when its recorded `grid_chash` or `sfh_interp` differ from the model's; given a
   `SamplingResult` it recomputes from the table.
-- The table is FSPS's `stellar_mass` as it is: on MIST it exceeds 1 M_sun per M_sun formed
-  below 10^6.45 yr (up to 4.6 at 10^5 yr), so a population dominated by < 3 Myr stars can
-  have `mfrac > 1`. BPASS stays <= 1.
+- The table is FSPS's `stellar_mass`, except on MIST below 10^6.45 yr. There FSPS's raw value
+  reaches 4.6 M_sun per M_sun formed (10^5 yr): the pre-main-sequence isochrones start far
+  above the IMF's 0.08 M_sun lower limit (2.68 M_sun at 10^5 yr), and FSPS (`imf_weight.f90`)
+  counts every star below the first isochrone mass **at** that mass. `SSPData.from_fsps` (and
+  `scripts/attach_stellar_mass.py`) count that lowest bin by its IMF mass instead
+  (`ceridwen.ssps.stellar_mass`); the corrected MIST/MILES table lies in [0.97, 1.004] at those
+  ages and equals FSPS bit for bit at every other age. BPASS (FSPS reads `bpass.mass`) is
+  <= 1 and not corrected. A table above `STELLAR_MASS_MAX` (1.01) is refused: a constructor
+  raises, and a file loads **without** its table, with one warning (mfrac unavailable,
+  everything else unchanged). The first Zenodo copy of `mist_miles_chab` (sha256 `2f6777a8…`)
+  carries FSPS's raw table and is refused this way; `fetch_grid('mist_miles_chab',
+  force=True)` fetches the corrected copy once it is published.
 - CERIDWEN's composite `mfrac` uses its own SFH weights (the ones behind the spectrum), not
   FSPS's `csp_gen`. Versus python-fsps for 0.1-10 Gyr constant/rising SFHs: <= 4.2e-4 (step),
   <= 6.3e-3 (linear). The `"linear"` scheme drops mass formed more recently than the youngest
