@@ -182,6 +182,44 @@ def _truth_sfr_per_bin(model, out, truths):
     return bar * (10.0 ** float(np.ravel(np.asarray(t["logmass"]))[0]) if "logmass" in t else 1.0)
 
 
+def _prior_sfr_per_bin(model, out, draws):
+    """Per-bin physical SFR [M_sun/yr] of the prior draws ({name: (n, ...)}), shape
+    (n, n_bins), or None.  ``logmass`` is held at its posterior median, so the band shows the
+    prior on the SFH's shape at the fitted mass (a broad mass prior would otherwise fill the
+    panel); computed as the posterior's per-bin SFR is (postprocess._derive)."""
+    if not draws:
+        return None
+    import jax
+    import jax.numpy as jnp
+    from .postprocess import _per_bin_and_nodes, model_theta
+    names = list(model.param_names)
+    n = int(np.asarray(draws[names[0]]).shape[0])
+    free = {k: jnp.asarray(np.reshape(np.asarray(draws[k], dtype=float),
+                                      (n,) + tuple(np.shape(model.theta_init[k]))))
+            for k in names}
+    logm = None
+    if "logmass" in out["theta"]:
+        logm = float(np.median(np.asarray(out["theta"]["logmass"], dtype=float)))
+        if "logmass" in free:
+            free["logmass"] = jnp.full_like(free["logmass"], logm)
+    try:
+        f = jax.jit(jax.vmap(lambda th: {k: v for k, v in model_theta(model, th).items()
+                                         if k in ("sfh", "logmass")}))
+        t = f(free)
+    except (TypeError, ValueError):            # a transform that does not vectorise: no band
+        return None
+    if "sfh" not in t:
+        return None
+    psi = np.asarray(t["sfh"], dtype=float).reshape(n, -1)
+    n_time = int(np.asarray(out["extras"]["sfh"]["lookback_gyr"]).shape[-1])
+    bars = np.array([_per_bin_and_nodes(r, n_time)[0] for r in psi])
+    if "logmass" in t:
+        bars *= 10.0 ** np.asarray(t["logmass"], dtype=float).reshape(n, 1)
+    elif logm is not None:
+        bars *= 10.0 ** logm
+    return bars
+
+
 def _data_wave_range(obs_by_kind):
     """(lo, hi) observed wavelength [um] covered by the photometry and spectra, padded by
     ~25 % in log; None when there are none (lines only)."""
@@ -213,8 +251,10 @@ def _data_wave_range(obs_by_kind):
 def summary_figure(out, model, *, title=None, prior_draws=500, params=None, truths=None,
                    savepath=None, figsize=(15, 11)):
     """Summary page: SED with residuals (photometry and model in the same units, limited to
-    the observed wavelengths), emission lines, the SFH (per-bin log10 SFR vs lookback time,
-    posterior 16-84 % and median), and 1-D marginals of the fitted parameters (median,
+    the observed wavelengths; the full width when there are no emission lines), emission
+    lines, the SFH (per-bin log10 SFR vs lookback time, posterior 16-84 % and median, prior
+    16-84 % at the median mass; a linear time axis for a uniform node grid, else log), and
+    1-D marginals of the fitted parameters (median,
     16-84 %, best fit, prior 16-84 %).  ``out`` is ``PostProcess.run()``'s dict; ``model``
     the fitted ``SedModel``; ``truths`` ({name: value or array}) marks injected values in
     green, and draws the injected SFH when it gives the SFH parameters (e.g. logsfr_ratios)."""
@@ -227,6 +267,7 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
     cols = _flat_params(theta, params)
     best = _flat_point(out["bestfit"]["theta"], (params or list(theta.keys())))
     prior = None
+    pd = None
     if prior_draws:
         pd = _prior_draws(model, int(prior_draws))
         if pd is not None:
@@ -243,7 +284,8 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
     fig = plt.figure(figsize=figsize)
     gs = GridSpec(2, 2, figure=fig, height_ratios=[1.0, 1.0], width_ratios=[1.35, 1.0],
                   left=0.06, right=0.98, top=0.90, bottom=0.07, hspace=0.32, wspace=0.22)
-    gs_top = gs[0, 0].subgridspec(2, 1, height_ratios=[3, 1], hspace=0.05)
+    gs_top = (gs[0, 0] if has_lines else gs[0, :]).subgridspec(2, 1, height_ratios=[3, 1],
+                                                                hspace=0.05)
     ax_sed = fig.add_subplot(gs_top[0]); ax_chi = fig.add_subplot(gs_top[1], sharex=ax_sed)
     ax_lines = fig.add_subplot(gs[0, 1]) if has_lines else None
     ax_sfh = fig.add_subplot(gs[1, 0])
@@ -371,12 +413,16 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
         ax_lines.plot([], [], "|", color=C["data"], label="best fit")
         ax_lines.legend(fontsize=7, loc="upper right", frameon=False, ncol=3, bbox_to_anchor=(1.0, 1.08))
 
-    # SFH (as the paper's figures): per-bin log10 SFR against lookback time [Gyr] on a log
-    # axis; posterior 16-84 % per bin, posterior median, and the injected SFH when given
+    # SFH (as the paper's figures): per-bin log10 SFR against lookback time [Gyr];
+    # posterior 16-84 % per bin, posterior median, prior 16-84 %, and the injected SFH when
+    # given.  A uniform node grid (linspace) gets a linear axis, so the youngest bin
+    # [0, t1] is drawn whole; any other grid a log axis, whose first bin starts at t1 / 2
     sfh = out["extras"]["sfh"]
     T = np.median(np.asarray(sfh["lookback_gyr"], dtype=float), axis=0)
     edges = T.copy()
-    if edges[0] <= 0.0:
+    dT = np.diff(T)
+    log_axis = not (T[0] <= 0.0 and np.allclose(dT, dT.mean(), rtol=0.02))
+    if log_axis and edges[0] <= 0.0:
         edges[0] = 0.5 * edges[1]              # a log axis has no 0: first bin from t1 / 2
     if "sfr_per_bin" in sfh:
         per_bin = np.asarray(sfh["sfr_per_bin"], dtype=float)
@@ -388,18 +434,28 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
         lsfr = np.log10(per_bin)
     lsfr = np.where(np.isfinite(lsfr), lsfr, np.nan)
     lo, med, hi = _quantiles(lsfr)
+    p_sfr = _prior_sfr_per_bin(model, out, pd) if pd is not None else None
+    if p_sfr is not None:
+        with np.errstate(divide="ignore"):
+            lp = np.log10(p_sfr)
+        plo, _, phi = _quantiles(np.where(np.isfinite(lp), lp, np.nan))
+        ax_sfh.stairs(phi, edges, baseline=plo, fill=True, color=C["prior"], alpha=0.8, lw=0,
+                      label=r"prior 16$-$84%" + (" (at the median mass)"
+                                                 if "logmass" in theta else ""))
     ax_sfh.stairs(hi, edges, baseline=lo, fill=True, color=C["band"], alpha=0.6, lw=0,
                   label=r"posterior 16$-$84%")
-    ax_sfh.stairs(med, edges, color=C["posterior"], lw=1.6, label="posterior median")
+    ax_sfh.stairs(med, edges, baseline=None, color=C["posterior"], lw=1.6,
+                  label="posterior median")          # baseline=None: no drop to (and y-limit at) 0
     t_sfr = _truth_sfr_per_bin(model, out, truths)
     if t_sfr is not None:
         with np.errstate(divide="ignore"):
             lt = np.log10(t_sfr)
-        ax_sfh.stairs(np.where(np.isfinite(lt), lt, np.nan), edges, color=C["truth"], lw=1.4,
-                      ls="--", label="truth")
-    ax_sfh.set_xscale("log")
+        ax_sfh.stairs(np.where(np.isfinite(lt), lt, np.nan), edges, baseline=None,
+                      color=C["truth"], lw=1.4, ls="--", label="truth")
     ax_sfh.set_xlim(edges[0], edges[-1])
-    _nice_log_ticks(ax_sfh.xaxis, edges[0], edges[-1])
+    if log_axis:
+        ax_sfh.set_xscale("log")
+        _nice_log_ticks(ax_sfh.xaxis, edges[0], edges[-1])
     ax_sfh.set_xlabel("lookback time [Gyr]")
     ax_sfh.set_ylabel(r"$\log_{10}$ SFR [M$_\odot$ yr$^{-1}$]")
     ax_sfh.legend(fontsize=8, loc="best", frameon=False)
