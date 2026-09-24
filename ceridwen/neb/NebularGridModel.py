@@ -498,7 +498,8 @@ class NebularModel:
     def evaluate_batch_factored(self, logZ_gas, logU, ssp_ages_young,
                                 logqq_young, include_lines=True):
         """``(base (n_young, n_wave), scale (n_z, n_young))`` with neb[z, y, w] == scale[z, y] * base[y, w]
-        (same arithmetic as ``evaluate_batch``, not expanded).
+        (same arithmetic as ``evaluate_batch``, not expanded).  ``include_lines="both"`` returns
+        ``(base_continuum, base_with_lines, scale)`` from one evaluation.
         """
         logZ_gas = jnp.squeeze(logZ_gas)
         logU     = jnp.squeeze(logU)
@@ -535,9 +536,12 @@ class NebularModel:
         if include_lines:
             log_line = _interp_cube(self.nebem_line, self.nebem_line_logz,
                                     self.nebem_line_age, self.nebem_line_logu)
-            base = base + jnp.einsum(
+            base_full = base + jnp.einsum(
                 'wl,ly->wy', self.gaussnebarr,
                 jnp.power(10.0, log_line + ref[None, :]))
+            if include_lines == "both":
+                return base.T, base_full.T, scale
+            base = base_full
         return base.T, scale                                           # (n_young, n_wave), (n_z, n_young)
 
     def evaluate_batch_line_lum(self, logZ_gas, logU, ssp_ages_young,

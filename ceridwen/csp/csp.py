@@ -837,7 +837,8 @@ class CSPBasis:
     def get_spectrum_components(self, theta: dict) -> tuple:
         """``(continuum, lines)`` on the rest-frame grid, unscaled (no mass, distance or IGM):
         ``continuum`` is ``get_spectrum(include_lines=False)`` and ``lines`` the difference to the
-        full spectrum (the painted lines; with dust emission also their re-emitted energy).
+        full spectrum: the attenuated painted lines.  With dust emission the dust re-emission of
+        the lines' absorbed energy is in ``continuum``, as on every path.
         """
         self._warn_unknown_theta_keys(theta)
         continuum = self.get_spectrum(theta=theta, include_lines=False)
@@ -1510,8 +1511,9 @@ class CSPBasis:
     def _neb_weights_and_base(self, W_f32, theta, *, include_lines, amplitude):
         """``(v (n_young,), base (n_young, n_wave))`` with sum_z W[z,a] neb[z,a,w] == v[y] base[y,w] for
         the young rows: the metallicity axis is contracted before the wavelength axis.
+        ``include_lines="both"``: ``base`` is the pair ``(continuum, continuum + lines)``.
         """
-        base, scale = self.neb.evaluate_batch_factored(
+        *bases, scale = self.neb.evaluate_batch_factored(
             self._gas_logz(theta), theta["gas_logu"],
             self._neb_ages_young, self._neb_logqq_young,
             include_lines=include_lines,
@@ -1519,7 +1521,8 @@ class CSPBasis:
         yi = self._neb_young_idx
         v = jnp.einsum("zy,zy->y", W_f32[:, yi],
                        scale.astype(jnp.float32)) * amplitude
-        return v, base.astype(jnp.float32)
+        bases = tuple(b.astype(jnp.float32) for b in bases)
+        return v, (bases if include_lines == "both" else bases[0])
 
     def _neb_spectrum_term(self, W_f32, theta, *, include_lines,
                            attn_age=None, amplitude=jnp.float32(1.0)):
@@ -1576,19 +1579,21 @@ class CSPBasis:
 
     def _spectrum_picket_dem(self, theta, include_lines):
         """Picket-fence geometry with energy-balance dust emission; the clear channel cancels in L_abs.
-        Two contractions of the stellar cube (dust-free and attenuated), like the mainline."""
-        W, fo, attn_age, diffuse_curve, A_cov, A_clear, neb_v, neb_base = \
-            self._picket_terms(theta, include_lines)
+        Two contractions of the stellar cube (dust-free and attenuated), like the mainline.  The
+        energy balance always includes the lines (see ``get_spectrum_dattn_dem_neb``)."""
+        W, fo, attn_age, diffuse_curve, A_cov, A_clear, neb_v, (base_cont, neb_base) = \
+            self._picket_terms(theta, "both")
         yi = self._neb_young_idx
+        stellar_attenuated = jnp.einsum("za,zaw,aw->w", W, self.flux,
+                                        A_cov * attn_age * diffuse_curve[None, :] + A_clear)
         spectrum_dust_free = (
             jnp.einsum("za,zaw,aw->w", W, self.flux, A_cov + A_clear)
             + jnp.einsum("y,yw->w", neb_v, neb_base))
         attenuated = (
-            jnp.einsum("za,zaw,aw->w", W, self.flux,
-                       A_cov * attn_age * diffuse_curve[None, :] + A_clear)
+            stellar_attenuated
             + jnp.einsum("y,yw,yw->w", neb_v, neb_base, attn_age[yi, :]) * diffuse_curve)
 
-        dust_emi_spectrum, _mdust, _tduste = self.dust_emi.compute_dust_emission(
+        dust_emi_spectrum, _mdust, tduste = self.dust_emi.compute_dust_emission(
             spec_attn     = attenuated,
             spec_dustfree = spectrum_dust_free,
             spec_lambda   = self.wave,
@@ -1597,7 +1602,11 @@ class CSPBasis:
             duste_umin    = theta["duste_umin"],
             duste_gamma   = theta["duste_gamma"],
         )
-        return dust_emi_spectrum
+        if include_lines:
+            return dust_emi_spectrum
+        return (stellar_attenuated
+                + jnp.einsum("y,yw,yw->w", neb_v, base_cont, attn_age[yi, :]) * diffuse_curve
+                + tduste)
 
     def get_spectrum_dattn_nodem_neb(self, theta, *, include_lines=None):
         """Dust attenuation + nebular emission.  ``include_lines`` None -> ``self.nebemlineinspec``."""
@@ -1633,7 +1642,9 @@ class CSPBasis:
         return spectrum.reshape((-1,))
 
     def get_spectrum_dattn_dem_neb(self, theta, *, include_lines=None):
-        """Dust attenuation + nebular emission + dust emission."""
+        """Dust attenuation + nebular emission + dust emission.  The energy balance always counts
+        the lines' absorbed energy; ``include_lines`` only decides whether the attenuated lines are
+        in the output (False: attenuated continuum + the full dust emission)."""
         if include_lines is None:
             include_lines = self.nebemlineinspec
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
@@ -1657,18 +1668,19 @@ class CSPBasis:
             attn_star = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)
 
         W_f32 = W.astype(jnp.float32)
-        neb_v, neb_base = self._neb_weights_and_base(
-            W_f32, theta, include_lines=include_lines, amplitude=neb_amp)
+        neb_v, (base_cont, neb_base) = self._neb_weights_and_base(
+            W_f32, theta, include_lines="both", amplitude=neb_amp)
         yi = self._neb_young_idx
+        stellar_attenuated = jnp.einsum("za,zaw,aw->w", W_f32, self.flux, ion_mult * attn_star)
         spectrum_dust_free = (
             jnp.einsum("za,zaw,aw->w", W_f32, self.flux, ion_mult)
             + jnp.einsum("y,yw->w", neb_v, neb_base))
         attenuated = (
-            jnp.einsum("za,zaw,aw->w", W_f32, self.flux, ion_mult * attn_star)
+            stellar_attenuated
             + jnp.einsum("y,yw,yw->w", neb_v, neb_base, attn_age[yi, :]))
         attenuated         = attenuated * diffuse_curve
 
-        dust_emi_spectrum, _mdust, _tduste = self.dust_emi.compute_dust_emission(
+        dust_emi_spectrum, _mdust, tduste = self.dust_emi.compute_dust_emission(
             spec_attn     = attenuated,
             spec_dustfree = spectrum_dust_free,
             spec_lambda   = self.wave,
@@ -1677,8 +1689,11 @@ class CSPBasis:
             duste_umin    = theta["duste_umin"],
             duste_gamma   = theta["duste_gamma"],
         )
-
-        return dust_emi_spectrum
+        if include_lines:
+            return dust_emi_spectrum
+        return ((stellar_attenuated
+                 + jnp.einsum("y,yw,yw->w", neb_v, base_cont, attn_age[yi, :])) * diffuse_curve
+                + tduste)
 
     def get_spectrum_dattn_nodem_noneb(self, theta, *, include_lines=None):
         """Dust attenuation only (``include_lines`` ignored)."""
