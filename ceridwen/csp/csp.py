@@ -1236,8 +1236,12 @@ class CSPBasis:
 
         theta = self.theta_init if theta is None else theta
 
+        T_ref = None
         if "lookback_time" in theta:
             T_gyr = np.asarray(theta["lookback_time"], dtype=float)
+        elif self.track_zred_age and "zred" in theta:   # the zred-tracked grid (_sfh_grids)
+            T_yr, T_ref = (np.asarray(g, dtype=float) for g in self._sfh_grids(theta))
+            T_gyr = T_yr / 1e9
         else:
             T_gyr = np.asarray(self.sfh_times, dtype=float) / 1e9
         T_gyr = np.atleast_1d(T_gyr).ravel()
@@ -1271,6 +1275,10 @@ class CSPBasis:
             psi_nodes[1:-1] = 0.5 * (psi[:-1] + psi[1:])
         else:
             psi_nodes = psi
+
+        if T_ref is not None:   # the SFR the forward model forms: the construction-grid mass kept
+            f = np.sum(bar_psi * np.diff(T_ref)) / np.sum(bar_psi * dt_yr)
+            bar_psi, psi_nodes = bar_psi * f, psi_nodes * f
 
         if units == "Gyr":
             scale, xlabel = 1.0,   "Lookback time [Gyr]"

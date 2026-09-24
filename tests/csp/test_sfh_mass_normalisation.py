@@ -297,3 +297,20 @@ def test_linear_weights_match_brute_force_quadrature(grid, T_max):
     d = np.abs(W / W.sum() - Bn / Bn.sum())
     older = la > la[0] + 1.0          # nodes more than 1 dex older than the youngest
     assert d[older].max() < 1e-4 * np.abs(W).max() / W.sum()
+
+
+@pytest.mark.parametrize("interp", ["step", "linear"])
+def test_display_sfh_on_the_tracked_grid(interp):
+    """display_sfh draws the SFH the forward model forms: on the age(zred) grid, with the
+    construction-grid mass (unit here) in its title."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    csp = _csp(_bpass(), interp, False, True)
+    sfh = _unit_sfh(csp, False)
+    for z in (1.0, 6.0):
+        ax = csp.display_sfh(_theta(csp, sfh, z, True))
+        x_max = max(float(np.max(line.get_xdata())) for line in ax.get_lines())
+        assert x_max == pytest.approx(float(COSMO.age(z)), rel=1e-6)
+        assert "M_total = 1.000e+00 M_sun" in ax.get_title()
+        plt.close(ax.figure)
