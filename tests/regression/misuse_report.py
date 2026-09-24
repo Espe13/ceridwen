@@ -78,6 +78,7 @@ WARN_EXPECT = {
     "absolute-looking logzsol value (-1.85)": "is it an OLD abso",
     "absolute-looking logzsol prior": "OLD absolute-log10-Z prior",
     "NaN flux not in the mask": "non-finite flux",
+    "Spectrum.mask_lines without zred": "without zred",
     "noll bump under its old name E_bump": "unrecognized theta key(s) ['E_bump']",
 }
 
@@ -294,6 +295,9 @@ def run_scenarios():
         ("f_outlier_spec_<unknown obs name>", {"ERROR"},
          lambda: _check_outlier_setup(_outlier_model(["f_outlier_spec_nope"],
                                                      {"f_outlier_spec_nope": TopHat(low=1e-5, high=0.5)}))),
+        ("Spectrum.mask_lines without zred", {"WARN"},
+         lambda: Spectrum(wavelength=jnp.linspace(6000, 7000, 50), flux=jnp.ones(50),
+                          uncertainty=jnp.ones(50), name="s").mask_lines([6564.72])),
         ("NaN flux not in the mask", {"WARN"},
          lambda: Photometry(filters=["sdss_g0", "sdss_r0"], flux=[1.0, float("nan")],
                             uncertainty=[0.1, 0.1], name="p")),

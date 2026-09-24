@@ -172,7 +172,8 @@ class TestMaskLinesRedshift:
                         flux=np.zeros_like(wave_obs),
                         uncertainty=np.ones_like(wave_obs),
                         mask=np.ones_like(wave_obs, bool))
-        spec.mask_lines([6562.8], dv=500.0)  # default zred=0.0
+        with pytest.warns(UserWarning, match="without zred"):
+            spec.mask_lines([6562.8], dv=500.0)  # no zred: rest = observed, with a warning
         mask = np.asarray(spec.mask)
         wave = np.asarray(spec.wavelength)
         c_kms = 2.998e5

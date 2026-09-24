@@ -476,5 +476,5 @@ reloads it. See [Post-processing](postprocessing.md) for the output layout and
   in width).
 - **Know your frames.** The spectrum's pixel grid is **observed-frame** vacuum
   Å (the model is redshifted onto it); line-list wavelengths and
-  `mask_lines(...)` centres are **rest-frame** vacuum Å (redshifted internally
-  by `(1 + zred)`).
+  `mask_lines(..., zred=z)` centres are **rest-frame** vacuum Å (redshifted by the
+  `(1 + zred)` you pass; without `zred` it warns and uses 0).

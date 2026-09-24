@@ -2,6 +2,8 @@
 ``ceridwen.broadening.SpectralProjector``, masking, chi-squared and
 polynomial-calibration helpers."""
 
+import warnings
+
 import jax.numpy as jnp
 import numpy as np
 from .base import Observation
@@ -376,11 +378,19 @@ class Spectrum(Observation):
         in_range  = (self._wavelength >= wave_min) & (self._wavelength <= wave_max)
         self.mask = self.mask & ~in_range
 
-    def mask_lines(self, line_waves, dv=1000.0, zred=0.0):
+    def mask_lines(self, line_waves, dv=1000.0, zred=None):
         """Mask +/- ``dv`` km/s around each rest-frame line wavelength [Å],
-        redshifted by (1 + zred) onto the observed grid."""
+        redshifted by (1 + zred) onto the observed grid.  Pass ``zred`` (the source
+        redshift; 0.0 for rest-frame data): without it the rest wavelengths are masked on the
+        observed grid, with a warning."""
         if self._wavelength is None:
             return
+        if zred is None:
+            warnings.warn(
+                "Spectrum.mask_lines without zred masks the REST wavelengths on the observed "
+                "pixel grid; pass zred=<source redshift> (zred=0.0 if the data are rest frame)",
+                stacklevel=2)
+            zred = 0.0
         c_kms = 2.998e5
         opz   = 1.0 + float(zred)
         for lam0_rest in np.asarray(line_waves).ravel():
