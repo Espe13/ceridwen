@@ -8,12 +8,12 @@ preserve the public API and give bit-comparable science (identical/near-identica
 later entries (e.g. the v1.0.5 `logzsol` metallicity keys, the v1.0.7 per-observation
 noise names) change the API and say so in their own entry.
 
-> **Nebular default changed (Unreleased, 1.0.12): `cloudy_dust=False`.** `CSPBasis` now
+> **Nebular default changed (1.0.12): `cloudy_dust=False`.** `CSPBasis` now
 > reads the CLOUDY grids without dust in the H II region (`ZAU_ND`, the FSPS / Prospector
 > default) instead of `ZAU_WD`. Nebular line fluxes change: on MIST, Balmer x1/0.78,
 > Ly-alpha x1/0.17, [O III] 5007 x1/1.13 relative to before (BPASS: x1/0.95, x1/0.40,
 > x1/0.99). `init_neb_params={"cloudy_dust": True}` restores the old grid; result files that
-> do not record `cloudy_dust` are read as `True`. See "Unreleased" below.
+> do not record `cloudy_dust` are read as `True`. See the 1.0.12 entry below.
 
 > Scope note: this documents the edits from *this* work. The repo working tree
 > also carries other uncommitted changes that predate this session; `git diff`
@@ -945,7 +945,44 @@ weighted quantiles (B3-001); `fetch_grid` names a pre-re-deposit cache (B3-007);
 `ceridwen.check` verifies the FSPS data files (B3-002). Docs, README, tutorial, GOTCHAS,
 AGENTS and examples corrected per the B3/Q1/P findings (see `git log main..night/fixes`).
 
-## Unreleased
+## 2026-09-24 — v1.0.12: physics fixes from the audit, rebuilt README
+
+What changes for you, in short (details in the sections below):
+
+- **Nebular emission uses the CLOUDY grids without dust by default** (`cloudy_dust=False`,
+  FSPS's `ZAU_ND`, as FSPS, python-fsps and Prospector). Line fluxes are higher than before:
+  on MIST, Balmer lines x1/0.78, Ly-alpha x1/0.17, [O III] 5007 x1/1.13; on BPASS x1/0.95,
+  x1/0.40, x1/0.99. `init_neb_params={"cloudy_dust": True}` gives the old grid; result files
+  that do not record the setting are read as `True`.
+- **`10**logmass` is the formed mass with a free redshift.** With `track_zred_age=True` the SFH
+  grid is stretched to the age of the universe at `zred`; the mass formed used to shrink with it
+  (-0.37 dex at z = 1, -1.17 dex at z = 6). Fixed-redshift fits are bit-identical.
+- **Dust emission re-emits the energy the dust absorbs from the emission lines** on every path.
+  Fixed-redshift photometry and every `Spectrum` were 2-3 % faint in the IR.
+- **IGM:** it acts after the galaxy's velocity broadening, so the Ly-alpha break is no longer
+  smeared by `sigma_gal`; line fluxes (Ly-alpha above all) take the transmission averaged over
+  the line profile, as the painted spectrum does.
+- **`frac_obrun = 0` is exactly the model without `frac_obrun`**; `fesc_geometry='picket'`
+  requires `add_neb=True`. Nebular `gas_logz` / `gas_logu` priors outside the CLOUDY grid raise.
+- **The `"linear"` SFH scheme** gives the second-oldest SSP node its share of the oldest interval
+  (weights at the oldest nodes were off by up to 16 % on BPASS fits reaching 13 Gyr; spectra
+  move by up to 4e-4 in the optical).
+- **Surviving mass of young MIST populations** (< 2.8 Myr) no longer exceeds the formed mass
+  (FSPS reports up to 4.6). A grid table above 1.01 is refused at load with a warning: the
+  published `mist_miles_chab` copy is refused this way until its corrected copy is deposited
+  on Zenodo and registered in a later release, so it fits without `mfrac` until then
+  (spectra unaffected). `mist_bpass_v2` is unchanged.
+- **Sampled `[α/Fe]` no longer builds a flux plane per sample** (28 GB -> 0.01 GB of XLA
+  temporary memory at 400 parallel evaluations on the high-resolution grid).
+- **NUTS** labels its R-hat as within-run mixing and sums the per-chain ESS.
+- **The tests find grids fetched with `fetch_grid`**: `fetch_grid('mist_bpass_v2')` is enough to
+  run the grid-dependent tests; `misuse_report.py` says how to get a grid instead of crashing.
+- **Rebuilt README**: one installation path (conda, `pip install ceridwen`, an FSPS clone at
+  `$SPS_HOME`, which is required, `python -m ceridwen.check`), a quick start with nested sampling
+  only, and new docs pages for the samplers, [α/Fe], noise and calibration, troubleshooting and
+  development. Smaller fixes: shorter `Spectrum.display()` and `MAPResult` printouts, a clone
+  folder named `ceridwen` no longer shadows the installed package, the summary figure draws the
+  SFH prior band.
 
 ### Tests, misuse report and newcomer output (day tab F6; Q2 findings)
 
@@ -1066,7 +1103,7 @@ difference from a whole-grid quadrature is the youngest-node effect (GOTCHAS 14)
 `test_stellar_mass` xfail passes. Moves the `"linear"` golden W arrays and the T2 categories
 built on the linear 0-13.8 Gyr CSP (numbers in the F1 day report).
 
-## Unreleased — dust, nebular and IGM fixes (branch day/F2; finding IDs from the night audit)
+### Dust, nebular and IGM fixes (B1-024, B1-006, B1-018, B1-027, B1-013, B1-012, P1-011, T2-002)
 
 **Nebular default: `cloudy_dust=False` (B1-024).** `CSPBasis` / `NebularModel` default to the
 CLOUDY grids without dust in the H II region (`ZAU_ND`), as FSPS, python-fsps and Prospector

@@ -47,7 +47,7 @@ If you use CERIDWEN in your research, please cite it:
   author       = {Stoffers, Amanda},
   title        = {{CERIDWEN}: Fast and Flexible {GPU}-Accelerated Stellar Population Inference},
   year         = {2026},
-  note         = {Version 1.0.11},
+  note         = {Version 1.0.12},
   howpublished = {\url{https://github.com/Espe13/ceridwen}}
 }
 ```
