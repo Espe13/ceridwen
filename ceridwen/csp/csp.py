@@ -173,6 +173,12 @@ class CSPBasis:
     track_zred_age : bool -- with a sampled ``zred``, rescale the lookback grid so its oldest node
         is the age of the Universe at that redshift.
     fesc_geometry : {'runaway_bc', 'picket'} -- how the ``frac_obrun`` escape channel bypasses dust.
+        'runaway_bc': a fraction frac_obrun of EVERY age row skips that row's age-bin attenuation
+        (the diffuse dust still applies); with several attenuated age bins old stars escape too.
+        The nebular ages emit a fraction frac_obrun of their LyC and power 1 - frac_obrun of the
+        nebular emission.  'picket': a fraction frac_obrun of the young light (the nebular grid's
+        ages, ``young_mask``), LyC included, meets no dust or gas at all (no age-bin or diffuse
+        dust, no nebular reprocessing, no dust heating); needs add_neb=True.
     cosmo : Cosmology -- required; used for the flux factor and for the age of the Universe.
     nebemlineinspec : bool -- default of ``include_lines`` in ``get_spectrum`` only.
     """

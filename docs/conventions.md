@@ -296,6 +296,32 @@ them.
 you by `fitSED(model, observations)`); a `Spectrum` therefore needs its
 `wavelength=` at construction even if the flux is attached later.
 
+## Dust geometry and the escape fraction `frac_obrun`
+
+The CSP attenuates each SSP age row by its age bin's dust (`init_dust_params['bin_edges']`,
+log10 age/Gyr; by default one "birth-cloud" bin, ages below 10^-1.97 Gyr = 10.7 Myr) and then
+everything by the diffuse dust. `theta['frac_obrun']` opens an escape channel, and
+`fesc_geometry` (on `CSPBasis`) chooses what escapes:
+
+- **`'runaway_bc'`** (default). A fraction `frac_obrun` of the light of **every age row** skips
+  that row's age-bin attenuation; it is still attenuated by the diffuse dust. The nebular ages
+  also emit a fraction `frac_obrun` of their ionising photons (free of the age-bin dust) and
+  power `1 - frac_obrun` of the nebular emission. With the default single bin only the ages
+  below 10.7 Myr are attenuated by a bin, so only they are affected. With several attenuated
+  age bins, old stars escape their own bin's dust too: an old-only population (two power-law
+  bins, `tau_pow1 = 1`, `tau_pow2 = 0.5`, SFR zero below 2.6 Gyr) is 1.19x brighter at 5500 A
+  for `frac_obrun = 0.3` and 1.65x for `frac_obrun = 1`.
+- **`'picket'`**. A fraction `frac_obrun` of the **young** light (the ages of the nebular CLOUDY
+  grid, log age <= 7.3, 20 Myr, on the shipped grids), ionising photons included, is not
+  attenuated by any dust or gas: no age-bin dust, no diffuse dust, no nebular reprocessing
+  (the nebular emission scales with `1 - frac_obrun` and the escape fraction of ionising
+  photons is `frac_obrun`), and it is not counted as absorbed in the dust-emission energy
+  balance. Requires `add_neb=True`. The picket's "young" (to 20 Myr) is wider than the default
+  birth-cloud bin (to 10.7 Myr): the 11-20 Myr ages get no birth-cloud dust, but a fraction
+  `frac_obrun` of their light still skips the diffuse dust.
+
+`frac_obrun = 0` is the model without the key in both geometries.
+
 ## FSPS at runtime
 
 With `add_neb=True` or `add_dust_emission=True`, the forward model reads CLOUDY

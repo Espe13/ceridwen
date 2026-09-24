@@ -600,3 +600,18 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
   above `fit.GP_WARN_NPIX` pixels. Timings are in the docs.
 - **chi^2 is diagonal.** `Spectrum.chi_sq` and the summary figure's chi^2/nu do not include
   the GP; `Spectrum.log_likelihood` and the sampled log-likelihoods do.
+
+## 21. `frac_obrun`: which light escapes (`fesc_geometry`)
+
+- **`runaway_bc` (default) acts on every age row, not only on young stars.** The fraction
+  `frac_obrun` of each row skips that row's age-bin attenuation (not the diffuse dust). With the
+  default single birth-cloud bin (ages < 10.7 Myr) this touches only young stars; with an
+  age-binned `Dust` whose old bins are attenuated, `frac_obrun` brightens old stars too (old-only
+  population, `tau_pow2 = 0.5`: x1.19 at 5500 A for `frac_obrun = 0.3`). Use `picket`, or a
+  single attenuated bin, if the escape channel is meant for young stars only.
+- **`picket` means "not attenuated by anything"** for a fraction `frac_obrun` of the ages of the
+  nebular grid (to log age 7.3 = 20 Myr): no birth-cloud or diffuse dust, no nebular
+  reprocessing, no dust-emission heating. It needs `add_neb=True` (it raises otherwise). The
+  11-20 Myr ages are young for the picket but outside the default birth-cloud bin.
+- `frac_obrun = 0` is exactly the model without the key (both geometries).
+
