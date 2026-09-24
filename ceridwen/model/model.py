@@ -161,6 +161,25 @@ class SedModel:
                     f"lookback_time=jnp.linspace(0.0, {age:.3f}, n)"
                 )
 
+        if ("zred" in self.param_names and not bool(getattr(csp, "track_zred_age", False))
+                and "lookback_time" not in self.transforms and "zred" in self.priors
+                and hasattr(csp, "sfh_times") and hasattr(csp, "age_at")):
+            from ..csp.csp import prior_support
+            zlo, zhi = prior_support(self.priors["zred"])
+            if np.isfinite(zhi) and zhi > 0:
+                oldest = float(csp.sfh_times[-1]) / 1e9
+                age_hi = float(csp.age_at(float(zhi)))
+                if oldest > age_hi * (1.0 + 5e-3):
+                    age_lo = float(csp.age_at(max(float(zlo), 0.0)))
+                    where = ("at every zred the prior allows" if oldest > age_lo * (1.0 + 5e-3)
+                             else "at the high-zred end of the prior")
+                    warnings.warn(
+                        f"the oldest SFH node, {oldest:.3f} Gyr of lookback time, predates the "
+                        f"Universe {where} (age {age_hi:.3f} Gyr at zred = {zhi:g}); with "
+                        "track_zred_age=False the grid is not rescaled with the sampled "
+                        "redshift.  Use CSPBasis(track_zred_age=True) or a grid within "
+                        "csp.age_at(zred_max)", stacklevel=2)
+
         self.setup_observations()
 
         if (self.zred == 0.0 and self.lumdist_mpc is None and not self.zred_is_free
