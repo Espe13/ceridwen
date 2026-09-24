@@ -937,3 +937,26 @@ longer mutates `sampler_kwargs` (B2-004), `CSPBasis` no longer mutates `init_*_p
 weighted quantiles (B3-001); `fetch_grid` names a pre-re-deposit cache (B3-007);
 `ceridwen.check` verifies the FSPS data files (B3-002). Docs, README, tutorial, GOTCHAS,
 AGENTS and examples corrected per the B3/Q1/P findings (see `git log main..night/fixes`).
+
+## 2026-09-24 — surviving mass on young MIST SSPs; α-grid messages (Q2-003, Q2-004)
+
+**Behaviour change (numbers).** FSPS's `stellar_mass` on MIST exceeds the formed mass below
+10^6.45 yr (4.62 M_sun per M_sun formed at 10^5 yr in `mist_miles_chab`, 360 of 1391 SSPs
+above 1): FSPS `IMF_WEIGHT` counts every star from 0.08 M_sun up to the first isochrone point
+at that point's mass, and the young pre-main-sequence isochrones start at up to 2.68 M_sun.
+`ceridwen.ssps.stellar_mass` counts that bin by its IMF mass (times the point's mact/mini) in
+SSPs whose isochrone is truncated; `SSPData.from_fsps`, `SSPDataAfe.from_fsps` and
+`scripts/attach_stellar_mass.py` (new `--replace`) use it. On `mist_miles_chab` 326 SSPs change,
+to [0.971, 1.0036]; every SSP at >= 10^6.45 yr keeps FSPS's value bit for bit. BPASS is unchanged
+(its masses come from `bpass.mass`, <= 1). Spectra are not touched.
+
+**Now refused (was silent).** A surviving-mass table above `STELLAR_MASS_MAX` = 1.01: the
+constructor and `with_stellar_mass` raise; `load` keeps the grid, drops the table, warns
+once (naming the grid and `fetch_grid(..., force=True)`) and every mfrac error says why. The
+first Zenodo copy of `mist_miles_chab` (sha256 `2f6777a8…`) is refused this way until its
+corrected copy is deposited.
+
+**Messages.** `display()` of a grid without a table says so without calling it old: for the
+α grid, "the published grid 'amist_c3k_hr_krou_afe' has none yet: mfrac and the surviving
+mass are unavailable; everything else works". The α-grid metallicity note no longer refers
+to earlier versions.

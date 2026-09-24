@@ -185,7 +185,8 @@ def surviving_mass_fractions(model, samples, *, chunk: int = 1024) -> np.ndarray
     if getattr(csp, "ssp_stellar_mass", None) is None:
         from .ssps.ssp_data import missing_stellar_mass_message
         raise ValueError(missing_stellar_mass_message(
-            "the model's SSP grid", chash=getattr(csp, "grid_chash", None)))
+            "the model's SSP grid", chash=getattr(csp, "grid_chash", None),
+            refused=getattr(csp, "stellar_mass_refused", None)))
     names = list(model.param_names)
     n = int(np.asarray(samples[names[0]]).shape[0])
     theta = {p: jnp.asarray(np.asarray(samples[p]).reshape(
@@ -274,7 +275,8 @@ class PostProcess:
         if mfrac:
             from .ssps.ssp_data import missing_stellar_mass_message
             raise ValueError(missing_stellar_mass_message(
-                "the model's SSP grid", chash=getattr(self.csp, "grid_chash", None)))
+                "the model's SSP grid", chash=getattr(self.csp, "grid_chash", None),
+                refused=getattr(self.csp, "stellar_mass_refused", None)))
         if self.want["sfr"]:
             warnings.warn("mfrac unavailable: the model's SSP grid has no surviving-mass table, "
                           "so PostProcess reports mass_formed only (mfrac=False silences "

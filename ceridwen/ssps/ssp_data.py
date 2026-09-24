@@ -29,6 +29,10 @@ SSP_SCHEMA_VERSION = "3.0"
 # 3.0 adds the optional surviving stellar-mass table ``ssp_stellar_mass`` (grid shape minus
 # the wavelength axis), which from_fsps records and a schema-2 file lacks (it still loads).
 
+# Upper bound of a surviving-mass table (stellar_mass.py); a file whose table exceeds it loads
+# without the table and warns (_refuse_stellar_mass), a constructor raises.
+from .stellar_mass import STELLAR_MASS_MAX, isochrone_points_or_none, corrected_table  # noqa: E402
+
 
 _IMF_KWARGS = frozenset({
     "imf_type", "imf1", "imf2", "imf3",
@@ -149,8 +153,10 @@ class SSPData:
     ssp_resolution : ndarray (n_wave,), km/s -- library sigma_v(lambda) on ssp_wave, NaN where unknown; optional in memory, required by save()/load()
     ssp_stellar_mass : ndarray (n_met, n_ages) or None -- surviving mass (stars + remnants) per
         M_sun formed of each SSP, FSPS ``stellar_mass`` (schema 3.0, optional); None when the
-        grid carries no table (a file written before schema 3.0)
+        grid carries no table, or its table was refused at load (``stellar_mass_refused``)
     stellar_mass_source : str or None -- provenance of ``ssp_stellar_mass``
+    stellar_mass_refused : str or None -- why the file's table was refused at load (values
+        above ``STELLAR_MASS_MAX``); None otherwise
     zsun : float, init-only -- the grid's solar metallicity (mass fraction) when it is neither
         recorded (``log10_zsun``) nor in ``grid_metadata.CHASH_TABLE``; must match a node
     log10_zsun : float -- resolved: the grid's solar node (exact), so logzsol = ssp_lgmet - log10_zsun
@@ -166,6 +172,7 @@ class SSPData:
     resolution_source: Optional[str] = field(default=None, compare=False)
     ssp_stellar_mass: Optional[np.ndarray] = field(default=None, compare=False)
     stellar_mass_source: Optional[str] = field(default=None, compare=False)
+    stellar_mass_refused: Optional[str] = field(default=None, compare=False)
 
     isoc_type: Optional[str] = field(default=None, compare=False)
     spec_library: Optional[str] = field(default=None, compare=False)
@@ -240,6 +247,11 @@ class SSPData:
         if not np.all(np.isfinite(m)) or np.any(m <= 0.0):
             raise ValueError("ssp_stellar_mass must be finite and positive (M_sun surviving per "
                              "M_sun formed); got non-finite or non-positive entries.")
+        if np.max(m) > STELLAR_MASS_MAX:
+            raise ValueError(
+                f"ssp_stellar_mass reaches {np.max(m):.4g} M_sun per M_sun formed in "
+                f"{int(np.sum(m > STELLAR_MASS_MAX))} SSPs: more mass survives than was formed "
+                f"(bound {STELLAR_MASS_MAX:g}).  {_STELLAR_MASS_CAUSE}")
         return m
 
     def with_stellar_mass(self, mass, *, source):
@@ -258,7 +270,8 @@ class SSPData:
     def require_stellar_mass(self) -> np.ndarray:
         """The surviving stellar-mass table; ValueError saying how to get a grid with one."""
         if self.ssp_stellar_mass is None:
-            raise ValueError(missing_stellar_mass_message(type(self).__name__, chash=self.chash))
+            raise ValueError(missing_stellar_mass_message(type(self).__name__, chash=self.chash,
+                                                          refused=self.stellar_mass_refused))
         return self.ssp_stellar_mass
 
     def _grid_arrays_for_chash(self):
@@ -425,7 +438,11 @@ class SSPData:
                           "(unknown everywhere; no subtraction will occur)"]
             if self.resolution_source:
                 lines += [f"  resolution source        : {self.resolution_source}"]
-        if self.ssp_stellar_mass is None:
+        if self.stellar_mass_refused:
+            lines += ["  surviving stellar mass   : REFUSED at load (mfrac and the surviving "
+                      "mass unavailable; everything else works)",
+                      f"    {self.stellar_mass_refused}"]
+        elif self.ssp_stellar_mass is None:
             lines += ["  surviving stellar mass   : not in this grid (written before SSP "
                       "schema 3.0; mfrac unavailable)"]
         else:
@@ -550,13 +567,19 @@ class SSPData:
             # identifies the flux grid: attaching a mass table keeps the grid's identity
             ssp_stellar_mass = (np.asarray(f['ssp_stellar_mass'][:], dtype=np.float64)
                                 if 'ssp_stellar_mass' in f else None)
+            stellar_mass_refused = None
+            if ssp_stellar_mass is not None and np.max(ssp_stellar_mass) > STELLAR_MASS_MAX:
+                stellar_mass_refused = _refuse_stellar_mass(filename, chash, ssp_stellar_mass)
+                ssp_stellar_mass = None
 
             a = f.attrs
             meta = {
                 'ssp_resolution':    ssp_resolution,
                 'ssp_stellar_mass':  ssp_stellar_mass,
-                'stellar_mass_source': _decode(a['stellar_mass_source'])
-                                       if 'stellar_mass_source' in a else None,
+                'stellar_mass_source': (_decode(a['stellar_mass_source'])
+                                        if 'stellar_mass_source' in a
+                                        and stellar_mass_refused is None else None),
+                'stellar_mass_refused': stellar_mass_refused,
                 'resolution_source': _decode(a['resolution_source'])
                                      if 'resolution_source' in a else None,
                 'schema_version': _decode(a['schema_version'])
@@ -647,20 +670,23 @@ def _collect_ssp_and_meta(**kwargs):
 
     spectrum_collector = []
     mass_collector = []
+    iso_collector = []
     for zmet_indx in range(1, nzmet + 1):              # 1-based metallicity index
         print(f"...retrieving metallicity {zmet_indx}/{nzmet} "
               f"[Z = {ssp.zlegend[zmet_indx-1]:.4f}]")
         _wave, _fluxes = ssp.get_spectrum(tage=0.0, zmet=zmet_indx, peraa=False)
         spectrum_collector.append(_fluxes)
         mass_collector.append(np.array(ssp.stellar_mass, dtype=np.float64))
+        iso_collector.append(isochrone_points_or_none(ssp))
 
     ssp_wave       = jnp.array(_wave)
     ssp_flux       = jnp.array(spectrum_collector)
     ssp_lg_age_gyr = jnp.array(ssp_lg_age_gyr)
 
     meta = _read_fsps_provenance(ssp, kwargs, ssp_wave, ssp_lgmet)
-    meta["ssp_stellar_mass"] = np.array(mass_collector)
-    meta["stellar_mass_source"] = fsps_stellar_mass_source(meta["fsps_version"])
+    iso = None if iso_collector[0] is None else np.array(iso_collector, dtype=np.float64)
+    meta["ssp_stellar_mass"], note = corrected_table(ssp, np.array(mass_collector), iso)
+    meta["stellar_mass_source"] = fsps_stellar_mass_source(meta["fsps_version"]) + note
     return ssp_lgmet, ssp_lg_age_gyr, ssp_wave, ssp_flux, meta
 
 
@@ -722,9 +748,37 @@ def current_grid_advice(chash, what: str) -> str:
     return (f"SSPData.from_fsps records {what} automatically; rebuild the grid with it.")
 
 
-def missing_stellar_mass_message(what="this grid", chash=None) -> str:
+_STELLAR_MASS_CAUSE = (
+    "FSPS's stellar_mass does this at ages below ~2.5 Myr on MIST, whose pre-main-sequence "
+    "isochrones start far above the IMF's lower mass limit: FSPS counts every star below the "
+    "first isochrone mass at that mass.  SSPData.from_fsps records the corrected table.")
+
+
+def _refuse_stellar_mass(filename, chash, mass) -> str:
+    """Warn that the file's surviving-mass table exceeds ``STELLAR_MASS_MAX`` and return the
+    reason recorded on the grid (``stellar_mass_refused``); the table is not used."""
+    import warnings
+    name = published_grid_name(chash)
+    what = f"the published grid {name!r} ({filename})" if name else str(filename)
+    todo = (f"Fetch the current copy with fetch_grid({name!r}, force=True)." if name else
+            "Rebuild the grid with SSPData.from_fsps, which records the corrected table.")
+    reason = (f"table reaches {np.max(mass):.4g} M_sun per M_sun formed in "
+              f"{int(np.sum(mass > STELLAR_MASS_MAX))} SSPs (bound {STELLAR_MASS_MAX:g})")
+    warnings.warn(
+        f"{what}: its surviving stellar-mass table (ssp_stellar_mass) is refused: the {reason}, "
+        f"more mass surviving than was formed.  {_STELLAR_MASS_CAUSE}  The grid loads without "
+        f"it: mfrac and the surviving mass are unavailable (fit with mfrac=False); the spectra "
+        f"and everything else are unaffected.  {todo}", UserWarning, stacklevel=4)
+    return f"the file's {reason}.  {todo}"
+
+
+def missing_stellar_mass_message(what="this grid", chash=None, refused=None) -> str:
     head = (f"{what} carries no surviving stellar-mass table (ssp_stellar_mass, SSP schema "
             f"3.0), so mfrac and the surviving mass cannot be computed.  ")
+    if refused:
+        return (f"{what} has no usable surviving stellar-mass table: it was refused when the "
+                f"grid was loaded ({refused}).  Fit with mfrac=False (fitSED and PostProcess), "
+                "which reports the formed mass only.")
     name = published_grid_name(chash)
     if name is not None:
         from .grid_fetch import REGISTRY

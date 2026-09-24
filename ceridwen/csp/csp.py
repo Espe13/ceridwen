@@ -270,6 +270,7 @@ class CSPBasis:
         _m = getattr(SSPData, "ssp_stellar_mass", None)
         self.ssp_stellar_mass = None if _m is None else np.asarray(_m, dtype=np.float64)
         self.stellar_mass_source = getattr(SSPData, "stellar_mass_source", None)
+        self.stellar_mass_refused = getattr(SSPData, "stellar_mass_refused", None)
 
         self._ssp_isoc_type    = getattr(SSPData, "isoc_type", None)
         self._ssp_spec_library = getattr(SSPData, "spec_library", None)
@@ -1475,7 +1476,8 @@ class CSPBasis:
         if self.ssp_stellar_mass is None:
             from ceridwen.ssps.ssp_data import missing_stellar_mass_message
             raise ValueError(missing_stellar_mass_message("the SSP grid of this CSPBasis",
-                                                          chash=self.grid_chash))
+                                                          chash=self.grid_chash,
+                                                          refused=self.stellar_mass_refused))
         W = self.calculate_ssp_weights(theta)
         m = self._stellar_mass_at(theta)
         return jnp.sum(W * m) / jnp.maximum(jnp.sum(W), 1e-300)

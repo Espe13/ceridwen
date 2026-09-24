@@ -17,6 +17,8 @@ from ceridwen.ssps.ssp_data import (
     _read_fsps_provenance,
     _import_fsps,
     fsps_stellar_mass_source,
+    isochrone_points_or_none,
+    corrected_table,
 )
 
 SSP_AFE_SCHEMA_VERSION = "3.1"   # 3.1: optional ssp_stellar_mass (n_afe, n_met, n_ages), as SSPData 3.0
@@ -261,6 +263,7 @@ class SSPDataAfe(SSPData):
 
         planes = []
         mass_planes = []
+        iso_planes = []
         _wave = None
         for afe_indx in range(1, n_afe + 1):               # afeindx is 1-based
             if n_afe > 1:
@@ -269,6 +272,7 @@ class SSPDataAfe(SSPData):
                       f"(afe = {ssp_afe[afe_indx - 1]:+.1f})")
             spectrum_collector = []
             mass_collector = []
+            iso_collector = []
             for zmet_indx in range(1, nzmet + 1):
                 print(f"...retrieving metallicity {zmet_indx}/{nzmet} "
                       f"[Z = {ssp.zlegend[zmet_indx - 1]:.4f}]")
@@ -276,8 +280,10 @@ class SSPDataAfe(SSPData):
                     tage=0.0, zmet=zmet_indx, peraa=False)
                 spectrum_collector.append(_fluxes)
                 mass_collector.append(np.array(ssp.stellar_mass, dtype=np.float64))
+                iso_collector.append(isochrone_points_or_none(ssp))
             planes.append(np.array(spectrum_collector))
             mass_planes.append(np.array(mass_collector))
+            iso_planes.append(iso_collector)
 
             _z_now = np.log10(np.asarray(ssp.zlegend))
             if not np.allclose(_z_now, np.asarray(ssp_lgmet)):
@@ -293,8 +299,10 @@ class SSPDataAfe(SSPData):
 
         meta = _read_fsps_provenance(ssp, kwargs, ssp_wave, ssp_lgmet)
         meta['schema_version'] = SSP_AFE_SCHEMA_VERSION
-        meta['ssp_stellar_mass'] = np.stack(mass_planes, axis=0)
-        meta['stellar_mass_source'] = fsps_stellar_mass_source(meta['fsps_version'])
+        iso = (None if iso_planes[0][0] is None
+               else np.array(iso_planes, dtype=np.float64))
+        meta['ssp_stellar_mass'], note = corrected_table(ssp, np.stack(mass_planes, axis=0), iso)
+        meta['stellar_mass_source'] = fsps_stellar_mass_source(meta['fsps_version']) + note
         if n_afe > 1 and meta.get('isoc_type') == 'mist':
             meta['refused_cells'] = _duplicated_isochrone_cells(n_afe, int(nzmet))
 

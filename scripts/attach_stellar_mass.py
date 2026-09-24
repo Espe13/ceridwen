@@ -17,6 +17,15 @@ Steps
 3. Read ``stellar_mass`` for every metallicity (and alpha plane).  When the spectral
    library also matches, compare FSPS's spectra with the grid's flux cube as a check that
    this FSPS reproduces the grid (reported; ``--flux-rtol`` makes it fatal).
+3b. Correct FSPS's lowest IMF bin where the isochrone is truncated (see
+   ``truncated_isochrone_correction``).  FSPS ``IMF_WEIGHT`` (``imf_weight.f90``) gives
+   the first isochrone point the NUMBER of stars from ``imf_lower_bound`` (0.08 M_sun for
+   MIST) up to that point, and ``SSP_GEN`` counts each at the point's own ``mact``.  At
+   ages < ~2.5 Myr the MIST pre-main-sequence isochrones start well above 0.1 M_sun (2.68
+   M_sun at 10^5 yr), so FSPS returns up to 4.6 M_sun surviving per M_sun formed.  There
+   the first bin's mass is replaced by its IMF MASS integral (times mact/mini of the point);
+   everywhere else (isochrone complete down to its floor) the table is FSPS's, bit for bit.
+   BPASS reads its masses from ``bpass.mass`` and needs no correction.
 4. COPY the input to ``--out`` (default ``<name>_schema3.h5``), write the table and its
    provenance into the copy, and verify: strict reload, every original dataset
    bit-identical (sha256) to the input, the table round-trips exactly, chash unchanged.
@@ -32,6 +41,8 @@ Examples
 python scripts/attach_stellar_mass.py ceridwen/data/test_data/ssp_data_mist_miles.h5
 python scripts/attach_stellar_mass.py ssp_data_bpass.h5 --out ssp_data_bpass_schema3.h5 \
     --fsps-python ~/opt/anaconda3/envs/<bpass-fsps-env>/bin/python
+python scripts/attach_stellar_mass.py mist_miles_chab.h5 --replace --out mist_miles_chab_fixed.h5
+    (--replace: the input already carries a table; the copy gets the recomputed one)
 """
 from __future__ import annotations
 
@@ -62,24 +73,37 @@ WORKER = r"""
 import json, sys
 import numpy as np
 import fsps
+import os
+from fsps._fsps import driver
 kw, n_afe, out = json.loads(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+
+
+__FIRST_ISOCHRONE_POINTS__
+
 sp = fsps.StellarPopulation(zcontinuous=0, sfh=0, **kw)
 fsps_n_afe = int(getattr(sp, "n_afe", 1))
-mass, flux = [], []
+with_iso = (sp.libraries[0].decode() if isinstance(sp.libraries[0], bytes)
+            else str(sp.libraries[0])) != "bpss"          # BPASS: masses from bpass.mass
+mass, flux, iso = [], [], []
 for ia in range(n_afe):
     if n_afe > 1:
         sp.params["afeindx"] = ia + 1
-    m_rows, f_rows = [], []
+    m_rows, f_rows, i_rows = [], [], []
     for iz in range(len(sp.zlegend)):
         print(f"  plane {ia + 1}/{n_afe}  metallicity {iz + 1}/{len(sp.zlegend)}", flush=True)
         _w, f = sp.get_spectrum(tage=0.0, zmet=iz + 1, peraa=False)
         m_rows.append(np.array(sp.stellar_mass, dtype=np.float64))
         f_rows.append(np.asarray(f, dtype=np.float64))
-    mass.append(m_rows); flux.append(f_rows)
+        if with_iso:
+            i_rows.append(first_isochrone_points(sp, driver))
+    mass.append(m_rows); flux.append(f_rows); iso.append(i_rows)
 libs = [l.decode() if isinstance(l, bytes) else str(l) for l in sp.libraries]
+imf = {k: float(sp.params[k]) for k in ("imf_type", "imf_lower_limit", "imf_upper_limit",
+                                        "imf1", "imf2", "imf3")}
 np.savez(out, mass=np.array(mass), flux=np.array(flux), log_age=np.asarray(sp.log_age),
          zlegend=np.asarray(sp.zlegend), libraries=np.array(libs),
-         version=np.array(str(getattr(fsps, "__version__", None))), n_afe=fsps_n_afe)
+         version=np.array(str(getattr(fsps, "__version__", None))), n_afe=fsps_n_afe,
+         iso_first=np.array(iso, dtype=np.float64), imf_json=np.array(json.dumps(imf)))
 """
 
 
@@ -89,7 +113,11 @@ def run_fsps(kw, n_afe, python=None):
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:      # FSPS may leave fort.NN files in its cwd
         out = os.path.join(tmp, "fsps_out.npz")
-        cmd = [python or sys.executable, "-c", WORKER, json.dumps(kw), str(n_afe), out]
+        import inspect
+        from ceridwen.ssps.stellar_mass import first_isochrone_points
+        worker = WORKER.replace("__FIRST_ISOCHRONE_POINTS__",
+                                inspect.getsource(first_isochrone_points))
+        cmd = [python or sys.executable, "-c", worker, json.dumps(kw), str(n_afe), out]
         res = subprocess.run(cmd, cwd=tmp, env=os.environ.copy())
         if res.returncode or not os.path.exists(out):
             sys.exit(f"the FSPS worker failed ({' '.join(cmd[:1])}); see its output above")
@@ -128,6 +156,28 @@ def fsps_mass_table(grid, is_afe, flux_rtol=None, python=None):
         sys.exit(f"FSPS metallicity nodes {np.round(lgz, 4)} differ from the grid's "
                  f"{np.round(g_lgz, 4)}")
     mass = raw["mass"] if is_afe else raw["mass"][0]
+    report["fsps_max"] = float(np.max(raw["mass"]))
+    if raw["iso_first"].size:
+        iso = raw["iso_first"]
+        if iso.shape[:3] != raw["mass"].shape or np.max(np.abs(iso[..., 0] - raw["log_age"])) > 1e-3:
+            sys.exit(f"FSPS isochrone table {iso.shape[:3]} does not match its SSP ages "
+                     f"{raw['mass'].shape}: cannot correct the truncated isochrones")
+        from ceridwen.ssps.stellar_mass import truncated_isochrone_correction
+        fixed, corr = truncated_isochrone_correction(raw["mass"], iso,
+                                                     json.loads(str(raw["imf_json"])))
+        if corr["max_abs_dlogw_vs_fsps"] > 2e-4:        # FSPS writes log(weight) as F8.4
+            sys.exit(f"the first-bin IMF weight differs from FSPS's by "
+                     f"{corr['max_abs_dlogw_vs_fsps']:.2e} dex: this IMF is not FSPS's")
+        mass = fixed if is_afe else fixed[0]
+        report["truncated_isochrone_correction"] = {
+            k: v for k, v in corr.items() if k != "cells"}
+        report["corrected_cells"] = corr["cells"]
+    else:
+        report["truncated_isochrone_correction"] = "not needed (BPASS: masses from bpass.mass)"
+    from ceridwen.ssps.ssp_data import STELLAR_MASS_MAX
+    if np.max(mass) > STELLAR_MASS_MAX:
+        sys.exit(f"the mass table reaches {np.max(mass):.4f} M_sun per M_sun formed: more "
+                 "than was formed.  Not attached.")
     if libs[1] == grid.spec_library:
         g = np.asarray(grid.ssp_flux, dtype=np.float64)
         f = raw["flux"] if is_afe else raw["flux"][0]
@@ -159,6 +209,9 @@ def main() -> int:
     p.add_argument("--flux-rtol", type=float, default=None,
                    help="abort when FSPS's spectra differ from the grid's by more than this "
                         "(only when the spectral library matches); default: report only")
+    p.add_argument("--replace", action="store_true",
+                   help="the input already carries ssp_stellar_mass: write the recomputed "
+                        "table into the copy in its place (e.g. to correct a published grid)")
     args = p.parse_args()
 
     from ceridwen.ssps.ssp_data import SSPData, SSP_SCHEMA_VERSION, fsps_stellar_mass_source
@@ -176,10 +229,13 @@ def main() -> int:
         sys.exit("$SPS_HOME is not set: FSPS is needed to compute the masses")
 
     with h5py.File(src, "r") as f:
-        if "ssp_stellar_mass" in f:
-            sys.exit(f"{src} already carries ssp_stellar_mass — nothing to do")
+        had_table = "ssp_stellar_mass" in f
+        if had_table and not args.replace:
+            sys.exit(f"{src} already carries ssp_stellar_mass — nothing to do (--replace "
+                     "recomputes it into the copy)")
         is_afe = "ssp_afe" in f or f["ssp_flux"].ndim == 4
-        names = [k for k in f if isinstance(f[k], h5py.Dataset)]
+        names = [k for k in f if isinstance(f[k], h5py.Dataset) and k != "ssp_stellar_mass"]
+        old_mass = f["ssp_stellar_mass"][()] if had_table else None
         in_sha = {k: sha(f[k][()]) for k in names}
     cls = SSPDataAfe if is_afe else SSPData
     grid = cls.load(str(src))
@@ -192,20 +248,31 @@ def main() -> int:
     source = (fsps_stellar_mass_source(report["python_fsps"])
               + f"; libraries {report['libraries']}; attached to the existing grid "
                 "without rebuilding its spectra")
+    if isinstance(report["truncated_isochrone_correction"], dict):
+        from ceridwen.ssps.stellar_mass import CORRECTION_NOTE
+        source += CORRECTION_NOTE.format(
+            n=report["truncated_isochrone_correction"]["n_corrected"])
     print(f"  python-fsps    : {report['python_fsps']}  libraries {report['libraries']}")
     print(f"  flux check     : {report['flux_check']}")
     print(f"  stellar mass   : shape {mass.shape}, [{mass.min():.6g}, {mass.max():.6g}] "
-          "M_sun per M_sun formed")
+          f"M_sun per M_sun formed (FSPS raw max {report['fsps_max']:.6g})")
+    print(f"  isochrone fix  : {report['truncated_isochrone_correction']}")
+    if old_mass is not None:
+        d = np.abs(np.asarray(mass) - old_mass)
+        print(f"  vs input table : max |change| {d.max():.6g}, {int(np.sum(d > 0))} of {d.size} "
+              "cells changed")
 
     tmp = out.with_name(out.name + ".partial")
     shutil.copy2(src, tmp)
     with h5py.File(tmp, "r+") as f:
+        if "ssp_stellar_mass" in f:
+            del f["ssp_stellar_mass"]
         f.create_dataset("ssp_stellar_mass", data=np.asarray(mass, dtype=np.float64))
         f.attrs["units_stellar_mass"] = ("M_sun surviving (stars + remnants) per M_sun "
                                          "formed, per SSP")
         f.attrs["stellar_mass_source"] = source
         f.attrs["stellar_mass_fsps_report_json"] = json.dumps(
-            {k: v for k, v in report.items() if k != "fsps_kwargs"} | {
+            {k: v for k, v in report.items() if k not in ("fsps_kwargs", "corrected_cells")} | {
                 "fsps_kwargs": {k: (v if isinstance(v, (int, float, str, bool)) else str(v))
                                 for k, v in report["fsps_kwargs"].items()}})
         # self-describing: the grid's resolved Z_sun, axis and identity, so the file does not
@@ -217,7 +284,8 @@ def main() -> int:
         f.attrs["units_lgmet"] = grid._units_lgmet()
         f.attrs["chash"] = str(grid.chash)
         prev = _dec(f.attrs.get("schema_version"))
-        f.attrs["schema_version_before_stellar_mass"] = str(prev)
+        if not had_table:
+            f.attrs["schema_version_before_stellar_mass"] = str(prev)
         f.attrs["schema_version"] = SSP_AFE_SCHEMA_VERSION if is_afe else SSP_SCHEMA_VERSION
 
     # ---- verify ----------------------------------------------------------------------
