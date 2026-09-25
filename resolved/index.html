@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/noise_calibration/">
+        <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/resolved/">
       
       
-        <link rel="prev" href="../postprocessing/">
+        <link rel="prev" href="../afe/">
       
       
-        <link rel="next" href="../gp_likelihood/">
+        <link rel="next" href="../conventions/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Noise and calibration - CERIDWEN</title>
+        <title>Resolved mode (prototype) - CERIDWEN</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#noise-and-calibration" class="md-skip">
+        <a href="#resolved-mode-prototype" class="md-skip">
           Skip to content
         </a>
       
@@ -118,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Noise and calibration
+              Resolved mode (prototype)
             
           </span>
         </div>
@@ -425,37 +425,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Noise and calibration
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../noise_calibration/" class="md-nav__link">
         
   
   
@@ -471,59 +444,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#fixed-terms-set-on-the-observation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Fixed terms, set on the observation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#sampled-noise-terms" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Sampled noise terms
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#calibrating-a-spectrum" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Calibrating a spectrum
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -640,10 +560,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../resolved/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resolved mode (prototype)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -659,6 +606,59 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-exists" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What exists
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-does-not-exist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What does not exist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation-on-the-proposal-mock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation on the proposal mock
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -791,74 +791,93 @@
   
 
 
-<h1 id="noise-and-calibration">Noise and calibration<a class="headerlink" href="#noise-and-calibration" title="Permanent link">&para;</a></h1>
-<p>The default likelihood is Gaussian with the uncertainties you pass to each observation. This
-page lists the terms that change it: error floors and inflated errors, upper limits, and the
-calibration of a spectrum. The outlier mixture and the Gaussian-process likelihood have their
-own pages (<a href="../outlier_model/">Outlier model</a>, <a href="../gp_likelihood/">GP likelihood</a>).
-<a href="https://github.com/Espe13/ceridwen/blob/main/GOTCHAS.md"><code>GOTCHAS.md</code></a> (section 5) lists
-the combinations that are refused.</p>
-<h2 id="fixed-terms-set-on-the-observation">Fixed terms, set on the observation<a class="headerlink" href="#fixed-terms-set-on-the-observation" title="Permanent link">&para;</a></h2>
-<ul>
-<li><code>Spectrum(noise_floor=f)</code>: a fractional floor, sigma_eff² = sigma² + (f |model|)².</li>
-<li><code>Photometry(upper_limit=mask)</code>: bands where <code>mask</code> is True get a one-sided penalty (only a
-  model above the data is penalised).</li>
-</ul>
-<h2 id="sampled-noise-terms">Sampled noise terms<a class="headerlink" href="#sampled-noise-terms" title="Permanent link">&para;</a></h2>
-<p>Four terms inflate an observation's variance. Each is switched on by giving its parameter a
-prior (and a <code>free_param_init</code>) in <code>SedModel</code>:</p>
+<h1 id="resolved-mode-prototype">Resolved mode (prototype)<a class="headerlink" href="#resolved-mode-prototype" title="Permanent link">&para;</a></h1>
+<p><code>ceridwen.resolved</code> fits band images instead of integrated photometry. Every cell of a pixel
+grid carries its own stellar population. The cells are rendered through each band's PSF into the
+images, and all cells are fitted under one image likelihood with a spatial prior. It is a
+<strong>prototype</strong>: the pieces below exist, are differentiable and tested, and have been validated on
+one mock. It is not a production pipeline.</p>
+<h2 id="what-exists">What exists<a class="headerlink" href="#what-exists" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>parameter</th>
-<th>variance becomes</th>
+<th>Piece</th>
+<th>What it does</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>log_err_scale_&lt;kind&gt;</code></td>
-<td>sigma² exp(2 log_err_scale): a common rescaling of the quoted errors</td>
+<td><code>CellGrid(csp, phot, shape, psfs, zred=...)</code></td>
+<td>Per-cell <code>logmass</code> (formed), <code>logsfr_ratios</code> on the CSP's shared lookback bins (step SFH, one SFR per bin), <code>diffuse_tau_kc</code>; one <code>logzsol</code> for the galaxy; fixed redshift. <code>cell_maggies(theta)</code> gives <code>(n_cells, n_bands)</code> AB maggies, <code>render(theta)</code> gives <code>(n_bands, n_y, n_x)</code> images.</td>
 </tr>
 <tr>
-<td><code>log_jitter_&lt;kind&gt;</code></td>
-<td>+ exp(log_jitter)², in data units</td>
+<td><code>GaussianMixturePSF(amplitudes, sigmas_arcsec)</code></td>
+<td>PSF as a mixture of circular Gaussians, integrated over the pixel. <code>nircam_psfs(filters)</code> gives one Gaussian per NIRCam band with the JDox FWHM (F115W 0.040", F150W 0.050", F200W 0.066", F277W 0.092", F356W 0.116", F444W 0.145").</td>
 </tr>
 <tr>
-<td><code>log_f_calib_&lt;kind&gt;</code></td>
-<td>+ (exp(log_f_calib) |model|)²</td>
+<td><code>MRFPrior(weight)</code></td>
+<td>First-difference Gaussian Markov random field on each cell-parameter map: <code>-0.5 * weight * sum |grad theta|^2</code>, one weight per parameter or one for all.</td>
 </tr>
 <tr>
-<td><code>log_f_data_&lt;kind&gt;</code></td>
-<td>+ (exp(log_f_data) |data|)²</td>
+<td><code>resolved_map_fit(model, images, sigmas, prior)</code></td>
+<td>MAP by L-BFGS (optax, as <code>ceridwen.optimize.map_fit</code>) on the unconstrained parameters with <code>jax.grad</code>. It returns the MAP theta, the maps (mass, SFR10, SFH ratios, dust), the totals, the number of steps and gradient evaluations, the compile and run times, and a <code>logmass</code> constraint map.</td>
 </tr>
 </tbody>
 </table>
-<p><code>&lt;kind&gt;</code> is <code>phot</code>, <code>spec</code> or <code>lines</code>. With several observations of one kind, each has its
-own term, <code>&lt;root&gt;_&lt;kind&gt;_&lt;obs.name&gt;</code> (for example <code>log_jitter_spec_nirspec</code>); the plain name
-then raises. A constant transform fixes a term at a value. These names are read by <code>fitSED</code>;
-with <code>run_sampler</code> you build the <code>DiagonalNoiseModel</code> yourself. <code>log_jitter</code> is the natural
-log of a flux in the observation's units (maggies, cgs F_nu or erg s⁻¹ cm⁻²), so set its prior
-from the size of your uncertainties.</p>
-<h2 id="calibrating-a-spectrum">Calibrating a spectrum<a class="headerlink" href="#calibrating-a-spectrum" title="Permanent link">&para;</a></h2>
-<p>A spectrum's flux calibration rarely matches the photometry. Keep the photometry in the fit:
-it anchors the absolute level, and without it the continuum shape is degenerate with dust and
-age. Three ways to model the calibration, one per spectrum:</p>
+<p>How the model is built:</p>
 <ul>
-<li><strong>Sampled level and shape.</strong> <code>spectrum_scaling</code> multiplies the whole <code>Spectrum</code> prediction.
-  <code>spectrum_calib</code>, shape <code>(order,)</code>, multiplies it by <code>1 + sum_k c_k P_k(x)</code>, Legendre
-  polynomials of the observed wavelength mapped onto [-1, 1] over all pixels (no P_0 term:
-  the level is <code>spectrum_scaling</code>). With several spectra, use <code>spectrum_scaling_&lt;obs.name&gt;</code>
-  and <code>spectrum_calib_&lt;obs.name&gt;</code>.</li>
-<li><strong>Profiled polynomial.</strong> <code>Spectrum(polynomial_order=M)</code> solves for the Chebyshev coefficients
-  c_0..c_M inside the likelihood at every step, as Prospector's <code>PolyOptCal</code> does. The
-  posterior is conditional on the best-fit polynomial: its uncertainty is not propagated.</li>
-<li><strong>Marginalised polynomial.</strong> <code>Spectrum(polynomial_order=M, polynomial_mode="marginalize",
-  polynomial_prior_sigma=s)</code> integrates the coefficients out analytically under a Gaussian
-  prior of width <code>s</code> (in units of the fractional response). The calibration uncertainty then
-  reaches the posterior and the evidence, with no extra sampled dimension.</li>
+<li><strong>No second SPS.</strong> A cell is <code>CSPBasis.predict(theta_cell, [phot])</code> for a fixed-redshift
+  <code>Photometry</code>, the same call <code>fitSED</code> makes for one galaxy, mapped over the cells with
+  <code>jax.lax.map</code> (<code>batch_size</code> cells at a time). Each cell is predicted at <code>logmass = 8</code> and then
+  scaled in float64 by <code>10**(logmass - 8)</code>. This is exact, because <code>predict</code> is linear in the
+  mass. It is needed because the CSP forms the observed F_nu in float32, which underflows to zero
+  below about 100 M_sun at z = 6.</li>
+<li><strong>Image.</strong> Each cell is a point source at its centre, and pixel = cell. The image of band <code>b</code>
+  is <code>sum_k a_k Ky_k F_b Kx_k^T</code>, where the <code>K</code> matrices are the Gaussian integrated over each
+  pixel. The convolution is exact up to the grid edge (flux falling off the grid is lost, as on a
+  detector), differentiable, and free of FFT wrap-around. The second moment of a point source is
+  <code>sqrt(sigma^2 + d^2/12)</code> per axis.</li>
+<li><strong>Likelihood.</strong> Diagonal Gaussian over the images, with one <code>sigma</code> per band or one per pixel.
+  An optional <code>mask</code> (True means the pixel is used) may cover NaN pixels.</li>
+<li><strong>Priors.</strong> Per-cell priors (<code>default_cell_priors()</code>): <code>logmass</code> Uniform(0, 11),
+  <code>logsfr_ratios</code> StudentT(0, 1, 2), <code>diffuse_tau_kc</code> ClippedNormal(0.3, 1, 0, 4), <code>logzsol</code>
+  Uniform(-2, 0.2). The <code>MRFPrior</code> adds the spatial term on top of these.</li>
+<li><strong>Constraint map.</strong> <code>constraint_ratio</code> is, per cell, the Gauss-Newton curvature of the
+  likelihood in <code>logmass</code> divided by the prior curvature (the GMRF precision diagonal). For a
+  one-dimensional Gaussian, <code>KL(posterior || prior) = 0.5 [ln(1 + r) - r/(1 + r)]</code> plus a
+  mean-shift term. This ratio <code>r</code> is the MAP, per-cell, diagonal version of that KL divergence.</li>
 </ul>
-<p><code>eline_scaling</code> is a different parameter: it scales the model emission lines of a <code>Lines</code>
-observation only, not the spectrum.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.resolved</span><span class="w"> </span><span class="kn">import</span> <span class="n">CellGrid</span><span class="p">,</span> <span class="n">MRFPrior</span><span class="p">,</span> <span class="n">resolved_map_fit</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.resolved.psf</span><span class="w"> </span><span class="kn">import</span> <span class="n">nircam_psfs</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="n">lookback_time</span><span class="o">=</span><span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.02</span><span class="p">,</span> <span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">,</span> <span class="mf">0.9</span><span class="p">],</span> <span class="n">sfh_per_bin</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>               <span class="n">sfh_interp</span><span class="o">=</span><span class="s2">&quot;step&quot;</span><span class="p">,</span> <span class="n">zh_const</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_diffuse_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_neb</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>               <span class="n">gas_tied</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_igm</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">cosmo</span><span class="o">=</span><span class="n">Cosmology</span><span class="o">.</span><span class="n">planck18</span><span class="p">())</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">filters</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;jwst_f115w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f150w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f200w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f277w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f356w&quot;</span><span class="p">,</span> <span class="s2">&quot;jwst_f444w&quot;</span><span class="p">]</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">model</span> <span class="o">=</span> <span class="n">CellGrid</span><span class="p">(</span><span class="n">csp</span><span class="p">,</span> <span class="n">Photometry</span><span class="p">(</span><span class="n">filters</span><span class="o">=</span><span class="n">filters</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;nircam&quot;</span><span class="p">),</span> <span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="mi">64</span><span class="p">),</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>                 <span class="n">nircam_psfs</span><span class="p">(</span><span class="n">filters</span><span class="p">),</span> <span class="n">zred</span><span class="o">=</span><span class="mf">6.0</span><span class="p">,</span> <span class="n">pixel_scale</span><span class="o">=</span><span class="mf">0.03</span><span class="p">)</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">res</span> <span class="o">=</span> <span class="n">resolved_map_fit</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">images</span><span class="p">,</span> <span class="n">sigmas</span><span class="p">,</span> <span class="n">MRFPrior</span><span class="p">(</span><span class="mf">1.0</span><span class="p">),</span> <span class="n">max_steps</span><span class="o">=</span><span class="mi">800</span><span class="p">)</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="nb">print</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>
+</code></pre></div>
+<p><code>examples/resolved/resolved_mock.py</code> is the complete worked example: it builds the mock, runs
+the held-out choice of the prior weight, and runs both fits.</p>
+<h2 id="what-does-not-exist">What does not exist<a class="headerlink" href="#what-does-not-exist" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>No sampler.</strong> Only the MAP is available. There are no posterior widths and no evidence.</li>
+<li><strong>No exposure-level rendering.</strong> The model is fitted to mosaic-like images on the cell grid.
+  There are no per-exposure WCS, distortion or drizzle, no sub-pixel cell offsets, and no
+  sky or background terms.</li>
+<li><strong>No sampled correlation length.</strong> The MRF weight is fixed. The example picks one global weight
+  by held-out predictive likelihood.</li>
+<li><strong>No real PSFs.</strong> Only Gaussian mixtures are available (no WebbPSF/STPSF models, no
+  field-dependent PSF, no PSF uncertainty).</li>
+<li><strong>One metallicity and one redshift per galaxy.</strong> Per-cell dust is the diffuse Kriek &amp; Conroy
+  optical depth only, at the CSP's default dust index.</li>
+<li><strong>Noise is uncorrelated.</strong> Pixel-to-pixel noise correlations (e.g. from drizzling) are not
+  modelled.</li>
+</ul>
+<h2 id="validation-on-the-proposal-mock">Validation on the proposal mock<a class="headerlink" href="#validation-on-the-proposal-mock" title="Permanent link">&para;</a></h2>
+<!-- filled from examples/resolved/resolved_mock_results.json -->
 
 
 
