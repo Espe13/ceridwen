@@ -60,9 +60,12 @@ def test_csp_cube_byte_identical_and_no_float64_cube_on_device():
     ssp = SSPData.load(str(GRID))
     ref = np.asarray(jnp.array(jnp.asarray(ssp.ssp_flux), dtype=jnp.float32))
     gc.collect()
+    # other tests of the session may hold grid-sized float64 arrays: only new ones count
+    before = {id(a) for a in _grid_sized_f64_on_device(ssp.ssp_flux.shape)}
     csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 5.0, 4), add_neb=False,
                    verbose=False, cosmo=Cosmology.planck18())
     gc.collect()
     assert np.asarray(csp.flux).tobytes() == ref.tobytes()
     assert csp.flux.dtype == jnp.float32
-    assert _grid_sized_f64_on_device(ssp.ssp_flux.shape) == []
+    new = [a for a in _grid_sized_f64_on_device(ssp.ssp_flux.shape) if id(a) not in before]
+    assert new == []
