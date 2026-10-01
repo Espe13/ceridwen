@@ -24,6 +24,11 @@ class Observation:
 
     wavelength = None
 
+    # Half-open (lo, hi) range of model-grid indices that the CSP's projection onto this
+    # observation reads, known after setup_for_model; None = the whole grid (the safe
+    # default: CSPBasis.predict then synthesises every model pixel).
+    model_support = None
+
     def __init__(self,
                  flux=None,
                  uncertainty=None,

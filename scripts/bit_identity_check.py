@@ -58,7 +58,8 @@ def _flat(prefix, obj, out):
 
 
 def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False, lsf=None,
-           interp="step", track=False, zred=ZRED, spec_wave=SPEC_WAVE, filters=FILTERS):
+           interp="step", track=False, zred=ZRED, spec_wave=SPEC_WAVE, filters=FILTERS,
+           support=False):
     path = find_test_grid()
     if path is None:
         sys.exit("no test SSP grid found (tests/_gridfixture.py)")
@@ -72,6 +73,8 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
         kw["track_zred_age"] = True
     if gas_tied:
         kw["gas_tied"] = True          # v1.0.5 path: gas_logz := logzsol
+    if support:                        # C1: only the model pixels the observations read
+        kw["wavelength_support"] = True
     if igm_dla:                        # IGM damping wing + DLA with sampled theta keys
         from ceridwen.igm import MadauDampingDLA
         kw["igm_model"] = MadauDampingDLA(Ob0=0.04897)
@@ -336,6 +339,18 @@ def collect(args):
                spec_wave=np.linspace(1100.0, 1400.0, 300), filters=["jwst_f090w", "jwst_f115w"])
     configs.append(("igm_break_s0", dict(brk, sigma_losvd=0.0)))
     configs.append(("igm_break_s300", dict(brk, sigma_losvd=300.0)))
+    # C1, CSPBasis(wavelength_support=True): the opt-in path that synthesises only the model
+    # pixels the observations read (not byte-identical to the whole grid, so its own
+    # configurations); appended last, earlier draws unchanged
+    import inspect
+    if "wavelength_support" in inspect.signature(CSPBasis.__init__).parameters:
+        configs.append(("support_plain", dict(add_neb=False, add_igm=True, sigma_losvd=250.0,
+                                              dust_emission=False, support=True)))
+        if os.environ.get("SPS_HOME"):
+            configs.append(("support_neb", dict(add_neb=True, add_igm=True, sigma_losvd=250.0,
+                                                dust_emission=False, support=True)))
+    else:
+        print("  (package has no wavelength_support: support configurations skipped)")
     for tag, cfg in configs:
         t0 = time.perf_counter()
         model = _build(**cfg)

@@ -12,6 +12,11 @@
   `elines_to_fit`.
 - Small grid lookups (metallicity, [alpha/Fe], dust emission, nebular grids) use
   `jnp.searchsorted(..., method="compare_all")`: same indices, fewer GPU kernels.
+- `CSPBasis(wavelength_support=True)` / `CSPBasis_afe(...)`: opt-in, off by default. `predict`
+  synthesises only the model pixels the observations read (`Observation.model_support`) and
+  zero-fills the rest after the scaling; the whole grid for dust emission, painted lines and
+  free-z photometry. Not byte-identical (last float32 bit); 2.5-3x faster log-likelihood on
+  CPU at W = 64-100 for a JWST photometry (+ grating) model on the BPASS grid (GOTCHAS 24).
 - These mechanisms come from Liu Hao's speedups work on his fork of CERIDWEN.
 
 ## 1.0.12 (2026-09-24)
