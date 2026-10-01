@@ -371,7 +371,9 @@ prefer `predict`/`get_spectrum_components`.
 - **The width is `sigma_gas`**, a dispersion in km/s; `Spectrum(eline_sigma=...)`
   raises (there is no second line width).
 - **Flat prior and many faint lines.** By default every covered grid line is
-  fitted, including ones CLOUDY predicts at ~0. They cost nothing in bias but
+  fitted, including ones CLOUDY predicts at ~0, except FSPS's `"[O II] 3867"` (1.8 Å from
+  `[Ne III] 3869`, whose flux it would share; it stays at its CLOUDY flux and naming it in
+  `elines_to_fit` raises). They cost nothing in bias but
   each adds an Occam factor to the evidence; restrict with `elines_to_fit` when
   you compare evidences between models.
 - **Ly-α** always has a flat prior.
