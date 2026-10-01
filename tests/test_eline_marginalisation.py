@@ -751,7 +751,7 @@ def _model_on(csp0, wave, **spec_kw):
 
 
 def test_phantom_oii_3867_is_not_marginalised():
-    """FSPS's "[O II] 3867" (3868.16 A) has zero CLOUDY flux and no NIST transition: it is not
+    """FSPS's "[O II] 3867" (3868.16 A) has zero or negligible CLOUDY flux: it is not
     a default marginalised line next to [Ne III] 3869, and naming it explicitly is refused
     (fork 1fae781)."""
     from ceridwen.likelihood.eline_marginal import line_table_for, PHANTOM_LINES
@@ -765,5 +765,5 @@ def test_phantom_oii_3867_is_not_marginalised():
     es = _model_on(csp0, wave)._eline_system
     assert "[Ne III] 3869" in es.names
     assert not set(PHANTOM_LINES) & set(es.names)
-    with pytest.raises(ValueError, match="not a real line"):
+    with pytest.raises(ValueError, match="not a line to fit"):
         _model_on(csp0, wave, elines_to_fit=["[O II] 3867", "[Ne III] 3869"])

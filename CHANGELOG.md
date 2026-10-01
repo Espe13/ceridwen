@@ -7,9 +7,9 @@
 - Nested sampling: the step kernel compiles in a thread while the live points initialise.
 - Nested sampling: `log_evidence_err` is drawn with a seed derived from `rng_key` (it varied
   from run to run at the same key); numpy's global RNG is restored afterwards.
-- Emission-line marginalisation: FSPS's phantom `"[O II] 3867"` (zero CLOUDY flux, no NIST
-  line, 1.8 A from [Ne III] 3869) is no longer a default fitted line and is refused in
-  `elines_to_fit`.
+- Emission-line marginalisation: FSPS's `"[O II] 3867"` (zero CLOUDY flux in the MIST,
+  Padova and Parsec cubes, negligible in BPASS; 1.8 A from [Ne III] 3869) is no longer a
+  default fitted line (it stays at its CLOUDY flux) and is refused in `elines_to_fit`.
 - These mechanisms come from Liu Hao's speedups work on his fork of CERIDWEN.
 
 ## 1.0.12 (2026-09-24)
