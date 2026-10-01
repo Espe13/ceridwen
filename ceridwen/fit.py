@@ -679,8 +679,10 @@ def _describe_adapter(adapter, model) -> str:
         n_dims = sum(int(jnp.size(v)) for v in model.theta_init.values())
         inner = adapter._num_inner_steps if adapter._num_inner_steps is not None else n_dims * 5
         ndel = adapter._num_delete if adapter._num_delete is not None else max(1, adapter.num_live // 5)
+        kernel = getattr(adapter, "slice_kernel", "stock")
         return (f"nested: num_live={adapter.num_live}, num_inner_steps={inner}, "
-                f"num_delete={ndel}, logZ_tol={adapter.logZ_tol:g}")
+                f"num_delete={ndel}, logZ_tol={adapter.logZ_tol:g}"
+                + ("" if kernel == "stock" else f", slice_kernel={kernel}"))
     keys = ("num_warmup", "num_samples", "num_chains", "target_acceptance")
     return cls + ": " + ", ".join(f"{k}={getattr(adapter, k)}" for k in keys if hasattr(adapter, k))
 
@@ -1015,6 +1017,10 @@ def adapter_settings(adapter, model=None) -> dict:
                                else max(1, adapter.num_live // 5)),
                    logZ_tol=adapter.logZ_tol,
                    checkpoint_interval_s=adapter.checkpoint_interval_s)
+        # the opt-in inner slice kernel; absent for "stock", so earlier files read the same
+        kernel = getattr(adapter, "slice_kernel", "stock")
+        if kernel != "stock":
+            out["slice_kernel"] = kernel
         return out
     for k in ("num_warmup", "num_samples", "num_chains", "target_acceptance",
               "initial_step_size", "max_num_doublings", "dense_mass", "bounds"):

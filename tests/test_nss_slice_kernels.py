@@ -55,14 +55,13 @@ def test_unknown_slice_kernel_raises():
         BlackJAXNestedSamplerAdapter({}, slice_kernel="fast")
 
 
-def test_stock_resume_config_has_no_kernel_key():
-    """Checkpoints written before the option existed must still resume with "stock"."""
+def test_resume_config_is_the_same_for_every_kernel():
+    """Checkpoints written before the option existed, or with another kernel, resume with any
+    kernel: the kernels make the same moves (tests/test_ns_checkpoint.py resumes across them)."""
     theta = {'x': jnp.zeros(2)}
-    stock = BlackJAXNestedSamplerAdapter({}, verbose=False)._run_config(theta, 6, 8)
-    lanes = BlackJAXNestedSamplerAdapter({}, verbose=False,
-                                         slice_kernel="lanes")._run_config(theta, 6, 8)
-    assert "slice_kernel" not in stock
-    assert lanes["slice_kernel"] == "lanes"
+    configs = [BlackJAXNestedSamplerAdapter({}, verbose=False, slice_kernel=k)._run_config(
+        theta, 6, 8) for k in SLICE_KERNELS]
+    assert all(c == configs[0] for c in configs) and "slice_kernel" not in configs[0]
 
 
 @pytest.mark.parametrize("kernel", ["carry", "lanes"])
@@ -210,3 +209,14 @@ def test_log_evidence_err_is_reproducible_and_leaves_global_rng_alone():
     assert np.isfinite(a.log_evidence_err) and a.log_evidence_err > 0
     assert a.log_evidence_err == b.log_evidence_err
     assert after_a == expected          # the global RNG continued as if the run never drew
+
+
+def test_result_provenance_records_an_opt_in_kernel_only():
+    """The result file's sampler settings and the fit log name the kernel when it is not
+    "stock"; for "stock" they are unchanged, so earlier files read the same."""
+    from ceridwen.fit import adapter_settings
+    stock = adapter_settings(BlackJAXNestedSamplerAdapter({}, verbose=False))
+    lanes = adapter_settings(BlackJAXNestedSamplerAdapter({}, verbose=False,
+                                                          slice_kernel="lanes"))
+    assert "slice_kernel" not in stock
+    assert lanes.pop("slice_kernel") == "lanes" and lanes == stock

@@ -61,7 +61,8 @@ With `checkpoint_dir=` (or `$CERIDWEN_CHECKPOINT_DIR`), the run writes
 pass that file as `resume_from=` with the same `rng_key` and settings: the run continues from
 the saved live and dead points and reproduces the uninterrupted run. It refuses a checkpoint
 whose settings, parameter shapes or live-point log-likelihoods (to a relative 1e-6) do not
-match the model.
+match the model. `slice_kernel` may differ between the killed run and the resumed one: the
+kernels make the same moves with the same random numbers.
 
 ```python
 result = fitSED(model, sampler="nested", output_dir="./my_fit",

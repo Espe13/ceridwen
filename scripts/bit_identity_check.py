@@ -8,8 +8,8 @@ a short nested-sampling run between two versions of the package.
 Every array is compared with ``tobytes()`` (dtype, shape and every bit).  Add ``--ns`` to
 include a small nested-sampling run (same rng key; samples, log_weights, logL, logZ), and,
 when the adapter has ``slice_kernel=``, the same run with the opt-in kernels "carry" and "lanes"
-(keys ``plain/ns_<kernel>/...``); ``--compare`` also checks those against the reference's
-``plain/ns/...`` (the stock kernel), since on CPU they must be byte-identical to it.
+(keys ``plain/ns_<kernel>/...``), which on CPU must be byte-identical to the stock run of the
+same version (checked in every mode; exit 1 if not).
 Needs the test grid (see tests/_gridfixture.py); the nebular block runs only with $SPS_HOME.
 """
 from __future__ import annotations
@@ -376,9 +376,25 @@ def main():
     if not (args.save or args.compare):
         ap.error("--save PATH or --compare PATH")
     out = collect(args)
+    # the opt-in slice kernels against the stock nested run of this same version
+    kernel_bad, n_kernel = [], 0
+    for k in out:
+        parts = k.split("/")
+        if len(parts) > 2 and parts[1].startswith("ns_"):
+            n_kernel += 1
+            a, b = out["/".join([parts[0], "ns", *parts[2:]])], out[k]
+            if a.dtype != b.dtype or a.shape != b.shape or a.tobytes() != b.tobytes():
+                kernel_bad.append(k)
+    if n_kernel:
+        print(f"opt-in slice kernels vs this version's stock run: {n_kernel} arrays, "
+              f"{len(kernel_bad)} differ")
+        for k in kernel_bad:
+            print(f"  DIFF {k}")
     if args.save:
         np.savez(args.save, **out)
         print(f"saved {len(out)} arrays -> {args.save}")
+        if kernel_bad and not args.compare:
+            sys.exit(1)
     if args.compare:
         ref = np.load(args.compare)
         bad, missing = [], []
@@ -397,22 +413,7 @@ def main():
             print(f"  DIFF {k}: max|old-new| = {d}")
         for k in missing[:20]:
             print(f"  MISSING {k}")
-        # the opt-in slice kernels against the reference's stock nested run
-        alias_bad, n_alias = [], 0
-        for k in extra:
-            parts = k.split("/")
-            if len(parts) > 2 and parts[1].startswith("ns_") and \
-                    "/".join([parts[0], "ns", *parts[2:]]) in ref.files:
-                n_alias += 1
-                a, b = ref["/".join([parts[0], "ns", *parts[2:]])], out[k]
-                if a.dtype != b.dtype or a.shape != b.shape or a.tobytes() != b.tobytes():
-                    alias_bad.append(k)
-        if n_alias:
-            print(f"opt-in kernels vs the reference's stock run: {n_alias} arrays, "
-                  f"{len(alias_bad)} differ")
-            for k in alias_bad:
-                print(f"  DIFF {k} (vs stock {'/'.join([k.split('/')[0], 'ns', *k.split('/')[2:]])})")
-        sys.exit(1 if (bad or missing) else 0)
+        sys.exit(1 if (bad or missing or kernel_bad) else 0)
 
 
 if __name__ == "__main__":

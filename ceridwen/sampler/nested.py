@@ -508,14 +508,13 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
             return None
 
     def _run_config(self, theta_init, num_inner_steps, num_delete):
-        """What must match between a checkpoint and the run that resumes it."""
-        cfg = {"num_live": self.num_live, "num_delete": int(num_delete),
-               "num_inner_steps": int(num_inner_steps),
-               "params": [(k, tuple(int(d) for d in jnp.shape(v)))
-                          for k, v in theta_init.items()]}
-        if self.slice_kernel != "stock":     # absent for "stock": older checkpoints still match
-            cfg["slice_kernel"] = self.slice_kernel
-        return cfg
+        """What must match between a checkpoint and the run that resumes it.  ``slice_kernel``
+        is not part of it: the kernels make the same moves with the same random numbers, so a
+        checkpoint may be continued with any of them (bitwise equal on CPU)."""
+        return {"num_live": self.num_live, "num_delete": int(num_delete),
+                "num_inner_steps": int(num_inner_steps),
+                "params": [(k, tuple(int(d) for d in jnp.shape(v)))
+                           for k, v in theta_init.items()]}
 
     def _build_nested_sampler(self, loglike_fn, logprior_fn, num_inner_steps, num_delete):
         """The NSS transition kernel for ``self.slice_kernel``: ``"stock"`` is
