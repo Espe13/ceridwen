@@ -61,7 +61,8 @@ def _flat(prefix, obj, out):
 
 
 def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False, lsf=None,
-           interp="step", track=False, zred=ZRED, spec_wave=SPEC_WAVE, filters=FILTERS):
+           interp="step", track=False, zred=ZRED, spec_wave=SPEC_WAVE, filters=FILTERS,
+           marg=False, line_windows=False):
     path = find_test_grid()
     if path is None:
         sys.exit("no test SSP grid found (tests/_gridfixture.py)")
@@ -95,7 +96,7 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
                                 # LSF scale: fixed float, or sampled ("lsf_scale") in (0.8, 1.3)
                                 Instrument.sigma_kms(150.0, scale=lsf, scale_range=(
                                     (0.8, 1.3) if isinstance(lsf, str) else None))),
-                    name="spec")]
+                    name="spec", **({"marginalize_elines": True} if marg else {}))]
     if add_neb:
         obs.append(Lines(line_ind=np.arange(len(LINES)), line_names=list(LINES),
                          wavelength=np.array(list(LINES.values())),
@@ -106,9 +107,25 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
         init.update(x_HI=jnp.array([0.5]), logN_HI=jnp.array([20.5]))
     if isinstance(lsf, str):
         init[lsf] = jnp.array([1.1])
-    model = SedModel(csp, obs, priors={}, transforms={"sfh": _sfh},
-                     free_param_init=init, zred=zred,
-                     kinematics=Kinematics(sigma_gal=sigma_losvd))
+    transforms = {"sfh": _sfh}
+    kin = Kinematics(sigma_gal=sigma_losvd)
+    if marg:
+        # marginalised line fluxes (the nebular parameters fixed, as eline_marginal requires)
+        # with a sampled sigma_gas: the line basis is rebuilt at every call
+        transforms.update(gas_logu=lambda th: jnp.array([-2.5]),
+                          gas_logz=lambda th: jnp.array([-0.3]))
+        init["sigma_gas"] = jnp.array([120.0])
+        kin = Kinematics(sigma_gal=sigma_losvd, sigma_gas="sigma_gas", sigma_max=600.0)
+    model = SedModel(csp, obs, priors={}, transforms=transforms,
+                     free_param_init=init, zred=zred, kinematics=kin,
+                     # a sampled sigma_gas in the joint marginal needs unbroadened photometry
+                     **({"broaden_photometry": False} if marg else {}))
+    proj = model.obs_dict["spec"]._proj
+    if line_windows and hasattr(proj, "enable_line_windows"):
+        # the windowed line basis (opt-in); a package without it runs the dense one, which is
+        # what the windowed one must equal bit for bit
+        if proj.enable_line_windows() is None:
+            sys.exit("bit_identity_check: no line window for the neb_marg_windows configuration")
     return model
 
 
@@ -182,7 +199,7 @@ def _mfrac(model, theta_np, tag, out):
         csp.ssp_stellar_mass = saved
 
 
-def _likelihood(model, theta_np, tag, out):
+def _likelihood(model, theta_np, tag, out, gauss_only=False):
     """fitSED's sampled log-posterior (MultiObservationLikelihood.make_lnprobfn): value and
     gradient at every draw, plus the SHA-256 of the lowered StableHLO of jit(value_and_grad).  Then
     the outlier-mixture variant (f_outlier_spec sampled, f_outlier_phot fixed), the profiled
@@ -247,6 +264,8 @@ def _likelihood(model, theta_np, tag, out):
             else DiagonalGaussianLikelihood(nm[k]) for k in keys)))
     except ImportError:
         print("  (package has no marginalised calibration: variant skipped)")
+    if gauss_only:          # marginalised lines: the other likelihoods are refused with them
+        variants = variants[:1]
     n = next(iter(theta_np.values())).shape[0]
     f_draws = rng.uniform(1e-4, 0.3, (n, 1))
     for vname, lhs in variants:
@@ -352,13 +371,21 @@ def collect(args):
                spec_wave=np.linspace(1100.0, 1400.0, 300), filters=["jwst_f090w", "jwst_f115w"])
     configs.append(("igm_break_s0", dict(brk, sigma_losvd=0.0)))
     configs.append(("igm_break_s300", dict(brk, sigma_losvd=300.0)))
+    if os.environ.get("SPS_HOME"):
+        # marginalised emission lines with sampled sigma_gas and LSF scale: the per-call line
+        # basis (SpectralProjector.predict_with_line_basis), dense and with the static line
+        # windows; appended last, earlier draws unchanged
+        marg = dict(add_neb=True, add_igm=True, sigma_losvd=250.0, dust_emission=False,
+                    lsf="lsf_scale", marg=True)
+        configs.append(("neb_marg_dense", marg))
+        configs.append(("neb_marg_windows", dict(marg, line_windows=True)))
     for tag, cfg in configs:
         t0 = time.perf_counter()
         model = _build(**cfg)
         theta = _draws(model, N_THETA, rng)
         _forward(model, theta, tag, out)
         _postprocess(model, theta, tag, out)
-        _likelihood(model, theta, tag, out)
+        _likelihood(model, theta, tag, out, gauss_only=cfg.get("marg", False))
         if args.ns and tag == "plain":
             _nested(model, tag, out)
             for kernel in _opt_in_kernels():

@@ -41,6 +41,9 @@ CKMS = 2.99792458e5
 C_AA_S = 2.99792458e18
 FWHM_TO_SIGMA = 1.0 / (2.0 * np.sqrt(2.0 * np.log(2.0)))
 BAND_NSIGMA = 5.0
+# Half-width of a line window in units of the line's largest sigma: exp(-x^2 / 2) is exactly
+# 0 in float64 beyond |x| = 38.60 (37.64 on XLA CPU, which flushes subnormals to zero).
+_LINE_WINDOW_NSIGMA = 40.0
 
 
 def check_scale_range(rng, what="scale_range") -> tuple:
@@ -588,6 +591,39 @@ def make_line_painter_free_z(wave_obs, line_wave_rest, sigma_inst_table_kms) -> 
     return paint
 
 
+def _line_windows(wave_obs, line_wave_rest, sigma_inst_table_kms, sigma_gas_max_kms,
+                 opz_lo, opz_hi, inst_scale_max=1.0, nsigma=_LINE_WINDOW_NSIGMA):
+    """Static pixel windows holding every nonzero value of each line profile (NumPy, setup).
+
+    For every line centre ``line_wave_rest * opz`` with ``opz`` in [opz_lo, opz_hi], every
+    gas dispersion up to ``sigma_gas_max_kms`` and every instrument scale up to
+    ``inst_scale_max``, the profile of :meth:`SpectralProjector.line_basis` is exactly 0 in
+    float64 on the pixels more than ``nsigma`` of its largest sigma from the centre.  Returns
+    ``(start, width)``: line ``j`` is nonzero only on pixels ``start[j] .. start[j] + width - 1``
+    (one width for all lines, the largest, so the window array has a static shape), or None
+    when that width covers the whole spectrum (nothing to gain).
+    """
+    wave_obs = np.asarray(wave_obs, dtype=np.float64)
+    lam = np.asarray(line_wave_rest, dtype=np.float64)
+    tab = np.asarray(sigma_inst_table_kms, dtype=np.float64)
+    lo_c, hi_c = lam * opz_lo, lam * opz_hi
+    # the largest instrument width the traced jnp.interp can return for a centre in
+    # [lo_c, hi_c]: the larger end value, or a table node in between (piecewise linear)
+    s_inst = np.maximum(np.interp(lo_c, wave_obs, tab), np.interp(hi_c, wave_obs, tab))
+    for j in range(lam.size):
+        inner = tab[(wave_obs > lo_c[j]) & (wave_obs < hi_c[j])]
+        if inner.size:
+            s_inst[j] = max(s_inst[j], float(inner.max()))
+    s_max = np.sqrt(float(sigma_gas_max_kms) ** 2 + (float(inst_scale_max) * s_inst) ** 2) / CKMS
+    lnw = np.log(wave_obs)
+    lo = np.searchsorted(lnw, np.log(lo_c) - nsigma * s_max, side="left")
+    hi = np.searchsorted(lnw, np.log(hi_c) + nsigma * s_max, side="right")
+    width = int(np.max(hi - lo)) if lam.size else 0
+    if width >= wave_obs.size:
+        return None
+    return np.clip(lo, 0, wave_obs.size - width).astype(np.int64), width
+
+
 @dataclass(eq=False)
 class SpectralProjector:
     """Built once per Spectrum by setup_for_model; predict() is the per-likelihood call.
@@ -625,6 +661,7 @@ class SpectralProjector:
     inst_scale_key: Optional[str] = None
     inst_scale_range: Optional[tuple] = None
     scaled: Optional[ScaledResponse] = None
+    line_window: Optional[tuple] = None
     _line_idx_j: jnp.ndarray = field(init=False)
 
     def __post_init__(self):
@@ -653,6 +690,32 @@ class SpectralProjector:
                            "which is not in theta")
         lo, hi = self.inst_scale_range
         return jnp.clip(jnp.ravel(jnp.asarray(theta[k]))[0], lo, hi)
+
+    def enable_line_windows(self) -> Optional[tuple]:
+        """Opt in to the windowed line basis in :meth:`predict_with_line_basis` (off by default:
+        on CPU it measured slower than the dense one; it targets GPUs).  Each line profile is
+        then evaluated on a static window of +-40 of its largest sigma only; the values are
+        bitwise those of the dense :meth:`line_basis` (gradients agree to 1-2 ulp: the reverse
+        pass sums over the window): the bounds are ``Kinematics.sigma_max`` for a sampled
+        sigma_gas (``Kinematics.resolve`` clips to it), the top of ``inst_scale_range`` and the
+        line centres over ``zred_range``.  A sampled redshift outside ``zred_range`` (beyond the
+        projector's support) truncates the lines; ``eline_delta_zred`` in theta always takes the
+        dense path.  Call before the first trace: the setting is read when jit traces; a rebuilt
+        projector (``SedModel.setup_observations``, ``fitSED(observations=...)``) starts with it
+        off again.  Sets and returns ``line_window`` ((start, width), or None when a window would
+        cover the whole spectrum)."""
+        if self.line_wave_rest is None or self.line_idx.size == 0:
+            self.line_window = None
+            return None
+        b = self.kinematics
+        gas = b.effective_sigma_gas
+        opz_lo, opz_hi = ((self.opz_ref, self.opz_ref) if self.zred_range is None
+                          else (1.0 + self.zred_range[0], 1.0 + self.zred_range[1]))
+        self.line_window = _line_windows(
+            self.wave_obs, self.line_wave_rest, self.line_sigma_table_kms,
+            b.sigma_max if isinstance(gas, str) else float(gas), opz_lo, opz_hi,
+            1.0 if self.inst_scale_range is None else self.inst_scale_range[1])
+        return self.line_window
 
     @classmethod
     def build(cls, kinematics: Kinematics, instrument: Optional[Instrument],
@@ -867,6 +930,30 @@ class SpectralProjector:
         phi = jnp.exp(-0.5 * x * x) / (jnp.sqrt(2.0 * jnp.pi) * s[None, :])
         return phi * jnp.asarray(wo / C_AA_S)[:, None]
 
+    def _line_basis_windowed(self, sigma_gas_kms, opz_line, inst_scale=None):
+        """:meth:`line_basis` (bitwise values) with the exponentials evaluated on the static windows
+        of ``line_window`` only; valid for ``sigma_gas_kms`` and ``inst_scale`` within the
+        bounds the windows were built for and ``opz_line`` in the projector's redshift range."""
+        start, width = self.line_window
+        wo = np.asarray(self.wave_obs, dtype=np.float64)
+        rows = start[None, :] + np.arange(width)[:, None]            # (width, n_kept), static
+        lam = jnp.asarray(np.asarray(self.line_wave_rest, dtype=np.float64))
+        lnl = jnp.log(lam) + jnp.log(opz_line)
+        s_inst = jnp.interp(lam * opz_line, jnp.asarray(wo),
+                            jnp.asarray(np.asarray(self.line_sigma_table_kms, dtype=np.float64)))
+        if inst_scale is not None:
+            s_inst = s_inst * inst_scale
+        s = jnp.sqrt(sigma_gas_kms ** 2 + s_inst ** 2) / CKMS
+        x = (jnp.asarray(np.log(wo)[rows]) - lnl[None, :]) / s[None, :]
+        phi = jnp.exp(-0.5 * x * x) / (jnp.sqrt(2.0 * jnp.pi) * s[None, :])
+        win = phi * jnp.asarray((wo / C_AA_S)[rows])
+        # each pixel takes its line's window value, or 0 outside the window (one gather + select)
+        offset = np.arange(wo.size)[:, None] - start[None, :]
+        inside = (offset >= 0) & (offset < width)
+        basis = jnp.where(inside, win[np.clip(offset, 0, width - 1),
+                                      np.arange(start.size)[None, :]], 0.0)
+        return basis
+
     def predict_with_line_basis(self, spec_rest, line_flux_obs_all, theta, fit_pos=None,
                                 basis=None, transmission=None):
         """``(prediction, A)``: continuum plus the lines of ``line_flux_obs_all`` painted with
@@ -886,8 +973,13 @@ class SpectralProjector:
         if basis is None:   # a precomputed basis is only passed for fixed z, widths, dz = 0
             opz_line = self.opz_ref if opz is None else opz
             if "eline_delta_zred" in theta:
+                # unbounded shift: the static windows do not hold, the dense basis does
                 opz_line = opz_line + jnp.ravel(jnp.asarray(theta["eline_delta_zred"]))[0]
-            basis = self.line_basis(s_gas, opz_line, s_ins)
+                basis = self.line_basis(s_gas, opz_line, s_ins)
+            elif self.line_window is not None:
+                basis = self._line_basis_windowed(s_gas, opz_line, s_ins)
+            else:
+                basis = self.line_basis(s_gas, opz_line, s_ins)
         else:
             basis = jnp.asarray(basis)
         if line_flux_obs_all is not None:

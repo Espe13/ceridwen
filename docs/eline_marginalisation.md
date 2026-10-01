@@ -126,13 +126,28 @@ same prior, or use `eline_prior_width > 0` (a proper prior) when evidences matte
 ## Speed
 
 When nothing the line solve depends on can change between likelihood calls (fixed
-`zred` and `sigma_gas`, no `eline_delta_zred`, no sampled `spectrum_scaling*`,
+`zred`, `sigma_gas` and instrument scale, no `eline_delta_zred`, no sampled `spectrum_scaling*`,
 `spectrum_calib*` or `eline_scaling`, and no sampled noise terms or `noise_floor`), the
 line profiles, the design matrices and, for a flat prior, the whole factorisation are
 computed once at setup. On an A100 at the nested sampler's batch width (100) a
 flat-prior marginalised likelihood then costs 0.99-1.00 times the ordinary one, and
 the 20 per cent prior 1.11 times; otherwise the per-call path costs about 1.2-1.25
 times. `model._eline_system.static` is `None` when the per-call path is in use.
+
+On the per-call path the line basis, a dense `(n_pix, n_line)` matrix of Gaussians, is
+rebuilt at every call. Each profile is exactly 0 in float64 more than about 38.6 of its
+sigma from its centre, so an opt-in windowed basis evaluates each line on a static
+window of +-40 of its largest sigma only (that sigma is set by `Kinematics.sigma_max` for a sampled
+`sigma_gas`, the top of the instrument-scale range, and the line centres over `zred_range`) and
+gives bitwise the dense values (its gradients agree to 1-2 ulp, the reverse pass
+summing over the window). Turn it on after building the model and before the first
+likelihood call: `model.obs_dict["spec"]._proj.enable_line_windows()` (a rebuilt
+projector, as `fitSED(observations=...)` makes, starts with it off). It is off by
+default because on CPU it measured slower (the full likelihood 0.99-1.14 times at batch
+widths 64 and 100, 4000- and 400-pixel spectra): there the cost is filling the matrix,
+not the exponentials. It is meant for GPUs, where it has yet to be timed on
+this code (`scripts/gpu_bench_l1.py`). A sampled `eline_delta_zred` always takes the
+dense path; a sampled redshift outside `zred_range` truncates the windowed lines.
 
 ## Noise terms
 
