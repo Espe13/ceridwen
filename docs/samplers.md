@@ -38,6 +38,16 @@ The settings, passed in `sampler_kwargs`:
 - `num_inner_steps`: inner MCMC steps per replacement (fitSED's default 30).
 - `logZ_tol`: the run stops when the evidence left in the live points, ln(Z_live / Z), falls
   below this (default -5).
+- `slice_kernel`: the inner slice kernel, `"stock"` (default, `blackjax.nss` unchanged),
+  `"carry"` or `"lanes"`. `"carry"` evaluates each stepping-out edge once instead of twice
+  under `vmap`. `"lanes"` runs every replacement's chain of slice steps as one lane of a shared
+  loop, so lanes do not wait for the slowest one, candidates below the prior slice level skip
+  the likelihood, and idle batch slots evaluate look-ahead candidates (Dance et al. 2025,
+  arXiv:2503.17405; ported from Liu Hao's fork). Both use the same random numbers and the same
+  evaluations as `"stock"`: on CPU the dead points, ln Z and call counts are bitwise equal
+  (`tests/test_nss_slice_kernels.py`). On a GPU the batches differ in composition, so float
+  rounding can separate the trajectories after many iterations; the results then agree
+  statistically, not bitwise.
 
 The sampler shows a progress bar of dead points. Its cost scales with `num_live`: on a shared
 11-core laptop CPU, the Quick start model at `num_live=100, num_delete=20, logZ_tol=-2.0`
