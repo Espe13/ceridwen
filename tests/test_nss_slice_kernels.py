@@ -187,55 +187,6 @@ def test_adapter_runs_are_bitwise_equal_across_kernels():
         assert res.n_likelihood_calls == ref.n_likelihood_calls
 
 
-@pytest.mark.parametrize("kernel", ["stock", "lanes"])
-def test_step_compiled_during_init_compiles_once_and_matches_serial_run(kernel, caplog):
-    """The step kernel is compiled in a thread while init runs (fork a60f1f8): it must be
-    compiled exactly once, and the run must equal init + step called serially."""
-    import logging
-    from ceridwen.sampler import Uniform
-
-    def loglike(p):
-        return -50. * jnp.sum((p['x'] - .7) ** 2)
-
-    def logprior(p):
-        return jnp.zeros(())
-
-    adapter = BlackJAXNestedSamplerAdapter(
-        {'x': Uniform(low=-5., high=5.)}, num_live=40, num_delete=8, num_inner_steps=6,
-        verbose=False, checkpoint_interval_s=0, slice_kernel=kernel)
-    step_name = adapter._build_nested_sampler(loglike, logprior, 6, 8).step.__name__
-    caplog.set_level(logging.WARNING)
-    # a config context would be thread-local and miss the compiling thread
-    jax.config.update('jax_log_compiles', True)
-    try:
-        result = adapter.run(loglike, logprior, {'x': jnp.zeros(3)}, jax.random.PRNGKey(7))
-    finally:
-        jax.config.update('jax_log_compiles', False)
-    compiles = [r for r in caplog.records
-                if r.getMessage().startswith(f'Finished XLA compilation of jit({step_name})')]
-    assert len(compiles) == 1
-
-    # the serial path: init, then the step compiled on its first call
-    import blackjax.ns.utils as ns_utils
-    key, prior_key = jax.random.split(jax.random.PRNGKey(7))
-    sampler = adapter._build_nested_sampler(loglike, logprior, 6, 8)
-    live = jax.jit(sampler.init)(adapter._sample_prior({'x': jnp.zeros(3)}, prior_key))
-    step = jax.jit(sampler.step)
-    dead = []
-    while True:
-        holder = next(h for h in (live, getattr(live, "integrator", None),
-                                  getattr(live, "sampler_state", None))
-                      if h is not None and hasattr(h, "logZ") and hasattr(h, "logZ_live"))
-        lz, lzl = (float(v) for v in jax.device_get((holder.logZ, holder.logZ_live)))
-        if not lzl - lz >= adapter.logZ_tol:
-            break
-        key, subkey = jax.random.split(key)
-        live, d = step(subkey, live)
-        dead.append(d)
-    _, logl, _ = adapter._finalise_dead(live, dead, ns_utils)
-    np.testing.assert_array_equal(np.asarray(logl), np.asarray(result.log_likelihoods))
-
-
 def test_log_evidence_err_is_reproducible_and_leaves_global_rng_alone():
     """anesthetic draws the ln Z error from numpy's global RNG; the adapter seeds it from
     rng_key (and restores it), so the same key gives the same error."""

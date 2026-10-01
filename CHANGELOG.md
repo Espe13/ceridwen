@@ -4,7 +4,6 @@
   edge evaluated once) and `"lanes"` (every particle's slice chain as one lane of a shared loop,
   Dance et al. 2025). Both use the same random numbers and evaluations as `blackjax.nss`: bitwise
   equal on CPU, statistically equal on GPU (`docs/samplers.md`).
-- Nested sampling: the step kernel compiles in a thread while the live points initialise.
 - Nested sampling: `log_evidence_err` is drawn with a seed derived from `rng_key` (it varied
   from run to run at the same key); numpy's global RNG is restored afterwards.
 - Emission-line marginalisation: FSPS's `"[O II] 3867"` (zero CLOUDY flux in the MIST,

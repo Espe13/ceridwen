@@ -664,20 +664,12 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         step_fn = jax.jit(nested_sampler.step)
 
         if self.verbose:
-            print("  [timing] Calling init_fn (JIT compile + eval) and compiling the step "
-                  "kernel ...", flush=True)
+            print("  [timing] Calling init_fn (JIT compile + eval) ...",
+                  flush=True)
             _t0 = time.perf_counter()
 
         if _resume is None:
-            # Compile the step kernel in a thread while init compiles and runs; the first
-            # step_fn call then takes the executable from JAX's cache (Liu Hao's fork, a60f1f8).
-            import concurrent.futures
-            live_shape = jax.eval_shape(init_fn, particles)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                step_compiled = pool.submit(
-                    lambda: step_fn.lower(rng_key, live_shape).compile())
-                live = init_fn(particles)
-                step_compiled.result()
+            live = init_fn(particles)
         else:
             # the saved state replaces the prior draw, init and the first iterations
             live = jax.tree_util.tree_map(jnp.asarray, _resume["live"])
@@ -733,7 +725,7 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
             _iter = 0 if _resume is None else _resume["n_iter"]
             while logZ_live - logZ >= self.logZ_tol:
                 rng_key, subkey = jax.random.split(rng_key)
-                if _resume is not None and _iter == _resume["n_iter"] and self.verbose:
+                if _iter == (0 if _resume is None else _resume["n_iter"]) and self.verbose:
                     pbar.write("  [step_fn] compiling the step kernel (one-time JIT)")
                 _t_iter = time.perf_counter()
                 live, dead_info = step_fn(subkey, live)
