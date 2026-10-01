@@ -101,7 +101,7 @@ class CSPBasis_afe(CSPBasis):
         init_dust_params = ({'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']}
                             if init_dust_params is None else dict(init_dust_params))
 
-        _flux_in = jnp.asarray(SSPData.ssp_flux)
+        _flux_in = np.asarray(SSPData.ssp_flux)            # host NumPy (SSPData keeps it there)
         _afe_in  = getattr(SSPData, "ssp_afe", None)
         if _flux_in.ndim != 4 or _afe_in is None:
             raise TypeError(
@@ -129,7 +129,10 @@ class CSPBasis_afe(CSPBasis):
                 "searchsorted-based interpolation in _flux_at_afe); got "
                 f"{np.asarray(_afe_in).tolist()}."
             )
-        self.flux      = jnp.array(_flux_in, dtype=jnp.float32)  # (n_afe, n_z, n_age, n_wave)
+        # the float32 cast on the device (as CSPBasis: XLA's convert) from a transient copy
+        _f64 = jnp.asarray(_flux_in)
+        self.flux      = _f64.astype(jnp.float32)          # (n_afe, n_z, n_age, n_wave)
+        del _f64
         self.afe_grid  = _afe_in                           # (n_afe,) [alpha/Fe]
         self._n_afe    = int(_afe_in.size)
         # the same cube laid out (n_age, n_afe * n_z, n_wave) for _contract: a sampled afe is

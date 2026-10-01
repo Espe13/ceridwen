@@ -151,7 +151,9 @@ class SSPData:
         BPASS, the FSPS label log10(zsun 10^[Fe/H]) for MIST/aMIST (not MIST's physical initial Z)
     ssp_lg_age_gyr : array (n_ages,) -- log10(age / Gyr)
     ssp_wave : array (n_wave,), Angstrom
-    ssp_flux : array (n_met, n_ages, n_wave), L_sun/Hz per M_sun formed
+    ssp_flux : ndarray (n_met, n_ages, n_wave), L_sun/Hz per M_sun formed -- kept in HOST memory as a
+        read-only NumPy array (a JAX array given here is copied to the host); the CSP puts only
+        its float32 copy on the device
     ssp_resolution : ndarray (n_wave,), km/s -- library sigma_v(lambda) on ssp_wave, NaN where unknown; optional in memory, required by save()/load()
     ssp_stellar_mass : ndarray (n_met, n_ages) or None -- surviving mass (stars + remnants) per
         M_sun formed of each SSP, FSPS ``stellar_mass`` (schema 3.0, optional); None when the
@@ -168,7 +170,7 @@ class SSPData:
     ssp_lgmet: jnp.ndarray
     ssp_lg_age_gyr: jnp.ndarray
     ssp_wave: jnp.ndarray
-    ssp_flux: jnp.ndarray
+    ssp_flux: np.ndarray
 
     ssp_resolution: Optional[np.ndarray] = field(default=None, compare=False)
     resolution_source: Optional[str] = field(default=None, compare=False)
@@ -217,6 +219,13 @@ class SSPData:
             )
 
     def __post_init__(self, zsun=None, _chash_hint=None):
+        # host NumPy, read-only (as immutable as the JAX array it replaces): a float64 cube on
+        # the device would sit next to the CSP's float32 copy for the whole fit
+        flux = np.asarray(self.ssp_flux)
+        if flux.flags.writeable:
+            flux = flux.view()
+            flux.flags.writeable = False
+        object.__setattr__(self, "ssp_flux", flux)
         self._check_flux_shape()
         self._resolve_metallicity(zsun, _chash_hint)
         if self.ssp_resolution is not None:
@@ -561,8 +570,8 @@ class SSPData:
                 'ssp_lgmet':      jnp.array(raw['ssp_lgmet']),
                 'ssp_lg_age_gyr': jnp.array(raw['ssp_lg_age_gyr']),
                 'ssp_wave':       jnp.array(raw['ssp_wave']),
-                'ssp_flux':       jnp.asarray(raw['ssp_flux'] if flux_dtype is None
-                                              else raw['ssp_flux'].astype(flux_dtype)),
+                'ssp_flux':       (raw['ssp_flux'] if flux_dtype is None
+                                   else raw['ssp_flux'].astype(flux_dtype)),   # host NumPy
             }
             extra = {name: (jnp.array(v) if v is not None else None)
                      for name, v in raw_extra.items()}
@@ -685,7 +694,7 @@ def _collect_ssp_and_meta(**kwargs):
         iso_collector.append(isochrone_points_or_none(ssp))
 
     ssp_wave       = jnp.array(_wave)
-    ssp_flux       = jnp.array(spectrum_collector)
+    ssp_flux       = np.array(spectrum_collector)          # host NumPy (SSPData keeps it there)
     ssp_lg_age_gyr = jnp.array(ssp_lg_age_gyr)
 
     meta = _read_fsps_provenance(ssp, kwargs, ssp_wave, ssp_lgmet)

@@ -300,7 +300,12 @@ class CSPBasis:
         init_dust_params = ({'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']}
                             if init_dust_params is None else dict(init_dust_params))
 
-        self.flux      = jnp.array(SSPData.ssp_flux, dtype=jnp.float32)  # (n_z, n_age, n_wave)
+        # the grid's cube is host NumPy; the float32 cast runs on the device (XLA's convert,
+        # which flushes float32 subnormals, as before) from a transient float64 copy that is
+        # freed at once, so the device keeps only the float32 cube
+        _f64 = jnp.asarray(SSPData.ssp_flux)
+        self.flux      = _f64.astype(jnp.float32)          # (n_z, n_age, n_wave)
+        del _f64
         self.wave      = jnp.array(SSPData.ssp_wave)       # (n_wave,)
         self.ages      = jnp.array(SSPData.ssp_lg_age_gyr) # (n_age,)  log10(Gyr)
         self._setup_metallicity(SSPData)                   # self.zmet: logzsol axis

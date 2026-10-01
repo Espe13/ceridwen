@@ -20,6 +20,10 @@
 - `SedModel._hoist_flux_factor` (private, off): the fixed-redshift flux factor computed once at
   construction and passed to `CSPBasis.predict(flux_factor=...)` instead of per call; byte-identical,
   no CPU gain beyond noise, kept for a GPU benchmark (`scripts/gpu_bench_E2.py`).
+- `SSPData.ssp_flux` / `SSPDataAfe.ssp_flux` are read-only host NumPy arrays (a JAX array
+  passed in is copied to the host). The CSP casts to float32 on the device from a transient
+  copy, so a fit keeps only the float32 cube on the device (CPU, grid alive: test BPASS grid
+  88.8 -> 29.8 MiB, aMIST hr afe grid 1166.7 -> 583.4 MiB); `csp.flux` is byte-identical.
 - These mechanisms come from Liu Hao's speedups work on his fork of CERIDWEN.
 
 ## 1.0.12 (2026-09-24)

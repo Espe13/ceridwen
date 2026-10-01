@@ -139,7 +139,8 @@ The forward model is assembled bottom-up: SSP library → composite stellar
 population → dust attenuation/emission → nebular → IGM → observed-frame
 projection → likelihood → sampler.
 
-- `ssps/` — `ssp_data.py`: `SSPData` (frozen dataclass, HDF5 I/O, ionising-photon
+- `ssps/` — `ssp_data.py`: `SSPData` (frozen dataclass, HDF5 I/O; `ssp_flux` is a read-only
+  host NumPy array, the device holds only the CSP's float32 `csp.flux`; ionising-photon
   rate derived internally; HDF5 caches the SSP spectral grid; schema 3.0 adds the optional
   surviving-mass table `ssp_stellar_mass`, carried by the published solar-scaled grids (not
   yet the α grid: `mfrac=False` there) and recorded by

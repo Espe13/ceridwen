@@ -337,7 +337,9 @@ prefer `predict`/`get_spectrum_components`.
   sampled parameters without a prior; `free_param_init` is applied without
   transforms too; prior constructors reject unknown/missing arguments.
 - `CSPBasis(verbose=False)` is silent; `SSPData.load(..., flux_dtype="float32")`
-  halves the grid memory.
+  halves the grid's host memory. `SSPData.ssp_flux` is a read-only host NumPy array (a JAX
+  array passed in is copied to the host); the device holds only the CSP's float32 copy
+  (`csp.flux`).
 - `pp.figures(dir)` writes the summary / corner / diagnostics figures
   (`ceridwen.plotting`).
 
