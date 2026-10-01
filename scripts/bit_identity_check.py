@@ -6,7 +6,10 @@ a short nested-sampling run between two versions of the package.
     git checkout <new>;          python scripts/bit_identity_check.py --compare /tmp/bits_old.npz
 
 Every array is compared with ``tobytes()`` (dtype, shape and every bit).  Add ``--ns`` to
-include a small nested-sampling run (same rng key; samples, log_weights, logL, logZ).
+include a small nested-sampling run (same rng key; samples, log_weights, logL, logZ), and,
+when the adapter has ``slice_kernel=``, the same run with the opt-in kernels "carry" and "lanes"
+(keys ``plain/ns_<kernel>/...``); ``--compare`` also checks those against the reference's
+``plain/ns/...`` (the stock kernel), since on CPU they must be byte-identical to it.
 Needs the test grid (see tests/_gridfixture.py); the nebular block runs only with $SPS_HOME.
 """
 from __future__ import annotations
@@ -271,7 +274,7 @@ def _likelihood(model, theta_np, tag, out):
         obs[k].flux, obs[k].uncertainty = flux, unc
 
 
-def _nested(model, tag, out):
+def _nested(model, tag, out, kernel="stock"):
     from ceridwen import fitSED
     from ceridwen.sampler.priors import Uniform, StudentT
     model.priors = {"logsfr_ratios": StudentT(mean=0.0, scale=1.0, df=2.0),
@@ -288,15 +291,28 @@ def _nested(model, tag, out):
     if missing:
         sys.exit(f"bit_identity_check: no prior defined for {missing}")
     model.priors = {k: v for k, v in model.priors.items() if k in model.param_names}
+    skw = {"num_live": 40, "num_delete": 8, "num_inner_steps": 10, "logZ_tol": -1.0}
+    ns = "ns"
+    if kernel != "stock":           # the stock run keeps the sampler_kwargs (and keys) of old
+        skw["slice_kernel"] = kernel
+        ns = f"ns_{kernel}"
     result = fitSED(model, sampler="nested", rng_key=jax.random.PRNGKey(7),
-                    sampler_kwargs={"num_live": 40, "num_delete": 8, "num_inner_steps": 10,
-                                    "logZ_tol": -1.0},
-                    output_dir="/tmp/ceridwen_bits_ns", verbose=False)
-    _flat(f"{tag}/ns/samples", result.samples, out)
-    out[f"{tag}/ns/log_weights"] = np.asarray(result.log_weights)
-    out[f"{tag}/ns/log_likelihoods"] = np.asarray(result.log_likelihoods)
-    out[f"{tag}/ns/log_likelihoods_birth"] = np.asarray(result.log_likelihoods_birth)
-    out[f"{tag}/ns/logZ"] = np.asarray([result.log_evidence, result.log_evidence_err])
+                    sampler_kwargs=skw, output_dir="/tmp/ceridwen_bits_ns", verbose=False)
+    _flat(f"{tag}/{ns}/samples", result.samples, out)
+    out[f"{tag}/{ns}/log_weights"] = np.asarray(result.log_weights)
+    out[f"{tag}/{ns}/log_likelihoods"] = np.asarray(result.log_likelihoods)
+    out[f"{tag}/{ns}/log_likelihoods_birth"] = np.asarray(result.log_likelihoods_birth)
+    out[f"{tag}/{ns}/logZ"] = np.asarray([result.log_evidence, result.log_evidence_err])
+
+
+def _opt_in_kernels():
+    """The adapter's opt-in slice kernels (none in versions without ``slice_kernel=``)."""
+    import inspect
+    from ceridwen.sampler.nested import BlackJAXNestedSamplerAdapter
+    if "slice_kernel" not in inspect.signature(BlackJAXNestedSamplerAdapter).parameters:
+        return []
+    from ceridwen.sampler.nested import SLICE_KERNELS
+    return [k for k in SLICE_KERNELS if k != "stock"]
 
 
 def collect(args):
@@ -345,6 +361,8 @@ def collect(args):
         _likelihood(model, theta, tag, out)
         if args.ns and tag == "plain":
             _nested(model, tag, out)
+            for kernel in _opt_in_kernels():
+                _nested(model, tag, out, kernel)
         print(f"{tag:<12} {len(out)} arrays so far  ({time.perf_counter() - t0:.1f} s)")
     return out
 
@@ -379,6 +397,21 @@ def main():
             print(f"  DIFF {k}: max|old-new| = {d}")
         for k in missing[:20]:
             print(f"  MISSING {k}")
+        # the opt-in slice kernels against the reference's stock nested run
+        alias_bad, n_alias = [], 0
+        for k in extra:
+            parts = k.split("/")
+            if len(parts) > 2 and parts[1].startswith("ns_") and \
+                    "/".join([parts[0], "ns", *parts[2:]]) in ref.files:
+                n_alias += 1
+                a, b = ref["/".join([parts[0], "ns", *parts[2:]])], out[k]
+                if a.dtype != b.dtype or a.shape != b.shape or a.tobytes() != b.tobytes():
+                    alias_bad.append(k)
+        if n_alias:
+            print(f"opt-in kernels vs the reference's stock run: {n_alias} arrays, "
+                  f"{len(alias_bad)} differ")
+            for k in alias_bad:
+                print(f"  DIFF {k} (vs stock {'/'.join([k.split('/')[0], 'ns', *k.split('/')[2:]])})")
         sys.exit(1 if (bad or missing) else 0)
 
 
