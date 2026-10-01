@@ -619,6 +619,11 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         rng_key     : Array,
     ) -> SamplingResult:
         """Run nested sampling and return a ``SamplingResult``; ``logprior_fn`` must be proper."""
+        import numpy as np
+        # seed of the ln Z error estimate (anesthetic draws it from numpy's global RNG): derived
+        # from rng_key, so the same key gives the same error, and the global RNG is restored
+        _err_seed = int(np.asarray(jax.random.randint(
+            jax.random.fold_in(rng_key, 0x5EED), (), 0, 2 ** 31 - 1)))
         try:
             import blackjax
             import blackjax.ns.utils as ns_utils
@@ -793,7 +798,12 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
                 logzero    = float("nan"),
             )
             log_Z     = float(_ns.logZ())
-            log_Z_err = float(_ns.logZ(12).std())
+            _state = np.random.get_state()
+            try:
+                np.random.seed(_err_seed)
+                log_Z_err = float(_ns.logZ(12).std())
+            finally:
+                np.random.set_state(_state)
         except Exception:
             pass
         if log_Z is None:

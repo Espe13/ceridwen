@@ -234,3 +234,28 @@ def test_step_compiled_during_init_compiles_once_and_matches_serial_run(kernel, 
         dead.append(d)
     _, logl, _ = adapter._finalise_dead(live, dead, ns_utils)
     np.testing.assert_array_equal(np.asarray(logl), np.asarray(result.log_likelihoods))
+
+
+def test_log_evidence_err_is_reproducible_and_leaves_global_rng_alone():
+    """anesthetic draws the ln Z error from numpy's global RNG; the adapter seeds it from
+    rng_key (and restores it), so the same key gives the same error."""
+    pytest.importorskip("anesthetic")
+    from ceridwen.sampler import Uniform
+
+    def run():
+        adapter = BlackJAXNestedSamplerAdapter(
+            {'x': Uniform(low=-5., high=5.)}, num_live=30, num_delete=6, num_inner_steps=4,
+            verbose=False, checkpoint_interval_s=0)
+        return adapter.run(lambda p: -.5 * jnp.sum(p['x'] ** 2), lambda p: jnp.zeros(()),
+                           {'x': jnp.zeros(2)}, jax.random.PRNGKey(3))
+
+    np.random.seed(1)
+    a = run()
+    after_a = np.random.rand()
+    np.random.seed(2)
+    b = run()
+    np.random.seed(1)
+    expected = np.random.rand()
+    assert np.isfinite(a.log_evidence_err) and a.log_evidence_err > 0
+    assert a.log_evidence_err == b.log_evidence_err
+    assert after_a == expected          # the global RNG continued as if the run never drew
