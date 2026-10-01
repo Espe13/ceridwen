@@ -36,6 +36,11 @@ class SedModel:
         filters (default True; below 5e-4 mag for broad bands, per cent for a narrow band on a line)
     """
 
+    # E2 (opt-in, off): compute the fixed-redshift flux factor once at construction instead of
+    # per call.  Byte-identical on CPU, but no CPU gain beyond noise (one batch-invariant
+    # quadrature per call); kept for the GPU benchmark, scripts/gpu_bench_E2.py
+    _hoist_flux_factor = False
+
     def __init__(
         self,
         csp,
@@ -150,6 +155,17 @@ class SedModel:
             self._zred_fixed = jnp.array([self.zred])
             if self.lumdist_mpc is not None:
                 self._lumdist_fixed = jnp.array([self.lumdist_mpc])
+        # the flux factor of the fixed redshift (a 129-node quadrature) is a per-call constant:
+        # with _hoist_flux_factor it is evaluated once here, by the CSP's own function under
+        # jit, and handed to csp.predict (a private argument, never a theta key); a sampled
+        # zred keeps the per-call path
+        self._flux_factor_fixed = None
+        if (self._hoist_flux_factor and self._zred_fixed is not None
+                and hasattr(csp, "_flux_factor")):
+            _th = {"zred": self._zred_fixed}
+            if self._lumdist_fixed is not None:
+                _th["lumdist_mpc"] = self._lumdist_fixed
+            self._flux_factor_fixed = jax.jit(csp._flux_factor)(_th)
 
         self.zred_is_free = ("zred" in self.param_names) or ("zred" in self.transforms)
         grid_rescaled = (bool(getattr(csp, "track_zred_age", False))
@@ -616,6 +632,7 @@ class SedModel:
         A fixed zred/lumdist_mpc is injected into the CSP theta here; without a
         'zred' the CSP applies no flux factor and the outputs are not maggies."""
         model_theta = self.apply_transforms(theta)
+        ff = self._fixed_flux_factor(model_theta)
         if self._zred_fixed is not None and "zred" not in model_theta:
             if model_theta is theta:
                 model_theta = dict(model_theta)
@@ -626,7 +643,18 @@ class SedModel:
             model_theta["lumdist_mpc"] = self._lumdist_fixed
         return self.csp.predict(model_theta, self.observations,
                                 kinematics=self.kinematics,
-                                broaden_photometry=self.broaden_photometry)
+                                broaden_photometry=self.broaden_photometry,
+                                **({} if ff is None else {"flux_factor": ff}))
+
+    def _fixed_flux_factor(self, model_theta):
+        """The flux factor computed at construction when this call will use the injected fixed
+        zred (and lumdist_mpc) -- i.e. theta brings neither key itself -- else None (per call)."""
+        if (self._flux_factor_fixed is None or "zred" in model_theta
+                or "lumdist_mpc" in model_theta):
+            return None
+        # opaque to XLA's simplifier, as the per-call value is: a visible constant lets it
+        # reassociate (F * a) * ff and move float64 line fluxes by an ulp
+        return jax.lax.optimization_barrier(self._flux_factor_fixed)
 
     def predict_with_elines(self, theta: dict[str, Array]):
         """``(predictions, aux)`` for the emission-line marginalisation: the predictions with
@@ -635,6 +663,7 @@ class SedModel:
         if getattr(self, "_eline_system", None) is None:
             raise ValueError("no Spectrum of this model has marginalize_elines=True")
         model_theta = self.apply_transforms(theta)
+        ff = self._fixed_flux_factor(model_theta)
         if self._zred_fixed is not None and "zred" not in model_theta:
             model_theta = dict(model_theta)
             model_theta["zred"] = self._zred_fixed
@@ -644,7 +673,8 @@ class SedModel:
         return self.csp.predict(model_theta, self.observations,
                                 kinematics=self.kinematics,
                                 broaden_photometry=self.broaden_photometry,
-                                eline_system=self._eline_system)
+                                eline_system=self._eline_system,
+                                **({} if ff is None else {"flux_factor": ff}))
 
 
     def predict_jit(self, theta: dict[str, Array]) -> dict[str, Array]:

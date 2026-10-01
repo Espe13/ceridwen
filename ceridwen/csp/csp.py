@@ -900,7 +900,7 @@ class CSPBasis:
         return continuum, full - continuum
 
     def predict(self, theta: dict, observations: list, *, kinematics=None,
-                broaden_photometry=False, eline_system=None) -> dict:
+                broaden_photometry=False, eline_system=None, flux_factor=None) -> dict:
         """``{obs.name: prediction}``: Photometry -> maggies (n_filters,), Spectrum -> F_nu [erg/s/cm^2/Hz]
         on the observed pixels, Lines -> integrated fluxes (n_lines,).  Observed-frame only when
         ``theta`` carries ``zred``.
@@ -915,6 +915,10 @@ class CSPBasis:
         ``eline_system`` (``ElineSystem`` of ``SedModel``, line marginalisation): returns
         ``(predictions, aux)`` with the fitted lines removed from every prediction and
         ``aux = {"prior_mean": CLOUDY fluxes of the fitted lines, "cols": {obs.name: design}}``.
+
+        ``flux_factor``: ``self._flux_factor(theta)`` evaluated beforehand by the caller for a
+        FIXED ``theta['zred']`` (and ``lumdist_mpc``); ``SedModel`` passes it, computed once at
+        construction.  None (default): computed from theta on every call.
         """
         from ..observation.observation import (
             Spectrum as _Spectrum, Photometry as _Photometry,
@@ -943,7 +947,7 @@ class CSPBasis:
         # mass and flux factor first; the IGM separately, so the kinematic kernels can act
         # before it (galaxy kinematics -> redshift -> IGM -> instrument)
         cont0, lines0 = self._apply_mass_redshift_igm(
-            cont, cont if lines is None else lines, theta, igm=False)
+            cont, cont if lines is None else lines, theta, igm=False, flux_factor=flux_factor)
         trans = None
         if self.igm is not None and "zred" in theta:
             trans = self._igm_transmission(
@@ -965,6 +969,7 @@ class CSPBasis:
             kinematics=kinematics, broaden_photometry=broaden_photometry,
             eline_system=eline_system,
             before_igm=None if trans is None else (cont0, None if lines is None else lines0),
+            flux_factor=flux_factor,
         )
 
     def _support_for(self, observations, theta, paint_lines=False):
@@ -1015,9 +1020,11 @@ class CSPBasis:
         cont, lines = self._assemble_components(theta, paint_lines)
         return (cont if lines is None else cont + lines), cont
 
-    def _apply_mass_redshift_igm(self, spectrum_phot, spectrum_slit, theta, *, igm=True):
-        """Multiply both spectra by 10**logmass, the cgs flux factor and (``igm``) the IGM
-        transmission, each only when its key is present."""
+    def _apply_mass_redshift_igm(self, spectrum_phot, spectrum_slit, theta, *, igm=True,
+                                 flux_factor=None):
+        """Multiply both spectra by 10**logmass, the cgs flux factor (``flux_factor`` when
+        given, else ``_flux_factor(theta)``) and (``igm``) the IGM transmission, each only when
+        its key is present."""
         if "logmass" in theta:
             mass_scale = jnp.float32(10.0 ** jnp.ravel(theta["logmass"])[0])
             spectrum_phot = spectrum_phot * mass_scale
@@ -1025,7 +1032,7 @@ class CSPBasis:
 
         if "zred" in theta:
             z_scalar = jnp.ravel(theta["zred"])[0]
-            ff = jnp.float32(self._flux_factor(theta))
+            ff = jnp.float32(self._flux_factor(theta) if flux_factor is None else flux_factor)
             spectrum_phot = spectrum_phot * ff
             spectrum_slit = spectrum_slit * ff
             if igm and self.igm is not None:
@@ -1039,12 +1046,14 @@ class CSPBasis:
     def _project_observations(self, spectrum_phot, spectrum_slit,
                               observations, theta, *, paint_lines=True,
                               line_component=None, kinematics=None,
-                              broaden_photometry=False, eline_system=None, before_igm=None):
+                              broaden_photometry=False, eline_system=None, before_igm=None,
+                              flux_factor=None):
         """``{obs.name: prediction}`` from the scaled observer-frame spectra: ``spectrum_phot`` is the
         continuum (+ painted lines), ``spectrum_slit`` the continuum alone (Spectrum projector input),
         ``line_component`` the painted lines alone (or None).  ``before_igm``: ``(continuum, lines
         or None)`` before the IGM (None without IGM); a Spectrum or broadened Photometry whose
         kinematic width is not a fixed zero smooths these and applies the IGM afterwards.
+        ``flux_factor``: the precomputed fixed-z flux factor for the line fluxes (``predict``).
         """
         from ..observation.observation import (
             Photometry as _Photometry,
@@ -1061,12 +1070,13 @@ class CSPBasis:
                 "this CSP has no nebular model (add_neb=False), so a Lines "
                 "observation would receive identically zero line fluxes; build "
                 "the basis with add_neb=True or remove the Lines observation")
-        _line_fluxes = (self.predict_line_fluxes(theta)
+        _line_fluxes = (self.predict_line_fluxes(theta, flux_factor=flux_factor)
                         if _has_lines_obs and _has_neb else None)
-        _line_fluxes_spec = (self.predict_line_fluxes(theta, for_spectrum=True)
+        _line_fluxes_spec = (self.predict_line_fluxes(theta, for_spectrum=True,
+                                                      flux_factor=flux_factor)
                              if _has_spec_obs and _has_neb else None)
         _line_fluxes_phot = (
-            self.predict_line_fluxes(theta, for_photometry=True)
+            self.predict_line_fluxes(theta, for_photometry=True, flux_factor=flux_factor)
             if (not paint_lines) and _has_neb and _has_phot_obs
             else None)
         es = eline_system
@@ -1242,7 +1252,8 @@ class CSPBasis:
         obs._neb_blend_matrix = np.asarray(B, dtype=np.float32)
         return obs._neb_blend_matrix
 
-    def predict_line_fluxes(self, theta, *, for_photometry=False, for_spectrum=False):
+    def predict_line_fluxes(self, theta, *, for_photometry=False, for_spectrum=False,
+                            flux_factor=None):
         """Observed-frame fluxes of every nebular grid line (n_lines,), through the same weights,
         dust, escape, mass and distance factors as the spectrum.
 
@@ -1250,7 +1261,8 @@ class CSPBasis:
         averaged over the line's painted profile and ``eline_scaling`` (the Lines observation).  ``for_spectrum``: the same
         without ``eline_scaling`` (painted by the Spectrum projector).  ``for_photometry``: per-Hz
         amplitudes with the full f_nu flux factor and no IGM (applied inside the photometric line
-        basis) and no ``eline_scaling``.
+        basis) and no ``eline_scaling``.  ``flux_factor``: precomputed for a fixed redshift
+        (see ``predict``), else ``_flux_factor(theta)``.
         """
         W = self.calculate_ssp_weights(theta=theta)          # (n_z, n_age)
         logZ_gas = self._gas_logz(theta)
@@ -1294,7 +1306,7 @@ class CSPBasis:
             F = F * 10.0 ** jnp.ravel(theta["logmass"])[0]
         if "zred" in theta:
             z_scalar = jnp.ravel(theta["zred"])[0]
-            ff = self._flux_factor(theta)
+            ff = self._flux_factor(theta) if flux_factor is None else flux_factor
             F = F * (ff if for_photometry else ff / (1.0 + z_scalar))
             if self.igm is not None and not for_photometry:
                 # averaged over the painted profile, as the painted path applies it (the IGM

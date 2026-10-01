@@ -17,6 +17,9 @@
   zero-fills the rest after the scaling; the whole grid for dust emission, painted lines and
   free-z photometry. Not byte-identical (last float32 bit); 2.5-3x faster log-likelihood on
   CPU at W = 64-100 for a JWST photometry (+ grating) model on the BPASS grid (GOTCHAS 24).
+- `SedModel._hoist_flux_factor` (private, off): the fixed-redshift flux factor computed once at
+  construction and passed to `CSPBasis.predict(flux_factor=...)` instead of per call; byte-identical,
+  no CPU gain beyond noise, kept for a GPU benchmark (`scripts/gpu_bench_E2.py`).
 - These mechanisms come from Liu Hao's speedups work on his fork of CERIDWEN.
 
 ## 1.0.12 (2026-09-24)

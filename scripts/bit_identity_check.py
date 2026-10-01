@@ -59,7 +59,7 @@ def _flat(prefix, obj, out):
 
 def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False, lsf=None,
            interp="step", track=False, zred=ZRED, spec_wave=SPEC_WAVE, filters=FILTERS,
-           support=False):
+           support=False, hoist_ff=False):
     path = find_test_grid()
     if path is None:
         sys.exit("no test SSP grid found (tests/_gridfixture.py)")
@@ -106,9 +106,16 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
         init.update(x_HI=jnp.array([0.5]), logN_HI=jnp.array([20.5]))
     if isinstance(lsf, str):
         init[lsf] = jnp.array([1.1])
-    model = SedModel(csp, obs, priors={}, transforms={"sfh": _sfh},
-                     free_param_init=init, zred=zred,
-                     kinematics=Kinematics(sigma_gal=sigma_losvd))
+    hoist_saved = getattr(SedModel, "_hoist_flux_factor", None)
+    if hoist_ff:                       # E2: the fixed-z flux factor computed at construction
+        SedModel._hoist_flux_factor = True
+    try:
+        model = SedModel(csp, obs, priors={}, transforms={"sfh": _sfh},
+                         free_param_init=init, zred=zred,
+                         kinematics=Kinematics(sigma_gal=sigma_losvd))
+    finally:
+        if hoist_saved is not None:
+            SedModel._hoist_flux_factor = hoist_saved
     return model
 
 
@@ -351,6 +358,11 @@ def collect(args):
                                                 dust_emission=False, support=True)))
     else:
         print("  (package has no wavelength_support: support configurations skipped)")
+    # E2, SedModel._hoist_flux_factor (opt-in): byte-identical to the per-call path by test;
+    # its own configuration so the path stays covered; appended last
+    if hasattr(SedModel, "_hoist_flux_factor") and os.environ.get("SPS_HOME"):
+        configs.append(("neb_ffhoist", dict(add_neb=True, add_igm=True, sigma_losvd=250.0,
+                                            dust_emission=False, hoist_ff=True)))
     for tag, cfg in configs:
         t0 = time.perf_counter()
         model = _build(**cfg)
