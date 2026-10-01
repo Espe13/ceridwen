@@ -1522,7 +1522,7 @@ class CSPBasis:
 
             target_Z = theta["logzsol"]
             z_idx = jnp.clip(
-                jnp.searchsorted(self.zmet, target_Z, side='left'),
+                jnp.searchsorted(self.zmet, target_Z, side='left', method='compare_all'),
                 1, self._n_z - 1,
             )
             z1 = self.zmet[z_idx - 1]
@@ -1536,7 +1536,7 @@ class CSPBasis:
 
         zh   = theta["logzsol_hist"]
         zbin = 0.5 * (zh[:-1] + zh[1:])
-        k    = jnp.clip(jnp.searchsorted(self.zmet, zbin) - 1, 0, self._n_z - 2)
+        k    = jnp.clip(jnp.searchsorted(self.zmet, zbin, method='compare_all') - 1, 0, self._n_z - 2)
 
         z0 = self.zmet[k]
         z1 = self.zmet[k + 1]
