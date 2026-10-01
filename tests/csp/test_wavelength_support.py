@@ -250,3 +250,14 @@ def test_afe_support_equals_whole_grid():
         if afe is not None:
             th["afe"] = jnp.array([afe])
         _close(jax.jit(full.predict)(th), jax.jit(sup.predict)(th))
+
+
+def test_result_file_records_wavelength_support_only_when_on():
+    """csp_config names the opt-in, so a rebuilt model with the other setting is a difference;
+    with it off the record is the one written before the option existed."""
+    import json
+    from ceridwen.resultfile import _model_record
+    on, off = (_model(s, neb=False) for s in (True, False))
+    cfg_on, cfg_off = (json.loads(_model_record(m)["/model@csp_config"]) for m in (on, off))
+    assert "wavelength_support" not in cfg_off
+    assert cfg_on.pop("wavelength_support") is True and cfg_on == cfg_off

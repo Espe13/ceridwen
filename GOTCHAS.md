@@ -675,7 +675,8 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
 - **Not byte-identical to the default.** XLA's CPU reductions change their summation order
   with the array length, so a prediction differs in the last float32 bit (measured: up to
   1.6e-7 relative; the log-likelihood by about 1e-10 of its value). Compare fits made with
-  the same setting. The result file does not record it.
+  the same setting. The result file records it (`csp_config['wavelength_support']`, present
+  only when on), so `check_model_against_result` reports a rebuilt model with the other setting.
 - **Silently the whole grid** (no warning, same numbers as off) for dust emission (the energy
   balance integrates over every pixel), lines painted on the model grid (free-z Photometry,
   a sampled `sigma_gas` with `broaden_photometry`, `_force_paint_lines`), a Photometry at a
