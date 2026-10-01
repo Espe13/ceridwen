@@ -62,7 +62,7 @@ def _flat(prefix, obj, out):
 
 def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False, lsf=None,
            interp="step", track=False, zred=ZRED, spec_wave=SPEC_WAVE, filters=FILTERS,
-           marg=False, line_windows=False):
+           marg=False, line_windows=False, support=False, hoist_ff=False):
     path = find_test_grid()
     if path is None:
         sys.exit("no test SSP grid found (tests/_gridfixture.py)")
@@ -76,6 +76,8 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
         kw["track_zred_age"] = True
     if gas_tied:
         kw["gas_tied"] = True          # v1.0.5 path: gas_logz := logzsol
+    if support:                        # C1: only the model pixels the observations read
+        kw["wavelength_support"] = True
     if igm_dla:                        # IGM damping wing + DLA with sampled theta keys
         from ceridwen.igm import MadauDampingDLA
         kw["igm_model"] = MadauDampingDLA(Ob0=0.04897)
@@ -116,10 +118,17 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
                           gas_logz=lambda th: jnp.array([-0.3]))
         init["sigma_gas"] = jnp.array([120.0])
         kin = Kinematics(sigma_gal=sigma_losvd, sigma_gas="sigma_gas", sigma_max=600.0)
-    model = SedModel(csp, obs, priors={}, transforms=transforms,
-                     free_param_init=init, zred=zred, kinematics=kin,
-                     # a sampled sigma_gas in the joint marginal needs unbroadened photometry
-                     **({"broaden_photometry": False} if marg else {}))
+    hoist_saved = getattr(SedModel, "_hoist_flux_factor", None)
+    if hoist_ff:                       # E2: the fixed-z flux factor computed at construction
+        SedModel._hoist_flux_factor = True
+    try:
+        model = SedModel(csp, obs, priors={}, transforms=transforms,
+                         free_param_init=init, zred=zred, kinematics=kin,
+                         # a sampled sigma_gas in the joint marginal needs unbroadened photometry
+                         **({"broaden_photometry": False} if marg else {}))
+    finally:
+        if hoist_saved is not None:
+            SedModel._hoist_flux_factor = hoist_saved
     proj = model.obs_dict["spec"]._proj
     if line_windows and hasattr(proj, "enable_line_windows"):
         # the windowed line basis (opt-in); a package without it runs the dense one, which is
@@ -379,6 +388,23 @@ def collect(args):
                     lsf="lsf_scale", marg=True)
         configs.append(("neb_marg_dense", marg))
         configs.append(("neb_marg_windows", dict(marg, line_windows=True)))
+    # C1, CSPBasis(wavelength_support=True): the opt-in path that synthesises only the model
+    # pixels the observations read (not byte-identical to the whole grid, so its own
+    # configurations); appended last, earlier draws unchanged
+    import inspect
+    if "wavelength_support" in inspect.signature(CSPBasis.__init__).parameters:
+        configs.append(("support_plain", dict(add_neb=False, add_igm=True, sigma_losvd=250.0,
+                                              dust_emission=False, support=True)))
+        if os.environ.get("SPS_HOME"):
+            configs.append(("support_neb", dict(add_neb=True, add_igm=True, sigma_losvd=250.0,
+                                                dust_emission=False, support=True)))
+    else:
+        print("  (package has no wavelength_support: support configurations skipped)")
+    # E2, SedModel._hoist_flux_factor (opt-in): byte-identical to the per-call path by test;
+    # its own configuration so the path stays covered; appended last
+    if hasattr(SedModel, "_hoist_flux_factor") and os.environ.get("SPS_HOME"):
+        configs.append(("neb_ffhoist", dict(add_neb=True, add_igm=True, sigma_losvd=250.0,
+                                            dust_emission=False, hoist_ff=True)))
     for tag, cfg in configs:
         t0 = time.perf_counter()
         model = _build(**cfg)

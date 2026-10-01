@@ -339,7 +339,9 @@ prefer `predict`/`get_spectrum_components`.
   sampled parameters without a prior; `free_param_init` is applied without
   transforms too; prior constructors reject unknown/missing arguments.
 - `CSPBasis(verbose=False)` is silent; `SSPData.load(..., flux_dtype="float32")`
-  halves the grid memory.
+  halves the grid's host memory. `SSPData.ssp_flux` is a read-only host NumPy array (a JAX
+  array passed in is copied to the host); the device holds only the CSP's float32 copy
+  (`csp.flux`).
 - `pp.figures(dir)` writes the summary / corner / diagnostics figures
   (`ceridwen.plotting`).
 
@@ -661,3 +663,23 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
 - **The IGM acts after `σ_gal`** and before the instrument (`docs/conventions.md`,
   Broadening). A fixed `σ_gal = 0` keeps the IGM on the model grid.
 
+
+## 24. `CSPBasis(wavelength_support=True)`: only the pixels the observations read
+
+- **Off by default.** On, `predict` (and so every fit) synthesises only the contiguous range of
+  model pixels the observations read: each Photometry's non-zero filter columns and its
+  sigma_gal window, each Spectrum's projector window (the whole `zred_range` for a sampled
+  redshift); `Lines` read none. The rest is zero, filled after the mass, flux-factor and IGM
+  scaling. The IGM is still evaluated on the whole grid (Madau's optical depth is capped at its
+  peak, a whole-grid maximum) and then cut to the range.
+- **Not byte-identical to the default.** XLA's CPU reductions change their summation order
+  with the array length, so a prediction differs in the last float32 bit (measured: up to
+  1.6e-7 relative; the log-likelihood by about 1e-10 of its value). Compare fits made with
+  the same setting. The result file does not record it.
+- **Silently the whole grid** (no warning, same numbers as off) for dust emission (the energy
+  balance integrates over every pixel), lines painted on the model grid (free-z Photometry,
+  a sampled `sigma_gas` with `broaden_photometry`, `_force_paint_lines`), a Photometry at a
+  sampled redshift, an observation class that declares no `model_support`, or a range that
+  is the whole grid.
+- `csp.get_spectrum(...)`, `get_spectrum_components`, `PostProcess` spectra and figures are
+  always on the whole grid: only the observation predictions use the range.

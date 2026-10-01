@@ -16,7 +16,7 @@ import jax.numpy as jnp
 import pprint
 
 from ceridwen.csp.csp import (CSPBasis, LOGZSOL_KEYS, REMOVED_METALLICITY_KEYS,
-                              _check_duste_model, _default_logzsol,
+                              _check_duste_model, _default_logzsol, _per_pixel, _sel,
                               removed_metallicity_key_error)
 from ceridwen.ssps.grid_metadata import logzsol_total as _logzsol_total, refused_cell_bounds
 
@@ -27,7 +27,8 @@ class CSPBasis_afe(CSPBasis):
     Same constructor and interface as ``CSPBasis`` minus the nebular arguments; requires an
     ``SSPDataAfe`` grid (4-D ``ssp_flux`` with an ``ssp_afe`` axis).  theta["afe"] is
     optional: absent, the plane closest to [alpha/Fe] = 0 is used.  The SFH weights,
-    dust, projection, flux factor and cosmology are those of ``CSPBasis``.
+    dust, projection, flux factor and cosmology are those of ``CSPBasis``, and so is
+    ``wavelength_support`` (opt-in; see ``CSPBasis``).
     """
 
     def __init__(
@@ -52,10 +53,12 @@ class CSPBasis_afe(CSPBasis):
         sfh_per_bin=False,
         cosmo=None,
         duste_model="DL07",
+        wavelength_support=False,
         **kwargs,
     ):
         self.verbose = bool(verbose)
         self.gas_tied = False          # no nebular model on alpha grids
+        self._wave_support = bool(wavelength_support)
         if kwargs:
             hint = ""
             if "sigma_losvd_kms" in kwargs:
@@ -98,7 +101,7 @@ class CSPBasis_afe(CSPBasis):
         init_dust_params = ({'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']}
                             if init_dust_params is None else dict(init_dust_params))
 
-        _flux_in = jnp.asarray(SSPData.ssp_flux)
+        _flux_in = np.asarray(SSPData.ssp_flux)            # host NumPy (SSPData keeps it there)
         _afe_in  = getattr(SSPData, "ssp_afe", None)
         if _flux_in.ndim != 4 or _afe_in is None:
             raise TypeError(
@@ -126,7 +129,10 @@ class CSPBasis_afe(CSPBasis):
                 "searchsorted-based interpolation in _flux_at_afe); got "
                 f"{np.asarray(_afe_in).tolist()}."
             )
-        self.flux      = jnp.array(_flux_in, dtype=jnp.float32)  # (n_afe, n_z, n_age, n_wave)
+        # the float32 cast on the device (as CSPBasis: XLA's convert) from a transient copy
+        _f64 = jnp.asarray(_flux_in)
+        self.flux      = _f64.astype(jnp.float32)          # (n_afe, n_z, n_age, n_wave)
+        del _f64
         self.afe_grid  = _afe_in                           # (n_afe,) [alpha/Fe]
         self._n_afe    = int(_afe_in.size)
         # the same cube laid out (n_age, n_afe * n_z, n_wave) for _contract: a sampled afe is
@@ -337,15 +343,16 @@ class CSPBasis_afe(CSPBasis):
         w32  = w.astype(jnp.float32)
         return (jnp.float32(1.0) - w32) * f_lo + w32 * f_hi
 
-    def _contract(self, theta, weights, attn_age=None):
+    def _contract(self, theta, weights, attn_age=None, support=None):
         """sum_{z,a} weights[z,a] flux_afe[z,a,w] (* attn_age[a,w]) with flux_afe the cube at theta['afe'].
 
         Equal to contracting ``_flux_at_afe(theta)`` up to float32 rounding, without building
         that plane: a sampled afe becomes the two-hot vector wa = (1-w) e_{k-1} + w e_k over
         the n_afe axis, folded into the weights and contracted against ``_flux_afe_t`` in one
-        einsum.  Memory stays O(n_z n_age + n_wave) per sample under vmap (B1-022)."""
+        einsum.  Memory stays O(n_z n_age + n_wave) per sample under vmap (B1-022).
+        ``support`` (static slice): those model pixels only (``attn_age`` on them too)."""
         if self._n_afe == 1 or "afe" not in theta:
-            flux = self._flux_at_afe(theta)
+            flux = _sel(self._flux_at_afe(theta), support)
             if attn_age is None:
                 return jnp.einsum("za,zaw->w", weights, flux)
             return jnp.einsum("za,zaw,aw->w", weights, flux, attn_age)
@@ -356,9 +363,10 @@ class CSPBasis_afe(CSPBasis):
               + jnp.where(idx == k, w32, jnp.float32(0.0)))             # (n_afe,)
         wk = (wa[:, None, None] * weights[None]).transpose(2, 0, 1).reshape(
             weights.shape[1], -1)                                        # (n_age, n_afe * n_z)
+        flux_t = _sel(self._flux_afe_t, support)
         if attn_age is None:
-            return jnp.einsum("ak,akw->w", wk, self._flux_afe_t)
-        return jnp.einsum("ak,akw,aw->w", wk, self._flux_afe_t, attn_age)
+            return jnp.einsum("ak,akw->w", wk, flux_t)
+        return jnp.einsum("ak,akw,aw->w", wk, flux_t, attn_age)
 
     def _stellar_mass_at(self, theta):
         """(n_z, n_age) surviving-mass table at theta['afe'], interpolated as ``_flux_at_afe``."""
@@ -445,10 +453,11 @@ class CSPBasis_afe(CSPBasis):
             lines.append(f"  {k:<28s}: shape {v.shape}")
         return "\n".join(lines)
 
-    def get_spectrum_dattn_nodem_noneb(self, theta, *, include_lines=None):
-        """Dust attenuation only (``include_lines`` ignored)."""
+    @_per_pixel
+    def get_spectrum_dattn_nodem_noneb(self, theta, *, include_lines=None, support=None):
+        """Dust attenuation only (``include_lines`` ignored); ``support``: those pixels only."""
         _ = include_lines
-        attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+        attn, attn_diffuse = self.attenuate_dust(_sel(self.wave, support), theta)
 
         M       = self._age_bin_mix
         tau_age = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
@@ -459,7 +468,7 @@ class CSPBasis_afe(CSPBasis):
             attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
 
         weights  = self.calculate_ssp_weights(theta).astype(jnp.float32)
-        spectrum = self._contract(theta, weights, attn_age)
+        spectrum = self._contract(theta, weights, attn_age, support)
         spectrum *= jnp.exp(-attn_diffuse.astype(jnp.float32))
 
         return spectrum.reshape((-1,))
@@ -494,8 +503,9 @@ class CSPBasis_afe(CSPBasis):
         )
         return dust_emi_spectrum
 
-    def get_spectrum_nodattn_nodem_noneb(self, theta, *, include_lines=None):
-        """Stellar continuum only."""
+    @_per_pixel
+    def get_spectrum_nodattn_nodem_noneb(self, theta, *, include_lines=None, support=None):
+        """Stellar continuum only; ``support``: those pixels only."""
         _ = include_lines
         weights  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
-        return self._contract(theta, weights)
+        return self._contract(theta, weights, support=support)

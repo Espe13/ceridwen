@@ -146,6 +146,20 @@ def _fixed_zero(width) -> bool:
     return not isinstance(width, str) and float(width) == 0.0
 
 
+def _per_pixel(fn):
+    """Mark a ``get_spectrum_*`` variant whose model pixels are independent of each other: it
+    accepts ``support=`` (a static slice of the model grid) and returns those pixels only, each
+    computed exactly as on the whole grid.  ``predict`` uses the support path only for marked
+    variants (not dust emission, whose energy balance integrates over the whole grid)."""
+    fn._per_pixel = True
+    return fn
+
+
+def _sel(x, support):
+    """``x[..., support]`` (a static slice of the wavelength axis), or ``x`` itself for None."""
+    return x if support is None else x[..., support]
+
+
 class CSPBasis:
     """Composite stellar population basis.  ``predict(theta, observations)`` projects the model onto observations.
 
@@ -192,7 +206,19 @@ class CSPBasis:
         dust, no nebular reprocessing, no dust heating); needs add_neb=True.
     cosmo : Cosmology -- required; used for the flux factor and for the age of the Universe.
     nebemlineinspec : bool -- default of ``include_lines`` in ``get_spectrum`` only.
+    wavelength_support : bool -- opt-in (default False): ``predict`` synthesises only the model
+        pixels the observations read (``_support_for``: Photometry's filter columns and sigma_gal
+        window, a Spectrum's projector window) and zero-fills the rest after the mass, flux and
+        IGM scaling; ~2.5-3x faster likelihood on CPU for a JWST photometry (+ grating) model on
+        the 1 A - 1e8 A BPASS grid.  Not byte-identical to the whole grid: XLA's reductions
+        change their summation order with the array length, so predictions differ in the last
+        float32 bit (relative ~1e-7).  Ignored (whole grid) for dust emission, painted lines and
+        a Photometry at a sampled redshift.
     """
+
+    # predict synthesises only the model pixels the observations read (``_support_for``);
+    # set from ``wavelength_support`` (opt-in: not byte-identical to the whole grid)
+    _wave_support = False
 
     def __init__(
         self,
@@ -221,10 +247,12 @@ class CSPBasis:
         duste_model="DL07",
         cosmo=None,
         gas_tied=False,
+        wavelength_support=False,
         **kwargs,
     ):
         self.verbose = bool(verbose)
         self.gas_tied = bool(gas_tied)
+        self._wave_support = bool(wavelength_support)
         if self.gas_tied and not add_neb:
             raise ValueError("gas_tied=True ties the nebular gas metallicity to the stars, "
                              "but add_neb=False: there is no nebular model to tie")
@@ -272,7 +300,12 @@ class CSPBasis:
         init_dust_params = ({'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']}
                             if init_dust_params is None else dict(init_dust_params))
 
-        self.flux      = jnp.array(SSPData.ssp_flux, dtype=jnp.float32)  # (n_z, n_age, n_wave)
+        # the grid's cube is host NumPy; the float32 cast runs on the device (XLA's convert,
+        # which flushes float32 subnormals, as before) from a transient float64 copy that is
+        # freed at once, so the device keeps only the float32 cube
+        _f64 = jnp.asarray(SSPData.ssp_flux)
+        self.flux      = _f64.astype(jnp.float32)          # (n_z, n_age, n_wave)
+        del _f64
         self.wave      = jnp.array(SSPData.ssp_wave)       # (n_wave,)
         self.ages      = jnp.array(SSPData.ssp_lg_age_gyr) # (n_age,)  log10(Gyr)
         self._setup_metallicity(SSPData)                   # self.zmet: logzsol axis
@@ -872,7 +905,7 @@ class CSPBasis:
         return continuum, full - continuum
 
     def predict(self, theta: dict, observations: list, *, kinematics=None,
-                broaden_photometry=False, eline_system=None) -> dict:
+                broaden_photometry=False, eline_system=None, flux_factor=None) -> dict:
         """``{obs.name: prediction}``: Photometry -> maggies (n_filters,), Spectrum -> F_nu [erg/s/cm^2/Hz]
         on the observed pixels, Lines -> integrated fluxes (n_lines,).  Observed-frame only when
         ``theta`` carries ``zred``.
@@ -887,6 +920,10 @@ class CSPBasis:
         ``eline_system`` (``ElineSystem`` of ``SedModel``, line marginalisation): returns
         ``(predictions, aux)`` with the fitted lines removed from every prediction and
         ``aux = {"prior_mean": CLOUDY fluxes of the fitted lines, "cols": {obs.name: design}}``.
+
+        ``flux_factor``: ``self._flux_factor(theta)`` evaluated beforehand by the caller for a
+        FIXED ``theta['zred']`` (and ``lumdist_mpc``); ``SedModel`` passes it, computed once at
+        construction.  None (default): computed from theta on every call.
         """
         from ..observation.observation import (
             Spectrum as _Spectrum, Photometry as _Photometry,
@@ -905,18 +942,31 @@ class CSPBasis:
                 for o in observations
             )
         )
-        cont, lines = self._assemble_components(theta, paint_lines)
+        support = self._support_for(observations, theta, paint_lines)
+        if support is None:
+            cont, lines = self._assemble_components(theta, paint_lines)
+        else:
+            self._warn_unknown_theta_keys(theta)
+            cont = self.get_spectrum(theta=theta, include_lines=False, support=support)
+            lines = None
         # mass and flux factor first; the IGM separately, so the kinematic kernels can act
         # before it (galaxy kinematics -> redshift -> IGM -> instrument)
         cont0, lines0 = self._apply_mass_redshift_igm(
-            cont, cont if lines is None else lines, theta, igm=False)
+            cont, cont if lines is None else lines, theta, igm=False, flux_factor=flux_factor)
         trans = None
         if self.igm is not None and "zred" in theta:
             trans = self._igm_transmission(
                 jnp.ravel(theta["zred"])[0], theta).astype(cont0.dtype)
+            # on the whole grid, then the support: Madau's tau is capped at its peak (argmax)
+            trans = _sel(trans, support)
             cont, lines_s = cont0 * trans, lines0 * trans
         else:
             cont, lines_s = cont0, lines0
+        if support is not None:
+            # zeros on the pixels no observation reads, only after every scaling (the fork
+            # found XLA CPU returning zeros for a pad inside that fusion)
+            width = (support.start, self.wave.shape[0] - support.stop)
+            cont, cont0 = jnp.pad(cont, width), jnp.pad(cont0, width)
         return self._project_observations(
             cont if lines is None else cont + lines_s, cont,
             observations, theta, paint_lines=paint_lines,
@@ -924,7 +974,43 @@ class CSPBasis:
             kinematics=kinematics, broaden_photometry=broaden_photometry,
             eline_system=eline_system,
             before_igm=None if trans is None else (cont0, None if lines is None else lines0),
+            flux_factor=flux_factor,
         )
+
+    def _support_for(self, observations, theta, paint_lines=False):
+        """Static slice of the model grid that ``predict`` must synthesise for
+        ``observations``, or None for the whole grid.  Decided from setup-time state and the
+        theta KEYS only (static under jit): the union of every observation's
+        ``model_support`` (Photometry: the non-zero columns of ``_T`` and its sigma_gal
+        window; Spectrum: its projector's model window; Lines read the line fluxes, no pixel).
+
+        The whole grid when: ``_wave_support`` is False; the spectrum variant is not marked
+        ``_per_pixel`` (dust emission: the energy balance integrates over every pixel); the
+        lines are painted on the model grid; a Photometry is projected at a sampled redshift
+        (it reads the whole grid); an observation declares no support (None, the default of
+        ``Observation``); or the union is the whole grid or empty."""
+        from ..observation.lines import Lines as _Lines
+        if not (self._wave_support and getattr(self.get_spectrum, "_per_pixel", False)):
+            return None
+        if paint_lines:
+            return None
+        lo, hi = None, None
+        for obs in observations:
+            if isinstance(obs, _Lines):
+                continue
+            if getattr(obs, "free_z", False) and "zred" in theta:
+                return None
+            r = getattr(obs, "model_support", None)
+            if r is None:
+                return None
+            if r[1] <= r[0]:
+                continue
+            lo = r[0] if lo is None else min(lo, r[0])
+            hi = r[1] if hi is None else max(hi, r[1])
+        n = int(self.wave.shape[0])
+        if lo is None or (lo <= 0 and hi >= n):
+            return None
+        return slice(max(int(lo), 0), min(int(hi), n))
 
     def _assemble_components(self, theta, paint_lines):
         """``(continuum, lines or None)`` on the rest-frame grid, unscaled; ``lines`` is the painted
@@ -939,9 +1025,11 @@ class CSPBasis:
         cont, lines = self._assemble_components(theta, paint_lines)
         return (cont if lines is None else cont + lines), cont
 
-    def _apply_mass_redshift_igm(self, spectrum_phot, spectrum_slit, theta, *, igm=True):
-        """Multiply both spectra by 10**logmass, the cgs flux factor and (``igm``) the IGM
-        transmission, each only when its key is present."""
+    def _apply_mass_redshift_igm(self, spectrum_phot, spectrum_slit, theta, *, igm=True,
+                                 flux_factor=None):
+        """Multiply both spectra by 10**logmass, the cgs flux factor (``flux_factor`` when
+        given, else ``_flux_factor(theta)``) and (``igm``) the IGM transmission, each only when
+        its key is present."""
         if "logmass" in theta:
             mass_scale = jnp.float32(10.0 ** jnp.ravel(theta["logmass"])[0])
             spectrum_phot = spectrum_phot * mass_scale
@@ -949,7 +1037,7 @@ class CSPBasis:
 
         if "zred" in theta:
             z_scalar = jnp.ravel(theta["zred"])[0]
-            ff = jnp.float32(self._flux_factor(theta))
+            ff = jnp.float32(self._flux_factor(theta) if flux_factor is None else flux_factor)
             spectrum_phot = spectrum_phot * ff
             spectrum_slit = spectrum_slit * ff
             if igm and self.igm is not None:
@@ -963,12 +1051,14 @@ class CSPBasis:
     def _project_observations(self, spectrum_phot, spectrum_slit,
                               observations, theta, *, paint_lines=True,
                               line_component=None, kinematics=None,
-                              broaden_photometry=False, eline_system=None, before_igm=None):
+                              broaden_photometry=False, eline_system=None, before_igm=None,
+                              flux_factor=None):
         """``{obs.name: prediction}`` from the scaled observer-frame spectra: ``spectrum_phot`` is the
         continuum (+ painted lines), ``spectrum_slit`` the continuum alone (Spectrum projector input),
         ``line_component`` the painted lines alone (or None).  ``before_igm``: ``(continuum, lines
         or None)`` before the IGM (None without IGM); a Spectrum or broadened Photometry whose
         kinematic width is not a fixed zero smooths these and applies the IGM afterwards.
+        ``flux_factor``: the precomputed fixed-z flux factor for the line fluxes (``predict``).
         """
         from ..observation.observation import (
             Photometry as _Photometry,
@@ -985,12 +1075,13 @@ class CSPBasis:
                 "this CSP has no nebular model (add_neb=False), so a Lines "
                 "observation would receive identically zero line fluxes; build "
                 "the basis with add_neb=True or remove the Lines observation")
-        _line_fluxes = (self.predict_line_fluxes(theta)
+        _line_fluxes = (self.predict_line_fluxes(theta, flux_factor=flux_factor)
                         if _has_lines_obs and _has_neb else None)
-        _line_fluxes_spec = (self.predict_line_fluxes(theta, for_spectrum=True)
+        _line_fluxes_spec = (self.predict_line_fluxes(theta, for_spectrum=True,
+                                                      flux_factor=flux_factor)
                              if _has_spec_obs and _has_neb else None)
         _line_fluxes_phot = (
-            self.predict_line_fluxes(theta, for_photometry=True)
+            self.predict_line_fluxes(theta, for_photometry=True, flux_factor=flux_factor)
             if (not paint_lines) and _has_neb and _has_phot_obs
             else None)
         es = eline_system
@@ -1166,7 +1257,8 @@ class CSPBasis:
         obs._neb_blend_matrix = np.asarray(B, dtype=np.float32)
         return obs._neb_blend_matrix
 
-    def predict_line_fluxes(self, theta, *, for_photometry=False, for_spectrum=False):
+    def predict_line_fluxes(self, theta, *, for_photometry=False, for_spectrum=False,
+                            flux_factor=None):
         """Observed-frame fluxes of every nebular grid line (n_lines,), through the same weights,
         dust, escape, mass and distance factors as the spectrum.
 
@@ -1174,7 +1266,8 @@ class CSPBasis:
         averaged over the line's painted profile and ``eline_scaling`` (the Lines observation).  ``for_spectrum``: the same
         without ``eline_scaling`` (painted by the Spectrum projector).  ``for_photometry``: per-Hz
         amplitudes with the full f_nu flux factor and no IGM (applied inside the photometric line
-        basis) and no ``eline_scaling``.
+        basis) and no ``eline_scaling``.  ``flux_factor``: precomputed for a fixed redshift
+        (see ``predict``), else ``_flux_factor(theta)``.
         """
         W = self.calculate_ssp_weights(theta=theta)          # (n_z, n_age)
         logZ_gas = self._gas_logz(theta)
@@ -1218,7 +1311,7 @@ class CSPBasis:
             F = F * 10.0 ** jnp.ravel(theta["logmass"])[0]
         if "zred" in theta:
             z_scalar = jnp.ravel(theta["zred"])[0]
-            ff = self._flux_factor(theta)
+            ff = self._flux_factor(theta) if flux_factor is None else flux_factor
             F = F * (ff if for_photometry else ff / (1.0 + z_scalar))
             if self.igm is not None and not for_photometry:
                 # averaged over the painted profile, as the painted path applies it (the IGM
@@ -1599,10 +1692,11 @@ class CSPBasis:
             neb_young.astype(jnp.float32))
         return neb_all
 
-    def _neb_weights_and_base(self, W_f32, theta, *, include_lines, amplitude):
+    def _neb_weights_and_base(self, W_f32, theta, *, include_lines, amplitude, support=None):
         """``(v (n_young,), base (n_young, n_wave))`` with sum_z W[z,a] neb[z,a,w] == v[y] base[y,w] for
         the young rows: the metallicity axis is contracted before the wavelength axis.
         ``include_lines="both"``: ``base`` is the pair ``(continuum, continuum + lines)``.
+        ``support``: the bases on those model pixels only (static slice).
         """
         *bases, scale = self.neb.evaluate_batch_factored(
             self._gas_logz(theta), theta["gas_logu"],
@@ -1612,57 +1706,61 @@ class CSPBasis:
         yi = self._neb_young_idx
         v = jnp.einsum("zy,zy->y", W_f32[:, yi],
                        scale.astype(jnp.float32)) * amplitude
-        bases = tuple(b.astype(jnp.float32) for b in bases)
+        bases = tuple(_sel(b.astype(jnp.float32), support) for b in bases)
         return v, (bases if include_lines == "both" else bases[0])
 
     def _neb_spectrum_term(self, W_f32, theta, *, include_lines,
-                           attn_age=None, amplitude=jnp.float32(1.0)):
-        """Nebular contribution (n_wave,), optionally attenuated by the young rows of ``attn_age``."""
+                           attn_age=None, amplitude=jnp.float32(1.0), support=None):
+        """Nebular contribution (n_wave,), optionally attenuated by the young rows of ``attn_age``
+        (on ``support`` when given, like ``attn_age``)."""
         v, base = self._neb_weights_and_base(
-            W_f32, theta, include_lines=include_lines, amplitude=amplitude)
+            W_f32, theta, include_lines=include_lines, amplitude=amplitude, support=support)
         if attn_age is None:
             return jnp.einsum("y,yw->w", v, base)
         return jnp.einsum("y,yw,yw->w", v, base,
                           attn_age[self._neb_young_idx, :])
 
-    def _ion_multiplier(self, theta):
+    def _ion_multiplier(self, theta, support=None):
         """``(ion_mult (n_age, n_wave), neb_amp)``: ionising flux of young ages scaled by frac_obrun (0 without it), nebular amplitude 1 - frac_obrun."""
+        kill_ion = _sel(self.kill_ion, support)
         if "frac_obrun" in theta:
             f_esc = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
-            return (jnp.where(self.kill_ion, f_esc, jnp.float32(1.0)),
+            return (jnp.where(kill_ion, f_esc, jnp.float32(1.0)),
                     jnp.float32(1.0) - f_esc)
-        return (jnp.where(self.kill_ion, jnp.float32(0.0), jnp.float32(1.0)),
+        return (jnp.where(kill_ion, jnp.float32(0.0), jnp.float32(1.0)),
                 jnp.float32(1.0))
 
-    def _picket_terms(self, theta, include_lines):
+    def _picket_terms(self, theta, include_lines, support=None):
         """Picket-fence ingredients: ``(W, fo, attn_age, diffuse_curve, A_cov, A_clear, neb_v, neb_base)``
         with the stellar cube contracted against per-(age, wave) multipliers only:
         ``A_cov`` = covered channel (LyC removed, young weight 1 - fo, birth-cloud dust),
         ``A_clear`` = fo x young rows (no dust, LyC kept); the nebular term is the factored one
-        scaled by 1 - fo."""
+        scaled by 1 - fo.  ``support``: on those model pixels only."""
         W  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
         fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
-        attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+        attn, attn_diffuse = self.attenuate_dust(_sel(self.wave, support), theta)
         tau_age = jnp.einsum("ab,bw->aw", self._age_bin_mix, attn.astype(jnp.float32))
         attn_age = jnp.exp(-tau_age)                 # full birth-cloud, no bypass
         diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
         young = self.young_mask.astype(jnp.float32)  # (n_age,)
         cov_w = (jnp.float32(1.0) - fo) * young + (jnp.float32(1.0) - young)
-        no_ion = jnp.where(self.kill_ion, jnp.float32(0.0), jnp.float32(1.0))   # (n_age, n_wave)
+        no_ion = jnp.where(_sel(self.kill_ion, support),
+                           jnp.float32(0.0), jnp.float32(1.0))   # (n_age, n_wave)
         A_cov = no_ion * cov_w[:, None]
         A_clear = fo * young[:, None]
         neb_v, neb_base = self._neb_weights_and_base(
-            W, theta, include_lines=include_lines, amplitude=jnp.float32(1.0) - fo)
+            W, theta, include_lines=include_lines, amplitude=jnp.float32(1.0) - fo,
+            support=support)
         return W, fo, attn_age, diffuse_curve, A_cov, A_clear, neb_v, neb_base
 
-    def _spectrum_picket_nodem(self, theta, include_lines):
+    def _spectrum_picket_nodem(self, theta, include_lines, support=None):
         """Picket-fence geometry, no dust emission: a fraction ``frac_obrun`` of the young light (LyC
         included) escapes free of all dust; the covered fraction powers the nebular emission and is
         attenuated by birth-cloud and diffuse dust.  One contraction of the stellar cube.
         """
         W, fo, attn_age, diffuse_curve, A_cov, A_clear, neb_v, neb_base = \
-            self._picket_terms(theta, include_lines)
-        stellar = jnp.einsum("za,zaw,aw->w", W, self.flux,
+            self._picket_terms(theta, include_lines, support)
+        stellar = jnp.einsum("za,zaw,aw->w", W, _sel(self.flux, support),
                              A_cov * attn_age * diffuse_curve[None, :] + A_clear)
         neb = jnp.einsum("y,yw,yw->w", neb_v, neb_base,
                          attn_age[self._neb_young_idx, :]) * diffuse_curve
@@ -1699,18 +1797,20 @@ class CSPBasis:
                 + jnp.einsum("y,yw,yw->w", neb_v, base_cont, attn_age[yi, :]) * diffuse_curve
                 + tduste)
 
-    def get_spectrum_dattn_nodem_neb(self, theta, *, include_lines=None):
-        """Dust attenuation + nebular emission.  ``include_lines`` None -> ``self.nebemlineinspec``."""
+    @_per_pixel
+    def get_spectrum_dattn_nodem_neb(self, theta, *, include_lines=None, support=None):
+        """Dust attenuation + nebular emission.  ``include_lines`` None -> ``self.nebemlineinspec``;
+        ``support`` (static slice): those model pixels only."""
         if include_lines is None:
             include_lines = self.nebemlineinspec
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
 
         if self.fesc_geometry == "picket" and "frac_obrun" in theta:
-            return self._spectrum_picket_nodem(theta, include_lines)
+            return self._spectrum_picket_nodem(theta, include_lines, support)
 
-        ion_mult, neb_amp = self._ion_multiplier(theta)
+        ion_mult, neb_amp = self._ion_multiplier(theta, support)
 
-        attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+        attn, attn_diffuse = self.attenuate_dust(_sel(self.wave, support), theta)
         M        = self._age_bin_mix
         tau_age  = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age = jnp.exp(-tau_age)
@@ -1720,14 +1820,14 @@ class CSPBasis:
             fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
             attn_age = (jnp.float32(1.0) - fo) * attn_age + fo   # runaway fraction skips the birth cloud
             # escaped stellar LyC: no birth-cloud dust at all; the nebular term keeps attn_age
-            attn_star = jnp.where(self.kill_ion, jnp.float32(1.0), attn_age)
+            attn_star = jnp.where(_sel(self.kill_ion, support), jnp.float32(1.0), attn_age)
 
         W_f32 = W.astype(jnp.float32)
-        spectrum = jnp.einsum("za,zaw,aw->w", W_f32, self.flux,
+        spectrum = jnp.einsum("za,zaw,aw->w", W_f32, _sel(self.flux, support),
                               ion_mult * attn_star)
         spectrum = spectrum + self._neb_spectrum_term(
             W_f32, theta, include_lines=include_lines,
-            attn_age=attn_age, amplitude=neb_amp)
+            attn_age=attn_age, amplitude=neb_amp, support=support)
         spectrum = spectrum * jnp.exp(-attn_diffuse.astype(jnp.float32))
 
         return spectrum.reshape((-1,))
@@ -1786,10 +1886,11 @@ class CSPBasis:
                  + jnp.einsum("y,yw,yw->w", neb_v, base_cont, attn_age[yi, :])) * diffuse_curve
                 + tduste)
 
-    def get_spectrum_dattn_nodem_noneb(self, theta, *, include_lines=None):
-        """Dust attenuation only (``include_lines`` ignored)."""
+    @_per_pixel
+    def get_spectrum_dattn_nodem_noneb(self, theta, *, include_lines=None, support=None):
+        """Dust attenuation only (``include_lines`` ignored); ``support``: those pixels only."""
         _ = include_lines
-        attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+        attn, attn_diffuse = self.attenuate_dust(_sel(self.wave, support), theta)
 
         M       = self._age_bin_mix
         tau_age = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
@@ -1800,7 +1901,7 @@ class CSPBasis:
             attn_age = (jnp.float32(1.0) - fo) * attn_age + fo
 
         weights  = self.calculate_ssp_weights(theta).astype(jnp.float32)
-        spectrum = jnp.einsum("za,zaw,aw->w", weights, self.flux, attn_age)
+        spectrum = jnp.einsum("za,zaw,aw->w", weights, _sel(self.flux, support), attn_age)
         spectrum *= jnp.exp(-attn_diffuse.astype(jnp.float32))
 
         return spectrum.reshape((-1,))
@@ -1835,22 +1936,24 @@ class CSPBasis:
         )
         return dust_emi_spectrum
 
-    def get_spectrum_nodattn_nodem_noneb(self, theta, *, include_lines=None):
-        """Stellar continuum only."""
+    @_per_pixel
+    def get_spectrum_nodattn_nodem_noneb(self, theta, *, include_lines=None, support=None):
+        """Stellar continuum only; ``support``: those pixels only."""
         _ = include_lines
         weights  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
-        return jnp.einsum("za,zaw->w", weights, self.flux)
+        return jnp.einsum("za,zaw->w", weights, _sel(self.flux, support))
 
-    def get_spectrum_nodattn_nodem_neb(self, theta, *, include_lines=None):
-        """Nebular emission, no dust."""
+    @_per_pixel
+    def get_spectrum_nodattn_nodem_neb(self, theta, *, include_lines=None, support=None):
+        """Nebular emission, no dust; ``support``: those pixels only."""
         if include_lines is None:
             include_lines = self.nebemlineinspec
         W = self.calculate_ssp_weights(theta=theta)   # (n_z, n_age)
 
-        ion_mult, neb_amp = self._ion_multiplier(theta)
+        ion_mult, neb_amp = self._ion_multiplier(theta, support)
 
         W_f32 = W.astype(jnp.float32)
-        return (jnp.einsum("za,zaw,aw->w", W_f32, self.flux, ion_mult)
+        return (jnp.einsum("za,zaw,aw->w", W_f32, _sel(self.flux, support), ion_mult)
                 + self._neb_spectrum_term(W_f32, theta,
                                           include_lines=include_lines,
-                                          amplitude=neb_amp))
+                                          amplitude=neb_amp, support=support))

@@ -348,6 +348,15 @@ class Spectrum(Observation):
             subtract_library=self.subtract_library, zred_range=zred_range,
             inst_scale_range=inst_scale_range)
 
+    @property
+    def model_support(self):
+        """``(lo, hi)``: the model-grid indices the projector reads (its log-grid window, which
+        for a sampled redshift covers the whole ``zred_range``); None before setup."""
+        if self._proj is None:
+            return None
+        idx = np.asarray(self._proj.window.grid.idx)
+        return (int(idx[0]), int(idx[-1]) + 1)
+
     def predict(self, spectrum, wave_model=None, line_flux=None, theta=None, transmission=None):
         """Model F_nu on the observed pixels (n_pix,): the rest-frame CONTINUUM
         ``spectrum`` (n_wave,) broadened by sigma_gal, the instrument LSF (library
