@@ -15,6 +15,44 @@ from .priors import sample_for_parameter
 
 Array = jax.Array
 
+#: inner slice kernels of :class:`BlackJAXNestedSamplerAdapter` (``slice_kernel=``)
+SLICE_KERNELS = ("stock", "carry")
+
+
+def stepping_out_carry(rng_key, in_slice, width, max_expansions):
+    """Neal (2003) Fig. 3 stepping-out with the slice test in the loop body.
+
+    Drop-in for ``blackjax.mcmc.slice.stepping_out``: same random numbers, same sequence of
+    ``in_slice`` evaluations, bitwise-equal bracket.  The stock loops call ``in_slice`` in
+    their condition, and a vmapped ``lax.while_loop`` evaluates the condition a second time
+    inside its body, so every expansion costs two batched likelihood evaluations.  Here the
+    body evaluates the new edge once and carries the result.
+
+    Ported from Liu Hao's CERIDWEN fork (potatoist314/ceridwen, commit f973c10).
+    """
+    u_key, jk_key = jax.random.split(rng_key)
+    u = jax.random.uniform(u_key)
+    left = -width * u
+    right = left + width
+    v = jax.random.uniform(jk_key)
+    j = jnp.floor(max_expansions * v).astype(int)
+    k = (max_expansions - 1) - j
+
+    def cond(carry):
+        _, n, inside = carry
+        return inside & (n > 0)
+
+    def step(sign):
+        def body(carry):
+            edge, n, _ = carry
+            edge = edge + sign * width
+            return edge, n - 1, in_slice(edge)
+        return body
+
+    left, jl, _ = jax.lax.while_loop(cond, step(-1), (left, j, in_slice(left)))
+    right, kr, _ = jax.lax.while_loop(cond, step(+1), (right, k, in_slice(right)))
+    return left, right, (j - jl) + (k - kr), lambda t: jnp.asarray(True)
+
 
 # relative tolerance of the resume check on the saved live points' ln L (see _load_resume)
 RESUME_LOGL_RTOL = 1e-6
@@ -36,6 +74,11 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         and rng key, so it reproduces the uninterrupted run at the same key.  The checkpoint
         must come from the same model: the settings, the parameter shapes and the
         log-likelihood of the saved live points are checked before sampling resumes.
+    slice_kernel : {"stock", "carry"} -- inner slice kernel.  ``"stock"`` (default) is the
+        unchanged ``blackjax.nss``.  ``"carry"`` assembles the same kernel with
+        :func:`stepping_out_carry`, which evaluates each stepping-out edge once instead of
+        twice under ``vmap``; same random numbers and evaluations, so on CPU the samples,
+        evidence and call counts are bitwise equal to ``"stock"``.
     """
 
     #: format of the ``resume`` block written into periodic checkpoints
@@ -52,7 +95,11 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         checkpoint_interval_s : float = 1200.0,
         checkpoint_dir        : Optional[str] = None,
         resume_from           : Optional[str] = None,
+        slice_kernel          : str = "stock",
     ):
+        if slice_kernel not in SLICE_KERNELS:
+            raise ValueError(f"slice_kernel={slice_kernel!r}: choose one of {SLICE_KERNELS}")
+        self.slice_kernel    = slice_kernel
         self.priors          = dict(priors)
         self.num_live        = int(num_live)
         self._num_inner_steps = num_inner_steps
@@ -150,10 +197,47 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
 
     def _run_config(self, theta_init, num_inner_steps, num_delete):
         """What must match between a checkpoint and the run that resumes it."""
-        return {"num_live": self.num_live, "num_delete": int(num_delete),
-                "num_inner_steps": int(num_inner_steps),
-                "params": [(k, tuple(int(d) for d in jnp.shape(v)))
-                           for k, v in theta_init.items()]}
+        cfg = {"num_live": self.num_live, "num_delete": int(num_delete),
+               "num_inner_steps": int(num_inner_steps),
+               "params": [(k, tuple(int(d) for d in jnp.shape(v)))
+                          for k, v in theta_init.items()]}
+        if self.slice_kernel != "stock":     # absent for "stock": older checkpoints still match
+            cfg["slice_kernel"] = self.slice_kernel
+        return cfg
+
+    def _build_nested_sampler(self, loglike_fn, logprior_fn, num_inner_steps, num_delete):
+        """The NSS transition kernel for ``self.slice_kernel``: ``"stock"`` is
+        ``blackjax.nss``; ``"carry"`` assembles the kernel as
+        ``blackjax.ns.nss.as_top_level_api`` does, with :func:`stepping_out_carry` as the
+        interval procedure (blackjax >= 1.6, whose ``ns`` package is that of commit f73e12956)."""
+        import blackjax
+        if self.slice_kernel == "stock":
+            return blackjax.nss(
+                logprior_fn      = logprior_fn,
+                loglikelihood_fn = loglike_fn,
+                num_delete       = num_delete,
+                num_inner_steps  = num_inner_steps,
+            )
+        from functools import partial
+        from blackjax.mcmc.slice import build_kernel as build_slice_kernel
+        from blackjax.ns import adaptive, base, from_mcmc, nss
+        init_state_fn = partial(base.init_state_strategy,
+                                logprior_fn=logprior_fn, loglikelihood_fn=loglike_fn)
+        constrained_step = nss.slice_constrained_step(
+            init_state_fn,
+            build_slice_kernel(interval=stepping_out_carry,
+                               max_expansions=10, max_shrinkage=100),
+            nss.covariance_proposal)
+        kernel = from_mcmc.build_kernel(
+            constrained_step, num_inner_steps, nss.live_covariance, num_delete)
+
+        def init_fn(position, rng_key=None):
+            return adaptive.init(
+                position, init_state_fn=jax.vmap(init_state_fn),
+                update_inner_kernel_params_fn=nss.live_covariance,
+                rng_key=rng_key)
+
+        return blackjax.SamplingAlgorithm(init_fn, kernel)
 
     def _resume_block(self, live, dead_list, rng_key, n_iter, n_like_calls, elapsed, config):
         import numpy as _np
@@ -237,7 +321,7 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
 
         if self.verbose:
             print(
-                f"BlackJAX NSS  |  n_dims={n_dims}  "
+                f"BlackJAX NSS ({self.slice_kernel})  |  n_dims={n_dims}  "
                 f"num_live={self.num_live}  "
                 f"num_inner_steps={num_inner_steps}  "
                 f"num_delete={num_delete}"
@@ -250,12 +334,8 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
             rng_key, prior_key = jax.random.split(rng_key)
             particles = self._sample_prior(theta_init, prior_key)
 
-        nested_sampler = blackjax.nss(
-            logprior_fn      = logprior_fn,
-            loglikelihood_fn = loglike_fn,
-            num_delete       = num_delete,
-            num_inner_steps  = num_inner_steps,
-        )
+        nested_sampler = self._build_nested_sampler(
+            loglike_fn, logprior_fn, num_inner_steps, num_delete)
         init_fn = jax.jit(nested_sampler.init)
         step_fn = jax.jit(nested_sampler.step)
 
