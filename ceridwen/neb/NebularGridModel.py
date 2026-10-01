@@ -96,10 +96,8 @@ def _resolve_line_wavelengths(line_file, line_pos, payload):
 
 
 def _locate(x, grid):
-    """Index of the cell with ``grid[i] <= x < grid[i+1]``, clipped to ``[0, n-2]``.  The nebular
-    grid axes (logU, logZ, age) are small, so ``method='compare_all'``: the same index by the
-    ``jnp.searchsorted`` contract, one fused compare-reduce instead of a sequential loop."""
-    return jnp.clip(jnp.searchsorted(grid, x, method='compare_all') - 1, 0, grid.size - 2)
+    """Index of the cell with ``grid[i] <= x < grid[i+1]``, clipped to ``[0, n-2]``."""
+    return jnp.clip(jnp.searchsorted(grid, x) - 1, 0, grid.size - 2)
 
 
 def _frac(x, grid, i):

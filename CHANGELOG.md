@@ -10,8 +10,6 @@
 - Emission-line marginalisation: FSPS's phantom `"[O II] 3867"` (zero CLOUDY flux, no NIST
   line, 1.8 A from [Ne III] 3869) is no longer a default fitted line and is refused in
   `elines_to_fit`.
-- Small grid lookups (metallicity, [alpha/Fe], dust emission, nebular grids) use
-  `jnp.searchsorted(..., method="compare_all")`: same indices, fewer GPU kernels.
 - These mechanisms come from Liu Hao's speedups work on his fork of CERIDWEN.
 
 ## 1.0.12 (2026-09-24)

@@ -317,7 +317,7 @@ class CSPBasis_afe(CSPBasis):
         """``(k, w)`` with the interpolated plane ``(1 - w) * flux[k - 1] + w * flux[k]``; edges clamp like the metallicity interpolation."""
         target_afe = jnp.ravel(theta["afe"])[0]
         k = jnp.clip(
-            jnp.searchsorted(self.afe_grid, target_afe, side='left', method='compare_all'),
+            jnp.searchsorted(self.afe_grid, target_afe, side='left'),
             1, self._n_afe - 1,
         )
         a0 = self.afe_grid[k - 1]

@@ -176,10 +176,10 @@ class DustEmission:
         lbold = jnp.dot(f_attn, w)
         lboln = jnp.dot(f_free, w)
 
-        qlo = jnp.clip(jnp.searchsorted(self.qpaharr, duste_qpah, method='compare_all') - 1, 0, self.nqpah_dustem - 2)
+        qlo = jnp.clip(jnp.searchsorted(self.qpaharr, duste_qpah) - 1, 0, self.nqpah_dustem - 2)
         dq  = jnp.clip((duste_qpah - self.qpaharr[qlo]) / (self.qpaharr[qlo + 1] - self.qpaharr[qlo]), 0, 1)
 
-        ulo = jnp.clip(jnp.searchsorted(self.uminarr, duste_umin, method='compare_all') - 1, 0, self.numin_dustem - 2)
+        ulo = jnp.clip(jnp.searchsorted(self.uminarr, duste_umin) - 1, 0, self.numin_dustem - 2)
         du  = jnp.clip((duste_umin - self.uminarr[ulo]) / (self.uminarr[ulo + 1] - self.uminarr[ulo]), 0, 1)
 
         gamma = jnp.clip(duste_gamma, 0.0, 1.0)
