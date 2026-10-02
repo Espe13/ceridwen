@@ -861,8 +861,15 @@ class SedModel:
             "gas_logz":    r"$\log(Z_\mathrm{gas}/Z_\odot)$",
             "gas_logu":    r"$\log U$",
             "sigma_v":     r"$\sigma_v$",
-            "f_agn":       r"$f_\mathrm{AGN}$",
+            "fagn":        r"$f_\mathrm{AGN}$",
+            "log_fagn":    r"$\log f_\mathrm{AGN}$",
             "agn_tau":     r"$\tau_\mathrm{AGN}$",
+            "fagn_bbb":    r"$f_\mathrm{AGN,disc}$",
+            "log_fagn_bbb": r"$\log f_\mathrm{AGN,disc}$",
+            "dust4":       r"$\hat{\tau}_\mathrm{AGN}$",
+            "dust4_index": r"$n_\mathrm{AGN}$",
+            "agn_elum":    r"$L_{\mathrm{H}\beta,\mathrm{AGN}}$",
+            "agn_eline_sigma": r"$\sigma_\mathrm{AGN\,lines}$",
             "duste_qpah":  r"$q_\mathrm{PAH}$",
             "duste_umin":  r"$U_\mathrm{min}$",
             "duste_gamma": r"$\gamma_e$",
@@ -1125,8 +1132,10 @@ class SedModel:
             "nodattn_nodem_noneb": "stellar continuum only",
         }
         variant_key  = variant_raw.replace("get_spectrum_", "")
+        has_agn      = variant_key.endswith("_agn")      # CSPBasis(agn=...) wraps the kernel
+        variant_key  = variant_key[:-4] if has_agn else variant_key
         variant_disp = _VARIANT_MAP.get(
-            variant_key, variant_key.replace("_", " · "))
+            variant_key, variant_key.replace("_", " · ")) + ("  ·  AGN" if has_agn else "")
         txt(x_sed, y_sed - 0.20,
             rf"$\mathtt{{get\_spectrum}}(\boldsymbol{{\theta}})$"
             rf"  ·  {variant_disp}",
