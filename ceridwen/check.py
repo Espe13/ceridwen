@@ -137,6 +137,14 @@ def check_environment(verbose: bool = True) -> bool:
         else:
             record(_WARN, "$SPS_HOME",
                    f"{sps_home} lacks {'; '.join(missing)}: is it a full FSPS clone?")
+        # optional: the Nenkova+08 AGN torus templates (CSPBasis(agn=AGNConfig(...)) only)
+        torus = os.path.join(sps_home, "dust", "Nenkova08_y010_torusg_n10_q2.0.dat")
+        if os.path.isfile(torus):
+            record(_OK, "AGN torus templates", torus)
+        else:
+            record(_WARN, "AGN torus templates",
+                   f"{torus} not found: needed only for the AGN torus "
+                   "(CSPBasis(agn=AGNConfig(...))); it ships with FSPS")
 
     if verbose:
         header = "CERIDWEN environment check"

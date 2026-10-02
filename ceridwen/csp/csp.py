@@ -214,11 +214,18 @@ class CSPBasis:
         change their summation order with the array length, so predictions differ in the last
         float32 bit (relative ~1e-7).  Ignored (whole grid) for dust emission, painted lines and
         a Photometry at a sampled redshift.
+    agn : ceridwen.agn.AGNConfig or None -- AGN components (Nenkova+08 torus, ...), off by default
+        (None: every path unchanged, byte for byte).  ``AGNConfig(agn_mode=...)`` with
+        "fsps" (reproduces FSPS add_agn_dust), "prospector" (Prospector's AGNSSPBasis) or
+        "corrected" (renormalised, clamped, before the IGM, energy balance with dust emission);
+        see ``ceridwen.agn``.  The theta keys (fagn, agn_tau, ...) get their defaults here.
     """
 
     # predict synthesises only the model pixels the observations read (``_support_for``);
     # set from ``wavelength_support`` (opt-in: not byte-identical to the whole grid)
     _wave_support = False
+    # ceridwen.agn.hook.AGNHook when built with agn=AGNConfig(...), else None
+    _agn = None
 
     def __init__(
         self,
@@ -248,6 +255,7 @@ class CSPBasis:
         cosmo=None,
         gas_tied=False,
         wavelength_support=False,
+        agn=None,
         **kwargs,
     ):
         self.verbose = bool(verbose)
@@ -396,6 +404,7 @@ class CSPBasis:
         self.configure_spectrum_model(
             add_dust, add_diffuse_dust, add_dust_emission, add_neb, sps_home
         )
+        theta = self._install_agn(agn, theta, SSPData, add_dust_emission, sps_home)
 
         if sfh_interp not in ('step', 'linear'):
             raise ValueError(
@@ -613,7 +622,8 @@ class CSPBasis:
             'lookback_time', 'logzsol', 'logzsol_hist',
             'logmass', 'zred', 'lumdist_mpc', 'igm_factor', 'eline_scaling',
             'frac_obrun', 'spectrum_scaling', 'spectrum_calib',
-        } | set(getattr(getattr(self, "igm", None), "param_names", ()))
+        } | set(getattr(getattr(self, "igm", None), "param_names", ())) \
+          | set(getattr(self._agn, "param_names", ()))
 
 
     def register_known_theta_keys(self, keys):
@@ -701,6 +711,9 @@ class CSPBasis:
                                    if key == 'gas_logz' else "")
                                 + "; the nebular emission clamps there."
                             )
+
+        if self._agn is not None:
+            msgs += self._agn.range_messages(theta)
 
         if warn:
             for m in msgs:
@@ -892,6 +905,102 @@ class CSPBasis:
             print(f"Spectrum model: {label[key]}")
         self.get_spectrum = mapping[key]
 
+    # ------------------------------------------------------------------ AGN (ceridwen.agn)
+    def _install_agn(self, agn, theta, ssp, add_dust_emission, sps_home):
+        """With ``agn`` (an ``AGNConfig``): build the ``AGNHook``, the per-SSP dust-free
+        bolometric table, merge the AGN defaults into ``theta`` and wrap ``self.get_spectrum``
+        once (``_with_agn``).  Without it: nothing (every path unchanged)."""
+        if agn is None:
+            return theta
+        from ..agn.hook import AGNHook
+        self._agn = AGNHook(agn, self.wave, add_dust_emission=add_dust_emission,
+                            sps_home=sps_home)
+        # L_bol of every SSP: the dust-free stellar spectrum integrated over frequency with the
+        # DL07 trapezoid weights, float64 from the grid's own (host) cube
+        w = np.asarray(self._agn._w, dtype=np.float64)
+        flux64 = np.asarray(ssp.ssp_flux, dtype=np.float64)
+        self._agn_lbol = jnp.asarray(flux64 @ w)                 # (..., n_z, n_age)
+        del flux64
+        for k, v in self._agn.default_params().items():
+            if k not in theta:
+                theta[k] = v
+        self.agn_param_names = list(self._agn.param_names)
+        self.get_spectrum = self._with_agn(self.get_spectrum)
+        if self.verbose:
+            print(f"AGN: agn_mode={agn.agn_mode!r}, components "
+                  f"{sorted(self._agn.model.components)}, energy balance "
+                  f"{self._agn.energy_balance}")
+        return theta
+
+    def _agn_lbol_at(self, theta):
+        """(n_z, n_age) dust-free bolometric luminosity of each SSP [L_sun per M_sun formed]."""
+        return self._agn_lbol
+
+    def _dustfree_stellar(self, theta, W):
+        """(n_wave,) dust-free stellar spectrum of the SSP weights ``W`` (no nebular term)."""
+        return jnp.einsum("za,zaw->w", W.astype(jnp.float32), self.flux)
+
+    def _agn_context(self, theta, W):
+        """``AGNContext`` for this theta: L_bol of the dust-free stellar population, the
+        dust-free stellar spectrum (only when a component needs it) and exp(-tau_diffuse)."""
+        from ..agn import AGNContext
+        lbol = jnp.sum(W * self._agn_lbol_at(theta))
+        gal = (self._dustfree_stellar(theta, W).astype(jnp.float64)
+               if self._agn.need_galaxy else None)
+        if getattr(self, "diff_dust", None) is not None:
+            dc = jnp.exp(-jnp.asarray(self.diff_dust.compute_attenuation(self.wave, theta),
+                                      dtype=jnp.float64))
+        else:
+            dc = jnp.ones(self.wave.shape, dtype=jnp.float64)
+        return AGNContext(self.wave, lbol, gal, dc, self._agn.mode)
+
+    def _agn_rest(self, theta):
+        """(n_wave,) float64: the AGN continuum the wrapped ``get_spectrum`` adds."""
+        ctx = self._agn_context(theta, self.calculate_ssp_weights(theta=theta))
+        if self._agn.energy_balance:
+            agn, _ = self._agn(theta, ctx, self.dust_emi,
+                               (theta["duste_qpah"], theta["duste_umin"], theta["duste_gamma"]))
+        else:
+            agn, _ = self._agn(theta, ctx)
+        return agn
+
+    def _with_agn(self, base):
+        """``base`` (a ``get_spectrum_*`` kernel) plus the AGN continuum, cast to its dtype; keeps
+        its ``_per_pixel`` mark and ``support=`` (the AGN is computed on the whole grid, then
+        sliced)."""
+        if getattr(base, "_per_pixel", False):
+            def get_spectrum(theta, *, include_lines=None, support=None):
+                spec = base(theta, include_lines=include_lines, support=support)
+                return spec + _sel(self._agn_rest(theta), support).astype(spec.dtype)
+            get_spectrum._per_pixel = True
+        else:
+            def get_spectrum(theta, *, include_lines=None):
+                spec = base(theta, include_lines=include_lines)
+                return spec + self._agn_rest(theta).astype(spec.dtype)
+        get_spectrum.__name__ = getattr(base, "__name__", "get_spectrum") + "_agn"
+        get_spectrum.__doc__ = base.__doc__
+        get_spectrum._agn_base = base
+        return get_spectrum
+
+    def _agn_after_igm(self, theta, trans, dtype, support=None, flux_factor=None):
+        """Reproduction modes (``AGNHook.own_igm``): ``agn * (T_agn - T_gal)`` scaled by mass and
+        flux factor like the spectrum, added after the galaxy's IGM ``trans`` = T_gal so that
+        the AGN sees T_agn instead (fsps: 1, FSPS compsp.f90:138-151; prospector:
+        fake_fsps.add_igm).  None for "corrected" and without agn= (nothing is added)."""
+        if self._agn is None or not self._agn.own_igm:
+            return None
+        agn = _sel(self._agn_rest(theta), support).astype(dtype)
+        if "logmass" in theta:
+            agn = agn * jnp.float32(10.0 ** jnp.ravel(theta["logmass"])[0])
+        ff = jnp.float32(self._flux_factor(theta) if flux_factor is None else flux_factor)
+        if "igm_factor" in theta:
+            ig = jnp.ravel(theta["igm_factor"])[0]
+        else:
+            ig = self.igm_factor
+        t_agn = _sel(self._agn.agn_transmission(jnp.ravel(theta["zred"])[0], ig),
+                     support).astype(dtype)
+        return (agn * ff) * (t_agn - trans)
+
 
     def get_spectrum_components(self, theta: dict) -> tuple:
         """``(continuum, lines)`` on the rest-frame grid, unscaled (no mass, distance or IGM):
@@ -954,12 +1063,16 @@ class CSPBasis:
         cont0, lines0 = self._apply_mass_redshift_igm(
             cont, cont if lines is None else lines, theta, igm=False, flux_factor=flux_factor)
         trans = None
+        agn_corr = None
         if self.igm is not None and "zred" in theta:
             trans = self._igm_transmission(
                 jnp.ravel(theta["zred"])[0], theta).astype(cont0.dtype)
             # on the whole grid, then the support: Madau's tau is capped at its peak (argmax)
             trans = _sel(trans, support)
             cont, lines_s = cont0 * trans, lines0 * trans
+            agn_corr = self._agn_after_igm(theta, trans, cont0.dtype, support, flux_factor)
+            if agn_corr is not None:
+                cont = cont + agn_corr
         else:
             cont, lines_s = cont0, lines0
         if support is not None:
@@ -967,6 +1080,8 @@ class CSPBasis:
             # found XLA CPU returning zeros for a pad inside that fusion)
             width = (support.start, self.wave.shape[0] - support.stop)
             cont, cont0 = jnp.pad(cont, width), jnp.pad(cont0, width)
+            if agn_corr is not None:
+                agn_corr = jnp.pad(agn_corr, width)
         return self._project_observations(
             cont if lines is None else cont + lines_s, cont,
             observations, theta, paint_lines=paint_lines,
@@ -975,6 +1090,7 @@ class CSPBasis:
             eline_system=eline_system,
             before_igm=None if trans is None else (cont0, None if lines is None else lines0),
             flux_factor=flux_factor,
+            **({} if agn_corr is None else {"agn_after_igm": agn_corr}),
         )
 
     def _support_for(self, observations, theta, paint_lines=False):
@@ -1029,7 +1145,8 @@ class CSPBasis:
                                  flux_factor=None):
         """Multiply both spectra by 10**logmass, the cgs flux factor (``flux_factor`` when
         given, else ``_flux_factor(theta)``) and (``igm``) the IGM transmission, each only when
-        its key is present."""
+        its key is present.  In the AGN reproduction modes both spectra are taken to contain the
+        AGN (``get_spectrum`` output), which then gets its own IGM (``_agn_after_igm``)."""
         if "logmass" in theta:
             mass_scale = jnp.float32(10.0 ** jnp.ravel(theta["logmass"])[0])
             spectrum_phot = spectrum_phot * mass_scale
@@ -1045,6 +1162,11 @@ class CSPBasis:
                     z_scalar, theta).astype(spectrum_phot.dtype)
                 spectrum_phot = spectrum_phot * transmission
                 spectrum_slit = spectrum_slit * transmission
+                agn_corr = self._agn_after_igm(theta, transmission, spectrum_phot.dtype,
+                                               flux_factor=flux_factor)
+                if agn_corr is not None:          # reproduction modes: the AGN's own IGM
+                    spectrum_phot = spectrum_phot + agn_corr
+                    spectrum_slit = spectrum_slit + agn_corr
 
         return spectrum_phot, spectrum_slit
 
@@ -1052,13 +1174,18 @@ class CSPBasis:
                               observations, theta, *, paint_lines=True,
                               line_component=None, kinematics=None,
                               broaden_photometry=False, eline_system=None, before_igm=None,
-                              flux_factor=None):
+                              flux_factor=None, agn_after_igm=None):
         """``{obs.name: prediction}`` from the scaled observer-frame spectra: ``spectrum_phot`` is the
         continuum (+ painted lines), ``spectrum_slit`` the continuum alone (Spectrum projector input),
         ``line_component`` the painted lines alone (or None).  ``before_igm``: ``(continuum, lines
         or None)`` before the IGM (None without IGM); a Spectrum or broadened Photometry whose
         kinematic width is not a fixed zero smooths these and applies the IGM afterwards.
         ``flux_factor``: the precomputed fixed-z flux factor for the line fluxes (``predict``).
+        ``agn_after_igm``: the AGN reproduction modes' ``agn * (T_agn - T_gal)`` (observer
+        scaling, model grid; ``_agn_after_igm``), already in ``spectrum_phot`` /
+        ``spectrum_slit``; the branches that apply the IGM themselves after a kinematic kernel
+        (``before_igm``) add it after that kernel: unsmoothed for photometry, through the
+        Spectrum's projector (galaxy kernel + LSF, no transmission) for a Spectrum.
         """
         from ..observation.observation import (
             Photometry as _Photometry,
@@ -1153,6 +1280,8 @@ class CSPBasis:
                     pred = obs.predict(slit, self.wave, _line_fluxes_spec, theta, transmission=tr)
                 else:
                     pred = obs.predict(slit, self.wave, _line_fluxes_spec, theta)
+                if tr is not None and agn_after_igm is not None:
+                    pred = pred + obs.predict(agn_after_igm, self.wave, None, theta)
                 calib = _spec_calib(obs, theta, dtype=pred.dtype)
                 if calib is not None:
                     pred = pred * calib
@@ -1173,6 +1302,8 @@ class CSPBasis:
                         spec_for_obs = (pb(c0, s_gal) + pb(l0, s_gas)) * trans_m
                     else:
                         spec_for_obs = pb(c0 if l0 is None else c0 + l0, s_gal) * trans_m
+                    if agn_after_igm is not None:
+                        spec_for_obs = spec_for_obs + agn_after_igm
                 elif line_component is not None and gas_untied:
                     spec_for_obs = pb(spectrum_slit, s_gal) + pb(line_component, s_gas)
                 else:

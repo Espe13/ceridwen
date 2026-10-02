@@ -27,8 +27,9 @@ class CSPBasis_afe(CSPBasis):
     Same constructor and interface as ``CSPBasis`` minus the nebular arguments; requires an
     ``SSPDataAfe`` grid (4-D ``ssp_flux`` with an ``ssp_afe`` axis).  theta["afe"] is
     optional: absent, the plane closest to [alpha/Fe] = 0 is used.  The SFH weights,
-    dust, projection, flux factor and cosmology are those of ``CSPBasis``, and so is
-    ``wavelength_support`` (opt-in; see ``CSPBasis``).
+    dust, projection, flux factor and cosmology are those of ``CSPBasis``, and so are
+    ``wavelength_support`` (opt-in) and ``agn`` (see ``CSPBasis``; L_bol and the dust-free
+    galaxy spectrum are taken at theta['afe'] like the flux cube).
     """
 
     def __init__(
@@ -54,6 +55,7 @@ class CSPBasis_afe(CSPBasis):
         cosmo=None,
         duste_model="DL07",
         wavelength_support=False,
+        agn=None,
         **kwargs,
     ):
         self.verbose = bool(verbose)
@@ -218,6 +220,7 @@ class CSPBasis_afe(CSPBasis):
         self.configure_spectrum_model(
             add_dust, add_diffuse_dust, add_dust_emission, sps_home
         )
+        theta = self._install_agn(agn, theta, SSPData, add_dust_emission, sps_home)
 
         if sfh_interp not in ('step', 'linear'):
             raise ValueError(
@@ -377,6 +380,20 @@ class CSPBasis_afe(CSPBasis):
             return m[self._afe_solar_idx]
         k, w = self._afe_coords(theta)
         return (1.0 - w) * jnp.take(m, k - 1, axis=0) + w * jnp.take(m, k, axis=0)
+
+    def _agn_lbol_at(self, theta):
+        """(n_z, n_age) dust-free bolometric table at theta['afe'], interpolated as ``_flux_at_afe``."""
+        L = self._agn_lbol
+        if self._n_afe == 1:
+            return L[0]
+        if "afe" not in theta:
+            return L[self._afe_solar_idx]
+        k, w = self._afe_coords(theta)
+        return (1.0 - w) * jnp.take(L, k - 1, axis=0) + w * jnp.take(L, k, axis=0)
+
+    def _dustfree_stellar(self, theta, W):
+        """(n_wave,) dust-free stellar spectrum at theta['afe'] (``_contract``)."""
+        return self._contract(theta, W.astype(jnp.float32))
 
     def configure_spectrum_model(
         self, add_dust, add_diffuse_dust, add_dust_emission, sps_home
