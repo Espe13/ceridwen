@@ -2,7 +2,7 @@
 writes against the interface with a local stub of hook.py"; session INT does the real wiring).
 
 ``_predict_with_agn`` adds the AGN-line terms to ``SedModel.predict`` exactly as the handoff in
-REPORT_feat-agn-lines.md tells INT to: Spectrum += ``_proj.agn_lines``, Photometry += the
+REPORT_LINES.md tells INT to: Spectrum += ``_proj.agn_lines``, Photometry += the
 mode's photometry, Lines += ``agn_line_matrix @ F``. On it:
 
 B3  agn_elum = 0 leaves every prediction byte-identical to the model without AGN (both modes,
@@ -140,7 +140,7 @@ def test_one_agn_flux_in_lines_spectrum_and_photometry(csp):
     # Not exact, for two reasons that hold for the nebular lines identically (same profiles,
     # same _T): Photometry._T reads the spectrum at the FilterSet grid points (dlnlam = 1e-3,
     # ~6.5 A here), which aliases a line of a few A by up to ~1 % (it does NOT shrink with a finer
-    # model grid: REPORT_feat-agn-lines.md), and a resolved line on a steep filter edge is not a
+    # model grid: REPORT_LINES.md), and a resolved line on a steep filter edge is not a
     # delta function ([O III] 5007 and H alpha on the i-band edges at z = 0.3: 3 % of that faint
     # band). Prospector's nebline_photometry (the "prospector" mode) is the delta function.
     np.testing.assert_allclose(dp, delta, rtol=0, atol=1e-2 * np.abs(delta).max())
