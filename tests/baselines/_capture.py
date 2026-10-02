@@ -14,7 +14,11 @@ arrays must compare bit-for-bit (W) or to float64 rounding tolerance
 
 Usage
 -----
-    python tests/baselines/_capture.py
+    python tests/baselines/_capture.py          # every pre-AGN config (never re-run: they are
+                                                # the goldens; CLAUDE.md section 4)
+    python tests/baselines/_capture.py --agn    # ONLY the AGN configs (AGN_CONFIGS): writes the
+                                                # agn_* files and replaces just their manifest
+                                                # entries; the existing entries are not touched
 """
 from __future__ import annotations
 
@@ -73,21 +77,89 @@ def _build_theta(zh_const: bool, per_bin: bool):
     return theta
 
 
-def _build_csp(ssp, theta, *, sfh_interp, zh_const):
+def _build_csp(ssp, theta, *, sfh_interp, zh_const, agn=None, **over):
+    kw = dict(add_dust=False, add_diffuse_dust=False, add_dust_emission=False)
+    kw.update(over)
     return CSPBasis(
         ssp,
         theta             = theta,
         cosmo=Cosmology.planck18(),
         zh_const          = zh_const,
-        add_dust          = False,
-        add_diffuse_dust  = False,
-        add_dust_emission = False,
         add_neb           = True,
         init_neb_params   = {"cloudy_dust": True},   # the grid the goldens were captured with
         nebemlineinspec   = True,
         verbose           = False,
         sfh_interp        = sfh_interp,
+        agn               = agn,
+        **kw,
     )
+
+
+# AGN golden configs (AGN_PLAN section 4 C): the step / constant-Z / per-node SFH of the
+# pre-AGN goldens at zred = 2 with the IGM, plus the AGN of each mode.  "agn" holds the
+# AGNConfig kwargs, "csp" CSPBasis overrides, "theta" the AGN (and dust) theta values.
+AGN_CONFIGS = [
+    {"tag": "agn_fsps", "agn": {"agn_mode": "fsps"},
+     "csp": {"add_diffuse_dust": True, "add_igm": True},
+     "theta": {"zred": 2.0, "fagn": 0.5, "agn_tau": 20.0, "diffuse_tau_kc": 0.6}},
+    {"tag": "agn_prospector", "agn": {"agn_mode": "prospector", "dust4_type": 1},
+     "csp": {"add_diffuse_dust": True, "add_igm": True},
+     "theta": {"zred": 2.0, "fagn": 0.3, "agn_tau": 30.0, "fagn_bbb": 1.0, "dust4": 0.3,
+               "dust4_index": -1.2, "agn_elum": 1e-3, "diffuse_tau_kc": 0.6}},
+    {"tag": "agn_corrected_dustemi", "agn": {"agn_mode": "corrected", "dust4_type": 1},
+     "csp": {"add_dust": True, "add_diffuse_dust": True, "add_dust_emission": True,
+             "add_igm": True},
+     "theta": {"zred": 2.0, "fagn": 0.3, "agn_tau": 30.0, "fagn_bbb": 1.0, "dust4": 0.3,
+               "dust4_index": -1.2, "agn_elum": 1e-3, "diffuse_tau_kc": 0.6}},
+]
+
+
+def agn_arrays(ssp, cfg):
+    """(W, spec, lines, maggies) of one AGN config, exactly as the T3 test computes them."""
+    from ceridwen.agn import AGNConfig
+    theta = _build_theta(True, False)
+    csp = _build_csp(ssp, theta, sfh_interp="step", zh_const=True,
+                     agn=AGNConfig(**cfg["agn"]), **cfg["csp"])
+    phot = _photometry(csp)
+    theta_full = {k: jnp.asarray(v) for k, v in csp.theta_init.items()}
+    theta_full.setdefault("logmass", jnp.zeros(1))
+    theta_full.setdefault("igm_factor", jnp.ones(1))
+    theta_full.setdefault("eline_scaling", jnp.ones(1))
+    theta_full.update({k: jnp.array([v]) for k, v in cfg["theta"].items()})
+    W = np.asarray(csp.calculate_ssp_weights(theta_full))
+    spec = np.asarray(csp.get_spectrum(theta_full))
+    lines = np.asarray(csp.get_line_spec(theta_full))
+    spec_phot = csp._apply_mass_redshift_igm(*csp._assemble_observer_spectra(theta_full),
+                                             theta_full)[0]
+    maggies = np.asarray(phot.get_maggies(csp.wave, spec_phot))
+    return W, spec, lines, maggies
+
+
+def capture_agn():
+    """The AGN configs on the grid the T3 test loads (tests/_gridfixture.py)."""
+    import json
+    sys.path.insert(0, str(THIS_DIR.parent))
+    from _gridfixture import require_test_grid
+    grid = str(require_test_grid())
+    print(f"[capture --agn] grid {grid}")
+    ssp = SSPData.load(grid)
+    with open(THIS_DIR / "manifest.json") as f:
+        man = json.load(f)
+    tags = {c["tag"] for c in AGN_CONFIGS}
+    keep = [c for c in man["configs"] if c["tag"] not in tags]
+    for cfg in AGN_CONFIGS:
+        W, spec, lines, maggies = agn_arrays(ssp, cfg)
+        for name, arr in (("W", W), ("spec", spec), ("lines", lines), ("maggies", maggies)):
+            np.save(THIS_DIR / f"{name}_{cfg['tag']}.npy", arr)
+        keep.append({"tag": cfg["tag"], "sfh_interp": "step", "zh_const": True,
+                     "per_bin": False, "agn": cfg["agn"], "csp": cfg["csp"],
+                     "theta": cfg["theta"],
+                     "shapes": {"W": W.shape, "spec": spec.shape, "lines": lines.shape,
+                                "maggies": maggies.shape}})
+        print(f"[capture --agn] {cfg['tag']}: spec{spec.shape} maggies {maggies}")
+    man["configs"] = keep
+    with open(THIS_DIR / "manifest.json", "w") as f:
+        json.dump(man, f, indent=2)
 
 
 def _photometry(csp):
@@ -174,4 +246,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(capture_agn() if "--agn" in sys.argv[1:] else main())

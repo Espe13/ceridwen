@@ -100,15 +100,19 @@ def _build_theta_new(zh_const: bool, per_bin: bool):
     return theta
 
 
-def _build_csp(ssp, theta, *, sfh_interp, zh_const):
+def _build_csp(ssp, theta, *, sfh_interp, zh_const, agn=None, **over):
+    kw = dict(add_dust=False, add_diffuse_dust=False, add_dust_emission=False)
+    kw.update(over)
+    if agn is not None:
+        from ceridwen.agn import AGNConfig
+        agn = AGNConfig(**agn)
     return CSPBasis(
         ssp,
         theta             = theta,
         cosmo             = Cosmology.planck18(),   # the pre-2026-09-03 default
         zh_const          = zh_const,
-        add_dust          = False,
-        add_diffuse_dust  = False,
-        add_dust_emission = False,
+        agn               = agn,
+        **kw,
         add_neb           = True,
         init_neb_params   = {"cloudy_dust": True},   # the grid the goldens were captured with
         nebemlineinspec   = True,
@@ -127,14 +131,19 @@ def _photometry():
     )
 
 
+# AGN configs (tests/baselines/_capture.py --agn) carry "agn" (AGNConfig kwargs), "csp"
+# (CSPBasis overrides) and "theta" (AGN / dust / zred values) in the manifest
 CONFIGS = [(c["sfh_interp"], c["zh_const"], c["per_bin"], c["tag"])
            for c in MANIFEST["configs"]]
+_EXTRA = {c["tag"]: c for c in MANIFEST["configs"] if "agn" in c}
 
 
 @pytest.mark.parametrize("sfh_interp,zh_const,per_bin,tag", CONFIGS)
 def test_lookback_flip_invariant(ssp, sfh_interp, zh_const, per_bin, tag):
+    extra = _EXTRA.get(tag, {})
     theta = _build_theta_new(zh_const, per_bin)
-    csp   = _build_csp(ssp, theta, sfh_interp=sfh_interp, zh_const=zh_const)
+    csp   = _build_csp(ssp, theta, sfh_interp=sfh_interp, zh_const=zh_const,
+                       agn=extra.get("agn"), **extra.get("csp", {}))
     phot  = _photometry()
 
     theta_full = {k: jnp.asarray(v) for k, v in csp.theta_init.items()}
@@ -142,6 +151,7 @@ def test_lookback_flip_invariant(ssp, sfh_interp, zh_const, per_bin, tag):
     theta_full.setdefault("zred",          jnp.zeros(1))
     theta_full.setdefault("igm_factor",    jnp.ones(1))
     theta_full.setdefault("eline_scaling", jnp.ones(1))
+    theta_full.update({k: jnp.array([v]) for k, v in extra.get("theta", {}).items()})
 
     W_new       = np.asarray(csp.calculate_ssp_weights(theta_full))
     spec_new    = np.asarray(csp.get_spectrum(theta_full))
