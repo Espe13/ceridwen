@@ -1,0 +1,30 @@
+# AGN narrow-line ratios relative to H beta, Richardson et al. 2014 Table 3 "a42" set (per Prospector's docstring;
+# the paper itself was not re-read), as hard-coded in Prospector AGNSpecModel.init_aline_info (prospect/models/sedmodel.py, bd-j/prospector
+# @91f8e13a9f4a97680aceea788c38deae3c443b2f, identical in 40e2614). The lines are stored by FSPS NAME;
+# fsps_index and wave_vac record the FSPS emlines_info.dat they were read from (FSPS cbcd0ee) so that
+# ceridwen.agn.lines can refuse a different line list at setup. Prospector puts the whole [O II] 3727
+# doublet ratio (2.96) on '[O II] 3726' alone and nothing on '[O II] 3729'; kept as Prospector does.
+name,fsps_index,wave_vac,ratio_hbeta
+[O II] 3726,38,3727.118,2.96
+Ba-8 3798,40,3799.0277,0.06
+Ba-7 3835,41,3836.528,0.1
+[Ne III] 3869,43,3869.9172,1.0
+Ba-6 3889,45,3890.2127,0.2
+Ba-delta 4101.76A,50,4102.9514,0.25
+Ba-gamma 4341,51,4341.7476,0.48
+[O III] 4363,52,4364.2938,0.13
+Ba-beta 4861,59,4862.7629,1.0
+[O III] 4959,61,4960.3702,2.87
+[O III] 5007,62,5008.3137,8.53
+[N I] 5200,64,5201.788,0.07
+[N II] 5755,68,5756.2941,0.02
+He I 5875.64A,69,5877.3583,0.1
+[O I] 6300,70,6302.1385,0.33
+[O I] 6363,72,6365.6364,0.09
+[N II] 6548,73,6549.9587,0.79
+Ba-alpha 6563,74,6564.7229,2.86
+[N II] 6584,75,6585.3687,2.13
+He I 6678.15A,76,6680.0956,0.03
+[S II] 6716,77,6718.3965,0.77
+[S II] 6731,78,6732.7805,0.65
+[Ar III] 7135,80,7137.8656,0.19

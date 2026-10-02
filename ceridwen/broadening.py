@@ -35,6 +35,7 @@ __all__ = [
     "ScaledResponse", "check_scale_range",
     "make_line_painter_free_z",
     "make_line_painter", "SpectralProjector", "PhotometricBroadener",
+    "agn_line_profiles_on_grid", "make_agn_line_painter_prospector",
 ]
 
 CKMS = 2.99792458e5
@@ -624,6 +625,94 @@ def _line_windows(wave_obs, line_wave_rest, sigma_inst_table_kms, sigma_gas_max_
     return np.clip(lo, 0, wave_obs.size - width).astype(np.int64), width
 
 
+# --- AGN narrow lines (ceridwen.agn.lines) -----------------------------------------------
+# Prospector's constants (prospect.sources.constants), used only by its painter below, so that
+# the "prospector" mode reproduces AGNSpecModel to rounding.
+PROSPECT_CKMS = 2.998e5
+PROSPECT_LIGHTSPEED = 2.998e18
+_PROSPECT_NU_NUMER = 3e18          # SpecModel.get_eline_gaussians: trapezoid(g, 3e18 / warr)
+
+
+def agn_line_profiles_on_grid(wave, line_wave, sigma_kms, res_floor_factor=2.0):
+    """(n_wave, n_lines) L_nu profiles of unit-luminosity lines on the rest model grid ``wave``
+    for a traced width ``sigma_kms``: ``NebularModel.line_profiles(sigma_kms)`` with its default
+    settings (a Gaussian in lambda of width sqrt(floor^2 + (pos sigma / c)^2), floor =
+    ``res_floor_factor`` x the local pixel width, times pos^2 / c), the nebular convention, so the
+    AGN lines reach the photometry exactly as the nebular lines do."""
+    from .neb.NebularGridModel import CLIGHT_AA_S, SQRT_2PI
+    lam = np.asarray(wave, dtype=np.float64)
+    pos = np.asarray(line_wave, dtype=np.float64)
+    idx = np.clip(np.searchsorted(lam, pos, side="right") - 1, 1, lam.size - 2)
+    floor = jnp.asarray((lam[idx + 1] - lam[idx]) * float(res_floor_factor))
+    posj = jnp.asarray(pos)
+    dl = jnp.sqrt(floor ** 2 + (posj * sigma_kms / CLIGHT_AA_S * 1.0e13) ** 2)
+    prof = jnp.exp(-0.5 * ((jnp.asarray(lam)[:, None] - posj[None, :]) / dl[None, :]) ** 2)
+    return prof / (SQRT_2PI * dl[None, :]) * (posj[None, :] ** 2 / CLIGHT_AA_S)
+
+
+def make_agn_line_painter_prospector(wave_obs, agn_line_wave_rest, sf_line_wave_rest,
+                                     agn_sf_rows, pixel_mask=None) -> Callable:
+    """paint(line_flux, sigma_agn_kms, sigma_sf_kms, eline_sigma_kms, opz) -> f_nu on wave_obs,
+    Prospector's ``AGNSpecModel.predict_spec`` AGN-line term with static shapes.
+
+    Prospector (``cache_eline_parameters(nsigma=...)`` then ``predict_aline_spec``): with
+    ``nsigma = 5 agn_eline_sigma / eline_sigma`` a pixel is used when it lies within
+    ``nsigma * lambda_obs / c * sigma_sf`` of a nebular line (``sigma_sf_kms`` (n_sf,): the
+    nebular line widths, ``sf_line_wave_rest`` (n_sf,) their rest wavelengths) and is unmasked
+    (``pixel_mask``, the Spectrum's mask; None = all); a nebular line with no such pixel is not
+    valid. AGN line ``l`` (rest ``agn_line_wave_rest[l]``, the nebular line ``agn_sf_rows[l]``)
+    is painted only when that nebular line is valid, as a Gaussian in velocity of dispersion
+    ``sigma_agn_kms`` alone (no instrument), times dv/dnu, divided by minus its trapezoid in
+    ``nu = 3e18 / lambda`` over the used pixels in order (gaps included, as ``np.trapezoid`` over
+    the compressed array does), and only on the used pixels. ``line_flux`` (n_agn,) observed
+    integrated fluxes; centres at ``rest * opz`` (``opz`` = 1 + zred + eline_delta_zred).
+    Prospector's ``ckms`` / ``lightspeed`` (2.998e5, 2.998e18) are used here."""
+    from jax import lax
+    wo = np.asarray(wave_obs, dtype=np.float64)
+    n = wo.size
+    w = jnp.asarray(wo)
+    nu = jnp.asarray(_PROSPECT_NU_NUMER / wo)
+    lam_a = jnp.asarray(np.asarray(agn_line_wave_rest, dtype=np.float64))
+    lam_sf = jnp.asarray(np.asarray(sf_line_wave_rest, dtype=np.float64))
+    rows = np.asarray(agn_sf_rows, dtype=np.int64)
+    if rows.shape != (int(lam_a.shape[0]),) or rows.min() < 0 or rows.max() >= lam_sf.shape[0]:
+        raise ValueError("agn_sf_rows must give, for every AGN line, its row in sf_line_wave_rest")
+    rows = jnp.asarray(rows)
+    om = None if pixel_mask is None else jnp.asarray(np.asarray(pixel_mask, dtype=bool))
+    if om is not None and om.shape != (n,):
+        raise ValueError(f"pixel_mask must have one entry per pixel ({n}), got {om.shape}")
+    idx = jnp.arange(n)
+
+    def paint(line_flux, sigma_agn_kms, sigma_sf_kms, eline_sigma_kms, opz):
+        ew_sf = lam_sf * opz
+        nsigma = 5 * (sigma_agn_kms / eline_sigma_kms)
+        linewidth = nsigma * ew_sf / PROSPECT_CKMS * sigma_sf_kms
+        pm = jnp.abs(w[None, :] - ew_sf[:, None]) < linewidth[:, None]
+        if om is not None:
+            pm = pm & om[None, :]
+        valid = pm.any(axis=1)
+        emask = pm.any(axis=0)
+        on = valid[rows]
+        mu = (lam_a * opz)[None, :]
+        sigma = sigma_agn_kms
+        dv = PROSPECT_CKMS * (w[:, None] / mu - 1)
+        dv_dnu = PROSPECT_CKMS * w[:, None] ** 2 / (PROSPECT_LIGHTSPEED * mu)
+        g = 1. / (sigma * jnp.sqrt(jnp.pi * 2)) * jnp.exp(-dv ** 2 / (2 * sigma ** 2))
+        g = g * dv_dnu
+        # trapezoid over the used pixels in order: each used pixel pairs with the next used one
+        nxt_ge = lax.cummin(jnp.where(emask, idx, n), reverse=True)
+        nxt = jnp.concatenate([nxt_ge[1:], jnp.full((1,), n, dtype=nxt_ge.dtype)])
+        has = emask & (nxt < n)
+        j = jnp.minimum(nxt, n - 1)
+        d = jnp.where(has, nu[j] - nu, 0.0)
+        norm = -jnp.sum(d[:, None] * (g[j, :] + g) / 2.0, axis=0)
+        use = on & (norm != 0.0)
+        flux = jnp.where(use, line_flux, 0.0) / jnp.where(use, norm, 1.0)
+        return jnp.where(emask, g @ flux, 0.0)
+
+    return paint
+
+
 @dataclass(eq=False)
 class SpectralProjector:
     """Built once per Spectrum by setup_for_model; predict() is the per-likelihood call.
@@ -986,6 +1075,79 @@ class SpectralProjector:
             out = out + basis @ line_flux_obs_all[self._line_idx_j]
         A = None if fit_pos is None else basis[:, np.asarray(fit_pos, dtype=np.int64)]
         return out, A
+
+    # AGN narrow lines (ceridwen.agn.lines): a separate static painter, built by
+    # setup_agn_lines; None until then (the nebular path never reads it).
+    _agn = None
+
+    def setup_agn_lines(self, agn_line_wave_rest, *, mode, sf_line_wave_rest=None,
+                        agn_sf_rows=None, pixel_mask=None):
+        """Build the AGN-line painter for this projector (setup time, NumPy).
+
+        ``mode`` "corrected": the nebular painter's profile (Gaussian in ln lambda, unit area,
+        width sqrt(agn_eline_sigma^2 + sigma_inst^2) with the instrument at the line, times the
+        sampled instrument scale). "prospector" / "fsps": Prospector's ``AGNSpecModel`` painter
+        (:func:`make_agn_line_painter_prospector`), which needs every nebular line
+        (``sf_line_wave_rest``, rest A), the nebular row of each AGN line (``agn_sf_rows``) and
+        the Spectrum's ``pixel_mask``."""
+        lam = np.asarray(agn_line_wave_rest, dtype=np.float64)
+        if self.instrument is None:
+            s_table = 0.5 * CKMS * np.gradient(np.log(self.wave_obs))
+        else:
+            s_table = np.asarray(self.sigma_inst_kms, dtype=np.float64)
+        if mode == "corrected":
+            paint = make_line_painter_free_z(self.wave_obs, lam, s_table)
+            self._agn = {"mode": mode, "paint": paint}
+            return
+        if mode not in ("prospector", "fsps"):
+            raise ValueError(f"setup_agn_lines(mode={mode!r}): 'corrected', 'prospector' or 'fsps'")
+        if sf_line_wave_rest is None or agn_sf_rows is None:
+            raise ValueError(
+                "the Prospector AGN-line painter selects its pixels from the nebular lines "
+                "(AGNSpecModel asserts 'must add agn and nebular lines'): pass "
+                "sf_line_wave_rest and agn_sf_rows (a CSP with add_neb=True)")
+        sf = np.asarray(sf_line_wave_rest, dtype=np.float64)
+        # library width of each nebular line at its rest wavelength (Prospector interpolates the
+        # library resolution at the rest line wavelength); sigma_lib_kms is on wave_obs at opz_ref
+        lib = np.interp(sf * self.opz_ref, self.wave_obs,
+                        np.asarray(self.sigma_lib_kms, dtype=np.float64))
+        self._agn = {
+            "mode": mode,
+            "paint": make_agn_line_painter_prospector(self.wave_obs, lam, sf, agn_sf_rows,
+                                                      pixel_mask),
+            "sf_rest": jnp.asarray(sf), "lib": jnp.asarray(lib),
+            "inst": None if self.instrument is None else jnp.asarray(s_table),
+        }
+
+    def agn_lines(self, line_flux_obs, sigma_agn_kms, theta):
+        """f_nu of the AGN lines on the observed pixels (add to :meth:`predict`):
+        ``line_flux_obs`` (n_agn,) observed integrated fluxes, ``sigma_agn_kms`` the
+        ``agn_eline_sigma``; centres at rest x (1 + zred + ``eline_delta_zred``)."""
+        if self._agn is None:
+            raise RuntimeError("SpectralProjector.agn_lines before setup_agn_lines")
+        s_gal, s_gas = self.kinematics.resolve(theta)
+        opz = self.opz_ref
+        if self.free_z:
+            if "zred" not in theta:
+                raise KeyError("projector built with zred_range needs theta['zred']")
+            opz = 1.0 + jnp.ravel(jnp.asarray(theta["zred"]))[0]
+        if "eline_delta_zred" in theta:
+            opz = opz + jnp.ravel(jnp.asarray(theta["eline_delta_zred"]))[0]
+        s_ins = self.inst_scale(theta)
+        a = self._agn
+        if a["mode"] == "corrected":
+            return a["paint"](line_flux_obs, sigma_agn_kms, opz, s_ins)
+        # Prospector's nebular widths (cache_eline_parameters): hypot(eline_sigma, lib), then
+        # hypot with sqrt(inst^2 - lib^2) (0 where negative) when the spectrum has a resolution
+        lib = a["lib"]
+        e = jnp.hypot(s_gas, lib)
+        if a["inst"] is not None:
+            inst = jnp.interp(a["sf_rest"] * opz, jnp.asarray(self.wave_obs), a["inst"])
+            if s_ins is not None:
+                inst = inst * s_ins
+            d2 = inst ** 2 - lib ** 2
+            e = jnp.hypot(e, jnp.where(d2 > 0.0, jnp.sqrt(jnp.where(d2 > 0.0, d2, 1.0)), 0.0))
+        return a["paint"](line_flux_obs, sigma_agn_kms, e, s_gas, opz)
 
     def summary(self) -> str:
         b = self.kinematics
