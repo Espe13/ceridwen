@@ -13,6 +13,7 @@ import os
 import warnings
 
 import numpy as np
+import jax
 import jax.numpy as jnp
 import pprint
 
@@ -1020,13 +1021,26 @@ class CSPBasis:
                 f"Spectrum {obs.name!r}: AGN lines need the spectrum's projector; build the model "
                 "with SedModel (or call obs.setup_for_model) first")
         if proj._agn is None:
-            lines = self._agn.model.lines
-            mask = np.asarray(obs.mask, dtype=bool)        # empty for a Spectrum without data
+            self._setup_agn_spectrum(obs)
+        return proj.agn_lines(agn_l["F"], agn_l["sigma"], theta)
+
+    def _setup_agn_spectrum(self, obs):
+        """Build a Spectrum projector's AGN-line painter (setup-time state only).  Called by
+        ``SedModel.setup_observations``; a projector used without it (a direct
+        ``CSPBasis.predict``) gets it on first use, built outside any trace so that no tracer is
+        cached on the projector."""
+        if self._agn is None or self._agn.model.lines is None:
+            return
+        proj = getattr(obs, "_proj", None)
+        if proj is None:
+            return
+        lines = self._agn.model.lines
+        mask = np.asarray(obs.mask, dtype=bool)            # empty for a Spectrum without data
+        with jax.ensure_compile_time_eval():
             proj.setup_agn_lines(lines.line_wave, mode=self._agn.mode,
                                  sf_line_wave_rest=lines.emlines_wave,
                                  agn_sf_rows=lines.fsps_index,
                                  pixel_mask=mask if mask.size == np.size(proj.wave_obs) else None)
-        return proj.agn_lines(agn_l["F"], agn_l["sigma"], theta)
 
     def _agn_photometry_lines(self, obs, agn_l):
         """(n_filters,) maggies of the AGN lines in the reproduction modes: Prospector's

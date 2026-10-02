@@ -506,3 +506,24 @@ def test_postprocess_agn_curve_and_mdust(tmp_path):
     np.testing.assert_allclose(ex["mdust"][0], ex["L_absorbed"][0] * m1, rtol=1e-10)
     pp.figures(str(tmp_path))
     assert any(f.name.startswith("summary") for f in tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("mode", ["prospector", "corrected"])
+def test_first_call_under_jit_and_vmap(mode):
+    """The AGN-line painter is built at setup (SedModel.setup_observations), so a model whose
+    FIRST prediction is traced (jit, vmap: PostProcess, the samplers) caches no tracer, and a
+    direct CSPBasis.predict on an unprepared projector builds it outside the trace."""
+    model, spec, _, _ = _model(_csp(_cfg(mode), igm=True))
+    assert spec._proj._agn is not None                         # built at setup
+    th = {**T._theta(model), **_agn_vals(ON, mode)}
+    batch = {k: jnp.stack([v, v]) for k, v in th.items()}
+    out_v = jax.jit(jax.vmap(model.predict))(batch)
+    out_e = model.predict(th)
+    for k in out_e:
+        np.testing.assert_allclose(np.asarray(out_v[k][0]), np.asarray(out_e[k]), rtol=1e-6,
+                                   atol=1e-6 * np.abs(np.asarray(out_e[k])).max())
+    spec._proj._agn = None                                     # a projector never prepared
+    out_j = jax.jit(model.predict)(th)                         # built inside this first trace
+    out_j2 = jax.jit(lambda t: model.predict(t))(th)           # a second trace reuses it
+    for k in out_e:
+        assert np.all(np.isfinite(np.asarray(out_j[k]))) and np.all(np.isfinite(out_j2[k]))

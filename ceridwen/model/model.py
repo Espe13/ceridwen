@@ -508,6 +508,8 @@ class SedModel:
                     kinematics=self.kinematics, lib_resolution=lib,
                     line_wave_rest=lines_rest,
                     zred_range=zr, **kw)
+                if getattr(self.csp, "_agn", None) is not None:   # CSPBasis(agn=...) lines
+                    self.csp._setup_agn_spectrum(obs)
             elif kind == "photometry":
                 obs.setup_for_model(self.wave, zred=self.zred)
                 obs.free_z = bool(self.zred_is_free)
