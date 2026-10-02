@@ -62,7 +62,7 @@ def _flat(prefix, obj, out):
 
 def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False, lsf=None,
            interp="step", track=False, zred=ZRED, spec_wave=SPEC_WAVE, filters=FILTERS,
-           marg=False, line_windows=False, support=False, hoist_ff=False):
+           marg=False, line_windows=False, support=False, hoist_ff=False, agn=None):
     path = find_test_grid()
     if path is None:
         sys.exit("no test SSP grid found (tests/_gridfixture.py)")
@@ -81,8 +81,11 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
     if igm_dla:                        # IGM damping wing + DLA with sampled theta keys
         from ceridwen.igm import MadauDampingDLA
         kw["igm_model"] = MadauDampingDLA(Ob0=0.04897)
-    if add_neb or dust_emission:
+    if add_neb or dust_emission or agn is not None:
         kw["sps_home"] = os.environ["SPS_HOME"]
+    if agn is not None:                # ceridwen.agn: AGNConfig kwargs
+        from ceridwen.agn import AGNConfig
+        kw["agn"] = AGNConfig(**agn)
     csp = CSPBasis(ssp, **kw)
     sfh_times_yr = np.array(csp.sfh_times)
 
@@ -109,6 +112,10 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
         init.update(x_HI=jnp.array([0.5]), logN_HI=jnp.array([20.5]))
     if isinstance(lsf, str):
         init[lsf] = jnp.array([1.1])
+    if agn is not None:                # every AGN key of this configuration is sampled
+        vals = {"fagn": 0.3, "agn_tau": 20.0, "fagn_bbb": 0.5, "dust4": 0.3,
+                "dust4_index": -1.2, "agn_elum": 1e-3, "agn_eline_sigma": 200.0}
+        init.update({k: jnp.array([vals[k]]) for k in csp._agn.param_names})
     transforms = {"sfh": _sfh}
     kin = Kinematics(sigma_gal=sigma_losvd)
     if marg:
@@ -405,6 +412,27 @@ def collect(args):
     if hasattr(SedModel, "_hoist_flux_factor") and os.environ.get("SPS_HOME"):
         configs.append(("neb_ffhoist", dict(add_neb=True, add_igm=True, sigma_losvd=250.0,
                                             dust_emission=False, hoist_ff=True)))
+    # ceridwen.agn (CSPBasis(agn=...)): the torus of each mode, the disc + dust4 screen + lines,
+    # the energy balance and the C1 support path with the AGN on; appended last, earlier draws
+    # unchanged
+    try:
+        import ceridwen.agn  # noqa: F401
+        has_agn = "agn" in inspect.signature(CSPBasis.__init__).parameters
+    except ImportError:
+        has_agn = False
+    if has_agn and os.environ.get("SPS_HOME"):
+        base = dict(add_neb=True, add_igm=True, sigma_losvd=250.0, dust_emission=False)
+        configs.append(("agn_fsps", dict(base, agn={"agn_mode": "fsps", "lines": True})))
+        configs.append(("agn_prospector", dict(base, agn={"agn_mode": "prospector",
+                                                          "dust4_type": 1})))
+        configs.append(("agn_corrected_duste", dict(base, dust_emission=True,
+                                                    agn={"agn_mode": "corrected",
+                                                         "dust4_type": 1})))
+        configs.append(("agn_corrected_support", dict(base, add_neb=False, support=True,
+                                                      agn={"agn_mode": "corrected",
+                                                           "dust4_type": 1})))
+    elif not has_agn:
+        print("  (package has no ceridwen.agn: AGN configurations skipped)")
     for tag, cfg in configs:
         t0 = time.perf_counter()
         model = _build(**cfg)
