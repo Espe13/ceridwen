@@ -509,6 +509,125 @@ def make_a4():
          **out)
 
 
+# ---------------------------------------------------------------------------
+# A5: whole model, python-fsps + prospect AGNSSPBasis / AGNPolySpecModel
+# ---------------------------------------------------------------------------
+A5_FILTERS = ["jwst_f090w", "jwst_f115w", "jwst_f150w", "jwst_f200w", "jwst_f277w",
+              "jwst_f356w", "jwst_f410m", "jwst_f444w", "jwst_f560w", "jwst_f770w",
+              "jwst_f1000w", "jwst_f1280w", "jwst_f1500w", "jwst_f1800w", "jwst_f2100w"]
+# (name, fagn, agn_tau, fagn_bbb, dust4_type, dust4, dust4_index)
+A5_CONFIGS = [("off", 0.0, 20.0, 0.0, 1, 0.0, -1.0),
+              ("torus", 0.3, 20.0, 0.0, 1, 0.0, -1.0),
+              ("disk", 0.0, 20.0, 1.0, 1, 0.0, -1.0),
+              ("disk_dust4", 0.0, 20.0, 1.0, 1, 0.5, -1.2),
+              ("all", 0.3, 20.0, 1.0, 1, 0.5, -1.2)]
+
+
+def make_a5():
+    from prospect.models import sedmodel
+    from prospect.models.templates import TemplateLibrary
+    from prospect.observation import Photometry
+    from prospect.sources.agnssp_basis import AGNSSPBasis
+    from sedpy.observate import getSED
+    from prospect.sources.constants import lightspeed, jansky_cgs
+
+    zred = 3.0
+    mp = TemplateLibrary["continuity_sfh"]
+    mp.update(TemplateLibrary["agn"])
+    mp.update(TemplateLibrary["agn_bbb"])
+    mp.update(TemplateLibrary["dust4"])
+    mp["zred"]["init"] = zred
+    mp["logmass"]["init"] = 10.0
+    mp["dust2"]["init"] = 0.5
+    mp["dust_type"] = dict(N=1, isfree=False, init=0)
+    mp["dust_index"] = dict(N=1, isfree=False, init=-0.7)  # get_spectrum reads it
+    mp["add_igm_absorption"] = dict(N=1, isfree=False, init=True)
+    mp["sigma_smooth"] = dict(N=1, isfree=False, init=100.0)
+    for k in ("fagn", "agn_tau", "fagn_bbb", "dust4", "dust4_index"):
+        mp[k]["isfree"] = True
+    model = sedmodel.AGNPolySpecModel(mp)
+    free = list(model.free_params)
+    sps = AGNSSPBasis(zcontinuous=1)
+    phot_obs = Photometry(filters=A5_FILTERS, flux=np.zeros(len(A5_FILTERS)),
+                          uncertainty=np.ones(len(A5_FILTERS)))
+    phot_obs.rectify()
+
+    def phot_of(spec_maggies):
+        ow = model.observed_wave(model._wave)
+        flam = spec_maggies * lightspeed / ow ** 2 * (3631 * jansky_cgs)
+        return np.atleast_1d(getSED(ow, flam, phot_obs.filterset, linear_flux=True))
+
+    rows = {k: [] for k in ("phot", "galspec", "agnspec", "agnspec_torus", "smooth_spec",
+                            "phot_gal", "phot_disk", "phot_torus", "log_lbol",
+                            "fsps_fagn", "fsps_agn_tau")}
+    theta_all = []
+    for name, fagn, tau, fbbb, d4t, d4, d4i in A5_CONFIGS:
+        model.params["dust4_type"] = np.array([d4t])
+        vals = dict(fagn=fagn, agn_tau=tau, fagn_bbb=fbbb, dust4=d4, dust4_index=d4i)
+        theta = model.theta.copy()
+        for k, v in vals.items():
+            theta[model.theta_index[k]] = v
+        (ph,), _ = model.predict(theta, observations=[phot_obs], sps=sps)
+        theta_all.append(theta)
+        rows["phot"].append(ph)
+        rows["galspec"].append(model._norm_galspec.copy())
+        rows["agnspec"].append(model._norm_agnspec.copy())
+        rows["agnspec_torus"].append(model._norm_agnspec_torus.copy())
+        rows["smooth_spec"].append(model._smooth_spec.copy())
+        rows["phot_gal"].append(phot_of(model._norm_galspec))
+        rows["phot_disk"].append(phot_of(model._norm_agnspec))
+        rows["phot_torus"].append(phot_of(model._norm_agnspec_torus))
+        rows["log_lbol"].append(sps.ssp.log_lbol)
+        rows["fsps_fagn"].append(float(np.squeeze(sps.ssp.params["fagn"])))
+        rows["fsps_agn_tau"].append(float(np.squeeze(sps.ssp.params["agn_tau"])))
+        print(f"A5 {name}: phot {ph[[3, 7, 13]]}", flush=True)
+    rows = {k: np.array(v) for k, v in rows.items()}
+    off = 0
+    # python-fsps adds its own torus inside the galaxy spectrum when fagn > 0:
+    # AGNSSPBasis passes reserved_params=[] so fagn/agn_tau reach ssp.params
+    # (galaxy_basis.py SSPBasis.update), and libfsps has add_agn_dust=1 fixed
+    # (sps_vars.f90:121; python-fsps exposes no switch). Prospector's AGNSSP
+    # path therefore counts the torus twice. Measure it against the port.
+    mtot = float(np.sum(model.params["mass"]))
+    fsps_torus = np.zeros_like(rows["galspec"])
+    d_gal = rows["galspec"] - rows["galspec"][off][None]
+    dbl_rel = np.zeros(len(A5_CONFIGS))
+    for i, (name, fagn, tau, *_r) in enumerate(A5_CONFIGS):
+        fsps_torus[i] = fsps_port.agn_torus_fsps(np.asarray(model._wave, np.float64),
+                                                 rows["log_lbol"][i], fagn, tau,
+                                                 float(model.params["dust2"][0]), 0,
+                                                 float(model.params["dust_index"][0])
+                                                 ) / mtot * model.flux_norm()
+        if fagn > 0:
+            m = fsps_torus[i] > 1e-6 * fsps_torus[i].max()
+            dbl_rel[i] = np.max(np.abs(d_gal[i][m] / fsps_torus[i][m] - 1))
+            ratio = (rows["phot"][i] - rows["phot"][off]) / rows["phot_torus"][i]
+            print(f"A5 {name}: galspec - galspec(off) == FSPS torus term to max rel "
+                  f"{dbl_rel[i]:.2e}; delta phot / prospect-torus phot = "
+                  f"{ratio.min():.3f}..{ratio.max():.3f}", flush=True)
+    rows["fsps_torus_in_galspec"] = fsps_torus
+    rows["fsps_torus_in_galspec_maxrel"] = dbl_rel
+    save("A5_whole_model_prospector.npz",
+         prov_extra={"component": "A5 whole model: AGNSSPBasis(zcontinuous=1) + "
+                                  "AGNPolySpecModel, continuity_sfh + agn + agn_bbb + dust4",
+                     "configs_columns": ["name", "fagn", "agn_tau", "fagn_bbb", "dust4_type",
+                                         "dust4", "dust4_index"],
+                     "units": "phot*: maggies; *spec: maggies on model_wave*(1+zred) "
+                              "(flux_norm applied)",
+                     "double_counted_torus": "with fagn>0 the python-fsps galaxy spectrum "
+                             "already contains the FSPS torus (fsps_torus_in_galspec, port "
+                             "agreement in fsps_torus_in_galspec_maxrel); agnspec_torus adds "
+                             "prospect's T' on top. phot[i]-phot[off] includes both.",
+                     "note": "assert on AGN-only differences phot[i] - phot[off]; "
+                             "phot_gal/disk/torus are each spectrum alone through getSED "
+                             "with linear_flux (no LOSVD smoothing)"},
+         filters=np.array(A5_FILTERS), configs=np.array([list(map(str, c)) for c in A5_CONFIGS]),
+         zred=np.array(zred), free_params=np.array(free), theta=np.array(theta_all),
+         agebins=np.asarray(model.params["agebins"]), mass=np.asarray(model.params["mass"]),
+         model_wave=np.asarray(model._wave, np.float64), flux_norm=np.array(model.flux_norm()),
+         **rows)
+
+
 if __name__ == "__main__":
     todo = sys.argv[1:] or ["a1", "a2", "a3", "a4", "a5"]
     for item in todo:
