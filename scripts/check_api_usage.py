@@ -36,7 +36,7 @@ CHECKED = {
     "CSPBasis", "CSPBasis_afe", "SedModel", "Spectrum", "Photometry", "Lines", "Kinematics",
     "Instrument", "PostProcess", "fitSED", "NebularModel", "SSPData", "SSPDataAfe",
     "DiagonalNoiseModel", "GaussianProcess", "map_fit", "run_sampler", "BlackJAXNestedSamplerAdapter", "BlackJAXNUTSAdapter", "rebuild_model",
-    "check_model_against_result",
+    "check_model_against_result", "AGNConfig",
     "Uniform", "Normal", "ClippedNormal", "LogNormal", "LogUniform", "StudentT", "TopHat",
 }
 
@@ -59,6 +59,15 @@ def _prior_params_of(cls: ast.ClassDef):
     return None
 
 
+def _is_dataclass(cls: ast.ClassDef) -> bool:
+    for d in cls.decorator_list:
+        f = d.func if isinstance(d, ast.Call) else d
+        name = f.id if isinstance(f, ast.Name) else getattr(f, "attr", None)
+        if name == "dataclass":
+            return True
+    return False
+
+
 def collect_signatures():
     sigs, bases, prior_params = {}, {}, {}
     for path in PKG.rglob("*.py"):
@@ -69,6 +78,12 @@ def collect_signatures():
                 for item in node.body:
                     if isinstance(item, ast.FunctionDef) and item.name == "__init__":
                         sigs[node.name] = _sig_of(item)
+                if node.name not in sigs and _is_dataclass(node) and not node.bases:
+                    # a dataclass's generated __init__ takes its annotated fields (inherited
+                    # fields are not collected, so only base-less dataclasses are checked)
+                    sigs[node.name] = ({i.target.id for i in node.body
+                                        if isinstance(i, ast.AnnAssign)
+                                        and isinstance(i.target, ast.Name)}, False)
                 pp = _prior_params_of(node)
                 if pp is not None:
                     prior_params[node.name] = pp

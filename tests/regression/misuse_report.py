@@ -85,6 +85,10 @@ WARN_EXPECT = {
     "NaN flux not in the mask": "non-finite flux",
     "Spectrum.mask_lines without zred": "without zred",
     "noll bump under its old name E_bump": "unrecognized theta key(s) ['E_bump']",
+    "typo AGN theta key (fagn_bb) with agn=": "unrecognized theta key(s) ['fagn_bb']",
+    "fagn without agn= (AGN off)": "unrecognized theta key(s) ['fagn']",
+    "old label name f_agn with agn=": "unrecognized theta key(s) ['f_agn']",
+    "agn_tau outside the Nenkova grid [5, 150]": "outside the Nenkova+08 grid",
 }
 
 
@@ -215,6 +219,28 @@ def _noll_old_bump_name():
     c = _short_csp(add_dust=True, init_dust_params={"bin_edges": [(-jnp.inf, -1.97)],
                                                     "laws": ["noll"]})
     return c.get_spectrum_components(dict(c.theta_init, E_bump=jnp.array([2.0])))
+
+
+def _agn_csp(**cfg):
+    """A CSP with the AGN on (``ceridwen.agn``; the torus templates live in $SPS_HOME/dust)."""
+    from ceridwen.agn import AGNConfig
+    kw = _kw(**cfg.pop("csp", {}))
+    return CSPBasis(_ssp, theta={"lookback_time": _lb, "sfh": _sfr, "logzsol": jnp.array([-0.15])},
+                    agn=AGNConfig(**cfg), **kw)
+
+
+def _agn_lines_with_marginalisation():
+    from ceridwen.broadening import Instrument as _I
+    from ceridwen.agn import AGNConfig
+    c = CSPBasis(_ssp, theta={"lookback_time": jnp.linspace(0.0, 8.0, 10), "sfh": jnp.ones(10),
+                              "logzsol": jnp.array([-0.15])},
+                 agn=AGNConfig(agn_mode="corrected"), **_kw(add_neb=True))
+    spec = Spectrum(wavelength=jnp.linspace(6000, 9000, 400), flux=jnp.ones(400),
+                    uncertainty=jnp.ones(400), name="s", instrument=_I.R_fwhm(2000.0),
+                    marginalize_elines=True)
+    return SedModel(c, [spec], zred=0.5,
+                    transforms={"gas_logu": lambda th: jnp.array([-2.5]),
+                                "gas_logz": lambda th: jnp.array([0.0])})
 
 
 def run_scenarios():
@@ -412,6 +438,27 @@ def run_scenarios():
         ("duste_model='THEMIS' without dust emission", {"ERROR"},
          lambda: _short_csp(duste_model="THEMIS")),
         ("noll bump under its old name E_bump", {"WARN"}, _noll_old_bump_name),
+        # ceridwen.agn
+        ("typo AGN theta key (fagn_bb) with agn=", {"WARN"},
+         lambda: (lambda c: c.get_spectrum_components({**c.theta_init,
+                                                       "fagn_bb": jnp.array([0.1])}))(
+             _agn_csp(agn_mode="corrected"))),
+        ("fagn without agn= (AGN off)", {"WARN"},
+         lambda: csp.get_spectrum_components({**th, "fagn": jnp.array([0.3])})),
+        ("old label name f_agn with agn=", {"WARN"},
+         lambda: (lambda c: c.get_spectrum_components({**c.theta_init,
+                                                       "f_agn": jnp.array([0.3])}))(
+             _agn_csp(agn_mode="fsps"))),
+        ("agn_tau outside the Nenkova grid [5, 150]", {"WARN"},
+         lambda: (lambda c: c.check_param_ranges({**c.theta_init,
+                                                  "agn_tau": jnp.array([300.0])}))(
+             _agn_csp(agn_mode="corrected"))),
+        ("AGNConfig(dust4_type=2) (Prospector NotImplemented)", {"ERROR"},
+         lambda: __import__("ceridwen.agn", fromlist=["x"]).AGNConfig(agn_mode="prospector",
+                                                                      dust4_type=2)),
+        ("AGN lines in prospector mode without add_neb", {"ERROR"},
+         lambda: _agn_csp(agn_mode="prospector")),
+        ("marginalize_elines with AGN lines", {"ERROR"}, _agn_lines_with_marginalisation),
         ("LogUniform with mini <= 0 (log of 0)", {"ERROR"},
          lambda: LogUniform(mini=0.0, maxi=1.0)),
         ("Instrument LSF scale <= 0", {"ERROR"},
