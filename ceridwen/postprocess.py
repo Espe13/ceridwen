@@ -61,6 +61,14 @@ Conventions
   distance, (1+z) or IGM.  ``spectra_model``: the fitted model; ``spectra_intrinsic``:
   stellar continuum only (ionising continuum included); ``spectra_dustfree``: stars
   plus nebular, no dust.  Per-observation predictions are in the observation's units.
+* With ``CSPBasis(agn=...)``: ``spectra_model`` and ``spectra_observed`` include the AGN
+  continuum (torus, disc, their re-emission; the AGN narrow lines reach only the
+  per-observation predictions); ``spectra_intrinsic`` / ``spectra_dustfree`` do not.
+  ``spectra_agn`` (and ``spectra_agn_observed``) is the AGN continuum alone, and
+  ``extras["agn"]`` holds ``L_bol_star`` (the stellar L_bol the torus is scaled to),
+  ``L_absorbed`` [L_sun] and, with the energy balance, ``mdust`` [M_sun], the dust mass the
+  absorbed AGN light heats (the stellar dust mass is not reported).  ``LUV``/``MUV`` (from
+  ``spectra_model``) include the AGN.
 * ``LUV`` is the mean L_nu over 1450-1550 A rest [erg/s/Hz];
   ``MUV = -2.5 log10(LUV / (4 pi (10 pc)^2) / 3631 Jy)``; both from ``spectra_model``,
   ``*_intrinsic`` from ``spectra_intrinsic``.
@@ -467,6 +475,14 @@ class PostProcess:
         if "logmass" in t:
             scale = 10.0 ** jnp.ravel(t["logmass"])[0]
             full, intrinsic, dustfree = full * scale, intrinsic * scale, dustfree * scale
+        if getattr(csp, "_agn", None) is not None:           # CSPBasis(agn=...)
+            parts = csp._agn_parts(t)
+            agn = parts.pop("agn")
+            if "zred" in t:      # the AGN alone gets its own IGM in the reproduction modes
+                out["agn_observed"] = csp._apply_mass_redshift_igm(agn, agn, t)[0]
+            scale = 10.0 ** jnp.ravel(t["logmass"])[0] if "logmass" in t else 1.0
+            out["agn"] = agn * scale
+            out.update({f"agnx_{k}": v * scale for k, v in parts.items()})   # flat: batches concat
         out.update({"full": full, "intrinsic": intrinsic, "dustfree": dustfree})
         return out
 
@@ -683,6 +699,13 @@ class PostProcess:
         if "observed" in raw["spectra"]:
             pred["spectra_observed"] = np.asarray(raw["spectra"]["observed"]).astype(np.float32)   # cgs f_nu
             pred["zred"] = np.asarray(raw["spectra"]["zred"], dtype=float).reshape(n)
+        if "agn" in raw["spectra"]:                          # CSPBasis(agn=...): already in spectra_model
+            pred["spectra_agn"] = np.asarray(raw["spectra"]["agn"]).astype(np.float32)
+            if "agn_observed" in raw["spectra"]:
+                pred["spectra_agn_observed"] = np.asarray(
+                    raw["spectra"]["agn_observed"]).astype(np.float32)
+            out["extras"]["agn"] = {k[5:]: np.asarray(v, dtype=float).reshape(n)
+                                    for k, v in raw["spectra"].items() if k.startswith("agnx_")}
         if raw["pred"]:
             for obs in m.observations:
                 kind = getattr(obs, "_kind", "observation")

@@ -79,6 +79,12 @@ def prospector_igm_transmission(wave_rest, zred, igm_factor=1.0):
     return jnp.exp(-(tau_line + tau_cont) * igm_factor)
 
 
+def _sha256(path) -> str:
+    import hashlib
+    from pathlib import Path
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
 class AGNHook:
     """Static AGN wiring for one CSP.
 
@@ -133,6 +139,19 @@ class AGNHook:
             out["agn_torus_file"] = str(torus.path)
             out["agn_torus_sha256"] = hashlib.sha256(torus.path.read_bytes()).hexdigest()
             out["agn_torus_native_integrals"] = np.asarray(torus.native_integrals).tolist()
+        disk = self.model.components.get("disk")
+        if disk is not None:
+            out["agn_disk_file"] = str(disk.template_file)
+            out["agn_disk_sha256"] = _sha256(disk.template_file)
+        if self.model.screen is not None:
+            out["agn_dust4"] = "dust2 diffuse curve x exp(-dust4 (lam/5500)^dust4_index)"
+        lines = self.model.lines
+        if lines is not None:
+            from .lines import A42_FILE
+            out["agn_lines_table"] = str(A42_FILE)
+            out["agn_lines_table_sha256"] = _sha256(A42_FILE)
+            out["agn_lines_emlines_file"] = str(lines.emlines_file)
+            out["agn_lines_emlines_sha256"] = _sha256(lines.emlines_file)
         return out
 
     def range_messages(self, theta) -> list:
@@ -182,17 +201,35 @@ class AGNHook:
             attenuated = attenuated + att
         return intrinsic, attenuated
 
-    def __call__(self, theta, ctx: AGNContext, dust_emission=None, dust_theta=None):
+    def __call__(self, theta, ctx: AGNContext, dust_emission=None, dust_theta=None,
+                 formed_mass=1.0):
         """``(agn_continuum_rest (n_wave,) float64, agn_absorbed_lum scalar)``.
 
         ``dust_emission``: the CSP's ``DustEmission`` (needed when ``energy_balance``);
-        ``dust_theta``: its (qpah, umin, gamma) values."""
+        ``dust_theta``: its (qpah, umin, gamma) values; ``formed_mass``: the formed mass of the
+        SFH in the units of ``ctx`` (sum of the SSP weights), which the AGN line luminosities
+        (per M_formed) are multiplied by before their absorbed part joins the balance."""
         intrinsic, attenuated = self.components(theta, ctx)
         absorbed = jnp.dot(intrinsic - attenuated, self._w)
+        if self.energy_balance and self.model.lines is not None:
+            # the AGN line light the galaxy screen absorbs joins the re-emitted luminosity
+            th = self.filled(theta)
+            L = self.model.lines.line_luminosity(th) * formed_mass
+            absorbed = absorbed + jnp.sum(
+                L * (1.0 - self.line_dust_transmission(ctx.diffuse_curve)))
         if not self.energy_balance:
             return attenuated, absorbed
         _unit, tduste = self.dust_response(ctx, dust_emission, dust_theta)
         return attenuated + absorbed * tduste, absorbed
+
+    def line_dust_transmission(self, diffuse_curve):
+        """(n_lines,) dust transmission of the AGN lines, or None. ``"corrected"``: the galaxy's
+        diffuse curve at each line (the narrow-line region lies outside the nuclear ``dust4``
+        screen, so only the galaxy's diffuse dust acts on it). ``"fsps"`` / ``"prospector"``:
+        None, Prospector's ``AGNSpecModel`` attenuates its AGN lines by nothing."""
+        if self.mode != AGN_MODE_CORRECTED or self.model.lines is None:
+            return None
+        return jnp.interp(jnp.asarray(self.model.lines.line_wave), self.wave, diffuse_curve)
 
     def dust_response(self, ctx, dust_emission, dust_theta):
         """``(mdust, tduste)`` of DL07 for an absorbed luminosity of exactly 1 L_sun (per

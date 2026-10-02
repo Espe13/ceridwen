@@ -1098,6 +1098,8 @@ def _write_csp_config(mod_grp, model) -> None:
            "spec_library": getattr(csp, "_ssp_spec_library", None)}
     if getattr(csp, "_wave_support", False):   # opt-in; absent when off, so earlier files compare
         cfg["wavelength_support"] = True
+    if getattr(csp, "_agn", None) is not None:  # CSPBasis(agn=...); absent without AGN
+        cfg["agn"] = csp._agn.provenance()
     mod_grp.attrs["csp_config"] = json.dumps(cfg, default=str)
     if hasattr(csp, "sfh_times"):
         mod_grp.create_dataset("sfh_times_yr", data=np.asarray(csp.sfh_times))

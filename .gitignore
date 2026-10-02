@@ -30,6 +30,8 @@ data/
 !ceridwen/data/filters/*.par
 !ceridwen/data/*.fits
 ceridwen/data/test_data/
+# ceridwen/agn/data/ is package data too (Temple+21 disc template, a42 AGN line table)
+!ceridwen/agn/data/
 ceridwen.egg-info/
 figs/benchmarking
 figs/presentation

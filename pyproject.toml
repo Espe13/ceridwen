@@ -111,6 +111,9 @@ ceridwen = [
     "data/filters/*.par",
     "data/alpha_lyr_stis_005.fits",
     "data/sun_kurucz93.fits",
+    # AGN templates (ceridwen.agn): Temple+21 disc, Prospector's a42 AGN line ratios
+    "agn/data/*.txt",
+    "agn/data/*.csv",
 ]
 
 [tool.pytest.ini_options]

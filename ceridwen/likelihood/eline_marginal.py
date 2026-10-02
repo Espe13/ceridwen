@@ -249,6 +249,9 @@ def _agn_lines_on(csp) -> bool:
     """True when the basis carries AGN narrow lines (an ``AGNModel`` with lines, or an
     ``AGNConfig`` that switches them on), under whatever attribute the CSP keeps it."""
     from ..agn import AGNConfig, AGNModel
+    hook = getattr(csp, "_agn", None)              # CSPBasis(agn=AGNConfig(...)): an AGNHook
+    if getattr(getattr(hook, "model", None), "lines", None) is not None:
+        return True
     for v in getattr(csp, "__dict__", {}).values():
         if isinstance(v, AGNModel) and v.lines is not None:
             return True

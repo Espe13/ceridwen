@@ -915,6 +915,14 @@ class CSPBasis:
         from ..agn.hook import AGNHook
         self._agn = AGNHook(agn, self.wave, add_dust_emission=add_dust_emission,
                             sps_home=sps_home)
+        if (self._agn.model.lines is not None and self._agn.mode != "corrected"
+                and getattr(self, "neb", None) is None):
+            raise ValueError(
+                f"AGNConfig(agn_mode={agn.agn_mode!r}) with AGN lines needs add_neb=True: "
+                "Prospector's AGNSpecModel paints its AGN lines only on the pixels near a nebular "
+                "line (it asserts 'must add agn and nebular lines'), so without the nebular model "
+                "there is nothing to reproduce. Build the basis with add_neb=True, switch the "
+                "lines off (AGNConfig(..., lines=False)), or use agn_mode='corrected'")
         # L_bol of every SSP: the dust-free stellar spectrum integrated over frequency with the
         # DL07 trapezoid weights, float64 from the grid's own (host) cube
         w = np.asarray(self._agn._w, dtype=np.float64)
@@ -947,22 +955,119 @@ class CSPBasis:
         lbol = jnp.sum(W * self._agn_lbol_at(theta))
         gal = (self._dustfree_stellar(theta, W).astype(jnp.float64)
                if self._agn.need_galaxy else None)
+        return AGNContext(self.wave, lbol, gal, self._agn_diffuse_curve(theta), self._agn.mode)
+
+    def _agn_diffuse_curve(self, theta):
+        """(n_wave,) float64 exp(-tau_diffuse) of the galaxy's diffuse screen (1 without one)."""
         if getattr(self, "diff_dust", None) is not None:
-            dc = jnp.exp(-jnp.asarray(self.diff_dust.compute_attenuation(self.wave, theta),
-                                      dtype=jnp.float64))
-        else:
-            dc = jnp.ones(self.wave.shape, dtype=jnp.float64)
-        return AGNContext(self.wave, lbol, gal, dc, self._agn.mode)
+            return jnp.exp(-jnp.asarray(self.diff_dust.compute_attenuation(self.wave, theta),
+                                        dtype=jnp.float64))
+        return jnp.ones(self.wave.shape, dtype=jnp.float64)
+
+    def _agn_line_terms(self, theta, flux_factor=None):
+        """The AGN narrow lines of this theta (``ceridwen.agn.lines``), or None without them.
+
+        ``{"F": (n,) observed integrated fluxes [erg/s/cm^2] (mass, flux factor / (1 + z), and in
+        "corrected" mode the diffuse dust and the IGM at each line; no ``eline_scaling``),
+        "sigma": agn_eline_sigma [km/s], "lam_obs": (n,) observed centres [A] (1 + zred),
+        "grid": (n_wave,) or None, the lines as F_nu on the rest model grid for Photometry in
+        "corrected" mode (nebular profile convention, dust and IGM included; None in the
+        reproduction modes, where Photometry takes Prospector's delta-function form)}``."""
+        hook = self._agn
+        if hook is None or hook.model.lines is None:
+            return None
+        lines = hook.model.lines
+        th = hook.filled(theta)
+        # L_sun per M_formed, times the formed mass of the SFH (sum W = its integral, 1 for a
+        # unit-mass SFH), as the torus (L_bol) and the disc (galaxy at 5500 A) scale with W
+        L = lines.line_luminosity(th) * jnp.sum(self.calculate_ssp_weights(theta=theta))
+        sigma = lines.sigma_kms(th)
+        if "logmass" in theta:
+            L = L * 10.0 ** jnp.ravel(theta["logmass"])[0]
+        lam = jnp.asarray(lines.line_wave)
+        ff = opz = 1.0
+        z_in = "zred" in theta
+        if z_in:
+            z = jnp.ravel(theta["zred"])[0]
+            opz = 1.0 + z
+            ff = self._flux_factor(theta) if flux_factor is None else flux_factor
+        corrected = hook.mode == "corrected"
+        t_l = None
+        grid = None
+        if corrected:
+            t_l = hook.line_dust_transmission(self._agn_diffuse_curve(theta))
+            trans = (self._igm_transmission(z, theta).astype(jnp.float64)
+                     if (self.igm is not None and z_in) else None)
+            from ..broadening import agn_line_profiles_on_grid
+            rff = getattr(getattr(self, "neb", None), "res_floor_factor", 2.0)
+            prof = agn_line_profiles_on_grid(self.wave, lines.line_wave, sigma,
+                                             res_floor_factor=rff)          # (n_wave, n)
+            grid = prof @ (L * t_l) * ff
+            if trans is not None:
+                grid = grid * trans
+                t_l = t_l * jnp.interp(lam, self.wave, trans)
+        F = L * (ff / opz)
+        if t_l is not None:
+            F = F * t_l
+        return {"F": F, "sigma": sigma, "lam_obs": lam * opz, "grid": grid}
+
+    def _agn_spectrum_lines(self, obs, agn_l, theta):
+        """F_nu of the AGN lines on a Spectrum's observed pixels (its projector's AGN painter,
+        built on first use from setup-time state)."""
+        proj = getattr(obs, "_proj", None)
+        if proj is None:
+            raise ValueError(
+                f"Spectrum {obs.name!r}: AGN lines need the spectrum's projector; build the model "
+                "with SedModel (or call obs.setup_for_model) first")
+        if proj._agn is None:
+            lines = self._agn.model.lines
+            proj.setup_agn_lines(lines.line_wave, mode=self._agn.mode,
+                                 sf_line_wave_rest=lines.emlines_wave,
+                                 agn_sf_rows=lines.fsps_index,
+                                 pixel_mask=np.asarray(obs.mask))
+        return proj.agn_lines(agn_l["F"], agn_l["sigma"], theta)
+
+    def _agn_photometry_lines(self, obs, agn_l):
+        """(n_filters,) maggies of the AGN lines in the reproduction modes: Prospector's
+        ``nebline_photometry`` (line flux at the observed centre through each filter)."""
+        from ..agn.lines import line_photometry_delta
+        return line_photometry_delta(obs.filters, agn_l["lam_obs"], agn_l["F"])
 
     def _agn_rest(self, theta):
         """(n_wave,) float64: the AGN continuum the wrapped ``get_spectrum`` adds."""
-        ctx = self._agn_context(theta, self.calculate_ssp_weights(theta=theta))
+        W = self.calculate_ssp_weights(theta=theta)
+        ctx = self._agn_context(theta, W)
         if self._agn.energy_balance:
             agn, _ = self._agn(theta, ctx, self.dust_emi,
-                               (theta["duste_qpah"], theta["duste_umin"], theta["duste_gamma"]))
+                               (theta["duste_qpah"], theta["duste_umin"], theta["duste_gamma"]),
+                               formed_mass=jnp.sum(W))
         else:
             agn, _ = self._agn(theta, ctx)
         return agn
+
+    def _agn_parts(self, theta):
+        """Post-processing summary of the AGN of this theta (units of the SFH's formed mass,
+        times ``10**logmass`` for physical values): ``agn`` (n_wave,) the continuum
+        ``get_spectrum`` adds (``_agn_rest``), ``L_bol_star`` the dust-free stellar L_bol the
+        torus is scaled to, ``L_absorbed`` the AGN light the screens absorb (continuum, plus the
+        lines in "corrected" mode) [L_sun], and with the energy balance ``mdust`` the DL07 dust
+        mass heated by it [M_sun]."""
+        hook = self._agn
+        W = self.calculate_ssp_weights(theta=theta)
+        ctx = self._agn_context(theta, W)
+        if hook.energy_balance:
+            dth = (theta["duste_qpah"], theta["duste_umin"], theta["duste_gamma"])
+            agn, absorbed = hook(theta, ctx, self.dust_emi, dth, formed_mass=jnp.sum(W))
+        else:
+            agn, absorbed = hook(theta, ctx, formed_mass=jnp.sum(W))
+            if hook.model.lines is not None and hook.mode == "corrected":
+                L = hook.model.lines.line_luminosity(hook.filled(theta)) * jnp.sum(W)
+                absorbed = absorbed + jnp.sum(
+                    L * (1.0 - hook.line_dust_transmission(ctx.diffuse_curve)))
+        out = {"agn": agn, "L_bol_star": ctx.L_bol_star, "L_absorbed": absorbed}
+        if hook.energy_balance:
+            out["mdust"] = absorbed * hook.dust_response(ctx, self.dust_emi, dth)[0]
+        return out
 
     def _with_agn(self, base):
         """``base`` (a ``get_spectrum_*`` kernel) plus the AGN continuum, cast to its dtype; keeps
@@ -1211,6 +1316,7 @@ class CSPBasis:
             self.predict_line_fluxes(theta, for_photometry=True, flux_factor=flux_factor)
             if (not paint_lines) and _has_neb and _has_phot_obs
             else None)
+        agn_l = self._agn_line_terms(theta, flux_factor=flux_factor)
         es = eline_system
         aux_cols = {}
         if es is not None:
@@ -1256,6 +1362,13 @@ class CSPBasis:
                     out[obs.name] = _B @ _line_fluxes
                 else:
                     out[obs.name] = _line_fluxes[self._neb_cube_rows_for(obs)]
+                if agn_l is not None:
+                    F_agn = agn_l["F"]
+                    if "eline_scaling" in theta:
+                        F_agn = F_agn * jnp.ravel(theta["eline_scaling"])[0]
+                    out[obs.name] = out[obs.name] + (
+                        jnp.asarray(obs.agn_line_matrix(self._agn.model.lines)) @ F_agn
+                    ).astype(out[obs.name].dtype)
                 if es is not None and obs.name in es.lines_cols:
                     scale = (jnp.ravel(theta["eline_scaling"])[0]
                              if "eline_scaling" in theta else 1.0)
@@ -1282,6 +1395,8 @@ class CSPBasis:
                     pred = obs.predict(slit, self.wave, _line_fluxes_spec, theta)
                 if tr is not None and agn_after_igm is not None:
                     pred = pred + obs.predict(agn_after_igm, self.wave, None, theta)
+                if agn_l is not None:
+                    pred = pred + self._agn_spectrum_lines(obs, agn_l, theta).astype(pred.dtype)
                 calib = _spec_calib(obs, theta, dtype=pred.dtype)
                 if calib is not None:
                     pred = pred * calib
@@ -1308,12 +1423,21 @@ class CSPBasis:
                     spec_for_obs = pb(spectrum_slit, s_gal) + pb(line_component, s_gas)
                 else:
                     spec_for_obs = pb(spectrum_phot, s_gal)
+            if agn_l is not None and agn_l["grid"] is not None:
+                # corrected mode: AGN lines on the model grid with their own width (after any
+                # galaxy kernel), through the filters as the nebular lines are
+                spec_for_obs = spec_for_obs + agn_l["grid"].astype(spec_for_obs.dtype)
+            agn_delta = (None if agn_l is None or agn_l["grid"] is not None
+                         else self._agn_photometry_lines(obs, agn_l))
             if getattr(obs, "free_z", False) and z_in_theta:
-                out[obs.name] = obs.predict_at_redshift(
+                pred = obs.predict_at_redshift(
                     spec_for_obs, self.wave, jnp.ravel(theta["zred"])[0]
                 )
+                out[obs.name] = pred if agn_delta is None else pred + agn_delta.astype(pred.dtype)
                 continue
             pred = obs.predict(spec_for_obs, self.wave)
+            if agn_delta is not None:
+                pred = pred + agn_delta.astype(pred.dtype)
             if _line_fluxes_phot is not None:
                 basis = getattr(obs, "_line_basis", None)
                 gnb = (jnp.asarray(basis) if basis is not None

@@ -81,9 +81,10 @@ _CSP_OWNED_KWARGS = {
         "dust emission, which CSPBasis applies at fit time (DustEmission)",
     ),
     **_owned(
-        ["fagn", "agn_tau"],
-        "AGN emission, which CERIDWEN does not model (a planned extension) and which must "
-        "not be baked into the SSP grid",
+        ["fagn", "agn_tau", "fagn_bbb", "dust4", "dust4_index", "dust4_type", "add_agn_dust",
+         "add_agn_bbb_cont", "agn_elum", "agn_eline_sigma"],
+        "AGN emission, which CSPBasis applies at fit time (agn=AGNConfig(...), ceridwen.agn) "
+        "and which must not be baked into the SSP grid",
     ),
     **_owned(
         ["add_neb_emission", "add_neb_continuum", "gas_logz", "gas_logu",

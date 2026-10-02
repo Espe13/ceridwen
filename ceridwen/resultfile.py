@@ -229,7 +229,8 @@ def _csp_config_old_default(record) -> None:
     cfg = _cfg(raw)
     if "cloudy_dust" in cfg:
         return
-    has_neb = str(cfg.get("spectrum_model") or "").endswith("_neb")
+    # CSPBasis(agn=...) appends "_agn" to the kernel name (CSPBasis._with_agn)
+    has_neb = str(cfg.get("spectrum_model") or "").removesuffix("_agn").endswith("_neb")
     new = {}
     for k, v in cfg.items():            # the key order _write_csp_config writes
         new[k] = v

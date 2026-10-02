@@ -320,6 +320,13 @@ def summary_figure(out, model, *, title=None, prior_draws=500, params=None, trut
                         label="model (16$-$84%)")
     ax_sed.plot(wobs[m] / 1e4, med[m], color=C["posterior"], lw=0.9)
     y_seen = [lo[m], hi[m]]
+    agn_key = "spectra_agn_observed" if observed else "spectra_agn"
+    if agn_key in pred:                                  # CSPBasis(agn=...): the AGN alone
+        agn = np.asarray(pred[agn_key], dtype=float) * (_CGS_FNU_TO_NJY if observed else 1.0)
+        a_med = _quantiles(agn)[1]
+        ma = m & (a_med > 0) & np.isfinite(a_med)
+        ax_sed.plot(wobs[ma] / 1e4, a_med[ma], color=C["posterior"], lw=0.8, ls="--",
+                    label="AGN (median)")
     unit_spec = _CGS_FNU_TO_NJY if observed else 1.0     # spectra are cgs f_nu, photometry maggies
     for o in obs_by_kind["spectrum"]:
         w = np.asarray(o.wavelength, dtype=float) / 1e4
