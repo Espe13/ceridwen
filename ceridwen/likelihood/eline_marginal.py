@@ -245,6 +245,33 @@ def refuse_without_grid(csp, spec, observations):
             "the Lines observation or build the basis with add_neb=True")
 
 
+def _agn_lines_on(csp) -> bool:
+    """True when the basis carries AGN narrow lines (an ``AGNModel`` with lines, or an
+    ``AGNConfig`` that switches them on), under whatever attribute the CSP keeps it."""
+    from ..agn import AGNConfig, AGNModel
+    for v in getattr(csp, "__dict__", {}).values():
+        if isinstance(v, AGNModel) and v.lines is not None:
+            return True
+        if isinstance(v, AGNConfig) and v.use_lines:
+            return True
+    return False
+
+
+def refuse_with_agn_lines(csp, spec):
+    """Setup-time refusal: line marginalisation together with AGN narrow lines (Prospector's
+    ``AGNSpecModel`` asserts the same: "Cannot fit lines when AGN lines included")."""
+    if _agn_lines_on(csp):
+        raise ValueError(
+            f"Spectrum {spec.name!r}: marginalize_elines=True with AGN narrow lines "
+            "(AGNConfig(lines=...) on): the marginalisation frees the flux of every fitted line, "
+            "so an AGN line on top of a nebular line at the same wavelength is degenerate with it "
+            "and agn_elum would be constrained by nothing but the lines outside the fit. "
+            "Prospector refuses this too (AGNSpecModel: 'Cannot fit lines when AGN lines "
+            "included'). Either keep the AGN lines and fit the lines at their CLOUDY + AGN "
+            "fluxes (marginalize_elines=False), or marginalise and switch the AGN lines off, "
+            "AGNConfig(..., lines=False): the fitted line fluxes then absorb the AGN emission")
+
+
 def build_eline_system(model) -> Optional[ElineSystem]:
     """Validate the configuration and build the ``ElineSystem`` (None when no Spectrum
     marginalises its lines).  Every refusal happens here, at setup, never in a kernel."""
@@ -262,6 +289,7 @@ def build_eline_system(model) -> Optional[ElineSystem]:
             f"({[o.name for o in specs]}); only one marginalising Spectrum is supported")
     spec = specs[0]
     csp = model.csp
+    refuse_with_agn_lines(csp, spec)
     neb = getattr(csp, "neb", None)
     has_grid = neb is not None
     if neb is None:

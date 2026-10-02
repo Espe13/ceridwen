@@ -92,6 +92,24 @@ class Lines(Observation):
         d["line_components"] = [list(c) for c in self.line_components]
         return json.dumps(d)
 
+    def agn_line_matrix(self, agn_lines) -> np.ndarray:
+        """(n_lines, n_agn) float64 NumPy 0/1 matrix: row ``k`` sums the AGN lines
+        (``ceridwen.agn.lines.AGNLines``) that observed line ``k`` holds, every component of a
+        blend included. Matched BY NAME: each component wavelength is resolved to the nearest line
+        of FSPS's list within 1 A (ValueError otherwise) and that name is looked up among the AGN
+        lines (``AGNLines.rows_for``); a line that is not an AGN line gets a zero row. Cached on the
+        observation (NumPy, so a first use inside a jit trace never caches a tracer)."""
+        cached = self.__dict__.get("_agn_line_matrix")
+        if cached is not None and cached[0] is agn_lines:
+            return cached[1]
+        M = np.zeros((len(self.line_components), agn_lines.n_lines), dtype=np.float64)
+        for k, comp in enumerate(self.line_components):
+            for j in agn_lines.rows_for(comp):
+                if j >= 0:
+                    M[k, j] += 1.0
+        self.__dict__["_agn_line_matrix"] = (agn_lines, M)
+        return M
+
     @property
     def has_blends(self) -> bool:
         """True when at least one observed line sums several grid lines."""
