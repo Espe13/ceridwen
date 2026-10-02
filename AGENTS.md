@@ -111,6 +111,7 @@ from ceridwen.sampler import run_sampler
 from ceridwen.optimize import map_fit          # MAP (L-BFGS from prior draws)
 from ceridwen.likelihood import DiagonalGaussianLikelihood, MultiObservationLikelihood
 from ceridwen.resultfile import rebuild_model, check_model_against_result
+from ceridwen.agn import AGNConfig              # CSPBasis(..., agn=AGNConfig())
 ```
 
 Equivalent namespaced paths also work: `ceridwen.ssps.SSPData`,
@@ -212,6 +213,17 @@ projection → likelihood → sampler.
   `resume_from=` continues a killed run bit for bit), `nuts.py` (NUTS, VI-preconditioned),
   `vi.py` (VI transport maps: TriL, IAF/NeuTra), `runner.py` (`SamplerAdapter`
   protocol, `SamplingResult`, `run_sampler`, `to_anesthetic`).
+- `agn/` — the AGN (`CSPBasis(agn=AGNConfig(...))`, `docs/agn.md`). `__init__.py`: `AGNConfig`
+  (static: `agn_mode` "corrected" (default) / "fsps" / "prospector", components, `dust4_type`,
+  `tau_interp`, `agn_energy_balance`), `AGNContext`, the `Component` / `Screen` /
+  `LineComponent` interface, `AGNModel`. `torus.py`: `NenkovaTorus` (the Nenkova+08 templates
+  from `$SPS_HOME/dust`, resampled per mode). `disk.py`: `TempleDisk` (`data/temple21.txt`).
+  `screen.py`: `AGNScreen` (dust4), `ProspectorDiffuseCurve`. `lines.py`: `AGNLines`
+  (`data/richardson14_a42.csv`, by FSPS line name). `hook.py`: `AGNHook`, the single CSP wiring
+  point (screens, energy balance, the IGM order per mode, provenance). The CSP wraps its
+  spectrum kernel once (`CSPBasis._with_agn`) and adds the AGN lines in `predict`
+  (`_agn_line_terms`); theta keys `fagn`, `agn_tau`, `fagn_bbb`, `dust4`, `dust4_index`,
+  `agn_elum`, `agn_eline_sigma` exist only with `agn=`.
 - `cosmology.py` — JAX-native flat ΛCDM (Planck 18) with an astropy fallback.
 - `igm.py` — IGM attenuation (`Madau1995`; `MadauDampingDLA` = Madau × damping wing × DLA,
   with theta keys `x_HI` / `logN_HI` / `z_dla` declared in `IGMModel.param_names` and passed

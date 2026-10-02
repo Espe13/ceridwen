@@ -27,6 +27,20 @@ treat everything else as internal.
 
 ::: ceridwen.csp.CSPBasis_afe
 
+## AGN
+
+::: ceridwen.agn.AGNConfig
+
+::: ceridwen.agn.torus.NenkovaTorus
+
+::: ceridwen.agn.disk.TempleDisk
+
+::: ceridwen.agn.screen.AGNScreen
+
+::: ceridwen.agn.lines.AGNLines
+
+::: ceridwen.agn.hook.AGNHook
+
 ## Broadening
 
 ::: ceridwen.broadening.Kinematics

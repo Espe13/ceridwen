@@ -3,11 +3,13 @@
 This file is the interface every AGN component is written against (AGN_PLAN §3).
 It imports no component module at import time, so a checkout that has only some of
 ``torus.py`` / ``disk.py`` / ``screen.py`` / ``lines.py`` still imports cleanly.
-Changes to it after the first commit are recorded in ``INTERFACE_CHANGES.md``.
+Changes after the first commit: ``agn_mode`` defaults to ``"corrected"`` (session INT, after
+the parity suite AGN_PLAN §4 A passed; see CHANGELOG.md and docs/agn.md).
 
 Public API
 ----------
-``CSPBasis(..., agn=AGNConfig(agn_mode="corrected"))`` switches the AGN on. Without
+``CSPBasis(..., agn=AGNConfig())`` switches the AGN on in the default ``"corrected"`` mode
+(``agn=True`` is short for it, ``agn="fsps"`` for ``AGNConfig(agn_mode="fsps")``). Without
 ``agn=`` (the default) every existing path is unchanged, byte for byte.
 
 Modes (static, validated when ``AGNConfig`` is built):
@@ -98,9 +100,9 @@ class AGNConfig:
 
     Parameters
     ----------
-    agn_mode : {"fsps", "prospector", "corrected"}
-        Required: there is no default mode until the parity suite (AGN_PLAN §4 A)
-        has passed.
+    agn_mode : {"corrected", "fsps", "prospector"}, default "corrected"
+        "corrected" is the physically consistent model; "fsps" and "prospector" reproduce
+        those codes (defects included) for comparison with existing fits.
     torus, disk, lines : bool or None
         Which components exist. ``None`` = the mode's default: ``"fsps"`` -> torus
         only; ``"prospector"`` / ``"corrected"`` -> all three. Their shapes are static,
@@ -123,7 +125,7 @@ class AGNConfig:
         ``$SPS_HOME/dust/Nenkova08_y010_torusg_n10_q2.0.dat``.
     """
 
-    agn_mode: str
+    agn_mode: str = AGN_MODE_CORRECTED
     torus: Optional[bool] = None
     disk: Optional[bool] = None
     lines: Optional[bool] = None

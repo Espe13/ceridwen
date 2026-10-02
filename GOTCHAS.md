@@ -684,3 +684,46 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
   is the whole grid.
 - `csp.get_spectrum(...)`, `get_spectrum_components`, `PostProcess` spectra and figures are
   always on the whole grid: only the observation predictions use the range.
+
+## 25. AGN (`CSPBasis(agn=...)`, `docs/agn.md`)
+
+- **No `agn=`, no AGN.** `theta["fagn"]` on a CSP built without `agn=` is an unknown key: a
+  warning, and nothing else happens. Build the CSP with `agn=AGNConfig()` (or `agn=True`).
+- **Three modes, one default.** `AGNConfig()` is `agn_mode="corrected"`. `"fsps"` and
+  `"prospector"` reproduce those codes, defects included: use them to compare with an existing
+  FSPS / Prospector fit, not for new science.
+- **`agn_tau` outside [5, 150]** (the Nenkova+08 grid): clamped to the edge template in the fsps
+  and corrected modes, so the likelihood is flat there and a prior wider than [5, 150] piles up
+  posterior mass at the edge; extrapolated linearly in the prospector mode (the SED can go
+  negative), as Prospector does. `check_param_ranges` warns. Use a prior inside [5, 150].
+- **What `fagn` means.** `fagn` = L_torus / L_bol,\* with L_bol,\* the *dust-free stellar*
+  luminosity integrated over the model grid, BEFORE any screen. In the corrected mode the
+  torus carries exactly `fagn * L_bol,*` on any grid; the light the galaxy's dust absorbs from
+  it (and from the disc and the AGN lines) is re-emitted by DL07 when
+  `add_dust_emission=True`, and lost otherwise (as absorbed starlight is). L_bol,\* is not
+  FSPS's isochrone `log_lbol`: on the MIST/MILES grid the two differ by -0.1 % to +2.1 %
+  (`scripts/agn_lbol_check.py`), a definitional difference, so the same `fagn` is a slightly
+  different torus in CERIDWEN and FSPS.
+- **`fagn_bbb`** is F_nu,disc / F_nu,\* at rest 5500 A against the dust-free *stellar* young +
+  old spectrum (Prospector's definition; Prospector's galaxy also holds FSPS's nebular
+  continuum, small at 5500 A). It depends on the galaxy, so the disc moves when the stars do.
+- **AGN lines vs `marginalize_elines`.** A Spectrum with `marginalize_elines=True` together
+  with AGN lines is refused at setup (Prospector asserts the same): the marginalised fluxes would
+  absorb the AGN lines. Marginalise with `AGNConfig(lines=False)`, or keep the AGN lines and fit
+  the lines at their CLOUDY + AGN fluxes. In the reproduction modes the AGN lines are not
+  instrument-broadened, dust- or IGM-attenuated (Prospector's convention) and need
+  `add_neb=True`.
+- **PostProcess.** `spectra_model` / `spectra_observed` include the AGN continuum,
+  `spectra_intrinsic` / `spectra_dustfree` do not: `A_V = 2.5 log10(dustfree / full)` and
+  `LUV`/`MUV` contain the AGN. The AGN alone is `prediction["spectra_agn"]`; `extras["agn"]`
+  holds `L_bol_star`, `L_absorbed`, and `mdust` with the energy balance.
+- **Reproduction-mode IGM.** fsps: the AGN gets no IGM (FSPS adds the torus after
+  `igm_absorb`); prospector: Prospector's own Madau (`fake_fsps.add_igm`, 1 % / 4 % off
+  CERIDWEN's madau1995 blueward of Ly-alpha at z = 2 / 6). With a galaxy kernel (sigma_gal
+  > 0) before the IGM, the AGN's IGM correction is added after the kernel, unsmoothed for
+  photometry (a residual of <= 2e-3 of the AGN signal near Ly-alpha).
+- **Prospector's double-counted torus** (python-fsps adds its own torus inside the galaxy
+  spectrum and `AGNSSPBasis` adds another) is NOT reproduced: the prospector mode has the torus
+  once. Real Prospector's AGN-only torus photometry is 1.39-1.90x CERIDWEN's prospector mode.
+- **The torus templates** are read from `$SPS_HOME/dust/Nenkova08_y010_torusg_n10_q2.0.dat`
+  (`python -m ceridwen.check` reports them); the result file records their sha256.

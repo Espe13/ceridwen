@@ -22,6 +22,7 @@ Carlo. Documentation: [www.amanda-stoffers.de/ceridwen](https://www.amanda-stoff
 - Dust emission from Draine & Li (2007) or THEMIS templates
 - Nebular continuum and emission lines from the FSPS CLOUDY grids
 - IGM attenuation (Madau 1995), with an optional damping wing and damped Ly-α absorber (`MadauDampingDLA`)
+- AGN (`CSPBasis(agn=AGNConfig())`): Nenkova+08 clumpy torus, Temple+21 accretion disc, an AGN dust screen and AGN narrow lines, everything Prospector has; modes that reproduce FSPS and Prospector exactly, and a corrected default (exact `fagn * L_bol` normalisation, AGN before the IGM, energy balance with dust emission)
 - Photometry, spectra and emission-line fluxes, fitted alone or jointly
 - One broadening kernel: stellar and gas velocity dispersions, instrument line-spread function, library resolution removed automatically
 - Analytic marginalisation over emission-line fluxes (`Spectrum(marginalize_elines=True)`)
@@ -225,6 +226,7 @@ metallicity configurations (`tests/csp/test_lookback_flip_invariant.py`) with SS
 - [Outlier model](https://www.amanda-stoffers.de/ceridwen/outlier_model/): a mixture likelihood for bad data points
 - [Emission-line marginalisation](https://www.amanda-stoffers.de/ceridwen/eline_marginalisation/)
 - [α/Fe](https://www.amanda-stoffers.de/ceridwen/afe/): the α-enhanced grid and `CSPBasis_afe`
+- [AGN](https://www.amanda-stoffers.de/ceridwen/agn/): torus, disc, AGN screen and lines; the three modes and their parity with FSPS and Prospector
 - [Conventions](https://www.amanda-stoffers.de/ceridwen/conventions/): units, metallicity, lookback time, broadening, cosmology
 - [Troubleshooting](https://www.amanda-stoffers.de/ceridwen/troubleshooting/)
 - [Development and verification](https://www.amanda-stoffers.de/ceridwen/development/): every check, and how the code is built

@@ -215,11 +215,13 @@ class CSPBasis:
         change their summation order with the array length, so predictions differ in the last
         float32 bit (relative ~1e-7).  Ignored (whole grid) for dust emission, painted lines and
         a Photometry at a sampled redshift.
-    agn : ceridwen.agn.AGNConfig or None -- AGN components (Nenkova+08 torus, ...), off by default
-        (None: every path unchanged, byte for byte).  ``AGNConfig(agn_mode=...)`` with
-        "fsps" (reproduces FSPS add_agn_dust), "prospector" (Prospector's AGNSSPBasis) or
-        "corrected" (renormalised, clamped, before the IGM, energy balance with dust emission);
-        see ``ceridwen.agn``.  The theta keys (fagn, agn_tau, ...) get their defaults here.
+    agn : ceridwen.agn.AGNConfig, True, a mode name, or None -- the AGN (Nenkova+08 torus,
+        Temple+21 disc, dust4 screen, narrow lines), off by default (None: every path
+        unchanged, byte for byte).  ``AGNConfig()`` / ``True`` = "corrected" (exact
+        fagn * L_bol, clamped agn_tau, before the IGM, energy balance with dust emission);
+        ``AGNConfig(agn_mode="fsps")`` / ``"fsps"`` reproduces FSPS add_agn_dust,
+        "prospector" Prospector's AGNSSPBasis + AGNSpecModel; see ``ceridwen.agn`` and
+        docs/agn.md.  The theta keys (fagn, agn_tau, ...) get their defaults here.
     """
 
     # predict synthesises only the model pixels the observations read (``_support_for``);
@@ -911,8 +913,13 @@ class CSPBasis:
         """With ``agn`` (an ``AGNConfig``): build the ``AGNHook``, the per-SSP dust-free
         bolometric table, merge the AGN defaults into ``theta`` and wrap ``self.get_spectrum``
         once (``_with_agn``).  Without it: nothing (every path unchanged)."""
-        if agn is None:
+        if agn is None or agn is False:
             return theta
+        from ..agn import AGNConfig
+        if agn is True:                        # agn=True: the default AGNConfig() ("corrected")
+            agn = AGNConfig()
+        elif isinstance(agn, str):             # agn="fsps" etc.
+            agn = AGNConfig(agn_mode=agn)
         from ..agn.hook import AGNHook
         self._agn = AGNHook(agn, self.wave, add_dust_emission=add_dust_emission,
                             sps_home=sps_home)

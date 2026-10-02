@@ -527,3 +527,18 @@ def test_first_call_under_jit_and_vmap(mode):
     out_j2 = jax.jit(lambda t: model.predict(t))(th)           # a second trace reuses it
     for k in out_e:
         assert np.all(np.isfinite(np.asarray(out_j[k]))) and np.all(np.isfinite(out_j2[k]))
+
+
+# ------------------------------------------------------------------ the default (step 3)
+def test_default_mode_is_corrected_and_shorthands(ssp_data, torus_path):
+    """After A1-A5: AGNConfig() is the corrected mode; agn=True and agn="<mode>" are short
+    for AGNConfig() and AGNConfig(agn_mode=...); agn=False / None leave the AGN off."""
+    assert AGNConfig().agn_mode == "corrected"
+    kw = dict(lookback_time=jnp.linspace(0.0, 0.5, 5), zh_const=True, add_neb=False,
+              verbose=False, cosmo=Cosmology.planck18())
+    assert CSPBasis(ssp_data, agn=True, **kw)._agn.mode == "corrected"
+    fs = CSPBasis(ssp_data, agn="fsps", **kw)._agn
+    assert fs.mode == "fsps" and set(fs.model.components) == {"torus"}
+    assert CSPBasis(ssp_data, agn=False, **kw)._agn is None
+    with pytest.raises(ValueError, match="choose one of"):
+        CSPBasis(ssp_data, agn="bogus", **kw)
