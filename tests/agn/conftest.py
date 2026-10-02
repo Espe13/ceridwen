@@ -4,7 +4,7 @@
 * ``model_wave``: the test SSP grid's wavelength axis (``ssp_grid_path``).
 * ``agn_ref(name)``: a reference npz of session REF (``tests/reference/agn/<name>``, or the
   directory in ``$CERIDWEN_AGN_REF``); skips, saying so, when it is not there.
-* ``build_csp(agn, **kw)``: a small CSPBasis on the test grid (5 nodes, constant Z).
+* ``build_csp(agn, **kw)``: a small CSPBasis on the test grid (5 nodes to 0.5 Gyr, valid to z = 8; constant Z).
 """
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def build_csp(ssp_data, torus_path):
     cosmo = Cosmology.planck18()
 
     def build(agn=None, **kw):
-        args = dict(lookback_time=jnp.linspace(0.0, 5.0, 5), zh_const=True, add_neb=False,
+        args = dict(lookback_time=jnp.linspace(0.0, 0.5, 5), zh_const=True, add_neb=False,
                     add_igm=False, verbose=False, cosmo=cosmo)
         args.update(kw)
         return CSPBasis(ssp_data, agn=agn, **args)
