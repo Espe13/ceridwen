@@ -58,6 +58,9 @@ CATEGORIES = [
     "dust_laws",
     "dust_emission_themis",
     "lsf_scale",
+    "agn_torus",
+    "agn_disk",
+    "agn_lines",
 ]
 
 #: v1.0.5 metallicity baselines, one per grid family; each is skipped where its grid is absent;

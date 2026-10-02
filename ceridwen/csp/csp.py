@@ -1021,10 +1021,11 @@ class CSPBasis:
                 "with SedModel (or call obs.setup_for_model) first")
         if proj._agn is None:
             lines = self._agn.model.lines
+            mask = np.asarray(obs.mask, dtype=bool)        # empty for a Spectrum without data
             proj.setup_agn_lines(lines.line_wave, mode=self._agn.mode,
                                  sf_line_wave_rest=lines.emlines_wave,
                                  agn_sf_rows=lines.fsps_index,
-                                 pixel_mask=np.asarray(obs.mask))
+                                 pixel_mask=mask if mask.size == np.size(proj.wave_obs) else None)
         return proj.agn_lines(agn_l["F"], agn_l["sigma"], theta)
 
     def _agn_photometry_lines(self, obs, agn_l):
