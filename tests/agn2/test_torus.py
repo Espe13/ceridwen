@@ -22,6 +22,8 @@ V-TOR-6  polar dust energy (skirtor2016.py:351-368, both modes): at i = 0 the gr
 V-TOR-7  type-1/2 switch (skirtor2016.py:348): oa = 40: at i = 30 the disc is extinguished
          (polar_t < 1 in the UV), at i = 70 (> 90 - oa) polar_t == 1 exactly; the grey body is
          emitted in both.
+V-TOR-10 local SED independent of the model grid coverage (review finding r1).
+V-TOR-11 "corrected": every polar transmission <= 1 (review finding r1).
 V-TOR-8  inclination limit: the disc seen edge-on (i = 90) carries < 10 % of the face-on (i = 0)
          disc luminosity; the dust changes by < a factor 3 (the torus re-emits nearly
          isotropically in the IR, Stalevski+16).
@@ -251,3 +253,43 @@ def test_V_TOR_9_cigale_luminosities(ref):
             got = float(d[ours])
             assert got == pytest.approx(want, rel=1e-6, abs=1e-12 * abs(info[
                 "agn.total_dust_luminosity"])), (k, ours, got, want)
+
+
+def test_V_TOR_10_local_sed_independent_of_grid_coverage():
+    """Review finding VERDICT_TORUS_r1: a model grid that does not cover the whole SKIRTOR
+    template range (1 nm - 10 mm) must not change the SED at the wavelengths it does cover. On
+    a grid starting at 1000 A the disc must equal, pixel for pixel, the disc on a grid starting
+    at 100 A (same pixels), rel 1e-6, in both modes. (19.7 % of the Schartmann disc luminosity
+    lies below 912 A: renormalising each part to its full-template luminosity puts it into the
+    covered pixels.)"""
+    Sk, Po = _classes("V-TOR-10")
+    cut = MODEL_WAVE[MODEL_WAVE >= 1000.0]
+    for mode in ("corrected", "cigale"):
+        full = _build(Sk, MODEL_WAVE, mode, "V-TOR-10", R=None, file=None)
+        part = _build(Sk, cut, mode, "V-TOR-10", R=None, file=None)
+        th = _theta(dict(DEF, EBV=0.0), fagn=0.3)
+        a = full.nuclear_parts(th, _ctx(MODEL_WAVE, mode, 2.0, 5.0), None)
+        b = part.nuclear_parts(th, _ctx(cut, mode, 2.0, 5.0), None)
+        sel = MODEL_WAVE >= 1000.0
+        for k in ("disk", "dust"):
+            x, y = np.asarray(a[k])[sel], np.asarray(b[k])
+            m = x > 1e-6 * x.max()
+            assert np.max(np.abs(y[m] / x[m] - 1)) <= 1e-6, (mode, k)
+
+
+def test_V_TOR_11_corrected_transmission_physical():
+    """Review finding VERDICT_TORUS_r1: CIGALE's law 1 polynomial (skirtor2016.py:76-77) is
+    negative above ~3.1 um, so 10^(-0.4 k EBV) > 1 (light created; 1.99 at 20 um for EBV = 1).
+    "cigale" reproduces CIGALE; "corrected" is CERIDWEN's consistent framework: every polar
+    transmission <= 1 and the grey body >= 0, for all three laws."""
+    Sk, Po = _classes("V-TOR-11")
+    sk = _build(Sk, MODEL_WAVE, "corrected", "V-TOR-11", R=None, file=None)
+    for law in ("smc", "calzetti", "gaskell"):
+        po = _build(Po, MODEL_WAVE, "corrected", "V-TOR-11", law=law)
+        for ebv in (0.3, 1.0, 3.0):
+            th = _theta(dict(DEF, EBV=ebv, i=30.0), fagn=0.3)
+            t = np.asarray(po.transmission(th))
+            assert np.all(t <= 1.0), (law, ebv, t.max())
+            out = sk.nuclear_parts(th, _ctx(MODEL_WAVE, "corrected", 2.0, 5.0), po)
+            assert np.all(np.asarray(out["polar_t"]) <= 1.0 + 1e-12), (law, ebv)
+            assert np.all(np.asarray(out["polar_ir"]) >= 0.0), (law, ebv)

@@ -71,7 +71,7 @@ def nlr():
 
 
 def _axes(raw):
-    return (np.log10(raw["Z"] / ZSUN), raw["logu"], raw["xid"], np.log10(raw["nh"]),
+    return (np.log10(raw["Z_abs"] / ZSUN), raw["logu"], raw["xid"], np.log10(raw["nh"]),
             raw["alpha"])
 
 
