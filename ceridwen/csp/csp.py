@@ -932,6 +932,13 @@ class CSPBasis:
                 "line (it asserts 'must add agn and nebular lines'), so without the nebular model "
                 "there is nothing to reproduce. Build the basis with add_neb=True, switch the "
                 "lines off (AGNConfig(..., lines=False)), or use agn_mode='corrected'")
+        if self._agn.need_ldust_gal and not add_dust_emission:
+            raise ValueError(
+                f"AGNConfig(agn_mode={agn.agn_mode!r}, torus_model={agn.torus_model!r}) needs "
+                "CSPBasis(add_dust_emission=True): its amplitude (CIGALE's fracAGN) is the AGN "
+                "dust luminosity over AGN + galaxy dust luminosity, and the galaxy's dust "
+                "luminosity is what DL07 re-emits. (CIGALE silently uses 1 W without a dust "
+                "module; CERIDWEN refuses.)")
         if self._agn.need_ldust_gal and getattr(self, "fesc_geometry", None) == "picket":
             raise ValueError(
                 "an AGN component normalised to the galaxy's dust luminosity (CIGALE's fracAGN) "
