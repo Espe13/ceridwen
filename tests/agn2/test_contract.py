@@ -4,7 +4,8 @@
 V-CON-1  param_names == AGN2_THETA_KEYS[name]; default_params() has exactly those keys, finite.
 V-CON-2  outputs: float64, the documented shapes, finite at the defaults.
 V-CON-3  zero amplitude (fagn, agn_elum, blr_lum = 0) gives exactly 0; linear in the amplitude.
-V-CON-4  jit == eager (byte-equal) and vmap (W = 64) == loop (rel 1e-12) for every traced method.
+V-CON-4  jit == eager to max|diff| <= 1e-14 max|value| (not byte-equal: XLA fuses a*b + c into an
+         FMA under jit on CPU, DISPUTE_TORUS_r1, upheld) and vmap (W = 64) == loop (rel 1e-12).
 V-CON-5  jax.grad of a scalar of every traced output is finite in every theta key of the
          component, at the defaults.
 V-CON-6  line sets: region / width_key; line_wave equals FSPS's emlines_info.dat value of each
@@ -142,7 +143,9 @@ def test_V_CON_4_jit_vmap(name):
     eager = f(th)
     jitted = jax.jit(f)(th)
     for k in eager:
-        assert np.asarray(eager[k]).tobytes() == np.asarray(jitted[k]).tobytes(), k
+        e, j = np.asarray(eager[k]), np.asarray(jitted[k])
+        assert e.shape == j.shape and e.dtype == j.dtype, k
+        assert np.max(np.abs(e - j)) <= 1e-14 * max(np.max(np.abs(e)), 1e-300), k
     rng = np.random.default_rng(3)
     W = 64
     batch = {k: jnp.asarray(float(th[k]) * (1.0 + 0.02 * rng.standard_normal(W))
