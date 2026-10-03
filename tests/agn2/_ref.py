@@ -48,7 +48,7 @@ def _z_of(name):
 
 
 def feltre_raw(src_dir):
-    """``{"Z": (nZ,), "logu": , "xid": , "nh": , "alpha": , "lines": tuple of source names,
+    """``{"Z_abs": (nZ,) absolute Z, "logu": , "xid": , "nh": , "alpha": , "lines": tuple of source names,
     "L": (n_lines, nZ, nU, nX, nN, nA) erg/s}`` from the source text files, axes ascending."""
     src = pathlib.Path(src_dir)
     files = sorted(src.glob("nlr_nebular_Z*.txt"), key=lambda p: _z_of(p.name))
@@ -77,7 +77,7 @@ def feltre_raw(src_dir):
         L[(slice(None), iz) + tuple(idx)] = b[:, 4:].T
     if np.isnan(L).any():
         raise ValueError("the source grid has holes")
-    return {"Z": np.array([_z_of(f.name) for f in files]), "logu": ax[0], "xid": ax[1],
+    return {"Z_abs": np.array([_z_of(f.name) for f in files]), "logu": ax[0], "xid": ax[1],
             "nh": ax[2], "alpha": ax[3], "lines": tuple(header), "L": L}
 
 
