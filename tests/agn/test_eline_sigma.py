@@ -1,6 +1,6 @@
 """agn_eline_sigma as a free parameter (session SIGMA): setup validation and the
 unresolved-width warning (``SedModel._check_agn_eline_sigma_range`` /
-``_check_agn_eline_sigma_resolved``, ``ceridwen/model/model.py``).
+``_check_agn_eline_sigma_resolved``, ``ceridwen/model/model.py``) and its gradients.
 
 R1  a prior, a constant transform or a fixed value of agn_eline_sigma must lie in
     (0, AGN_ELINE_SIGMA_MAX = 2000] km/s (the Kinematics.sigma_max default); otherwise
@@ -8,6 +8,10 @@ R1  a prior, a constant transform or a fixed value of agn_eline_sigma must lie i
 W1  a sampled agn_eline_sigma (a prior on it) warns at setup when no Spectrum can resolve the
     AGN lines: no Spectrum, no unmasked pixel at any AGN line, or the instrumental sigma at
     every covered AGN line > 3 x the prior's upper edge.  No warning otherwise.
+G1  jax.grad of a log-likelihood is finite near the lower edge (1e-3 .. 50 km/s) in both the
+    corrected and the prospector mode, and matches central differences where it is nonzero.
+    (Prospector's painter uses pixels within 5 agn_eline_sigma / sigma_gas nebular widths of a
+    line, so below ~1 km/s it paints nothing there and the gradient is exactly 0.)
 """
 from __future__ import annotations
 
@@ -157,3 +161,27 @@ def test_W1_one_resolving_spectrum_is_enough(csp):
     spec, phot, _ = T._obs()
     _, w = _sed(csp, [_prism(), spec, phot], priors={KEY: Uniform(low=50.0, high=300.0)})
     assert not w
+
+
+# ------------------------------------------------------------------ G1
+@pytest.mark.parametrize("mode", ["corrected", "prospector"])
+def test_G1_grad_finite_near_lower_edge(mode):
+    model, _, _, _ = TI._model(TI._csp(TI._cfg(mode), igm=True))
+    f, x0, pos = TI._lnlike_factory(model, mode)
+    vg = jax.jit(jax.value_and_grad(f))
+    i = pos[KEY]
+    for s in (1e-3, 1.0, 5.0, 50.0):
+        x = x0.copy()
+        x[i] = s
+        v, g = vg(jnp.asarray(x))
+        g = np.asarray(g)
+        assert np.isfinite(float(v)) and np.all(np.isfinite(g)), (mode, s)
+        h = 1e-3 * s
+        e = np.zeros_like(x)
+        e[i] = h
+        fd = (float(f(jnp.asarray(x + e))) - float(f(jnp.asarray(x - e)))) / (2 * h)
+        if mode == "corrected" or s >= 5.0:
+            assert g[i] != 0.0
+            assert g[i] == pytest.approx(fd, rel=2e-3), (mode, s, g[i], fd)
+        else:                     # prospector: no pixel within 5 s / sigma_gas widths
+            assert abs(g[i]) <= 1e-10 * max(1.0, abs(float(v))) and abs(fd) <= 1e-6
