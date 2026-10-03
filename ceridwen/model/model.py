@@ -16,6 +16,10 @@ from ceridwen.broadening import Kinematics, DEFAULT_KINEMATICS, TIED
 
 Array = jax.Array
 
+# agn_eline_sigma (the AGN narrow-line dispersion, km/s): its prior / fixed value must lie in
+# (0, AGN_ELINE_SIGMA_MAX], the Kinematics.sigma_max default
+AGN_ELINE_SIGMA_MAX = float(Kinematics.__dataclass_fields__["sigma_max"].default)
+
 
 class SedModel:
     """Parameter manager and prediction layer: ``predict(theta)`` returns a dict keyed
@@ -122,6 +126,7 @@ class SedModel:
                     self.param_names.append(p)
 
         self._check_metallicity_setup(free_param_init)
+        self._check_agn_eline_sigma_range()
 
         unknown = sorted(set(self.priors) - set(self.param_names))
         if unknown:
@@ -286,6 +291,59 @@ class SedModel:
         self._check_gas_range()
         self._check_afe_range()
         self._check_refused_alpha_cell()
+
+    def _agn_line_hook(self):
+        """The CSP's AGN hook when its AGN lines (and so ``agn_eline_sigma``) are on, else None."""
+        hook = getattr(self.csp, "_agn", None)
+        if hook is None or getattr(hook.model, "lines", None) is None \
+                or "agn_eline_sigma" not in hook.param_names:
+            return None
+        return hook
+
+    def _check_agn_eline_sigma_range(self):
+        """``agn_eline_sigma`` (the AGN narrow-line dispersion, km/s): its prior, constant
+        transform or fixed value must lie in (0, AGN_ELINE_SIGMA_MAX].  Raises at setup."""
+        key = "agn_eline_sigma"
+        if self._agn_line_hook() is None:
+            return
+        from ..csp.csp import prior_support
+        if key in self.priors:
+            lo, hi = prior_support(self.priors[key])
+            what = f"the prior on {key!r} covers [{lo:g}, {hi:g}]"
+        else:
+            if key in self.transforms:
+                try:                     # its value at theta_init (constant or not)
+                    v = np.atleast_1d(np.asarray(self.transforms[key](dict(self.theta_init)),
+                                                 dtype=float))
+                except Exception:
+                    v = None
+                where = f"the transform for {key!r} gives"
+            elif key in self.theta_init:
+                v = np.atleast_1d(np.asarray(self.theta_init[key], dtype=float))
+                where = f"theta[{key!r}] is"
+            else:
+                return
+            if v is None or v.size == 0:
+                return
+            lo, hi = float(np.min(v)), float(np.max(v))
+            what = f"{where} {np.array2string(v, precision=4)}"
+        fix = (f"Give it a bounded prior inside (0, {AGN_ELINE_SIGMA_MAX:g}], e.g. "
+               "Uniform(low=50.0, high=500.0) (Prospector's), or fix it with a constant "
+               "transform, e.g. transforms={'agn_eline_sigma': lambda th: jnp.array([100.0])}.")
+        if not lo > 0.0:
+            raise ValueError(
+                f"{key} is the Gaussian dispersion [km/s] of the AGN narrow lines and must be "
+                f"> 0, but {what}.  A width <= 0 has no meaning, and the painters divide by it "
+                "(Prospector's AGNSpecModel painter by agn_eline_sigma alone), so it gives NaN "
+                f"predictions and gradients.  {fix}")
+        if not hi <= AGN_ELINE_SIGMA_MAX:
+            raise ValueError(
+                f"{what}, above {AGN_ELINE_SIGMA_MAX:g} km/s (the Kinematics.sigma_max default, "
+                "the widest line the broadening is built for).  The AGN lines are narrow-line-"
+                "region lines with Richardson+14 'a42' NARROW-line ratios; broad-line-region "
+                "widths (thousands of km/s) need a separate BLR component with its own lines, "
+                "ratios and width, which CERIDWEN does not have yet, and fitting broad lines "
+                f"with {key} would give them narrow-line ratios.  {fix}")
 
     def _check_tied_gas_range(self):
         """gas_tied=True (B1-019): the gas metallicity is the stellar logzsol, and a logzsol

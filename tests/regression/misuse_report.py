@@ -243,6 +243,14 @@ def _agn_lines_with_marginalisation():
                                 "gas_logz": lambda th: jnp.array([0.0])})
 
 
+def _agn_sigma_model(prior):
+    """A corrected-mode AGN SedModel (lines on) on photometry with a prior on agn_eline_sigma."""
+    ph = Photometry(filters=["sdss_g0", "sdss_r0"], flux=[1e-9, 1e-9],
+                    uncertainty=[1e-10, 1e-10], name="p")
+    return SedModel(_agn_csp(agn_mode="corrected"), [ph], zred=0.0,
+                    priors={"agn_eline_sigma": Uniform(low=prior[0], high=prior[1])})
+
+
 def run_scenarios():
     csp = _good_csp()
     th = dict(csp.theta_init)
@@ -459,6 +467,9 @@ def run_scenarios():
         ("AGN lines in prospector mode without add_neb", {"ERROR"},
          lambda: _agn_csp(agn_mode="prospector")),
         ("marginalize_elines with AGN lines", {"ERROR"}, _agn_lines_with_marginalisation),
+        ("agn_eline_sigma prior reaching 0 km/s", {"ERROR"}, lambda: _agn_sigma_model((0.0, 500.0))),
+        ("agn_eline_sigma prior above 2000 km/s (BLR widths)", {"ERROR"},
+         lambda: _agn_sigma_model((50.0, 3000.0))),
         ("LogUniform with mini <= 0 (log of 0)", {"ERROR"},
          lambda: LogUniform(mini=0.0, maxi=1.0)),
         ("Instrument LSF scale <= 0", {"ERROR"},
