@@ -1,0 +1,11 @@
+# BLR line ratios L/L_Halpha, Case B H I recombination, Storey & Hummer 1995 (MNRAS 272, 41) via PyNeb 1.1.32 RecAtom('H',1) default data, T=10000 K, n_e=10000 cm^-3.
+# Names, indices and vacuum wavelengths from /Users/amanda/Prospector/fsps/data/emlines_info.dat. Written by agn2_ref/data/blr/make_blr_caseb.py.
+name,fsps_index,wave_vac,ratio_halpha
+Ba-alpha 6563,74,6564.7229,1.0000000000e+00
+Ba-beta 4861,59,4862.7629,3.5127478754e-01
+Ba-gamma 4341,51,4341.7476,1.6478753541e-01
+Ba-delta 4101.76A,50,4102.9514,9.1189801700e-02
+Pa-alpha 1.8751um,107,18756.4020,1.1671388102e-01
+Pa-beta 1.28181um,104,12821.6990,5.6940509915e-02
+Pa-gamma 1.09381um,102,10941.1610,3.1643059490e-02
+Pa-delta 1.00494um,97,10052.2070,1.9447592068e-02
