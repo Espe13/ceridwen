@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 import jax.numpy as jnp
 
-from . import LineComponent, AGN_THETA_DEFAULTS
+from . import AGN2LineSet, AGN_THETA_DEFAULTS
 from .lines import read_emlines_info
 
 __all__ = ["NLR_FILE_NAME", "NLR_ZSUN", "NLR_AXES", "NLR_THETA_DEFAULTS", "default_nlr_file",
@@ -117,7 +117,7 @@ def multilinear(cube, axes, point):
     return c
 
 
-class FeltreNLR(LineComponent):
+class FeltreNLR(AGN2LineSet):
     """The Feltre+16 narrow-line region (static line set).
 
     Parameters
@@ -200,10 +200,6 @@ class FeltreNLR(LineComponent):
 
     # ---------------------------------------------------------------- static
     @property
-    def n_lines(self) -> int:
-        return len(self.line_names)
-
-    @property
     def ranges(self) -> dict:
         """{theta key: (lo, hi)} of the grid axes."""
         return {k: (float(g[0]), float(g[-1])) for k, g in self.axes.items()}
@@ -285,22 +281,6 @@ class FeltreNLR(LineComponent):
     def sigma_kms(self, theta):
         """``agn_eline_sigma`` [km/s] (scalar)."""
         return self._scalar(theta, "agn_eline_sigma")
-
-    def rows_for(self, wave_rest, tol=1.0) -> np.ndarray:
-        """For each rest wavelength: the index of the NLR line it is (matched BY NAME through the
-        nearest FSPS line within ``tol`` A), or -1. Same rule as ``AGNLines.rows_for``."""
-        lam = np.atleast_1d(np.asarray(wave_rest, dtype=np.float64))
-        out = np.full(lam.size, -1, dtype=np.int64)
-        pos = {n: k for k, n in enumerate(self.line_names)}
-        for i, l in enumerate(lam):
-            j = int(np.argmin(np.abs(self.emlines_wave - l)))
-            if abs(self.emlines_wave[j] - l) > tol:
-                raise ValueError(
-                    f"line at {l:.2f} A has no FSPS line within {tol:g} A (nearest "
-                    f"{self.emlines_names[j]!r} at {self.emlines_wave[j]:.2f} A in "
-                    f"{self.emlines_file})")
-            out[i] = pos.get(self.emlines_names[j], -1)
-        return out
 
     def __repr__(self):
         return (f"FeltreNLR(mode={self.mode!r}, {self.n_lines} lines "
