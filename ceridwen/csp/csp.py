@@ -1046,32 +1046,30 @@ class CSPBasis:
             return None
         from ..agn import IN_CSP_MODES
         th = hook.filled(theta)
-        # L_sun per M_formed, times the formed mass of the SFH (sum W = its integral, 1 for a
-        # unit-mass SFH), as the torus (L_bol) and the disc (galaxy at 5500 A) scale with W
-        msum = jnp.sum(self.calculate_ssp_weights(theta=theta))
-        ff = opz = 1.0
-        z_in = "zred" in theta
-        if z_in:
-            z = jnp.ravel(theta["zred"])[0]
-            opz = 1.0 + z
-            ff = self._flux_factor(theta) if flux_factor is None else flux_factor
         in_csp = hook.mode in IN_CSP_MODES
-        trans = dc = None
-        if in_csp:
-            dc = self._agn_diffuse_curve(theta)
-            trans = (self._igm_transmission(z, theta).astype(jnp.float64)
-                     if (self.igm is not None and z_in) else None)
         out = []
+        # every set traces the operations of the single-set code in the same order (the
+        # lowered program of the a42-only path is unchanged; XLA merges the repeats)
         for key, lines in hook.model.line_sets.items():
-            L = lines.line_luminosity(th) * msum
+            # L_sun per M_formed, times the formed mass of the SFH (sum W = its integral, 1 for
+            # a unit-mass SFH), as the torus (L_bol) and the disc (galaxy at 5500 A) scale with W
+            L = lines.line_luminosity(th) * jnp.sum(self.calculate_ssp_weights(theta=theta))
             sigma = lines.sigma_kms(th)
             if "logmass" in theta:
                 L = L * 10.0 ** jnp.ravel(theta["logmass"])[0]
             lam = jnp.asarray(lines.line_wave)
+            ff = opz = 1.0
+            z_in = "zred" in theta
+            if z_in:
+                z = jnp.ravel(theta["zred"])[0]
+                opz = 1.0 + z
+                ff = self._flux_factor(theta) if flux_factor is None else flux_factor
             t_l = None
             grid = None
             if in_csp:
-                t_l = hook.line_set_transmission(key, th, dc)
+                t_l = hook.line_set_transmission(key, th, self._agn_diffuse_curve(theta))
+                trans = (self._igm_transmission(z, theta).astype(jnp.float64)
+                         if (self.igm is not None and z_in) else None)
                 from ..broadening import agn_line_profiles_on_grid
                 rff = getattr(getattr(self, "neb", None), "res_floor_factor", 2.0)
                 prof = agn_line_profiles_on_grid(self.wave, lines.line_wave, sigma,
