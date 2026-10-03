@@ -14,7 +14,7 @@ V-SCAF-3   a component whose module does not exist raises NotImplementedError wh
            AGN2_THETA_KEYS is refused at setup.
 V-SCAF-4   corrected: the AGN continuum = (disk T_pol + dust + polar_ir) x T_gal (float64,
            independent recomputation from the toys), added to the base kernel in its dtype.
-V-SCAF-5   cigale: the AGN2 continuum sees no galaxy dust (independent of dust2) and there is
+V-SCAF-5   cigale: the AGN2 continuum sees no galaxy dust (independent of diffuse_tau_kc) and there is
            no energy balance.
 V-SCAF-6   polar dust: re-emission integrates to the absorbed disc light (toy contract), and
            the hook passes it through unchanged.
@@ -270,8 +270,8 @@ def test_V_SCAF_4_5_continuum_wiring(mode):
     cfg = AGNConfig(agn_mode=mode, torus_model="skirtor16", polar_dust=True, lines=False)
     csp = _csp(cfg)
     model, _, _, _ = _model(csp)
-    for dust2 in (0.0, 0.6):
-        _, mt = _mt(model, ON, dust2=jnp.array([dust2]))
+    for tau in (0.0, 0.6):
+        _, mt = _mt(model, ON, diffuse_tau_kc=jnp.array([tau]))
         got = np.asarray(csp._agn_rest(mt))
         disk, dust, t, ir, nuc = _expected_nuclear(csp, mt)
         gal = _diffuse(csp, mt) if mode == "corrected" else 1.0
@@ -310,7 +310,7 @@ def test_V_SCAF_7_energy_balance():
     csp = _csp(cfg, dem=True)
     assert csp._agn.energy_balance
     model, _, _, _ = _model(csp)
-    _, mt = _mt(model, ON, dust2=jnp.array([0.5]))
+    _, mt = _mt(model, ON, diffuse_tau_kc=jnp.array([0.5]))
     hook = csp._agn
     th = hook.filled(mt)
     W = csp.calculate_ssp_weights(theta=mt)
@@ -350,7 +350,7 @@ def test_V_SCAF_8_line_set_transmissions(mode):
     wave = np.asarray(csp.wave)
     for over in ({}, {"polar_ebv": 0.8}, {"dust2": 0.7}, {"dust2": 0.7, "polar_ebv": 0.0}):
         vals = dict(ON, **{k: v for k, v in over.items() if k != "dust2"})
-        _, mt = _mt(model, vals, **({"dust2": jnp.array([over["dust2"]])}
+        _, mt = _mt(model, vals, **({"diffuse_tau_kc": jnp.array([over["dust2"]])}
                                     if "dust2" in over else {}))
         th = hook.filled(mt)
         dc = _diffuse(csp, mt)
@@ -373,8 +373,8 @@ def test_V_SCAF_8_line_set_transmissions(mode):
 def test_V_SCAF_9_lines_observation_sums_by_name(igm):
     csp = _csp(AGNConfig(**ALL_ON), igm=igm)
     model, _, _, lines = _model(csp)
-    th0, mt0 = _mt(model, ZERO, dust2=jnp.array([0.4]))
-    th1, mt1 = _mt(model, ON, dust2=jnp.array([0.4]))
+    th0, mt0 = _mt(model, ZERO, diffuse_tau_kc=jnp.array([0.4]))
+    th1, mt1 = _mt(model, ON, diffuse_tau_kc=jnp.array([0.4]))
     d = np.asarray(model.predict(th1)["lines"], np.float64) - np.asarray(
         model.predict(th0)["lines"], np.float64)
     hook = csp._agn
@@ -566,7 +566,7 @@ def test_V_SCAF_14_ldust_gal(monkeypatch):
     assert dem._agn.need_ldust_gal
     model, _, _, _ = _model(dem)
     for d2 in (0.3, 1.0):
-        _, mt = _mt(model, ZERO, dust2=jnp.array([d2]), dust1=jnp.array([0.5]))
+        _, mt = _mt(model, ZERO, diffuse_tau_kc=jnp.array([d2]), tau_pow=jnp.array([0.5]))
         W = dem.calculate_ssp_weights(theta=mt)
         ctx = dem._agn_context(mt, W)
         w = np.asarray(dem._agn._w)
@@ -630,7 +630,7 @@ def test_V_SCAF_16_own_nuclear_parts(monkeypatch):
                    cosmo=cosmo, sps_home=os.environ["SPS_HOME"],
                    agn=AGNConfig(torus_model="skirtor16", polar_dust=True, lines=False))
     model, _, _, _ = _model(csp)
-    _, mt = _mt(model, ON, dust2=jnp.array([0.4]))
+    _, mt = _mt(model, ON, diffuse_tau_kc=jnp.array([0.4]))
     W = csp.calculate_ssp_weights(theta=mt)
     ctx = csp._agn_context(mt, W)
     th = csp._agn.filled(mt)
