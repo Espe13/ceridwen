@@ -1,7 +1,11 @@
 """Convert the Feltre et al. (2016) AGN narrow-line-region grid to ``nlr_feltre16.h5``.
 
 Input: the 16 ASCII files ``nlr_nebular_Z<digits>.txt`` of the public Feltre+16 NLR grid (one file
-per gas metallicity Z; ``Z0001`` = 0.0001, ``Z014`` = 0.014). Each has a ``#`` header naming the
+per gas metallicity Z; ``Z0001`` = 0.0001, ``Z014`` = 0.014; the file name is the only record of
+Z, so ``Z017`` is read as 0.017, not the 0.01774 of Feltre+16 Table 1, which the public files do
+not carry: they hold 16 Z incl. 0.017 and 0.020 and log U_S -5..-1 in 0.5 dex, wider than Table 1).
+Download: https://www.iap.fr/neogal/ewExternalFiles/AGN_NLR_nebular_feltre16.tar.gz (the tarball
+may be passed directly). Each has a ``#`` header naming the
 columns ``log(Us) xid nh alpha <line> <line> ...`` and one row per (log Us, xi_d, n_H, alpha) node,
 the line luminosities in erg/s as tabulated.
 
@@ -181,7 +185,8 @@ def match_lines(columns, sps_home):
     return out, fpath
 
 
-def write_h5(grid, matched, fsps_path, out):
+def write_h5(grid, matched, fsps_path, out, source=("", "")):
+    """``source``: (path of the input directory or tarball, sha256 of the tarball or "")."""
     import h5py
     names = list(grid["columns"])
     if HBETA not in names:
@@ -210,12 +215,16 @@ def write_h5(grid, matched, fsps_path, out):
         a = h.attrs
         a["format"] = "ceridwen nlr_feltre16 v1"
         a["axis_order"] = "line, Z, logu, xid, nh, alpha"
-        a["units_L"] = "erg/s as tabulated in the source files"
+        a["units_L"] = ("erg/s for an accretion luminosity of 1e45 erg/s (NEOGAL README; "
+                        "linear in it); only the ratios are used")
         a["units_ratio"] = "L_line / L_Hbeta"
         a["hbeta_source_name"] = HBETA
         a["source"] = ("Feltre, Charlot & Gutkin 2016, MNRAS 456, 3354: AGN narrow-line-region "
                        "photoionisation grid (nlr_nebular_Z*.txt)")
-        a["source_dir"] = str(Path(grid["files"][0]).parent)
+        a["source_path"] = source[0]
+        a["source_tarball_sha256"] = source[1]
+        a["source_url"] = ("https://www.iap.fr/neogal/ewExternalFiles/"
+                           "AGN_NLR_nebular_feltre16.tar.gz")
         a["source_files"] = ";".join(p.name for p in grid["files"])
         a["source_sha256"] = ";".join(_sha256(p) for p in grid["files"])
         a["fsps_emlines_file"] = str(fsps_path)
@@ -228,16 +237,33 @@ def write_h5(grid, matched, fsps_path, out):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("src", help="directory with nlr_nebular_Z*.txt")
+    ap.add_argument("src", help="directory with nlr_nebular_Z*.txt, or the NEOGAL tarball "
+                    "AGN_NLR_nebular_feltre16.tar.gz")
     default_out = Path(os.environ.get("CERIDWEN_AGN_DATA", Path.home() / ".ceridwen" / "agn"))
     ap.add_argument("--out", default=str(default_out / "nlr_feltre16.h5"))
     ap.add_argument("--sps-home", default=os.environ.get("SPS_HOME"))
     args = ap.parse_args(argv)
     if not args.sps_home:
         sys.exit("set $SPS_HOME or pass --sps-home: lines are matched to FSPS's emlines_info.dat")
-    grid = build_grid(args.src)
-    matched, fpath = match_lines(grid["columns"], args.sps_home)
-    out = write_h5(grid, matched, fpath, args.out)
+    src = Path(args.src)
+    if src.is_file() and src.name.endswith((".tar.gz", ".tgz")):
+        import tarfile
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            with tarfile.open(src) as tf:
+                tf.extractall(tmp, filter="data")
+            dirs = {p.parent for p in Path(tmp).rglob("nlr_nebular_Z*.txt")}
+            if len(dirs) != 1:
+                sys.exit(f"{src}: expected one directory of nlr_nebular_Z*.txt, found {dirs}")
+            grid = build_grid(dirs.pop())
+            matched, fpath = match_lines(grid["columns"], args.sps_home)
+            out = write_h5(grid, matched, fpath, args.out,
+                           source=(str(src.resolve()), _sha256(src)))
+    else:
+        grid = build_grid(src)
+        matched, fpath = match_lines(grid["columns"], args.sps_home)
+        out = write_h5(grid, matched, fpath, args.out,
+                       source=(str(src.resolve()), ""))
     print(f"wrote {out}: {grid['L'].shape[0]} lines x grid "
           f"{tuple(grid['L'].shape[1:])} (Z, logU, xid, nH, alpha)")
 
