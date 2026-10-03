@@ -16,6 +16,7 @@ T-SK-5  fagn = 0 -> exactly 0; linear in fagn (corrected); fagn/(1-fagn) (cigale
 T-SK-6  clamped outside the grid; continuous across nodes; finite grads at nodes and edges.
 T-SK-7  jit (rel 1e-14), vmap W = 64 == loop (rel 1e-12).
 T-SK-8  setup errors: missing file names the converter; R not on the grid; bad mode.
+T-SK-9  derived (CIGALE's sed.info AGN quantities) == the transcription at nodes (rel 1e-12).
 """
 from __future__ import annotations
 
@@ -105,6 +106,37 @@ def cigale_node(path, R, t, pl, q, oa, i, *, polar, EBV=0.0, T=100.0, emis=1.6, 
     dust = dust_i + bb
     norm = 1.0 / np.trapezoid(dust, x=wl)
     return wl, (dust - bb) * norm, bb * norm, sk_disk * norm
+
+
+def cigale_info(path, R, t, pl, q, oa, i, *, polar, fracAGN, Ldust, **pol):
+    """CIGALE's sed.info AGN quantities (skirtor2016.py l.397-531) at one node."""
+    wl, dust, pdust, disk = cigale_node(path, R, t, pl, q, oa, i, polar=polar, **pol)
+    # AGN1.disk after the replacement, in this node's normalisation, times norm
+    _, _, _, disk0 = cigale_node(path, R, t, pl, q, oa, 0.0, polar=False)
+    with h5py.File(path) as f:
+        a = {k: f["axes"][k][()] for k in f["axes"]}
+        ix = [int(np.flatnonzero(a[k] == v)[0]) for k, v in
+              zip(("R", "t", "pl", "q", "oa"), (R, t, pl, q, oa))]
+        n_i = float(f["norm"][(*ix, int(np.flatnonzero(a["i"] == i)[0]))])
+        n_0 = float(f["norm"][(*ix, 0)])
+    # dust, pdust, disk above already carry CIGALE's norm (l.392); AGN1.disk does not.
+    l_pol = np.trapezoid(pdust, x=wl)
+    lumin_disk = np.trapezoid(disk, x=wl)
+    agn1 = disk0 * n_0 / n_i
+    # CIGALE's norm = 1 / (1 + l_ext) and l_pol = l_ext / (1 + l_ext), so norm = 1 - l_pol
+    nrm = 1.0 - l_pol
+    c = cst.c * 1e9
+    cos30 = np.cos(np.radians(30.0))
+    norm_fac = cos30 * (2.0 * cos30 + 1.0) / 3.0 * nrm
+    intrin = np.trapezoid(agn1, x=wl) * norm_fac
+    l2500 = np.interp(250, wl, agn1) * norm_fac * 250.0 ** 2 / c
+    P = Ldust * (1.0 / (1.0 - fracAGN) - 1.0)
+    L6, L12 = np.interp([6000, 12000], wl, dust + pdust + disk) * P * np.array([6000, 12000])
+    return {"total_dust_luminosity": P, "polar_dust_luminosity": P * l_pol,
+            "torus_dust_luminosity": P - P * l_pol, "disk_luminosity": P * lumin_disk,
+            "luminosity": P + P * lumin_disk, "accretion_power": P * intrin * 0.493,
+            "intrin_Lnu_2500A_30deg": P * l2500, "L_6um": L6, "L_12um": L12,
+            "frac_agn_cigale": P / (P + Ldust)}
 
 
 def _to_model(wl, y):
@@ -366,3 +398,22 @@ def test_T_SK_8_setup_errors(tmp_path):
     for mode in ("fsps", "prospector"):
         with pytest.raises(ValueError, match="only in"):
             SkirtorTorus(WAVE, mode=mode, file=str(path))
+
+
+@pytest.mark.parametrize("polar_on", [False, True])
+def test_T_SK_9_derived(polar_on):
+    from ceridwen.agn.skirtor import SkirtorTorus
+    from ceridwen.agn.polar import PolarDust
+    path = _file()
+    ax = _axes(path)
+    R = float(ax["R"][0])
+    sk = SkirtorTorus(WAVE, mode="cigale", R=R, file=str(path))
+    pd = PolarDust(WAVE, mode="cigale", law="smc") if polar_on else None
+    pol = dict(EBV=0.3, T=140.0, emis=1.6, law=0)
+    for node in _nodes(ax, n=3, seed=3):
+        got = sk.derived(_theta(*node, fagn=0.25, polar_ebv=0.3, polar_temp=140.0,
+                                polar_emis=1.6), _ctx("cigale", ldust=2.0), pd)
+        ref = cigale_info(path, R, *node, polar=polar_on, fracAGN=0.25, Ldust=2.0, **pol)
+        for k, v in ref.items():
+            g = float(got[k])
+            assert (v == 0 and abs(g) < 1e-300) or abs(g / v - 1) < 1e-12, (node, k, g, v)

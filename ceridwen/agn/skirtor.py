@@ -332,7 +332,8 @@ class SkirtorTorus(_SkirtorContract):
         """Per unit amplitude P, on the templates' grid (F_lambda per nm): ``disk`` (after the
         polar dust for type-1 corners), ``dust`` (torus), ``polar`` (grey body), ``disk_u`` (the
         disc with T = 1, same per-corner 1 / (1 + l_c)) -- CIGALE's normalisation (dust + polar
-        integrates to 1)."""
+        integrates to 1). ``a_c`` (32,): the corner weights times CIGALE's per-corner
+        ``1 / (1 + l_c)``; ``sel``: the corner indices."""
         idx, w = self.corners(theta)
         sel = (idx["t"], idx["pl"], idx["q"], idx["oa"], idx["i"])
         D = self.disk_t[sel]                                    # (32, n_wl)
@@ -340,7 +341,7 @@ class SkirtorTorus(_SkirtorContract):
         if polar is None:
             disk0 = w @ D
             return {"disk": disk0, "dust": w @ U, "polar": jnp.zeros_like(disk0),
-                    "disk_u": disk0}
+                    "disk_u": disk0, "a_c": w, "sel": sel}
         k = self._polar_k.get(polar.law_index)
         if k is None:                       # NumPy (static): never cache a traced value
             k = np.asarray(polar.k_on(self.wl_nm), dtype=np.float64)
@@ -365,7 +366,8 @@ class SkirtorTorus(_SkirtorContract):
         bb_int = jnp.dot(bb, self.tw)
         frac_pol = jnp.sum(w * l_c / (1.0 + l_c))
         pol = frac_pol * bb / jnp.where(bb_int > 0, bb_int, 1.0)
-        return {"disk": disk, "dust": dust, "polar": pol, "disk_u": a_c @ D}
+        return {"disk": disk, "dust": dust, "polar": pol, "disk_u": a_c @ D, "a_c": a_c,
+                "sel": sel}
 
     def amplitude(self, theta, ctx):
         """P [L_sun per M_formed]: the luminosity of torus dust + polar dust."""
@@ -419,6 +421,37 @@ class SkirtorTorus(_SkirtorContract):
         t = jnp.where(ok, disk_t / jnp.where(ok, disk_u, 1.0), 1.0)
         return {"disk": disk_u, "dust": dust, "polar_t": t, "polar_ir": ir,
                 "nuclear": disk_t + dust + ir}
+
+    def derived(self, theta, ctx, polar=None):
+        """CIGALE's ``sed.info`` AGN quantities (skirtor2016.py l.397-531) for this theta, scalars
+        in ctx units (L_sun per M_formed; ``intrin_Lnu_2500A_30deg`` in L_sun/Hz):
+        ``total_dust_luminosity`` (= P), ``polar_dust_luminosity``, ``torus_dust_luminosity``,
+        ``disk_luminosity``, ``luminosity`` (dust + disc), ``accretion_power`` (4 pi intrinsic
+        disc, CIGALE's 0.493 factor), ``intrin_Lnu_2500A_30deg``, ``L_6um``, ``L_12um``
+        (lambda L_lambda), and ``frac_agn_cigale`` = P / (P + L_dust,gal) when ``ctx.L_dust_gal``
+        is set. Blended over the corner nodes like the spectra."""
+        P = self.amplitude(theta, ctx)
+        nat = self.native_parts(theta, polar)
+        tw = self.tw
+        l_disk = jnp.dot(nat["disk"], tw)
+        l_pol = jnp.dot(nat["polar"], tw)
+        cos30 = np.cos(np.radians(30.0))
+        a1 = self.agn1_int[nat["sel"]]
+        intrin = jnp.sum(nat["a_c"] * a1) * (cos30 * (2.0 * cos30 + 1.0) / 3.0)
+        s250 = float(np.interp(250.0, self.wl_nm, np.asarray(self.S)))
+        l2500 = jnp.sum(nat["a_c"] * a1) * s250 * (cos30 * (2.0 * cos30 + 1.0) / 3.0) \
+            * 250.0 ** 2 / C_NM_S
+        tot = nat["dust"] + nat["polar"] + nat["disk"]
+        l6, l12 = (jnp.interp(jnp.array([6000.0, 12000.0]), self.wl_j, tot)
+                   * jnp.array([6000.0, 12000.0]))
+        out = {"total_dust_luminosity": P, "polar_dust_luminosity": P * l_pol,
+               "torus_dust_luminosity": P - P * l_pol, "disk_luminosity": P * l_disk,
+               "luminosity": P + P * l_disk, "accretion_power": P * intrin * 0.493,
+               "intrin_Lnu_2500A_30deg": P * l2500, "L_6um": P * l6, "L_12um": P * l12}
+        if ctx.L_dust_gal is not None:
+            ld = jnp.asarray(ctx.L_dust_gal, dtype=jnp.float64)
+            out["frac_agn_cigale"] = P / jnp.where(P + ld > 0, P + ld, 1.0)
+        return out
 
     def rest_parts(self, theta, ctx):
         """{"disk", "dust"}: SKIRTOR without polar dust (the scaffold's contract)."""
