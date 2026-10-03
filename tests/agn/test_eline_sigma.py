@@ -1,9 +1,13 @@
-"""agn_eline_sigma as a free parameter (session SIGMA): setup validation
-(``SedModel._check_agn_eline_sigma_range``, ``ceridwen/model/model.py``).
+"""agn_eline_sigma as a free parameter (session SIGMA): setup validation and the
+unresolved-width warning (``SedModel._check_agn_eline_sigma_range`` /
+``_check_agn_eline_sigma_resolved``, ``ceridwen/model/model.py``).
 
 R1  a prior, a constant transform or a fixed value of agn_eline_sigma must lie in
     (0, AGN_ELINE_SIGMA_MAX = 2000] km/s (the Kinematics.sigma_max default); otherwise
     ValueError at setup (the upper-edge message names the missing BLR component).
+W1  a sampled agn_eline_sigma (a prior on it) warns at setup when no Spectrum can resolve the
+    AGN lines: no Spectrum, no unmasked pixel at any AGN line, or the instrumental sigma at
+    every covered AGN line > 3 x the prior's upper edge.  No warning otherwise.
 """
 from __future__ import annotations
 
@@ -105,3 +109,51 @@ def test_R1_without_agn_lines_nothing_checked():
     _, phot, _ = T._obs()
     m, w = _sed(c, [phot])
     assert KEY not in m.param_names and not w
+
+
+# ------------------------------------------------------------------ W1
+def test_W1_no_spectrum_warns(csp):
+    _, phot, lines = T._obs()
+    for obs in ([phot], [phot, lines]):
+        _, w = _sed(csp, obs, priors={KEY: Uniform(low=50.0, high=500.0)})
+        assert len(w) == 1 and "no Spectrum" in w[0] and "docs/agn.md" in w[0]
+
+
+def test_W1_spectrum_without_agn_lines_warns(csp):
+    """Every pixel within 20 A of an AGN line masked (R = 1000: 2 sigma_inst ~ 5 A), the rest
+    used: as good as no spectrum for the width."""
+    spec, phot, _ = T._obs()
+    obs_l = np.asarray(csp._agn.model.lines.line_wave) * (1 + T.ZRED)
+    w = T.WAVE_OBS
+    mask = np.all(np.abs(w[:, None] - obs_l[None, :]) > 20.0, axis=1)
+    assert 0 < mask.sum() < w.size
+    s = Spectrum(wavelength=w, flux=np.ones_like(w), uncertainty=np.ones_like(w),
+                 instrument=Instrument.R_fwhm(T.R_FWHM), name="spec", mask=mask)
+    _, got = _sed(csp, [s, phot], priors={KEY: Uniform(low=50.0, high=500.0)})
+    assert len(got) == 1 and "no Spectrum has unmasked pixels at any AGN line" in got[0]
+    _, got = _sed(csp, [spec, phot], priors={KEY: Uniform(low=50.0, high=500.0)})
+    assert not got                                                    # unmasked: quiet
+
+
+def test_W1_prism_threshold(csp):
+    """R_FWHM = 100: sigma_inst = c / (2.3548 R) = 1273 km/s.  Unresolvable for an upper edge
+    below 1273 / 3 = 424 km/s (warns), not for 500 (1273 < 1500: no warning)."""
+    _, phot, _ = T._obs()
+    _, w = _sed(csp, [_prism(), phot], priors={KEY: Uniform(low=50.0, high=300.0)})
+    assert len(w) == 1 and "1273 km/s" in w[0] and "'prism'" in w[0]
+    _, w = _sed(csp, [_prism(), phot], priors={KEY: Uniform(low=50.0, high=500.0)})
+    assert not w
+
+
+def test_W1_grating_and_fixed_quiet(csp):
+    spec, phot, _ = T._obs()                                          # R_FWHM = 1000
+    _, w = _sed(csp, [spec, phot], priors={KEY: Uniform(low=50.0, high=150.0)})
+    assert not w
+    _, w = _sed(csp, [phot], transforms={KEY: lambda th: jnp.array([100.0])})
+    assert not w                                                      # fixed: not sampled
+
+
+def test_W1_one_resolving_spectrum_is_enough(csp):
+    spec, phot, _ = T._obs()
+    _, w = _sed(csp, [_prism(), spec, phot], priors={KEY: Uniform(low=50.0, high=300.0)})
+    assert not w

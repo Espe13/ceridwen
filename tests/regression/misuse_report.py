@@ -89,6 +89,7 @@ WARN_EXPECT = {
     "fagn without agn= (AGN off)": "unrecognized theta key(s) ['fagn']",
     "old label name f_agn with agn=": "unrecognized theta key(s) ['f_agn']",
     "agn_tau outside the Nenkova grid [5, 150]": "outside the Nenkova+08 grid",
+    "agn_eline_sigma sampled with photometry only": "agn_eline_sigma is sampled but the data",
 }
 
 
@@ -470,6 +471,8 @@ def run_scenarios():
         ("agn_eline_sigma prior reaching 0 km/s", {"ERROR"}, lambda: _agn_sigma_model((0.0, 500.0))),
         ("agn_eline_sigma prior above 2000 km/s (BLR widths)", {"ERROR"},
          lambda: _agn_sigma_model((50.0, 3000.0))),
+        ("agn_eline_sigma sampled with photometry only", {"WARN"},
+         lambda: _agn_sigma_model((50.0, 500.0))),
         ("LogUniform with mini <= 0 (log of 0)", {"ERROR"},
          lambda: LogUniform(mini=0.0, maxi=1.0)),
         ("Instrument LSF scale <= 0", {"ERROR"},
