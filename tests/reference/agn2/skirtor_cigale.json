@@ -1,0 +1,13 @@
+{
+ "script": "scripts/agn2_reference/cigale_skirtor_reference.py",
+ "script_sha256": "d60009c38c593c29e7b87fe463565137bf08d343e3c4f64990b80a4a7149cf97",
+ "pcigale_src": "/Users/amanda/Desktop/PhD/Tools/ceridwen_workspace/agn2_ref/src/cigale",
+ "pcigale_commit": "29cb909fe2636800b4acdb1dfc7129d8c8494a24",
+ "python": "3.12.10 (main, Apr  8 2025, 11:35:47) [Clang 16.0.0 (clang-1600.0.26.6)]",
+ "database_files": 19201,
+ "database_sha256_of_sorted_file_hashes": "1403e72dbc8e929fa9577276c6e285209d964d6de9f96f25f24014140fe1d6cc",
+ "L_dust": 1.0,
+ "fracAGN": 0.5,
+ "n_sets": 321,
+ "units": "wl nm; contributions W/nm per L_dust = 1 W"
+}

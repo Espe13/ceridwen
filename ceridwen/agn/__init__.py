@@ -615,7 +615,7 @@ class SkirtorTorus(Component):
         transmission of the disc, "nuclear" what leaves the nucleus (before galaxy dust).
     needs_galaxy / needs_ldust_gal : flags (class or instance); True makes the CSP fill
         ``ctx.gal_nodust_young_old`` / ``ctx.L_dust_gal``. A component with
-        ``needs_ldust_gal`` is refused without ``add_dust_emission=True`` (PLAN_AGN2 2).
+        ``needs_ldust_gal`` is refused when the CSP has no galaxy dust screen (PLAN_AGN2 2.2).
     param_names must equal ``AGN2_THETA_KEYS["skirtor16"]``.
     """
 

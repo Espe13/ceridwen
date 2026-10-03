@@ -5,7 +5,7 @@ Requirements (PLAN_AGN2.md sections 2, 3, 5; CIGALE skirtor2016.py at 29cb909f):
 
 V-TOR-1  L1 parity, "cigale" mode, polar dust off: on CIGALE's own wavelength grid the disc and
          the torus dust equal pcigale's ``agn.SKIRTOR2016_disk`` / ``agn.SKIRTOR2016_torus``
-         (tests/reference/agn2/cigale_skirtor2016.npz, kind "node") to rel 1e-6 where the flux
+         (tests/reference/agn2/skirtor_cigale.npz, kind "node") to rel 1e-6 where the flux
          is > 1e-6 x its peak, for every node set (both disk_type 1 and 0, all t, pl, q, oa, R, i).
 V-TOR-2  L1 off-node: inside one cell, CERIDWEN equals the multilinear interpolation (NumPy,
          tests/agn2/_ref.py) of pcigale's 32 corner spectra (kind "cell") in (t, pl, q, oa, i),
@@ -46,7 +46,7 @@ import ceridwen.agn as agnmod  # noqa: E402
 from ceridwen.agn import AGNContext  # noqa: E402
 
 C_NM_S = 2.99792458e17
-REF = _ref.REF_DIR / "cigale_skirtor2016.npz"
+REF = _ref.REF_DIR / "skirtor_cigale.npz"
 LAWS = {0: "smc", 1: "calzetti", 2: "gaskell"}
 MODEL_WAVE = np.geomspace(100.0, 1.0e7, 3000)            # A
 
@@ -227,3 +227,27 @@ def test_V_TOR_8_inclination_limits(mode):
     assert _L(edge["disk"]) < 0.1 * _L(face["disk"])
     r = _L(edge["dust"]) / _L(face["dust"])
     assert 1 / 3 < r < 3, r
+
+
+def test_V_TOR_9_cigale_luminosities(ref):
+    """PLAN_AGN2 5 L1: CIGALE's module quantities (skirtor2016.py:397-531) per unit agn_power:
+    disc and polar-dust luminosity, intrinsic disc at 30 deg x 0.493 (accretion power),
+    L_nu(2500 A) at 30 deg; via SkirtorTorus.derived (TORUS's API), rel 1e-6."""
+    keys = [str(k) for k in ref["info_keys"]]
+    for k in np.nonzero(ref["kind"] != "cell")[0][::7]:
+        p = _params(ref, k)
+        sk, po = _instances(ref, p, "V-TOR-9", with_polar=p["EBV"] > 0)
+        if not hasattr(sk, "derived"):
+            _ref.missing("SkirtorTorus.derived", "V-TOR-9")
+        wl = ref["wl_nm"]
+        d = sk.derived(_theta(p, fagn=p["fracAGN"]), _ctx(wl * 10, "cigale",
+                                                          L_dust=float(ref["L_dust"])), po)
+        info = dict(zip(keys, ref["info"][k]))
+        for ours, theirs in (("disk_luminosity", "agn.disk_luminosity"),
+                             ("polar_dust_luminosity", "agn.polar_dust_luminosity"),
+                             ("accretion_power", "agn.accretion_power"),
+                             ("total_dust_luminosity", "agn.total_dust_luminosity")):
+            want = info[theirs]
+            got = float(d[ours])
+            assert got == pytest.approx(want, rel=1e-6, abs=1e-12 * abs(info[
+                "agn.total_dust_luminosity"])), (k, ours, got, want)
