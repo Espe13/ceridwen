@@ -98,8 +98,10 @@ class Lines(Observation):
         blend included. Matched BY NAME: each component wavelength is resolved to the nearest line
         of FSPS's list within 1 A (ValueError otherwise) and that name is looked up among the AGN
         lines (``AGNLines.rows_for``); a line that is not an AGN line gets a zero row. Cached on the
-        observation (NumPy, so a first use inside a jit trace never caches a tracer)."""
-        cached = self.__dict__.get("_agn_line_matrix")
+        observation (NumPy, so a first use inside a jit trace never caches a tracer), one entry per
+        line set (AGN2: the NLR and the BLR each have their own)."""
+        cache = self.__dict__.setdefault("_agn_line_matrix", {})
+        cached = cache.get(id(agn_lines))
         if cached is not None and cached[0] is agn_lines:
             return cached[1]
         M = np.zeros((len(self.line_components), agn_lines.n_lines), dtype=np.float64)
@@ -107,7 +109,7 @@ class Lines(Observation):
             for j in agn_lines.rows_for(comp):
                 if j >= 0:
                     M[k, j] += 1.0
-        self.__dict__["_agn_line_matrix"] = (agn_lines, M)
+        cache[id(agn_lines)] = (agn_lines, M)
         return M
 
     @property

@@ -29,7 +29,15 @@ Per call the CSP builds an ``AGNContext`` (``CSPBasis._agn_context``) and calls
   AGN, ``agnssp_basis.get_spectrum``; it differs from CERIDWEN's madau1995 blueward of
   Ly-alpha by 1 % at z = 2, 4 % at z = 6). The CSP adds ``agn * (T_agn - T_gal)`` after the
   IGM (``CSPBasis._agn_after_igm``). ``"corrected"`` adds the AGN before the IGM, as every
-  other component.
+  other component; so does ``"cigale"`` (CIGALE's ``redshifting`` module acts on the AGN too).
+
+AGN2 components (``AGNConfig.uses_agn2``; the table of transmissions is in
+``ceridwen/agn/__init__.py``): the SKIRTOR disc passes the polar dust (``PolarDust``), whose
+re-emission is added; the SKIRTOR dust, the polar re-emission and the transmitted disc form the
+nuclear spectrum, which then sees the galaxy's diffuse curve in ``"corrected"`` and nothing in
+``"cigale"``. Only what the galaxy's dust removes counts as absorbed (DL07 energy balance). Every
+line set (``AGNModel.line_sets``: NLR, BLR) has its own transmission
+(``line_set_transmission``), and its absorbed light joins the energy balance.
 
 Without ``agn=`` none of this exists and the kernels are called as before.
 """
@@ -39,8 +47,8 @@ from __future__ import annotations
 import jax.numpy as jnp
 import numpy as np
 
-from . import (AGN_MODE_CORRECTED, AGN_MODE_FSPS, AGN_MODE_PROSPECTOR, AGN_THETA_DEFAULTS,
-               AGNConfig, AGNContext, AGNModel)
+from . import (AGN_MODE_CIGALE, AGN_MODE_CORRECTED, AGN_MODE_FSPS, AGN_MODE_PROSPECTOR,
+               AGN_THETA_DEFAULTS, AGNConfig, AGNContext, AGNModel)
 from .torus import trapezoid_nu_weights
 
 __all__ = ["AGNHook", "AGN_TAU_RANGE", "prospector_igm_transmission"]
@@ -108,7 +116,11 @@ class AGNHook:
         self.wave = wave
         # |DL07 trapezoid weights| (positive): integrates F_nu over frequency
         self._w = -trapezoid_nu_weights(wave)
-        self.need_galaxy = "disk" in self.model.components
+        self.need_galaxy = "disk" in self.model.components or any(
+            getattr(c, "needs_galaxy", False) for c in self.model.components.values())
+        self.need_ldust_gal = any(getattr(c, "needs_ldust_gal", False)
+                                  for c in self.model.components.values())
+        self.uses_agn2 = config.uses_agn2
         self.param_names = self.model.param_names
         self._defaults = self.model.default_params()
         # spec_dustfree of unit absorbed luminosity for DL07 (one pixel, 1/|w|; spec_attn = 0)
@@ -132,7 +144,9 @@ class AGNHook:
                "agn_energy_balance": bool(self.energy_balance),
                "dust4_type": int(self.config.dust4_type),
                "agn_components": ",".join(sorted(self.model.components))
-               + (",lines" if self.model.lines is not None else "")}
+               + (",lines" if self.model.lines is not None else "")
+               + (",polar" if self.model.polar is not None else "")
+               + (",blr" if self.model.blr is not None else "")}
         torus = self.model.components.get("torus")
         if torus is not None:
             import hashlib
@@ -152,6 +166,20 @@ class AGNHook:
             out["agn_lines_table_sha256"] = _sha256(A42_FILE)
             out["agn_lines_emlines_file"] = str(lines.emlines_file)
             out["agn_lines_emlines_sha256"] = _sha256(lines.emlines_file)
+        if self.uses_agn2:
+            cfg = self.config
+            out.update({"agn_torus_model": cfg.torus_model if cfg.use_torus else "none",
+                        "agn_polar_dust": bool(cfg.polar_dust),
+                        "agn_polar_law": cfg.polar_law_resolved if cfg.polar_dust else "none",
+                        "agn_nlr_model": cfg.nlr_model if cfg.use_lines else "none",
+                        "agn_blr": bool(cfg.blr)})
+            for name, part in (("skirtor", self.model.components.get("skirtor")),
+                               ("polar", self.model.polar), ("blr", self.model.blr),
+                               ("nlr", self.model.lines if cfg.nlr_model == "feltre16"
+                                else None)):
+                prov = getattr(part, "provenance", None)
+                if part is not None and prov is not None:
+                    out.update({f"agn_{name}_{k}": v for k, v in prov().items()})
         return out
 
     def range_messages(self, theta) -> list:
@@ -174,6 +202,16 @@ class AGNHook:
                 if v.size and np.nanmin(v) < 0:
                     msgs.append(f"theta['{key}'] = {np.array2string(v, precision=3)} is "
                                 "negative; the AGN term is linear in it and goes negative.")
+        if self.uses_agn2:
+            if "blr_lum" in theta and "blr_lum" in self.param_names:
+                v = np.asarray(theta["blr_lum"], float)
+                if v.size and np.nanmin(v) < 0:
+                    msgs.append(f"theta['blr_lum'] = {np.array2string(v, precision=3)} is "
+                                "negative; the broad lines are linear in it and go negative.")
+            for part in self.model._parts():
+                rm = getattr(part, "range_messages", None)
+                if rm is not None and part is not self.model.screen:
+                    msgs += list(rm(theta))
         return msgs
 
     # ---------------------------------------------------------------- traced
@@ -190,6 +228,8 @@ class AGNHook:
         intrinsic = jnp.zeros_like(self.wave, dtype=jnp.float64)
         attenuated = jnp.zeros_like(self.wave, dtype=jnp.float64)
         for name, comp in self.model.components.items():
+            if name == "skirtor":
+                continue                      # AGN2: nuclear_parts below
             s = comp.rest_spectrum(th, ctx)
             intrinsic = intrinsic + s
             if name == "torus":
@@ -199,7 +239,36 @@ class AGNHook:
             else:
                 att = s * dc
             attenuated = attenuated + att
+        if "skirtor" in self.model.components:
+            nuc = self.nuclear_parts(th, ctx)["nuclear"]
+            intrinsic = intrinsic + nuc
+            attenuated = attenuated + nuc * self.galaxy_curve(ctx.diffuse_curve)
         return intrinsic, attenuated
+
+    def galaxy_curve(self, diffuse_curve):
+        """The galaxy-dust transmission the AGN2 parts see: the diffuse curve in "corrected",
+        1 in "cigale" (CIGALE adds the AGN after its dust attenuation modules)."""
+        if self.mode == AGN_MODE_CIGALE:
+            return jnp.ones_like(diffuse_curve)
+        return diffuse_curve
+
+    def nuclear_parts(self, theta, ctx: AGNContext):
+        """AGN2 continuum before the galaxy's dust, (n_wave,) float64 each: ``disk`` (SKIRTOR
+        disc, unattenuated), ``dust`` (SKIRTOR torus dust), ``polar_t`` (the polar-dust
+        transmission, ones without polar dust), ``polar_ir`` (its re-emission), ``nuclear`` =
+        disk * polar_t + dust + polar_ir. ``theta`` is the filled AGN theta."""
+        parts = self.model.components["skirtor"].rest_parts(theta, ctx)
+        disk = jnp.asarray(parts["disk"], dtype=jnp.float64)
+        dust = jnp.asarray(parts["dust"], dtype=jnp.float64)
+        polar = self.model.polar
+        if polar is None:
+            t = jnp.ones_like(disk)
+            ir = jnp.zeros_like(disk)
+        else:
+            t = jnp.asarray(polar.transmission(theta), dtype=jnp.float64)
+            ir = jnp.asarray(polar.reemission(theta, disk, t, ctx), dtype=jnp.float64)
+        return {"disk": disk, "dust": dust, "polar_t": t, "polar_ir": ir,
+                "nuclear": disk * t + dust + ir}
 
     def __call__(self, theta, ctx: AGNContext, dust_emission=None, dust_theta=None,
                  formed_mass=1.0):
@@ -217,6 +286,8 @@ class AGNHook:
             L = self.model.lines.line_luminosity(th) * formed_mass
             absorbed = absorbed + jnp.sum(
                 L * (1.0 - self.line_dust_transmission(ctx.diffuse_curve)))
+        if self.energy_balance and self.model.blr is not None:
+            absorbed = absorbed + self.blr_absorbed(self.filled(theta), ctx, formed_mass)
         if not self.energy_balance:
             return attenuated, absorbed
         _unit, tduste = self.dust_response(ctx, dust_emission, dust_theta)
@@ -230,6 +301,42 @@ class AGNHook:
         if self.mode != AGN_MODE_CORRECTED or self.model.lines is None:
             return None
         return jnp.interp(jnp.asarray(self.model.lines.line_wave), self.wave, diffuse_curve)
+
+    def line_set_transmission(self, key, theta, diffuse_curve):
+        """(n_lines,) float64 transmission of line set ``key`` ("nlr" / "blr") at its lines, or
+        None (no attenuation). ``theta``: the filled AGN theta. The NLR keeps
+        ``line_dust_transmission`` (the a42 path is unchanged); the BLR sees the nuclear screen
+        (polar dust, or the dust4 power law) and, in "corrected", the galaxy's diffuse curve."""
+        if key == "nlr":
+            return self.line_dust_transmission(diffuse_curve)
+        lam = jnp.asarray(self.model.line_sets[key].line_wave)
+        t = self._nuclear_line_transmission(theta, lam)
+        if self.mode == AGN_MODE_CORRECTED:
+            g = jnp.interp(lam, self.wave, diffuse_curve)
+            t = g if t is None else t * g
+        return t
+
+    def _nuclear_line_transmission(self, theta, lam):
+        """(n,) transmission of the nuclear screen at rest wavelengths ``lam``, or None."""
+        if self.model.polar is not None:
+            return jnp.interp(lam, self.wave, self.model.polar.transmission(theta))
+        if self.model.screen is not None:
+            return jnp.interp(lam, self.wave, self.model.screen.dust4_transmission(theta))
+        return None
+
+    def blr_absorbed(self, theta, ctx, formed_mass):
+        """Broad-line light the GALAXY's dust absorbs (joins DL07): L x T_nuc x (1 - T_gal) at
+        each line ("corrected"; 0 otherwise). What the nuclear screen removes is not galaxy
+        dust and is not re-emitted (the polar re-emission is fed by the disc only)."""
+        if self.mode != AGN_MODE_CORRECTED:
+            return jnp.zeros((), dtype=jnp.float64)
+        blr = self.model.blr
+        L = blr.line_luminosity(theta) * formed_mass
+        lam = jnp.asarray(blr.line_wave)
+        t_nuc = self._nuclear_line_transmission(theta, lam)
+        if t_nuc is not None:
+            L = L * t_nuc
+        return jnp.sum(L * (1.0 - jnp.interp(lam, self.wave, ctx.diffuse_curve)))
 
     def dust_response(self, ctx, dust_emission, dust_theta):
         """``(mdust, tduste)`` of DL07 for an absorbed luminosity of exactly 1 L_sun (per

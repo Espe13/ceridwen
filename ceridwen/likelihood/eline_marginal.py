@@ -252,10 +252,12 @@ def _agn_lines_on(csp) -> bool:
     hook = getattr(csp, "_agn", None)              # CSPBasis(agn=AGNConfig(...)): an AGNHook
     if getattr(getattr(hook, "model", None), "lines", None) is not None:
         return True
+    if getattr(getattr(hook, "model", None), "blr", None) is not None:      # AGN2 broad lines
+        return True
     for v in getattr(csp, "__dict__", {}).values():
-        if isinstance(v, AGNModel) and v.lines is not None:
+        if isinstance(v, AGNModel) and (v.lines is not None or v.blr is not None):
             return True
-        if isinstance(v, AGNConfig) and v.use_lines:
+        if isinstance(v, AGNConfig) and v.use_any_lines:
             return True
     return False
 
