@@ -45,9 +45,14 @@ Resampling onto the model grid (static indices and weights, applied in the trace
 ``"cigale"``     CIGALE's own: ``np.interp`` of L_lambda, 0 outside the template grid
                  (``pcigale/sed/utils.py:interpolate_lumin``), then L_nu = L_lambda lambda^2 / c.
 ``"corrected"``  log-log between neighbouring template points that are both > 0 (0 across a zero),
-                 then each part rescaled so that its frequency integral on the model grid (the
-                 DL07 trapezoid weights) equals its luminosity on the template grid: the model
-                 carries exactly ``P`` in dust + polar dust on any grid.
+                 each part times trapz(part) / (exact integral of its log-log interpolant), both
+                 over the whole template grid (a property of the template, not of the model
+                 grid): every pixel is independent of how much of 1 nm - 10 mm the model grid
+                 covers; a covering grid carries CIGALE's luminosity, ``P`` in dust + polar dust,
+                 to its trapezoid quadrature (|L/P - 1| <= 3.0e-7 measured over 40 random thetas on the
+                 15000-point 1 A - 1e8 A grid, 1.9e-6 on 6000 points); a
+                 shorter grid misses what lies outside it. The transmitted disc takes the
+                 unattenuated disc's factor (so its polar transmission is <= 1 everywhere).
 
 Units: ``rest_parts`` / ``nuclear_parts`` return L_sun/Hz per M_formed (``ctx`` units).
 """
@@ -249,6 +254,8 @@ class SkirtorTorus(_SkirtorContract):
             self._hi = jnp.asarray(hi)
             self._t = jnp.asarray(np.where(inside, np.clip(t, 0.0, 1.0), 0.0))
             self._llam2c = jnp.asarray(np.log(wave_nm ** 2 / C_NM_S))
+            self._lnx = jnp.asarray(np.log(wl))                   # template grid, for the
+            self._x = jnp.asarray(wl)                             # exact log-log integral
             if not inside.any():
                 raise ValueError(
                     f"SkirtorTorus: the model grid [{wave[0]:.4g}, {wave[-1]:.4g}] A does not "
@@ -380,9 +387,32 @@ class SkirtorTorus(_SkirtorContract):
             return jnp.asarray(ctx.L_dust_gal, dtype=jnp.float64) * (f / (1.0 - f))
         return f * jnp.asarray(ctx.L_bol_star, dtype=jnp.float64)
 
-    def to_model(self, y):
+    def loglog_scale(self, y):
+        """``"corrected"``: trapz(y) / (exact integral of the log-log interpolant of y), both over
+        the whole template grid -- a property of the template alone, never of the model grid
+        (VERDICT_TORUS_r1 R1), so the model pixels do not depend on how much of the templates the
+        model grid covers, and a grid covering 1 nm - 10 mm carries CIGALE's luminosity
+        ``trapz(y)`` (up to the model grid's trapezoid quadrature)."""
+        pos = y > 0
+        ly = jnp.log(jnp.where(pos, y, 1.0))
+        x0, x1, lx0, lx1 = self._x[:-1], self._x[1:], self._lnx[:-1], self._lnx[1:]
+        ok = pos[:-1] & pos[1:]
+        L = lx1 - lx0
+        d = (ly[1:] - ly[:-1]) / L + 1.0                       # s + 1 of each segment
+        a = jnp.exp(ly[:-1] + lx0)                             # y0 x0
+        dL = d * L
+        small = jnp.abs(dL) < 1e-6
+        dL_s = jnp.where(small, 1.0, dL)
+        # integral of y0 (x / x0)^s dx over the segment = y0 x0 L (e^{dL} - 1) / dL
+        g = jnp.where(small, 1.0 + 0.5 * dL + dL * dL / 6.0, jnp.expm1(dL_s) / dL_s)
+        exact = jnp.sum(jnp.where(ok, a * L * g, 0.0))
+        lin = jnp.dot(y, self.tw)
+        return jnp.where(exact > 0, lin / jnp.where(exact > 0, exact, 1.0), 0.0)
+
+    def to_model(self, y, scale=None):
         """(n_wl,) F_lambda per nm on the templates' grid -> (n_wave,) F_nu per Hz on the model
-        grid (the mode's resampling; see the module docstring)."""
+        grid (the mode's resampling; see the module docstring). ``"corrected"``: times
+        ``scale`` (default ``loglog_scale(y)``)."""
         lo, frac = self._lo, self._frac
         if self.mode == AGN_MODE_CIGALE:
             y_lo, y_hi = y[lo], y[jnp.minimum(lo + 1, y.shape[0] - 1)]
@@ -394,10 +424,7 @@ class SkirtorTorus(_SkirtorContract):
         seg = self._inside & pos_nat[lo] & pos_nat[self._hi]
         ly_lo, ly_hi = ly[lo], ly[self._hi]
         fnu = jnp.where(seg, jnp.exp(ly_lo + self._t * (ly_hi - ly_lo) + self._llam2c), 0.0)
-        target = jnp.dot(y, self.tw)                    # luminosity on the template grid
-        have = jnp.dot(fnu, self._w_model)
-        ok = have > 0
-        return jnp.where(ok, fnu * (target / jnp.where(ok, have, 1.0)), 0.0)
+        return fnu * (self.loglog_scale(y) if scale is None else scale)
 
     def nuclear_parts(self, theta, ctx, polar=None):
         """The AGN2 nuclear continuum, (n_wave,) float64 L_sun/Hz per M_formed each:
@@ -412,9 +439,12 @@ class SkirtorTorus(_SkirtorContract):
             zero = jnp.zeros_like(disk0)
             return {"disk": disk0, "dust": dust, "polar_t": jnp.ones_like(disk0),
                     "polar_ir": zero, "nuclear": disk0 + dust}
-        disk_t = P * self.to_model(nat["disk"])
-        # the unattenuated disc in the same normalisation (CIGALE divides by 1 + l_c per corner)
-        disk_u = P * self.to_model(nat["disk_u"])
+        # the unattenuated disc in the same normalisation (CIGALE divides by 1 + l_c per corner);
+        # "corrected": the transmitted disc takes the unattenuated disc's log-log scale, so
+        # polar_t = 1 exactly where the polar dust does not act and <= 1 everywhere
+        sc = None if self.mode == AGN_MODE_CIGALE else self.loglog_scale(nat["disk_u"])
+        disk_u = P * self.to_model(nat["disk_u"], sc)
+        disk_t = P * self.to_model(nat["disk"], sc)
         dust = P * self.to_model(nat["dust"])
         ir = P * self.to_model(nat["polar"])
         ok = disk_u > 0

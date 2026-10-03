@@ -9,13 +9,14 @@ the closed forms).
 T-SK-1  cigale mode at nodes == the transcription (disc, torus dust, polar dust), polar on/off,
         3 laws, type-1 and type-2 views (rel 1e-12 where > 1e-6 x peak).
 T-SK-2  off-node == multilinear blend of the per-node transcription (rel 1e-12).
-T-SK-3  corrected mode: torus dust + polar dust carry exactly P = fagn L_bol on the model grid,
-        and each part keeps its template-grid luminosity (rel 1e-12).
+T-SK-3  corrected mode: torus dust + polar dust carry P = fagn L_bol to quadrature (5e-6 on
+        6000 points), each part its template luminosity; polar transmission <= 1.
 T-SK-4  polar re-emission == the angle-averaged absorption of the face-on disc (CIGALE l_ext).
 T-SK-5  fagn = 0 -> exactly 0; linear in fagn (corrected); fagn/(1-fagn) (cigale).
 T-SK-6  clamped outside the grid; continuous across nodes; finite grads at nodes and edges.
 T-SK-7  jit (rel 1e-14), vmap W = 64 == loop (rel 1e-12).
 T-SK-8  setup errors: missing file names the converter; R not on the grid; bad mode.
+T-SK-10 corrected pixels do not depend on the model grid's extent (byte-equal).
 T-SK-9  derived (CIGALE's sed.info AGN quantities) == the transcription at nodes (rel 1e-12).
 """
 from __future__ import annotations
@@ -252,27 +253,47 @@ def _nu_int(y):
 
 @pytest.mark.parametrize("polar_on", [False, True])
 def test_T_SK_3_corrected_energy(polar_on):
+    """Torus + polar dust carry P = fagn L_bol to the model grid's quadrature (|L/P - 1| measured
+    <= 1.9e-6 on this 6000-point grid, 3e-7 on 15000 points); each part keeps its template
+    luminosity to the same order; the transmitted disc is never brighter than the emitted one."""
     from ceridwen.agn.skirtor import SkirtorTorus
     from ceridwen.agn.polar import PolarDust
     path = _file()
     ax = _axes(path)
     sk = SkirtorTorus(WAVE, mode="corrected", R=float(ax["R"][0]), file=str(path))
-    pd = PolarDust(WAVE, mode="corrected", law="smc") if polar_on else None
+    pd = PolarDust(WAVE, mode="corrected", law="calzetti") if polar_on else None
     lbol = 3.0
     for node in _nodes(ax, n=3):
         th = _theta(*node, fagn=0.2, polar_ebv=0.4, polar_temp=120.0, polar_emis=1.6)
         p = sk.nuclear_parts(th, _ctx("corrected", lbol=lbol), pd)
         L = _nu_int(p["dust"]) + _nu_int(p["polar_ir"])
-        assert abs(L / (0.2 * lbol) - 1.0) < 1e-12, (node, L)
+        assert abs(L / (0.2 * lbol) - 1.0) < 5e-6, (node, L)
         nat = sk.native_parts(th, pd)
         tw = np.asarray(sk.tw)
         for k_model, k_nat in (("dust", "dust"), ("polar_ir", "polar")):
             want = 0.2 * lbol * float(np.asarray(nat[k_nat]) @ tw)
             got = _nu_int(p[k_model])
-            assert (want == 0 and got == 0) or abs(got / want - 1) < 1e-12
-        want = 0.2 * lbol * float(np.asarray(nat["disk"]) @ tw)
-        got = _nu_int(p["disk"] * p["polar_t"])
-        assert abs(got / want - 1) < 1e-10, (got, want)
+            assert (want == 0 and got == 0) or abs(got / want - 1) < 5e-6
+        assert np.all(np.asarray(p["polar_t"]) <= 1.0)
+
+
+def test_T_SK_10_corrected_pixels_independent_of_grid_coverage():
+    """VERDICT_TORUS_r1 R1: the corrected SED at a pixel does not depend on the grid's extent."""
+    from ceridwen.agn.skirtor import SkirtorTorus
+    from ceridwen.agn.polar import PolarDust
+    path = _file()
+    cut = WAVE[(WAVE >= 2000.0) & (WAVE <= 3e6)]
+    a_sk = SkirtorTorus(WAVE, mode="corrected", file=str(path))
+    b_sk = SkirtorTorus(cut, mode="corrected", file=str(path))
+    pd_a = PolarDust(WAVE, mode="corrected", law="smc")
+    pd_b = PolarDust(cut, mode="corrected", law="smc")
+    th = _theta(7.0, 1.0, 1.0, 40.0, 30.0, polar_ebv=0.3, polar_temp=100.0, polar_emis=1.6)
+    ctx_b = AGNContext(jnp.asarray(cut), jnp.asarray(3.0), None, jnp.ones(cut.size), "corrected")
+    a = a_sk.nuclear_parts(th, _ctx("corrected"), pd_a)
+    b = b_sk.nuclear_parts(th, ctx_b, pd_b)
+    sel = (WAVE >= 2000.0) & (WAVE <= 3e6)
+    for k in ("disk", "dust", "polar_ir", "polar_t", "nuclear"):
+        np.testing.assert_array_equal(np.asarray(a[k])[sel], np.asarray(b[k]), err_msg=k)
 
 
 def test_T_SK_4_polar_reemission_is_angle_averaged_absorption():

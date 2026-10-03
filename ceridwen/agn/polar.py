@@ -21,7 +21,9 @@ vendored as ``data/cigale_extFun_*.txt`` (unchanged; sha256 in ``EXTFUN_SHA256``
 ``interp1d`` raises below 1 nm (the curves start there); here the curve is held constant below
 1 nm (only the model-grid ``transmission`` reaches there; the SKIRTOR grid starts at 1 nm).
 
-Transmission ``10^(-0.4 k E(B-V))``.
+Transmission ``10^(-0.4 k E(B-V))``. CIGALE's law 1 polynomial is negative above ~3.1 um (k < 0,
+transmission > 1, light created); ``"cigale"`` keeps it (parity), ``"corrected"`` clips k at 0
+(no polar extinction there), so every transmission is <= 1 and the absorbed energy >= 0.
 
 Re-emission (CIGALE, l. 351-386): the luminosity the polar dust absorbs is the ANGLE-AVERAGED
 absorption of the face-on disc, ``l_ext = (7/18 - sin^2(oa)/6 - 2 sin^3(oa)/9) x
@@ -176,14 +178,19 @@ class PolarDust(_PolarDustContract):
         self.law = law
         self.law_index = LAW_INDEX[law]
         self.wave = wave
-        self.k_model = jnp.asarray(k_ext(wave / 10.0, self.law_index))   # on the model grid
+        self.k_model = jnp.asarray(self.k_on(wave / 10.0))               # on the model grid
 
     def default_params(self) -> dict:
         return dict(POLAR_DEFAULTS)
 
     def k_on(self, wl_nm):
-        """CIGALE's ``k_ext`` on a grid in nm (numpy; setup time)."""
-        return k_ext(wl_nm, self.law_index)
+        """CIGALE's ``k_ext`` on a grid in nm (numpy; setup time). ``"corrected"``: clipped at 0
+        (CIGALE's Calzetti polynomial is negative above ~3.1 um, which would make the
+        transmission exceed 1; VERDICT_TORUS_r1 R2)."""
+        k = k_ext(wl_nm, self.law_index)
+        if self.mode == AGN_MODE_CORRECTED:
+            k = np.maximum(k, 0.0)
+        return k
 
     def transmission(self, theta):
         """(n_wave,) ``10^(-0.4 k E(B-V))`` on the model grid: the polar-cone extinction along a
