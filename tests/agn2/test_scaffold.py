@@ -34,8 +34,8 @@ V-SCAF-12  linear in blr_lum and agn_elum at the prediction level.
 V-SCAF-13  jit, vmap (W = 64, 100) == loop, finite gradients of a log-likelihood in every AGN2
            theta key at the defaults and at range edges; central differences for amplitudes.
 V-SCAF-14  ctx.L_dust_gal equals the luminosity DL07 re-emits (CSP with dust emission minus
-           the same CSP without), when a component asks for it; such a component is refused
-           without add_dust_emission (PLAN_AGN2 section 2).
+           the same CSP without), when a component asks for it, with or without DL07; such a
+           component is refused without any galaxy dust screen (PLAN_AGN2 2.2, v2).
 V-SCAF-16  a SKIRTOR class with its own nuclear_parts(theta, ctx, polar) is used as is by the
            hook (continuum, energy balance), NOTE_TORUS_contract.md.
 V-SCAF-15  _agn_line_terms keeps its contract (the "nlr" set, None with BLR only); the line
@@ -575,8 +575,17 @@ def test_V_SCAF_14_ldust_gal(monkeypatch):
                       - np.asarray(nodem.get_spectrum(mt), np.float64)) @ w
         assert float(ctx.L_dust_gal) > 0
         assert float(ctx.L_dust_gal) == pytest.approx(re_emitted, rel=2e-3)
-    with pytest.raises(ValueError, match="needs CSPBasis\(add_dust_emission=True\)"):
-        CSPBasis(ssp, add_dust_emission=False, agn=cfg, **kw)       # PLAN_AGN2 2: refused
+    # PLAN_AGN2 2.2 (v2): allowed without dust emission (L_dust_gal is the attenuation-absorbed
+    # luminosity), refused without any galaxy dust screen
+    nodem_agn = CSPBasis(ssp, add_dust_emission=False, agn=cfg, **kw)
+    _, mt2 = _mt(_model(nodem_agn)[0], ZERO, diffuse_tau_kc=jnp.array([0.3]),
+                 tau_pow=jnp.array([0.5]))
+    W2 = nodem_agn.calculate_ssp_weights(theta=mt2)
+    assert float(nodem_agn._agn_context(mt2, W2).L_dust_gal) == pytest.approx(
+        float(dem._agn_context(mt2, W2).L_dust_gal), rel=1e-12)
+    with pytest.raises(ValueError, match="needs a galaxy dust screen"):
+        CSPBasis(ssp, add_dust_emission=False, agn=cfg,
+                 **dict(kw, add_dust=False, add_diffuse_dust=False))
     monkeypatch.setitem(agnmod.AGN2_REGISTRY, "skirtor16", _toys.ToySkirtor)
     off = CSPBasis(ssp, add_dust_emission=True, agn=AGNConfig(torus_model="skirtor16",
                                                               lines=False), **kw)

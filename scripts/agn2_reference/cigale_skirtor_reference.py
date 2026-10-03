@@ -3,8 +3,11 @@
 
 Runs ONLY in the reference environment (pcigale with a built ``skirtor2016`` database):
 
+    PYTHONPATH=~/Desktop/PhD/Tools/ceridwen_workspace/agn2_ref/src/cigale \
     ~/Desktop/PhD/Tools/ceridwen_workspace/agn2_ref/envs/cigale/bin/python \
         scripts/agn2_reference/cigale_skirtor_reference.py --out tests/reference/agn2/
+
+(pcigale runs from its source tree, database built in place: agn2_ref/envs/README.md.)
 
 For every parameter set it calls the module exactly as pcigale does
 (``get_module("skirtor2016", **params)`` then ``module.process(sed)`` on an ``SED`` whose
@@ -18,9 +21,11 @@ Parameter sets (all at SKIRTOR grid nodes; CIGALE does not interpolate):
                EBV = 0), disk_type 1 (CIGALE's default) and 0;
   ``cell``   : the 64 corners of one interior cell in (t, pl, q, oa, i) at R = 20, for the
                off-node tests (the test interpolates these with its own NumPy code);
-  ``polar``  : polar dust on: EBV in {0.03, 0.2, 1.0} x law in {0, 1, 2} x temperature in
-               {50, 100, 300} K x emissivity in {1.0, 1.6, 2.2}, at type-1 and type-2 views.
-Output: ``cigale_skirtor2016.npz`` (+ ``cigale_skirtor2016.json`` provenance: pcigale commit,
+  ``node``   : + PLAN_AGN2 5 L1: every oa x i in {0, 90-oa-10, 90-oa, 90}, t {3, 11},
+               pl/q {0, 1.5}, R {10, 30};
+  ``polar``  : PLAN_AGN2 5 L3: law {0,1,2} x EBV {0.03, 0.3, 1, 3} x T {50, 100, 300} K x
+               i {30, 70} x oa {20, 40, 60}, emissivity 1.6 (+ 1.0, 2.2 at one setting).
+Output: ``skirtor_cigale.npz`` (+ ``skirtor_cigale.json`` provenance: pcigale commit,
 database file hashes, parameter lists, this script's sha256).
 """
 from __future__ import annotations
@@ -55,14 +60,23 @@ def param_sets():
         p = dict(BASE, t=T[k % 5], pl=PL[k % 4], q=Q[(k // 4) % 4], oa=OA[k % 8],
                  R=R[k % 3], i=INC[k % 10], disk_type=int(rng.integers(0, 2)))
         sets.append(("node", p))
+    # PLAN_AGN2 5 L1: every oa x i in {0, 90-oa-10, 90-oa, 90} (both sides of the type-1/2
+    # boundary), t in {3, 11}, pl/q in {0, 1.5}, R in {10, 30}
+    for n, oa in enumerate(OA):
+        for k, i in enumerate(sorted({0, max(90 - oa - 10, 0), 90 - oa, 90})):
+            sets.append(("node", dict(BASE, oa=oa, i=i, t=(3, 11)[(n + k) % 2],
+                                      pl=(0.0, 1.5)[k % 2], q=(1.5, 0.0)[(n + k) % 2],
+                                      R=(10, 30)[n % 2])))
     for t, pl, q, oa, i in itertools.product([5, 7], [0.5, 1.0], [0.5, 1.0], [30, 40],
                                              [20, 30]):
         sets.append(("cell", dict(BASE, t=t, pl=pl, q=q, oa=oa, i=i)))
-    for ebv, law, temp, emis in itertools.product([0.03, 0.2, 1.0], [0, 1, 2],
-                                                  [50.0, 100.0, 300.0], [1.0, 1.6, 2.2]):
-        for i in (30, 70):           # oa = 40: type 1 for i <= 50, type 2 above
-            sets.append(("polar", dict(BASE, EBV=ebv, law=law, temperature=temp,
-                                       emissivity=emis, i=i)))
+    # PLAN_AGN2 5 L3: law x EBV x T x i x oa, emissivity 1.6 (+ two emissivity variants)
+    for law, ebv, temp, i, oa in itertools.product([0, 1, 2], [0.03, 0.3, 1.0, 3.0],
+                                                   [50.0, 100.0, 300.0], [30, 70],
+                                                   [20, 40, 60]):
+        sets.append(("polar", dict(BASE, EBV=ebv, law=law, temperature=temp, i=i, oa=oa)))
+    for emis in (1.0, 2.2):
+        sets.append(("polar", dict(BASE, EBV=0.3, emissivity=emis)))
     return sets
 
 
@@ -78,6 +92,9 @@ def run_one(params):
              for k in ("agn.SKIRTOR2016_torus", "agn.SKIRTOR2016_polar_dust",
                        "agn.SKIRTOR2016_disk")}
     info = {k: float(v) for k, v in sed.info.items() if k.startswith("agn.")}
+    # PLAN_AGN2 5: the module-level quantities of _init_code
+    for k in ("lumin_disk", "lumin_polar_dust", "lumin_intrin_disk", "l_agn_2500A"):
+        info[f"module.{k}"] = float(getattr(mod, k))
     return wl, comps, info
 
 
@@ -114,7 +131,7 @@ def main():
     pkeys = ["t", "pl", "q", "oa", "R", "Mcl", "i", "disk_type", "delta", "fracAGN", "law",
              "EBV", "temperature", "emissivity"]
     np.savez_compressed(
-        out / "cigale_skirtor2016.npz", wl_nm=wl0,
+        out / "skirtor_cigale.npz", wl_nm=wl0,
         torus=np.array(arrays["torus"]), polar=np.array(arrays["polar"]),
         disk=np.array(arrays["disk"]),
         info=np.array([[d[k] for k in keys] for d in infos]), info_keys=np.array(keys),
@@ -126,9 +143,12 @@ def main():
     prov = {"script": "scripts/agn2_reference/cigale_skirtor_reference.py",
             "script_sha256": hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),
             "pcigale_src": str(src), "pcigale_commit": commit, "python": sys.version,
-            "database_sha256": hashes, "L_dust": L_DUST, "fracAGN": FRAC_AGN,
+            "database_files": len(hashes),
+            "database_sha256_of_sorted_file_hashes": hashlib.sha256(
+                "\n".join(f"{k} {v}" for k, v in sorted(hashes.items())).encode()).hexdigest(),
+            "L_dust": L_DUST, "fracAGN": FRAC_AGN,
             "n_sets": len(sets), "units": "wl nm; contributions W/nm per L_dust = 1 W"}
-    (out / "cigale_skirtor2016.json").write_text(json.dumps(prov, indent=1))
+    (out / "skirtor_cigale.json").write_text(json.dumps(prov, indent=1))
     print(f"wrote {len(sets)} sets on {wl0.size} wavelengths -> {out}")
 
 

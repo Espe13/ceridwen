@@ -11,6 +11,7 @@ V-CON-5  jax.grad of a scalar of every traced output is finite in every theta ke
 V-CON-6  line sets: region / width_key; line_wave equals FSPS's emlines_info.dat value of each
          line_names entry; rows_for maps every own line_wave back to itself.
 V-CON-7  modes: "fsps" and "prospector" are refused by the constructor (ValueError).
+V-CON-8  float32 theta in, float64 out (common prompt rule 7).
 """
 from __future__ import annotations
 
@@ -195,3 +196,14 @@ def test_V_CON_7_reproduction_modes_refused(name, mode):
     _cls(name, f"V-CON-7[{name}]")
     with pytest.raises(ValueError):
         _build(name, f"V-CON-7[{name}]", mode=mode)
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_V_CON_8_float64_for_float32_theta(name):
+    """Common prompt rule 7 (float64 for everything new): a theta given in float32 (e.g. prior
+    draws cast by a caller) still gives float64 outputs; review finding VERDICT_BLR_r1."""
+    comp = _build(name, f"V-CON-8[{name}]")
+    th = _theta(comp, **({AMPL[name]: ON_AMPL[AMPL[name]]} if name in AMPL else {}))
+    th32 = {k: jnp.asarray(v, dtype=jnp.float32) for k, v in th.items()}
+    for k, v in _outputs(name, comp, th32).items():
+        assert jnp.asarray(v).dtype == jnp.float64, (name, k, jnp.asarray(v).dtype)

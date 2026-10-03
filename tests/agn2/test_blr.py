@@ -188,3 +188,78 @@ def test_V_BLR_5_grad():
         gl, gs = g(jnp.array([0.5]), jnp.array([sig]))
         assert np.all(np.isfinite(np.asarray(gl))) and np.all(np.isfinite(np.asarray(gs))), sig
         assert float(gl[0]) != 0.0 and float(gs[0]) != 0.0, sig
+
+
+# ------------------------------------------------------------------ PLAN_AGN2 1.2 / 1.3
+BLR_TABLE = (pathlib.Path.home() / "Desktop/PhD/Tools/ceridwen_workspace/agn2_ref/data/blr"
+             / "blr_caseB_T1e4_ne1e4.csv")
+BLR_TABLE_SHA256 = "1b92ed81caf837012099e255766fec5d73ecdf7878308903fbb75dec4fa106d1"
+PLAN_LINES = [("Ba-alpha 6563", 74), ("Ba-beta 4861", 59), ("Ba-gamma 4341", 51),
+              ("Ba-delta 4101.76A", 50), ("Pa-alpha 1.8751um", 107),
+              ("Pa-beta 1.28181um", 104), ("Pa-gamma 1.09381um", 102),
+              ("Pa-delta 1.00494um", 97)]
+
+
+def test_V_BLR_6_line_set_and_table():
+    """PLAN_AGN2 1.2: H I only, the 8 FSPS lines by name; ratios = RESEARCH's Case-B table
+    (agn2_ref/data/blr, sha256 above) exactly; default blr_sigma inside [400, 5000]."""
+    model, csp, _ = _model("corrected", "V-BLR-6")
+    import hashlib
+    blr = csp._agn.model.blr
+    assert list(zip(blr.line_names, [int(i) for i in blr.fsps_index])) == PLAN_LINES
+    if not BLR_TABLE.exists():
+        _ref.missing(BLR_TABLE, "V-BLR-6 (table parity)")
+    assert hashlib.sha256(BLR_TABLE.read_bytes()).hexdigest() == BLR_TABLE_SHA256
+    rows = [r.split(",") for r in BLR_TABLE.read_text().splitlines()
+            if r and not r.startswith("#")][1:]
+    want = np.array([float(r[3]) for r in rows])
+    got = np.asarray(blr.line_luminosity(csp._agn.filled({"blr_lum": jnp.asarray(1.0)})))
+    np.testing.assert_array_equal(got, want)
+    prov = blr.provenance() if hasattr(blr, "provenance") else {}
+    assert BLR_TABLE_SHA256 in " ".join(str(v) for v in prov.values()), prov
+    d = blr.default_params()["blr_sigma"]
+    assert 400.0 <= d <= 5000.0
+
+
+def _cigale_profile(wl, lam0, fwhm_kms):
+    """CIGALE nebular_AGN.py:143-159 (branch nebular_agn_new 74b43a93), in NumPy: L_lambda of
+    a unit line, Gaussian in lambda with FWHM width w = lam0 FWHM / c."""
+    import scipy.constants as cst
+    k1 = -4.0 * np.log(2)
+    k2 = 0.5 * np.sqrt(np.pi / np.log(2))
+    w = lam0 * fwhm_kms * 1e3 / cst.c
+    return np.exp(k1 / (w * w) * (wl - lam0) ** 2) / (w * k2)
+
+
+@pytest.mark.parametrize("fwhm", [800.0, 3000.0, 7000.0])
+def test_V_BLR_7_cigale_fwhm_convention(fwhm):
+    """PLAN_AGN2 1.3: a CIGALE line of FWHM F equals a CERIDWEN line of sigma = F / 2.35482:
+    same area and same FWHM. The CERIDWEN painter is Gaussian in ln(lambda) (nebular
+    convention), CIGALE's in lambda, so the shapes differ at O(sigma/c); PLAN's 'rel 1e-10 of
+    peak' is not reachable by construction (measured difference recorded in REPORT_VAL.md),
+    the test bounds it by 2 sigma/c."""
+    from ceridwen.broadening import make_line_painter_free_z
+    lam0 = 6564.7229
+    sig = fwhm / _ref.FWHM_PER_SIGMA
+    wl = lam0 * np.exp(np.linspace(-12, 12, 40001) * sig / _ref.CKMS)
+    paint = make_line_painter_free_z(wl, [lam0], np.zeros_like(wl))
+    fnu = np.asarray(paint(jnp.asarray([1.0]), sig, 1.0))           # unit flux, F_nu
+    lam_l = fnu * _ref.C_AA_S / wl ** 2                               # -> F_lambda per A
+    cig = _cigale_profile(wl / 10.0, lam0 / 10.0, fwhm) / 10.0        # per nm -> per A
+    area_c = np.trapezoid(lam_l, wl)
+    area_g = np.trapezoid(cig, wl)
+    assert area_c == pytest.approx(1.0, rel=1e-9)
+    assert area_g == pytest.approx(1.0, rel=1e-9)
+    f_c = _ref.fwhm_kms(wl, fnu, lam0)
+    # CIGALE's FWHM is defined on L_lambda in lambda: measure it there (half-max crossings)
+    half = 0.5 * cig.max()
+    j = int(np.argmax(cig))
+    il = np.nonzero(cig[:j] < half)[0][-1]
+    ir = j + np.nonzero(cig[j:] < half)[0][0]
+    xl = np.interp(half, [cig[il], cig[il + 1]], [wl[il], wl[il + 1]])
+    xr = np.interp(half, [cig[ir], cig[ir - 1]], [wl[ir], wl[ir - 1]])
+    f_g = (xr - xl) / lam0 * _ref.CKMS
+    assert f_c == pytest.approx(fwhm, rel=1e-4)
+    assert f_g == pytest.approx(fwhm, rel=1e-4)
+    diff = np.max(np.abs(lam_l - cig)) / cig.max()
+    assert diff <= 2 * sig / _ref.CKMS, diff
