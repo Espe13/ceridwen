@@ -134,9 +134,13 @@ def test_V_NLR_3_clamped_outside(nlr, raw):
     outside = {"nlr_logz": ax[0][-1] + 0.4, "nlr_logu": ax[1][0] - 1.0,
                "nlr_xid": ax[2][-1] + 0.2, "nlr_lognh": ax[3][0] - 0.5,
                "nlr_alpha": ax[4][-1] + 0.3}
+    further = {k: v + (v - inside[k]) for k, v in outside.items()}
     a = np.asarray(nlr.line_luminosity(_theta(agn_elum=1.0, **inside)))
     b = np.asarray(nlr.line_luminosity(_theta(agn_elum=1.0, **outside)))
-    np.testing.assert_array_equal(a, b)
+    c = np.asarray(nlr.line_luminosity(_theta(agn_elum=1.0, **further)))
+    np.testing.assert_array_equal(b, c)            # clamped: flat beyond the edge, bit for bit
+    # the edge value (my edge differs from NLR's axis node in the last bit: 1e-13)
+    np.testing.assert_allclose(b, a, rtol=1e-13, atol=0)
     msgs = " ".join(nlr.range_messages({k: np.array([v]) for k, v in outside.items()}))
     for k in KEYS:
         assert k in msgs, k
