@@ -49,6 +49,86 @@ transforms = {"fagn": lambda th: 10.0 ** th["log_fagn"],
               "fagn_bbb": lambda th: 10.0 ** th["log_fagn_bbb"]}
 ```
 
+## Fitting the AGN line width
+
+`agn_eline_sigma` is the Gaussian dispersion [km/s] of the 23 AGN narrow lines. In the
+corrected mode they are painted with width sqrt(agn_eline_sigma^2 + sigma_inst^2), the
+instrument at each line (`SpectralProjector.setup_agn_lines`), on every pixel: no window
+truncates them, and the gradient in `agn_eline_sigma` is finite down to 1e-3 km/s
+(`tests/agn/test_eline_sigma.py`).
+
+**Allowed values.** A prior, a constant transform or a fixed value must lie in (0, 2000] km/s
+(2000 = the `Kinematics.sigma_max` default); `SedModel` refuses anything else at setup. These
+are narrow-line-region lines with Richardson+14 narrow-line ratios: broad-line-region widths
+(thousands of km/s) need a separate BLR component, which does not exist yet.
+
+**When to sample it, when to fix it.** Only a Spectrum that resolves the AGN lines constrains
+the width: Lines fluxes do not depend on it, and Photometry only through line light near a
+filter edge. `SedModel` warns at setup when it has a prior but no Spectrum, no unmasked
+pixel at an AGN line, or an instrumental sigma above 3x the prior's upper edge at every AGN
+line. Then fix it:
+
+```python
+transforms = {"agn_eline_sigma": lambda th: jnp.array([100.0])}   # and no prior on it
+```
+
+The instrumental sigma is sigma_inst = c / (2.3548 R_FWHM):
+
+| R_FWHM | sigma_inst [km/s] | resolves (sigma_inst <= 3 x prior upper edge) for an upper edge >= |
+|---|---|---|
+| 30 | 4244 | 1415 km/s |
+| 100 | 1273 | 424 km/s |
+| 300 | 424 | 141 km/s |
+| 1000 | 127 | 42 km/s |
+| 2700 | 47 | 16 km/s |
+
+The warning is a floor, not a guarantee: a prism at R ~ 100 with `Uniform(50, 500)` passes it
+(1273 < 3 x 500) and the width is still prior-dominated (below). Sample the width with
+a grating, fix it with a prism.
+
+**Recovery on CPU** (`scripts/agn_injection_recovery.py --spec grating|prism`; z = 3, the
+JADES-like photometry plus a noiseless spectrum of rest 3600-6900 A at continuum S/N 20 per
+pixel; corrected mode with nebular emission; truths agn_elum = 3e-3, agn_eline_sigma = 250,
+sigma_gas = 60; all free with every stellar and continuum-AGN parameter; nested sampling,
+`slice_kernel="lanes"`):
+
+| parameter | truth | grating, R 1000 (num_live 400): median, 16-84 % | in 2.5-97.5 % | prism, R 100 (num_live 100): median, 16-84 % | in 2.5-97.5 % |
+|---|---|---|---|---|---|
+| `agn_elum` | 0.003 | 0.0033 (0.00312 to 0.00348) | yes | 0.00368 (0.00306 to 0.00435) | yes |
+| `agn_eline_sigma` | 250 | 252 (248 to 255) | yes | 267 (141 to 378) | yes |
+| `sigma_gas` | 60 | 60.4 (58.1 to 62.8) | yes | 139 (62.6 to 224) | yes |
+| `log_fagn` | -0.523 | -0.417 (-0.61 to -0.231) | yes | -0.517 (-0.654 to -0.249) | yes |
+| `agn_tau` | 20 | 28 (14.8 to 46.2) | yes | 21.4 (11.9 to 46) | yes |
+| `log_fagn_bbb` | 0 | -0.0036 (-0.0178 to 0.0124) | yes | 0.0397 (-0.025 to 0.107) | yes |
+| `logmass` | 10 | 9.956 (9.934 to 9.979) | NO (97.5 %: 9.999) | 9.931 (9.9 to 9.974) | yes |
+| `logzsol` | -0.5 | -0.543 (-0.585 to -0.493) | yes | -0.558 (-0.659 to -0.478) | yes |
+| `diffuse_tau_kc` | 0.4 | 0.4 (0.387 to 0.417) | yes | 0.439 (0.377 to 0.502) | yes |
+
+`agn_eline_sigma` posterior / prior standard deviation: 0.029 with the
+grating, 0.85 with the prism (prior-dominated). With the grating the line
+parameters are recovered to a few per cent; `logmass` sits just outside its 95 % interval
+(97.5 % at 9.999; 9.991 with num_live 100) although the truth has chi^2 = 0 (the best
+sample of the num_live 100 run has chi^2 = 0.9): the SFH directions projected onto the mass
+in the marginal, not a missed likelihood peak. `agn_elum` is per formed solar mass, so it trades with `logmass` (correlation -0.92).
+Posteriors: `sigma_<spec>[_nl400].npz` written by the script.
+
+**Degeneracy with sigma_gas.** The AGN lines sit on the same wavelengths as the star-forming
+lines (H beta, [O III], H alpha, [N II], [S II], ...), so a line is the sum of two Gaussians,
+sqrt(sigma_gas^2 + sigma_inst^2) and sqrt(agn_eline_sigma^2 + sigma_inst^2) wide. The data
+fix the blended profile; how it splits into the two widths depends on how much of each line
+is AGN. With the prism the two widths are both unconstrained (sigma_gas 139 +85/-76 km/s
+against a truth of 60, agn_eline_sigma posterior / prior width 0.85); with the grating
+the two widths are measured separately (agn_eline_sigma 252 +3/-4, sigma_gas 60.4 +2.4/-2.3
+km/s) with a posterior correlation of only -0.17: the AGN and the nebular lines carry
+different ratios, so different lines constrain different mixtures of the two widths.
+
+**What separates AGN from star formation is the line RATIOS, not the widths.** The AGN lines
+carry fixed Richardson+14 'a42' ratios (strong [O III]/H beta, [N II]/H alpha, [S II], [O I]),
+the nebular lines the CLOUDY ratios of the gas parameters, so `agn_elum` is set by the
+ratios: in the prism fit above the width is prior-dominated while `agn_elum` is recovered
+(3.68e-3, 16/84 % 3.06e-3 to 4.35e-3, truth 3e-3). Do not read an AGN detection off a
+width.
+
 ## The three modes
 
 | | `"fsps"` | `"prospector"` | `"corrected"` (default) |
