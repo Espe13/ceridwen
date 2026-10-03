@@ -135,7 +135,11 @@ class FeltreNLR(LineComponent):
     ``emlines_names`` the whole FSPS list.
     """
 
-    param_names = ("agn_elum", "agn_eline_sigma") + tuple(k for k, _ in NLR_AXES)
+    # the order of AGN2_THETA_KEYS["feltre16"] (ceridwen/agn/__init__.py)
+    param_names = ("agn_elum", "agn_eline_sigma", "nlr_logu", "nlr_logz", "nlr_alpha",
+                   "nlr_xid", "nlr_lognh")
+    region = "nlr"
+    width_key = "agn_eline_sigma"
 
     def __init__(self, *, mode, file=None, sps_home=None):
         if mode not in NLR_MODES:
@@ -208,6 +212,18 @@ class FeltreNLR(LineComponent):
         out = {k: AGN_THETA_DEFAULTS[k] for k in ("agn_elum", "agn_eline_sigma")}
         out.update(NLR_THETA_DEFAULTS)
         return out
+
+    def provenance(self) -> dict:
+        """Files and hashes for the result file."""
+        import hashlib
+        return {"agn_nlr_model": "feltre16",
+                "agn_nlr_file": str(self.path),
+                "agn_nlr_sha256": hashlib.sha256(self.path.read_bytes()).hexdigest(),
+                "agn_nlr_source_sha256": str(self.attrs.get("source_sha256", "")),
+                "agn_nlr_lines": ",".join(self.line_names),
+                "agn_nlr_not_painted": ",".join(self.dropped_lines),
+                "agn_nlr_zsun": NLR_ZSUN,
+                "agn_lines_emlines_file": self.emlines_file}
 
     def range_messages(self, theta) -> list:
         """Messages for NLR keys of ``theta`` outside the grid (setup-time, NumPy)."""
