@@ -242,9 +242,13 @@ class SkirtorTorus(_SkirtorContract):
         self._w_model = -trapezoid_nu_weights(jnp.asarray(wave))         # |dnu| weights
         if mode == AGN_MODE_CORRECTED:
             wl = self.wl_nm
-            self._llo = jnp.asarray(np.log(wl[lo]))
-            self._lhi = jnp.asarray(np.log(wl[np.minimum(lo + 1, wl.size - 1)]))
-            self._lx = jnp.asarray(np.log(wave_nm))
+            hi = np.minimum(lo + 1, wl.size - 1)
+            llo, lhi = np.log(wl[lo]), np.log(wl[hi])
+            t = np.where(lhi > llo, (np.log(wave_nm) - llo) / np.where(lhi > llo, lhi - llo, 1.0),
+                         0.0)
+            self._hi = jnp.asarray(hi)
+            self._t = jnp.asarray(np.where(inside, np.clip(t, 0.0, 1.0), 0.0))
+            self._llam2c = jnp.asarray(np.log(wave_nm ** 2 / C_NM_S))
             if not inside.any():
                 raise ValueError(
                     f"SkirtorTorus: the model grid [{wave[0]:.4g}, {wave[-1]:.4g}] A does not "
@@ -378,19 +382,16 @@ class SkirtorTorus(_SkirtorContract):
         """(n_wl,) F_lambda per nm on the templates' grid -> (n_wave,) F_nu per Hz on the model
         grid (the mode's resampling; see the module docstring)."""
         lo, frac = self._lo, self._frac
-        y_lo, y_hi = y[lo], y[jnp.minimum(lo + 1, y.shape[0] - 1)]
         if self.mode == AGN_MODE_CIGALE:
+            y_lo, y_hi = y[lo], y[jnp.minimum(lo + 1, y.shape[0] - 1)]
             lam = jnp.where(self._inside, y_lo + (y_hi - y_lo) * frac, 0.0)
             return lam * self._lam2_c
-        pos = self._inside & (y_lo > 0) & (y_hi > 0)
-        ylo_s = jnp.where(pos, y_lo, 1.0)
-        yhi_s = jnp.where(pos, y_hi, 1.0)
-        t = jnp.where(self._lhi > self._llo,
-                      (self._lx - self._llo) / jnp.where(self._lhi > self._llo,
-                                                       self._lhi - self._llo, 1.0), 0.0)
-        lam = jnp.where(pos, jnp.exp(jnp.log(ylo_s) + t * (jnp.log(yhi_s) - jnp.log(ylo_s))),
-                        0.0)
-        fnu = lam * self._lam2_c
+        # log-log: logs on the template grid (n_wl), one exp per model pixel
+        pos_nat = y > 0
+        ly = jnp.log(jnp.where(pos_nat, y, 1.0))
+        seg = self._inside & pos_nat[lo] & pos_nat[self._hi]
+        ly_lo, ly_hi = ly[lo], ly[self._hi]
+        fnu = jnp.where(seg, jnp.exp(ly_lo + self._t * (ly_hi - ly_lo) + self._llam2c), 0.0)
         target = jnp.dot(y, self.tw)                    # luminosity on the template grid
         have = jnp.dot(fnu, self._w_model)
         ok = have > 0
