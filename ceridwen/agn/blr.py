@@ -149,8 +149,9 @@ class BroadLines(AGN2LineSet):
 
     @staticmethod
     def _scalar(theta, key):
+        # float64 whatever the caller's dtype (a float32 theta must not lower the BLR's precision)
         if key in theta:
-            return jnp.ravel(jnp.asarray(theta[key]))[0]
+            return jnp.ravel(jnp.asarray(theta[key], dtype=jnp.float64))[0]
         return jnp.asarray(BLR_THETA_DEFAULTS[key], dtype=jnp.float64)
 
     def line_luminosity(self, theta):
