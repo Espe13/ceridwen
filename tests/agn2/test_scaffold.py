@@ -35,6 +35,8 @@ V-SCAF-13  jit, vmap (W = 64, 100) == loop, finite gradients of a log-likelihood
            theta key at the defaults and at range edges; central differences for amplitudes.
 V-SCAF-14  ctx.L_dust_gal equals the luminosity DL07 re-emits (CSP with dust emission minus
            the same CSP without), when a component asks for it.
+V-SCAF-16  a SKIRTOR class with its own nuclear_parts(theta, ctx, polar) is used as is by the
+           hook (continuum, energy balance), NOTE_TORUS_contract.md.
 V-SCAF-15  _agn_line_terms keeps its contract (the "nlr" set, None with BLR only); the line
            marginalisation is refused with BLR only; provenance names the AGN2 parts.
 """
@@ -601,3 +603,42 @@ def test_V_SCAF_15_compat_refusal_provenance():
     # the AGN2 keys are registered, so an unknown-key warning never fires for them
     for k in ON:
         assert k in csp._known_theta_keys or k not in csp._agn.param_names
+
+
+# ------------------------------------------------------------------ V-SCAF-16
+class _ToySkirtorOwnNuclear(_toys.ToySkirtor):
+    """Composes the polar dust itself: (disk + dust) / 2 + a flat offset (a composition the
+    hook's own one can never produce)."""
+
+    def nuclear_parts(self, theta, ctx, polar):
+        p = self.rest_parts(theta, ctx)
+        t = polar.transmission(theta)
+        nuc = 0.5 * (p["disk"] + p["dust"]) + 1e-3 * ctx.L_bol_star * self.disk_shape.max()
+        return {"disk": p["disk"], "dust": p["dust"], "polar_t": t,
+                "polar_ir": jnp.zeros_like(t), "nuclear": nuc}
+
+
+def test_V_SCAF_16_own_nuclear_parts(monkeypatch):
+    path = _need()
+    monkeypatch.setitem(agnmod.AGN2_REGISTRY, "skirtor16", _ToySkirtorOwnNuclear)
+    monkeypatch.setitem(agnmod.AGN2_REGISTRY, "polar", _toys.ToyPolar)
+    cosmo = Cosmology.planck18()
+    csp = CSPBasis(SSPData.load(str(path)),
+                   lookback_time=jnp.array([0.0, 0.01, 0.1, 1.0, float(cosmo.age(T.ZRED))]),
+                   zh_const=True, sfh_interp="step", add_dust=False, add_diffuse_dust=True,
+                   add_neb=True, add_igm=False, add_dust_emission=False, verbose=False,
+                   cosmo=cosmo, sps_home=os.environ["SPS_HOME"],
+                   agn=AGNConfig(torus_model="skirtor16", polar_dust=True, lines=False))
+    model, _, _, _ = _model(csp)
+    _, mt = _mt(model, ON, dust2=jnp.array([0.4]))
+    W = csp.calculate_ssp_weights(theta=mt)
+    ctx = csp._agn_context(mt, W)
+    th = csp._agn.filled(mt)
+    want = csp._agn.model.components["skirtor"].nuclear_parts(th, ctx, csp._agn.model.polar)
+    dc = _diffuse(csp, mt)
+    got = np.asarray(csp._agn_rest(mt))
+    exp = np.asarray(want["nuclear"]) * dc
+    np.testing.assert_allclose(got, exp, rtol=1e-12, atol=1e-14 * np.abs(exp).max())
+    absorbed = float(csp._agn_parts(mt)["L_absorbed"])
+    assert absorbed == pytest.approx(
+        float((np.asarray(want["nuclear"]) * (1 - dc)) @ _toys._w(csp.wave)), rel=1e-12)

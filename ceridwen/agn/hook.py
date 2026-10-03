@@ -256,8 +256,18 @@ class AGNHook:
         """AGN2 continuum before the galaxy's dust, (n_wave,) float64 each: ``disk`` (SKIRTOR
         disc, unattenuated), ``dust`` (SKIRTOR torus dust), ``polar_t`` (the polar-dust
         transmission, ones without polar dust), ``polar_ir`` (its re-emission), ``nuclear`` =
-        disk * polar_t + dust + polar_ir. ``theta`` is the filled AGN theta."""
-        parts = self.model.components["skirtor"].rest_parts(theta, ctx)
+        disk * polar_t + dust + polar_ir. ``theta`` is the filled AGN theta.
+
+        A SKIRTOR class that composes the polar dust itself (CIGALE renormalises disc, dust and
+        grey body together and re-emits the angle-averaged absorption, NOTE_TORUS_contract)
+        defines ``nuclear_parts(theta, ctx, polar)`` returning the same keys; it is used as is."""
+        sk = self.model.components["skirtor"]
+        own = getattr(sk, "nuclear_parts", None)
+        if own is not None:
+            p = own(theta, ctx, self.model.polar)
+            return {k: jnp.asarray(p[k], dtype=jnp.float64)
+                    for k in ("disk", "dust", "polar_t", "polar_ir", "nuclear")}
+        parts = sk.rest_parts(theta, ctx)
         disk = jnp.asarray(parts["disk"], dtype=jnp.float64)
         dust = jnp.asarray(parts["dust"], dtype=jnp.float64)
         polar = self.model.polar

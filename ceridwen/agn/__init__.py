@@ -607,6 +607,12 @@ class SkirtorTorus(Component):
         rest frame, BEFORE polar dust and galaxy dust (the hook applies them; the SKIRTOR
         templates' own internal extinction is part of the templates).
     rest_spectrum(theta, ctx) = disk + dust (provided here).
+    nuclear_parts(theta, ctx, polar) (optional) -> {"disk", "dust", "polar_t", "polar_ir",
+        "nuclear"}: when defined, ``hook.py`` uses it instead of composing
+        ``disk * polar.transmission + dust + polar.reemission`` itself (CIGALE renormalises
+        the three together and re-emits the angle-averaged absorption of the face-on disc).
+        ``polar`` is the PolarDust or None; "polar_t" is the effective line-of-sight
+        transmission of the disc, "nuclear" what leaves the nucleus (before galaxy dust).
     needs_galaxy / needs_ldust_gal : class flags; True makes the CSP fill
         ``ctx.gal_nodust_young_old`` / ``ctx.L_dust_gal``.
     param_names must equal ``AGN2_THETA_KEYS["skirtor16"]``.
@@ -632,9 +638,9 @@ class PolarDust:
         include the galaxy's diffuse curve (unlike ``Screen.transmission``).
     reemission(theta, disk, transmission, ctx) -> (n_wave,) L_sun/Hz per M_formed: the grey
         body re-emitting what the polar dust removes from ``disk`` (the unattenuated SKIRTOR
-        disc); in "corrected" mode its frequency integral equals that of
-        ``disk * (1 - transmission)`` (energy conservation, tested), in "cigale" mode CIGALE's
-        convention.
+        disc). Without ``SkirtorTorus.nuclear_parts`` its frequency integral equals that of
+        ``disk * (1 - transmission)``; a SKIRTOR class with ``nuclear_parts`` may feed it the
+        angle-averaged absorption instead (4 pi energy conservation, CIGALE's convention).
     param_names must equal ``AGN2_THETA_KEYS["polar"]``.
     """
 
