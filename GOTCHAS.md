@@ -737,3 +737,33 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
   once. Real Prospector's AGN-only torus photometry is 1.39-1.90x CERIDWEN's prospector mode.
 - **The torus templates** are read from `$SPS_HOME/dust/Nenkova08_y010_torusg_n10_q2.0.dat`
   (`python -m ceridwen.check` reports them); the result file records their sha256.
+
+## 26. AGN2: SKIRTOR, polar dust, Feltre+16 NLR, BLR (`docs/agn.md`, "AGN2")
+
+- **`fagn` means two different things.** With `torus_model="skirtor16"` in `agn_mode="cigale"`,
+  `fagn` is CIGALE's `fracAGN` = P / (P + L_dust,gal) (P = torus + polar-dust luminosity,
+  L_dust,gal = what the galaxy's dust absorbs): it must stay below 1, and a prior reaching 1
+  raises. In `"corrected"` it is P / L_bol,\*, can exceed 1, and is best sampled as `log_fagn`.
+  The same number in the two modes is a different AGN; compare fits through
+  `extras["agn"]["frac_agn_cigale"]`, which both modes report.
+- **`skirtor_oa` is measured from the equator** (Stalevski+16): the dust-free cone half-angle is
+  90 - oa, so a type-1 (unobscured) view needs `skirtor_i <= 90 - skirtor_oa`. Polar dust
+  extinguishes the disc only for such a view; its re-emission is added at every inclination.
+- **`blr_sigma` is a sigma, not a FWHM.** Papers quote broad-line FWHM: divide by 2.35482
+  (FWHM 1650 km/s is sigma 700). Its support is [400, 5000] km/s (a warning outside). Only a
+  resolved spectrum constrains it; fix it when fitting line fluxes or photometry.
+- **The broad and narrow H alpha are not separated by fluxes.** Both carry H alpha / H beta
+  ~ 2.85 (Case B), so with line FLUXES alone `blr_lum` trades with the nebular and NLR H alpha:
+  a catalogue H alpha flux is the total (narrow + broad), and only the line profile in a
+  spectrum splits it.
+- **Tabulated axes are clamped, and priors beyond them raise.** `skirtor_*` and `nlr_*` are
+  interpolated on their grids and clamped outside (flat likelihood). A fixed value outside warns
+  at setup; a prior whose support leaves the grid raises (`SedModel`), as for `gas_logz`.
+  `nlr_logz` is log10(Z / 0.01524) (Feltre+16's Z_sun), not the stellar grid's Z_sun.
+- **The SKIRTOR and NLR tables are not shipped.** Build them once with the converters of the
+  source repository into `$CERIDWEN_AGN_DATA` (default `~/.ceridwen/agn/`); without them the
+  CSP raises at construction and their tests skip with "MISSING ...: did NOT run" (a run with
+  those skips is not a pass).
+- **Line profiles differ from CIGALE's at order sigma/c.** CERIDWEN paints every line as a
+  Gaussian in ln lambda; CIGALE's AGN lines are Gaussian in lambda (4.7e-4 of the peak at FWHM
+  800 km/s, 4.1e-3 at 7000 km/s; same area). `"cigale"` mode keeps CERIDWEN's painter.

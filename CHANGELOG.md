@@ -1,3 +1,23 @@
+## Unreleased (AGN2: the CIGALE-standard AGN)
+- `AGNConfig(torus_model="skirtor16")`: the SKIRTOR 2016 torus + disc as CIGALE's `skirtor2016`
+  (theta `skirtor_t`, `_pl`, `_q`, `_oa`, `_i`; static `skirtor_R`); `polar_dust=True` (+
+  `polar_law`): CIGALE's polar dust (`polar_ebv`, `polar_temp`, `polar_emis`);
+  `nlr_model="feltre16"`: the Feltre+16 narrow-line grid (`nlr_logu`, `nlr_logz`, `nlr_alpha`,
+  `nlr_xid`, `nlr_lognh`; amplitude `agn_elum`); `blr=True`: broad H I lines (`blr_lum`,
+  `blr_sigma` = sigma in km/s; Case-B ratios). All off by default: `AGNConfig()` is unchanged
+  (byte-identical). Parity with pcigale 29cb909f: 1.6e-14 (SKIRTOR), 1.7e-12 (polar dust);
+  Feltre+16 grid nodes 4.4e-16 dex (`docs/agn.md`, "AGN2").
+- `agn_mode="cigale"`: reproduces CIGALE (fagn = CIGALE's fracAGN, no galaxy dust or energy
+  balance on the AGN); the components are refused in `"fsps"` / `"prospector"` modes.
+- The SKIRTOR and NLR tables are built by `scripts/agn2/build_skirtor_h5.py` /
+  `build_nlr_h5.py` into `$CERIDWEN_AGN_DATA` (not shipped).
+- `PostProcess`: with SKIRTOR, `extras["agn"]` adds `frac_agn_cigale` (CIGALE's fracAGN, both
+  modes), CIGALE's `agn.*` infos (`cigale_<name>`), `L_dust_gal` and the SKIRTOR luminosities.
+- `SedModel` refuses a prior that leaves the SKIRTOR or Feltre+16 grid (as for `gas_logz`), and a
+  `fagn` prior reaching 1 in `"cigale"` mode.
+- Tests: `tests/agn2/` (validation suite), `tests/agn2_dev/`; T2 categories `agn_skirtor`,
+  `agn_polar`, `agn_nlr` (need `$CERIDWEN_AGN_DATA`), `agn_blr`; T3 goldens `agn2_*`.
+
 ## Unreleased (AGN)
 - AGN in the forward model: `CSPBasis(agn=AGNConfig(...))` / `CSPBasis_afe(agn=...)`, package
   `ceridwen.agn` (`docs/agn.md`). Everything Prospector has: the Nenkova+08 clumpy torus

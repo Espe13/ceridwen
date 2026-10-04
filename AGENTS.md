@@ -216,7 +216,11 @@ projection → likelihood → sampler.
 - `agn/` — the AGN (`CSPBasis(agn=AGNConfig(...))`, `docs/agn.md`). `__init__.py`: `AGNConfig`
   (static: `agn_mode` "corrected" (default) / "fsps" / "prospector", components, `dust4_type`,
   `tau_interp`, `agn_energy_balance`), `AGNContext`, the `Component` / `Screen` /
-  `LineComponent` interface, `AGNModel`. `torus.py`: `NenkovaTorus` (the Nenkova+08 templates
+  `LineComponent` interface, `AGNModel`; AGN2 (CIGALE standard, `agn_mode="cigale"` or
+  "corrected", all off by default): `skirtor.py` `SkirtorTorus` (`torus_model="skirtor16"`),
+  `polar.py` `PolarDust` (`polar_dust=True`), `nlr.py` `FeltreNLR` (`nlr_model="feltre16"`),
+  `blr.py` `BroadLines` (`blr=True`); SKIRTOR / NLR tables from `$CERIDWEN_AGN_DATA`.
+  `torus.py`: `NenkovaTorus` (the Nenkova+08 templates
   from `$SPS_HOME/dust`, resampled per mode). `disk.py`: `TempleDisk` (`data/temple21.txt`).
   `screen.py`: `AGNScreen` (dust4), `ProspectorDiffuseCurve`. `lines.py`: `AGNLines`
   (`data/richardson14_a42.csv`, by FSPS line name). `hook.py`: `AGNHook`, the single CSP wiring

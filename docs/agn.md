@@ -3,8 +3,10 @@
 `CSPBasis(..., agn=AGNConfig(...))` adds an active nucleus to the forward model: everything
 Prospector has for AGN, built so that it can **reproduce** FSPS and Prospector exactly
 (`agn_mode="fsps"`, `"prospector"`), and then **correctly** (`agn_mode="corrected"`, the
-default). Without `agn=` nothing changes: every existing prediction is byte-identical
-(`scripts/bit_identity_check.py`).
+default). The CIGALE-standard components (SKIRTOR torus, polar dust, Feltre+16 narrow-line
+region, broad-line region; section "AGN2") come with a fourth mode, `agn_mode="cigale"`, that
+reproduces CIGALE. Without `agn=` nothing changes: every existing prediction is byte-identical
+(`scripts/bit_identity_check.py`), and so does `AGNConfig()` with the AGN2 switches off.
 
 ```python
 from ceridwen import CSPBasis, Cosmology
@@ -60,7 +62,7 @@ truncates them, and the gradient in `agn_eline_sigma` is finite down to 1e-3 km/
 **Allowed values.** A prior, a constant transform or a fixed value must lie in (0, 2000] km/s
 (2000 = the `Kinematics.sigma_max` default); `SedModel` refuses anything else at setup. These
 are narrow-line-region lines with Richardson+14 narrow-line ratios: broad-line-region widths
-(thousands of km/s) need a separate BLR component, which does not exist yet.
+(thousands of km/s) are the BLR component's (`AGNConfig(blr=True)`, `blr_sigma`, below).
 
 **When to sample it, when to fix it.** Only a Spectrum that resolves the AGN lines constrains
 the width: Lines fluxes do not depend on it, and Photometry only through line light near a
@@ -192,6 +194,80 @@ size of the double count.
 The Nenkova+08 SEDs integrate to 0.989-0.996 of the file's own trapezoid on any dense grid
 (the log-log SED is not the trapezoid of its nodes); the corrected mode renormalises to
 exactly `fagn * L_bol`, the fsps mode keeps FSPS's normalisation (a 0.4-1.1 % difference).
+
+## AGN2: the CIGALE standard (SKIRTOR, polar dust, Feltre+16 NLR, BLR)
+
+Four static switches of `AGNConfig`, all off by default (`AGNConfig()` is unchanged, byte for byte):
+
+```python
+from ceridwen.agn import AGNConfig
+agn = AGNConfig(agn_mode="corrected",            # or "cigale"
+                torus_model="skirtor16",         # SKIRTOR torus + its disc (replaces Nenkova+08)
+                polar_dust=True, polar_law="smc",  # CIGALE polar dust ("smc", "calzetti", "gaskell")
+                nlr_model="feltre16",            # Feltre+16 narrow lines (replace the a42 ratios)
+                blr=True)                        # broad H I lines
+```
+
+| component | theta keys (default) | meaning | source |
+|---|---|---|---|
+| SKIRTOR 2016 torus + disc | `fagn` (0), `skirtor_t` (7), `skirtor_pl` (1), `skirtor_q` (1), `skirtor_oa` (40), `skirtor_i` (30) | amplitude (below); tau_9.7 {3..11}, p, q {0..1.5}, opening angle [deg, equator to torus edge] {10..80}, inclination [deg, 0 = face-on] {0..90}; `AGNConfig(skirtor_R=10/20/30)` static (default 20) | Stalevski+12, +16 templates as CIGALE's `skirtor2016` uses them (Schartmann 2005 disc, delta 0; cigale 29cb909f) |
+| polar dust | `polar_ebv` (0.03), `polar_temp` (100 K), `polar_emis` (1.6) | E(B-V) of the polar screen; grey body T, beta (lambda_0 = 200 um) | CIGALE `skirtor2016.py` (Yang+20, +22) |
+| Feltre+16 NLR | `agn_elum` (0), `agn_eline_sigma` (100), `nlr_logu` (-2.5), `nlr_logz` (0), `nlr_alpha` (-1.7), `nlr_xid` (0.3), `nlr_lognh` (3) | L_Hbeta,NLR [L_sun] per formed M_sun; sigma [km/s]; log U_S [-5, -1]; log Z/Z_sun [-2.18, +0.66] (Z_sun = 0.01524); alpha [-2, -1.2]; xi_d [0.1, 0.5]; log n_H [2, 4] | public NEOGAL grid (`AGN_NLR_nebular_feltre16.tar.gz`), 17 of its 20 lines (N V 1240, [Si III] 1883, Si III] 1888 are not in the FSPS line list); [O II] 3726+3729 sits on `[O II] 3726` as in the a42 table |
+| BLR | `blr_lum` (0), `blr_sigma` (1500) | L_Halpha,BLR [L_sun] per formed M_sun, before attenuation; Gaussian **sigma** [km/s] (FWHM = 2.35482 sigma; support [400, 5000]) | 8 H I lines (H alpha-delta, Pa alpha-delta), Case B (Storey & Hummer 1995 via PyNeb), T = 1e4 K, n_e = 1e4: H alpha / H beta = 2.847 (`ceridwen/agn/data/blr_caseB_T1e4_ne1e4.csv`) |
+
+Interpolation is multilinear in the tabulated variables (log line ratios for the NLR), clamped at
+the grid edges; a fixed value outside a grid warns at setup and a **prior** reaching outside it
+raises (`SedModel`, as for `gas_logz`). The SKIRTOR (227 MB) and NLR tables are not shipped: the
+converters `scripts/agn2/build_skirtor_h5.py` and `build_nlr_h5.py` of the source repository write
+`$CERIDWEN_AGN_DATA/skirtor2016.h5` and `nlr_feltre16.h5` (default `~/.ceridwen/agn/`); a missing
+file is a teaching error at construction. The tests that need them skip with "MISSING ...: did NOT
+run". Data licences (SKIRTOR, Feltre+16) have not been checked for redistribution.
+
+**What is refused.** The AGN2 switches in `"fsps"` / `"prospector"` modes; the Temple disc with
+SKIRTOR (SKIRTOR carries its own disc); `dust4_type=1` with SKIRTOR (its nuclear screen is the
+polar dust); `polar_dust=True` without SKIRTOR; in `"cigale"` mode the Nenkova torus, the Temple
+disc, the dust4 screen and the a42 lines (CIGALE has none of them), a CSP without any galaxy dust
+screen with SKIRTOR (CIGALE's `fagn` is relative to the galaxy's dust luminosity) or with
+`fesc_geometry="picket"` (that luminosity is computed with the screen geometry), and a `fagn`
+prior reaching 1. `marginalize_elines=True` with AGN lines (narrow or broad) is refused as before.
+
+### `agn_mode="cigale"` and `"corrected"`
+
+| | `"cigale"` | `"corrected"` |
+|---|---|---|
+| `fagn` (SKIRTOR) | CIGALE's `fracAGN` = P / (P + L_dust,gal): P = torus + polar-dust luminosity, L_dust,gal what the galaxy's dust absorbs from stars and nebular emission (CIGALE's `dust.luminosity`); must be < 1 | P / L_bol,\* (as the Nenkova torus); CIGALE's fracAGN is reported as `frac_agn_cigale` |
+| galaxy dust on the AGN | none (CIGALE adds the AGN after its dust modules) | the diffuse curve on the disc, torus, polar re-emission, NLR and BLR |
+| energy balance | none | what the galaxy's dust absorbs from the AGN goes to DL07 (with `add_dust_emission=True`) |
+| polar dust | CIGALE: the disc extinguished only for a type-1 view (i <= 90 - oa); the re-emitted luminosity is the angle-averaged absorption of the face-on disc; disc, torus and grey body renormalised together | the same 4 pi accounting; CIGALE's Calzetti k (negative above ~3.1 um) clipped at 0 |
+| resampling onto the model grid | CIGALE's `np.interp` of L_lambda, 0 outside the template grid | log-log between positive template points, scaled to the template's own integral (pixels independent of the model grid's extent) |
+| NLR attenuation | none (the Feltre NLR is not a CIGALE component; CIGALE's unreleased `nebular_AGN` would apply the polar screen) | galaxy diffuse curve at each line |
+| BLR | `blr_lum` with the Case-B table, polar-dust transmission at each line (CIGALE's `nebular_AGN` convention); CIGALE's own BLR scaling (ionising photons x covering factor, Cloudy tables with H alpha / H beta = 46 at its defaults) is not reproduced | polar (or dust4) transmission x galaxy curve at each line; what the polar screen removes is not re-emitted (CIGALE re-emits only disc light) |
+| line profile | Gaussian in ln lambda (CERIDWEN's painter); CIGALE's AGN lines are Gaussian in lambda: they differ at order sigma/c (4.7e-4 of the peak at FWHM 800 km/s, 4.1e-3 at 7000), same area | same |
+| IGM | after the AGN (CIGALE's redshifting module acts on every contribution) | the same |
+
+`PostProcess` reports, with SKIRTOR, `extras["agn"]["frac_agn_cigale"]` (CIGALE's fracAGN, both
+modes; equal to `fagn` in `"cigale"`), CIGALE's `agn.*` infos as `cigale_<name>` (accretion
+power, intrinsic L_nu at 2500 A at 30 deg, L_6um, L_12um, disc / torus / polar luminosities),
+`L_dust_gal`, `L_skirtor_disk`, `L_skirtor_dust` and `L_polar_ir`.
+
+### Parity with CIGALE and the literature (AGN2 run, `scripts/agn2_lit/`, `tests/agn2/`)
+
+| test | what | result |
+|---|---|---|
+| L1 | `"cigale"` SKIRTOR (disc, torus separately) vs pcigale `skirtor2016` (CIGALE 29cb909f), 71 node sets incl. both sides of the type-1/2 boundary, CIGALE's 948-point grid | max rel 1.6e-14 where flux > 1e-6 x peak |
+| L2 | the template files (Stalevski+16): torus-dust shape at 40 nodes; the disc anisotropy cos i (2 cos i + 1) | 5.1e-15; 1.5e-9 |
+| L3 | with polar dust: 218 sets (3 laws, E(B-V) 0.03-3, T 50-300 K, i 30/70, oa 20/40/60) vs pcigale | max rel 1.7e-12 |
+| L4 | Feltre+16 NLR through the CSP vs the public grid files, all nodes; BPT (their Fig. 2) | 4.4e-16 dex |
+| L5 | BLR: line ratios vs the Case-B table; the profile vs CIGALE's AGN-line Gaussian | ratios exact; profile as in the table above |
+| corrected SKIRTOR energy | torus + polar IR luminosity vs `fagn` x L_bol,\* on the 15000-point test grid | 0.9e-6 to 5.5e-6 (the model grid's quadrature) |
+
+**Recommended priors** (PLAN_AGN2; BEAGLE-AGN, Vidal-Garcia+24, for the NLR): `fagn` Uniform(0,
+0.99) in `"cigale"`, `log_fagn` Uniform(-5, log10 3) in `"corrected"`; fix `skirtor_t` 7,
+`skirtor_pl` 1, `skirtor_q` 1, `skirtor_oa` 40 without mid-IR coverage, `skirtor_i` Uniform(0, 90);
+`polar_ebv` Uniform(0, 1); `nlr_logu` Uniform(-4, -1.5), `nlr_logz` Uniform(-2.18, 0.24), with
+`nlr_xid` 0.3, `nlr_alpha` -1.7 and `nlr_lognh` 3 fixed (they are degenerate with log U and the
+amplitude); `blr_sigma` LogUniform(400, 3000) km/s (JWST broad H alpha FWHM 890-6279 km/s).
+Only a resolved spectrum constrains `blr_sigma`; line fluxes alone do not.
 
 ## What the AGN changes elsewhere
 
