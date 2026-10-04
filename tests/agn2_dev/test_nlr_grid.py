@@ -58,7 +58,7 @@ def table():
     with h5py.File(_nlr_file(), "r") as h:
         return {"L": h["L"][()], "ratio": h["ratio"][()],
                 "src": [s.decode() for s in h["lines/source_name"][()]],
-                "Z": h["axes/Z"][()], "logu": h["axes/logu"][()], "xid": h["axes/xid"][()],
+                "z_abs": h["axes/Z"][()], "logu": h["axes/logu"][()], "xid": h["axes/xid"][()],
                 "nh": h["axes/nh"][()], "alpha": h["axes/alpha"][()]}
 
 
@@ -72,11 +72,11 @@ def test_D_nlr_1_cube_equals_raw_files(table):
     if not RAW_DIR.is_dir():
         pytest.skip(f"MISSING {RAW_DIR}: D-nlr-1 did NOT run (set $CERIDWEN_NLR_RAW)")
     names = sorted(RAW_DIR.glob("nlr_nebular_Z*.txt"))
-    assert len(names) == table["Z"].size
+    assert len(names) == table["z_abs"].size
     n = 0
     for p in names:
         z = float("0." + p.stem.split("_Z")[1])
-        iz = int(np.flatnonzero(np.isclose(table["Z"], z, rtol=0, atol=1e-12))[0])
+        iz = int(np.flatnonzero(np.isclose(table["z_abs"], z, rtol=0, atol=1e-12))[0])
         cols = open(p).readline()[1:].split()
         assert cols[4:] == table["src"]
         for row in np.loadtxt(p):
