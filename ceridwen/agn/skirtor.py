@@ -3,7 +3,8 @@ accretion disc, as CIGALE's ``skirtor2016`` module uses it.
 
 Reference: ``pcigale/sed_modules/skirtor2016.py`` and ``database_builder/skirtor2016`` at cigale
 29cb909f (2025.1). The templates are the SKIRTOR grid converted by
-``scripts/agn2/build_skirtor_h5.py`` into ``skirtor2016.h5`` (CIGALE's database arrays: F_lambda
+the converter ``build_skirtor_h5.py`` (CERIDWEN source repository, agn2 converters; not
+installed with the package) into ``skirtor2016.h5`` (CIGALE's database arrays: F_lambda
 per nm on CIGALE's grid, torus dust normalised to a unit integral).
 
 Grid (theta keys, all interpolated multilinearly in the tabulated variable, clamped at the edges):
@@ -85,7 +86,8 @@ SKIRTOR_DEFAULTS = {"fagn": 0.0, "skirtor_t": 7.0, "skirtor_pl": 1.0, "skirtor_q
                     "skirtor_oa": 40.0, "skirtor_i": 30.0}
 SKIRTOR_R_DEFAULT = 20.0
 DISK_TYPES = (0, 1)                 # 0 SKIRTOR power law, 1 Schartmann 2005 (CIGALE default)
-CONVERTER = "scripts/agn2/build_skirtor_h5.py"
+# the converter of the source repository (not shipped in the wheel, so named without its path)
+CONVERTER = "build_skirtor_h5.py"
 
 _CACHE = {}
 
@@ -210,8 +212,9 @@ class SkirtorTorus(_SkirtorContract):
         self.path = Path(file) if file is not None else default_skirtor_path()
         if not self.path.exists():
             raise ValueError(
-                f"SkirtorTorus: MISSING the SKIRTOR template file {self.path}. Build it with "
-                f"`python {CONVERTER} --raw-dir <SKIRTOR *_sed.dat> --cigale-db <pcigale/data/"
+                f"SkirtorTorus: MISSING the SKIRTOR template file {self.path}. Build it with the "
+                f"converter {CONVERTER} of the CERIDWEN source repository (agn2 converters, not "
+                f"installed with the package): `python {CONVERTER} --raw-dir <SKIRTOR *_sed.dat> --cigale-db <pcigale/data/"
                 "skirtor2016>` (writes $CERIDWEN_AGN_DATA/skirtor2016.h5) or pass "
                 "AGNConfig(skirtor_file=...).")
         self.disk_type = int(disk_type)
