@@ -1077,12 +1077,24 @@ class SpectralProjector:
         return out, A
 
     # AGN narrow lines (ceridwen.agn.lines): a separate static painter, built by
-    # setup_agn_lines; None until then (the nebular path never reads it).
+    # setup_agn_lines; None until then (the nebular path never reads it). Further AGN line sets
+    # (AGN2: the broad lines) get their own painter in _agn_sets, keyed by the set's name.
     _agn = None
+    _agn_sets = None
+
+    def has_agn_lines(self, key="nlr") -> bool:
+        """True when the painter of AGN line set ``key`` has been built."""
+        if key == "nlr":
+            return self._agn is not None
+        return self._agn_sets is not None and key in self._agn_sets
 
     def setup_agn_lines(self, agn_line_wave_rest, *, mode, sf_line_wave_rest=None,
-                        agn_sf_rows=None, pixel_mask=None):
+                        agn_sf_rows=None, pixel_mask=None, key="nlr"):
         """Build the AGN-line painter for this projector (setup time, NumPy).
+
+        ``key``: the line set ("nlr", the default, is stored where it always was; any other
+        set, e.g. "blr", only with ``mode="corrected"``, the nebular painter's profile with the
+        set's own width).
 
         ``mode`` "corrected": the nebular painter's profile (Gaussian in ln lambda, unit area,
         width sqrt(agn_eline_sigma^2 + sigma_inst^2) with the instrument at the line, times the
@@ -1097,8 +1109,16 @@ class SpectralProjector:
             s_table = np.asarray(self.sigma_inst_kms, dtype=np.float64)
         if mode == "corrected":
             paint = make_line_painter_free_z(self.wave_obs, lam, s_table)
-            self._agn = {"mode": mode, "paint": paint}
+            if key == "nlr":
+                self._agn = {"mode": mode, "paint": paint}
+            else:
+                if self._agn_sets is None:
+                    self._agn_sets = {}
+                self._agn_sets[key] = {"mode": mode, "paint": paint}
             return
+        if key != "nlr":
+            raise ValueError(f"setup_agn_lines(key={key!r}, mode={mode!r}): only the narrow "
+                             "lines have Prospector's painter; other line sets use 'corrected'")
         if mode not in ("prospector", "fsps"):
             raise ValueError(f"setup_agn_lines(mode={mode!r}): 'corrected', 'prospector' or 'fsps'")
         if sf_line_wave_rest is None or agn_sf_rows is None:
@@ -1119,12 +1139,13 @@ class SpectralProjector:
             "inst": None if self.instrument is None else jnp.asarray(s_table),
         }
 
-    def agn_lines(self, line_flux_obs, sigma_agn_kms, theta):
+    def agn_lines(self, line_flux_obs, sigma_agn_kms, theta, key="nlr"):
         """f_nu of the AGN lines on the observed pixels (add to :meth:`predict`):
-        ``line_flux_obs`` (n_agn,) observed integrated fluxes, ``sigma_agn_kms`` the
-        ``agn_eline_sigma``; centres at rest x (1 + zred + ``eline_delta_zred``)."""
-        if self._agn is None:
-            raise RuntimeError("SpectralProjector.agn_lines before setup_agn_lines")
+        ``line_flux_obs`` (n_agn,) observed integrated fluxes, ``sigma_agn_kms`` the set's width
+        (``agn_eline_sigma``, ``blr_sigma``); centres at rest x (1 + zred +
+        ``eline_delta_zred``). ``key``: the line set (see :meth:`setup_agn_lines`)."""
+        if not self.has_agn_lines(key):
+            raise RuntimeError(f"SpectralProjector.agn_lines(key={key!r}) before setup_agn_lines")
         s_gal, s_gas = self.kinematics.resolve(theta)
         opz = self.opz_ref
         if self.free_z:
@@ -1134,7 +1155,7 @@ class SpectralProjector:
         if "eline_delta_zred" in theta:
             opz = opz + jnp.ravel(jnp.asarray(theta["eline_delta_zred"]))[0]
         s_ins = self.inst_scale(theta)
-        a = self._agn
+        a = self._agn if key == "nlr" else self._agn_sets[key]
         if a["mode"] == "corrected":
             return a["paint"](line_flux_obs, sigma_agn_kms, opz, s_ins)
         # Prospector's nebular widths (cache_eline_parameters): hypot(eline_sigma, lib), then
