@@ -252,12 +252,12 @@ def _agn_sigma_model(prior):
                     priors={"agn_eline_sigma": Uniform(low=prior[0], high=prior[1])})
 
 
-def _agn2_prior_model(agn, prior_key, lo, hi, init):
+def _agn2_prior_model(agn, prior_key, lo, hi, init, **csp_kw):
     """An AGN2 SedModel with a bounded prior on one tabulated AGN2 key (setup-time check)."""
     from ceridwen.agn import AGNConfig
     ph = Photometry(filters=["sdss_g0", "sdss_r0"], flux=[1e-9, 1e-9],
                     uncertainty=[1e-10, 1e-10], name="p")
-    csp = _short_csp(add_neb=False, agn=AGNConfig(**agn))
+    csp = _short_csp(add_neb=False, agn=AGNConfig(**agn), **csp_kw)
     return SedModel(csp, [ph], zred=0.5, priors={prior_key: Uniform(low=lo, high=hi)},
                     free_param_init={prior_key: jnp.array([init])})
 
@@ -491,7 +491,8 @@ def run_scenarios():
                                    "skirtor_i", 0.0, 100.0, 40.0)),
         ("cigale fagn prior reaching 1 (fracAGN)", {"ERROR"},
          lambda: _agn2_prior_model(dict(agn_mode="cigale", torus_model="skirtor16",
-                                        lines=False), "fagn", 0.0, 1.0, 0.3)),
+                                        lines=False), "fagn", 0.0, 1.0, 0.3,
+                                   add_diffuse_dust=True)),
         ("Temple disc with SKIRTOR (double disc)", {"ERROR"},
          lambda: __import__("ceridwen.agn", fromlist=["AGNConfig"]).AGNConfig(
              torus_model="skirtor16", disk=True)),
