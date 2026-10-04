@@ -130,6 +130,7 @@ class SedModel:
 
         self._check_metallicity_setup(free_param_init)
         self._check_agn_eline_sigma_range()
+        self._check_agn2_prior_ranges()
 
         unknown = sorted(set(self.priors) - set(self.param_names))
         if unknown:
@@ -491,6 +492,23 @@ class SedModel:
                     f"the transform for {name!r} gives {np.array2string(fixed, precision=3)}, outside the "
                     f"nebular grid's {name} axis [{glo:+.3f}, {ghi:+.3f}]{grid}; the CLOUDY "
                     "interpolation would clamp to the edge.  Give a value inside the axis.")
+
+    def _check_agn2_prior_ranges(self):
+        """The same rule for the tabulated AGN2 components (SKIRTOR axes, the Feltre+16 NLR axes,
+        and fagn < 1 in "cigale" mode): each part that defines ``check_prior_ranges(priors,
+        prior_support)`` raises for a prior that leaves its grid (a fixed value outside it warns
+        through the hook's ``range_messages``)."""
+        hook = getattr(self.csp, "_agn", None)
+        if hook is None:
+            return
+        from ..csp.csp import prior_support
+        m = hook.model
+        parts = list(m.components.values()) + [getattr(m, a, None)
+                                                for a in ("polar", "lines", "blr", "screen")]
+        for part in parts:
+            check = getattr(part, "check_prior_ranges", None)
+            if check is not None:
+                check(self.priors, prior_support)
 
     def _check_afe_range(self):
         """The logzsol rule for [alpha/Fe] on an alpha grid (B1-011): a bounded prior or a

@@ -252,6 +252,16 @@ def _agn_sigma_model(prior):
                     priors={"agn_eline_sigma": Uniform(low=prior[0], high=prior[1])})
 
 
+def _agn2_prior_model(agn, prior_key, lo, hi, init):
+    """An AGN2 SedModel with a bounded prior on one tabulated AGN2 key (setup-time check)."""
+    from ceridwen.agn import AGNConfig
+    ph = Photometry(filters=["sdss_g0", "sdss_r0"], flux=[1e-9, 1e-9],
+                    uncertainty=[1e-10, 1e-10], name="p")
+    csp = _short_csp(add_neb=False, agn=AGNConfig(**agn))
+    return SedModel(csp, [ph], zred=0.5, priors={prior_key: Uniform(low=lo, high=hi)},
+                    free_param_init={prior_key: jnp.array([init])})
+
+
 def run_scenarios():
     csp = _good_csp()
     th = dict(csp.theta_init)
@@ -473,6 +483,20 @@ def run_scenarios():
          lambda: _agn_sigma_model((50.0, 3000.0))),
         ("agn_eline_sigma sampled with photometry only", {"WARN"},
          lambda: _agn_sigma_model((50.0, 500.0))),
+        ("Feltre NLR prior beyond the grid (nlr_logu to -6)", {"ERROR"},
+         lambda: _agn2_prior_model(dict(torus=False, disk=False, nlr_model="feltre16"),
+                                   "nlr_logu", -6.0, -1.5, -2.5)),
+        ("SKIRTOR prior beyond the grid (skirtor_i to 100)", {"ERROR"},
+         lambda: _agn2_prior_model(dict(torus_model="skirtor16", lines=False),
+                                   "skirtor_i", 0.0, 100.0, 40.0)),
+        ("cigale fagn prior reaching 1 (fracAGN)", {"ERROR"},
+         lambda: _agn2_prior_model(dict(agn_mode="cigale", torus_model="skirtor16",
+                                        lines=False), "fagn", 0.0, 1.0, 0.3)),
+        ("Temple disc with SKIRTOR (double disc)", {"ERROR"},
+         lambda: __import__("ceridwen.agn", fromlist=["AGNConfig"]).AGNConfig(
+             torus_model="skirtor16", disk=True)),
+        ("polar dust without SKIRTOR", {"ERROR"},
+         lambda: __import__("ceridwen.agn", fromlist=["AGNConfig"]).AGNConfig(polar_dust=True)),
         ("LogUniform with mini <= 0 (log of 0)", {"ERROR"},
          lambda: LogUniform(mini=0.0, maxi=1.0)),
         ("Instrument LSF scale <= 0", {"ERROR"},

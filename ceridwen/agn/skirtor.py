@@ -311,6 +311,39 @@ class SkirtorTorus(_SkirtorContract):
                             "(L_AGN,dust + L_dust,gal) and must be < 1 (CIGALE raises at 1).")
         return msgs
 
+    def check_prior_ranges(self, priors, prior_support):
+        """Raise for a prior on a SKIRTOR axis whose support leaves the grid, or is unbounded (the
+        interpolation clamps there: a flat likelihood tail), and, in "cigale" mode, for a prior
+        on ``fagn`` reaching 1 (CIGALE's fracAGN < 1). ``prior_support(prior) -> (lo, hi)``;
+        called by ``SedModel`` at setup (the rule of ``SedModel._check_gas_range``)."""
+        for ax in SKIRTOR_AXES:
+            key = THETA_OF_AXIS[ax]
+            p = priors.get(key)
+            if p is None:
+                continue
+            a = self.axes_np[ax]
+            lo, hi = float(a[0]), float(a[-1])
+            plo, phi = prior_support(p)
+            if not (np.isfinite(plo) and np.isfinite(phi)):
+                raise ValueError(
+                    f"the prior on {key!r} is unbounded; the SKIRTOR grid covers [{lo:g}, {hi:g}] "
+                    f"and is not extrapolated. Use a bounded prior, e.g. Uniform(low={lo:g}, "
+                    f"high={hi:g}).")
+            if plo < lo - 1e-9 or phi > hi + 1e-9:
+                raise ValueError(
+                    f"the prior on {key!r} covers [{plo:g}, {phi:g}], outside the SKIRTOR grid "
+                    f"[{lo:g}, {hi:g}]; the interpolation clamps there, so the SED freezes at the "
+                    f"edge and the posterior piles up in a flat tail. Narrow the prior, e.g. "
+                    f"Uniform(low={lo:g}, high={hi:g}).")
+        p = priors.get("fagn")
+        if p is not None and self.mode == AGN_MODE_CIGALE:
+            plo, phi = prior_support(p)
+            if not phi < 1.0:
+                raise ValueError(
+                    f"the prior on 'fagn' reaches {phi:g}: in agn_mode='cigale' fagn is CIGALE's "
+                    "fracAGN = L_AGN,dust / (L_AGN,dust + L_dust,gal), which must be < 1 (CIGALE "
+                    "raises at 1). Use e.g. Uniform(low=0.0, high=0.99).")
+
     # ------------------------------------------------------------------ traced
     def corners(self, theta):
         """``(idx, w)``: 32 corner indices per axis (dict of (32,) int) and weights (32,)."""
