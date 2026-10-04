@@ -141,6 +141,12 @@ _EXTRA = {c["tag"]: c for c in MANIFEST["configs"] if "agn" in c}
 @pytest.mark.parametrize("sfh_interp,zh_const,per_bin,tag", CONFIGS)
 def test_lookback_flip_invariant(ssp, sfh_interp, zh_const, per_bin, tag):
     extra = _EXTRA.get(tag, {})
+    if extra.get("data"):                       # AGN2 configs: converted $CERIDWEN_AGN_DATA tables
+        from ceridwen.agn.skirtor import default_skirtor_path
+        root = pathlib.Path(default_skirtor_path()).parent
+        missing = [n for n in extra["data"] if not (root / n).exists()]
+        if missing:
+            pytest.skip(f"MISSING {root}/{missing}: golden {tag} did NOT run")
     theta = _build_theta_new(zh_const, per_bin)
     csp   = _build_csp(ssp, theta, sfh_interp=sfh_interp, zh_const=zh_const,
                        agn=extra.get("agn"), **extra.get("csp", {}))

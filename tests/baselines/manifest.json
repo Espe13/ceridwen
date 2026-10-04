@@ -266,6 +266,138 @@
           5
         ]
       }
+    },
+    {
+      "tag": "agn2_skirtor_polar_cigale",
+      "sfh_interp": "step",
+      "zh_const": true,
+      "per_bin": false,
+      "agn": {
+        "agn_mode": "cigale",
+        "torus_model": "skirtor16",
+        "polar_dust": true,
+        "lines": false
+      },
+      "csp": {
+        "add_diffuse_dust": true,
+        "add_igm": true
+      },
+      "theta": {
+        "zred": 2.0,
+        "fagn": 0.3,
+        "skirtor_t": 7.0,
+        "skirtor_i": 30.0,
+        "polar_ebv": 0.2,
+        "diffuse_tau_kc": 0.6
+      },
+      "data": [
+        "skirtor2016.h5"
+      ],
+      "shapes": {
+        "W": [
+          12,
+          43
+        ],
+        "spec": [
+          15000
+        ],
+        "lines": [
+          15000
+        ],
+        "maggies": [
+          5
+        ]
+      }
+    },
+    {
+      "tag": "agn2_skirtor_polar_corrected_dustemi",
+      "sfh_interp": "step",
+      "zh_const": true,
+      "per_bin": false,
+      "agn": {
+        "agn_mode": "corrected",
+        "torus_model": "skirtor16",
+        "polar_dust": true,
+        "lines": false
+      },
+      "csp": {
+        "add_dust": true,
+        "add_diffuse_dust": true,
+        "add_dust_emission": true,
+        "add_igm": true
+      },
+      "theta": {
+        "zred": 2.0,
+        "fagn": 0.3,
+        "skirtor_t": 6.0,
+        "skirtor_i": 55.0,
+        "skirtor_oa": 35.0,
+        "polar_ebv": 0.2,
+        "polar_temp": 150.0,
+        "diffuse_tau_kc": 0.6
+      },
+      "data": [
+        "skirtor2016.h5"
+      ],
+      "shapes": {
+        "W": [
+          12,
+          43
+        ],
+        "spec": [
+          15000
+        ],
+        "lines": [
+          15000
+        ],
+        "maggies": [
+          5
+        ]
+      }
+    },
+    {
+      "tag": "agn2_nlr_blr_corrected",
+      "sfh_interp": "step",
+      "zh_const": true,
+      "per_bin": false,
+      "agn": {
+        "agn_mode": "corrected",
+        "torus": false,
+        "disk": false,
+        "nlr_model": "feltre16",
+        "blr": true
+      },
+      "csp": {
+        "add_diffuse_dust": true,
+        "add_igm": true
+      },
+      "theta": {
+        "zred": 2.0,
+        "agn_elum": 0.001,
+        "nlr_logu": -2.2,
+        "nlr_logz": -0.3,
+        "blr_lum": 0.3,
+        "blr_sigma": 1500.0,
+        "diffuse_tau_kc": 0.6
+      },
+      "data": [
+        "nlr_feltre16.h5"
+      ],
+      "shapes": {
+        "W": [
+          12,
+          43
+        ],
+        "spec": [
+          15000
+        ],
+        "lines": [
+          15000
+        ],
+        "maggies": [
+          5
+        ]
+      }
     }
   ],
   "spectra_recaptured": "2026-09-10 broadening merge (W_*.npy untouched)"

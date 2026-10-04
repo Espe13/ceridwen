@@ -61,6 +61,7 @@ CATEGORIES = [
     "agn_torus",
     "agn_disk",
     "agn_lines",
+    "agn_blr",
 ]
 
 #: v1.0.5 metallicity baselines, one per grid family; each is skipped where its grid is absent;
@@ -70,10 +71,18 @@ OPTIONAL_CATEGORIES = ["logzsol_bpass", "logzsol_mist", "logzsol_afe",
                        "stellar_mass"]
 
 
-@pytest.mark.parametrize("category", CATEGORIES + OPTIONAL_CATEGORIES)
+#: AGN2 categories that need the converted tables of $CERIDWEN_AGN_DATA (not committed: SKIRTOR
+#: 227 MB; see docs/agn.md); absent tables skip LOUDLY, a run with these skips is not a pass
+AGN2_DATA_CATEGORIES = ["agn_skirtor", "agn_polar", "agn_nlr"]
+
+
+@pytest.mark.parametrize("category", CATEGORIES + OPTIONAL_CATEGORIES + AGN2_DATA_CATEGORIES)
 def test_category_matches_baseline(category, fresh):
     if category in OPTIONAL_CATEGORIES and category not in fresh:
         pytest.skip(f"{category}: its SSP grid is not present locally")
+    if category in AGN2_DATA_CATEGORIES and category not in fresh:
+        from capture_baseline import _agn2_data_missing
+        pytest.skip(f"MISSING $CERIDWEN_AGN_DATA/{_agn2_data_missing()}: {category} did NOT run")
     expected = _load(category)
     actual = fresh[category]
     assert set(actual.keys()) == set(expected.keys()), (

@@ -19,6 +19,9 @@ Usage
     python tests/baselines/_capture.py --agn    # ONLY the AGN configs (AGN_CONFIGS): writes the
                                                 # agn_* files and replaces just their manifest
                                                 # entries; the existing entries are not touched
+    python tests/baselines/_capture.py --agn2   # ONLY the AGN2 configs (AGN2_CONFIGS: SKIRTOR,
+                                                # polar dust, Feltre+16 NLR, BLR; they need the
+                                                # converted tables of $CERIDWEN_AGN_DATA)
 """
 from __future__ import annotations
 
@@ -114,6 +117,32 @@ AGN_CONFIGS = [
 ]
 
 
+# AGN2 golden configs (AGN2_BRIEF; session INT): the same SFH, the AGN2 components. "data"
+# names the $CERIDWEN_AGN_DATA tables a config needs (the T3 test skips LOUDLY without them).
+AGN2_CONFIGS = [
+    {"tag": "agn2_skirtor_polar_cigale",
+     "agn": {"agn_mode": "cigale", "torus_model": "skirtor16", "polar_dust": True,
+             "lines": False},
+     "csp": {"add_diffuse_dust": True, "add_igm": True}, "data": ["skirtor2016.h5"],
+     "theta": {"zred": 2.0, "fagn": 0.3, "skirtor_t": 7.0, "skirtor_i": 30.0,
+               "polar_ebv": 0.2, "diffuse_tau_kc": 0.6}},
+    {"tag": "agn2_skirtor_polar_corrected_dustemi",
+     "agn": {"agn_mode": "corrected", "torus_model": "skirtor16", "polar_dust": True,
+             "lines": False},
+     "csp": {"add_dust": True, "add_diffuse_dust": True, "add_dust_emission": True,
+             "add_igm": True}, "data": ["skirtor2016.h5"],
+     "theta": {"zred": 2.0, "fagn": 0.3, "skirtor_t": 6.0, "skirtor_i": 55.0,
+               "skirtor_oa": 35.0, "polar_ebv": 0.2, "polar_temp": 150.0,
+               "diffuse_tau_kc": 0.6}},
+    {"tag": "agn2_nlr_blr_corrected",
+     "agn": {"agn_mode": "corrected", "torus": False, "disk": False, "nlr_model": "feltre16",
+             "blr": True},
+     "csp": {"add_diffuse_dust": True, "add_igm": True}, "data": ["nlr_feltre16.h5"],
+     "theta": {"zred": 2.0, "agn_elum": 1e-3, "nlr_logu": -2.2, "nlr_logz": -0.3,
+               "blr_lum": 0.3, "blr_sigma": 1500.0, "diffuse_tau_kc": 0.6}},
+]
+
+
 def agn_arrays(ssp, cfg):
     """(W, spec, lines, maggies) of one AGN config, exactly as the T3 test computes them."""
     from ceridwen.agn import AGNConfig
@@ -135,8 +164,38 @@ def agn_arrays(ssp, cfg):
     return W, spec, lines, maggies
 
 
-def capture_agn():
-    """The AGN configs on the grid the T3 test loads (tests/_gridfixture.py)."""
+_AGN2_AMPLITUDES = ("fagn", "agn_elum", "blr_lum")
+
+
+def check_agn2_zero(ssp, cfg):
+    """Independent check before an AGN2 capture: with every AGN amplitude at 0 the four arrays
+    equal those of the same CSP built without ``agn=`` byte for byte (the AGN2 term is additive
+    and vanishes; its size is checked analytically in tests/regression/capture_baseline.py)."""
+    zero = dict(cfg, theta={k: (0.0 if k in _AGN2_AMPLITUDES else v)
+                            for k, v in cfg["theta"].items()})
+    a = agn_arrays(ssp, zero)
+    plain = {k: v for k, v in zero["theta"].items()
+             if k in ("zred", "diffuse_tau_kc")}
+    theta = _build_theta(True, False)
+    csp = _build_csp(ssp, theta, sfh_interp="step", zh_const=True, **cfg["csp"])
+    phot = _photometry(csp)
+    th = {k: jnp.asarray(v) for k, v in csp.theta_init.items()}
+    th.setdefault("logmass", jnp.zeros(1))
+    th.setdefault("igm_factor", jnp.ones(1))
+    th.setdefault("eline_scaling", jnp.ones(1))
+    th.update({k: jnp.array([v]) for k, v in plain.items()})
+    b = (np.asarray(csp.calculate_ssp_weights(th)), np.asarray(csp.get_spectrum(th)),
+         np.asarray(csp.get_line_spec(th)),
+         np.asarray(phot.get_maggies(csp.wave, csp._apply_mass_redshift_igm(
+             *csp._assemble_observer_spectra(th), th)[0])))
+    for name, x, y in zip(("W", "spec", "lines", "maggies"), a, b):
+        assert x.tobytes() == y.tobytes(), f"{cfg['tag']}: {name} at zero AGN != no AGN"
+
+
+def capture_agn(configs=None):
+    """The AGN configs (default ``AGN_CONFIGS``) on the grid the T3 test loads
+    (tests/_gridfixture.py); only their files and manifest entries are written."""
+    configs = AGN_CONFIGS if configs is None else configs
     import json
     sys.path.insert(0, str(THIS_DIR.parent))
     from _gridfixture import require_test_grid
@@ -145,15 +204,18 @@ def capture_agn():
     ssp = SSPData.load(grid)
     with open(THIS_DIR / "manifest.json") as f:
         man = json.load(f)
-    tags = {c["tag"] for c in AGN_CONFIGS}
+    tags = {c["tag"] for c in configs}
     keep = [c for c in man["configs"] if c["tag"] not in tags]
-    for cfg in AGN_CONFIGS:
+    for cfg in configs:
+        if "data" in cfg:
+            check_agn2_zero(ssp, cfg)
         W, spec, lines, maggies = agn_arrays(ssp, cfg)
         for name, arr in (("W", W), ("spec", spec), ("lines", lines), ("maggies", maggies)):
             np.save(THIS_DIR / f"{name}_{cfg['tag']}.npy", arr)
         keep.append({"tag": cfg["tag"], "sfh_interp": "step", "zh_const": True,
                      "per_bin": False, "agn": cfg["agn"], "csp": cfg["csp"],
                      "theta": cfg["theta"],
+                     **({"data": cfg["data"]} if "data" in cfg else {}),
                      "shapes": {"W": W.shape, "spec": spec.shape, "lines": lines.shape,
                                 "maggies": maggies.shape}})
         print(f"[capture --agn] {cfg['tag']}: spec{spec.shape} maggies {maggies}")
@@ -246,4 +308,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--agn2" in sys.argv[1:]:
+        sys.exit(capture_agn(AGN2_CONFIGS))
     sys.exit(capture_agn() if "--agn" in sys.argv[1:] else main())
