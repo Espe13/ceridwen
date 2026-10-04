@@ -1,6 +1,7 @@
 """AGN narrow-line region from the Feltre, Charlot & Gutkin (2016) photoionisation grid.
 
-The grid (``scripts/agn2/build_nlr_h5.py`` -> ``nlr_feltre16.h5``) tabulates the luminosities of
+The grid (``nlr_feltre16.h5``, written by the converter ``build_nlr_h5.py`` of the CERIDWEN source
+repository, agn2 converters, not installed with the package) tabulates the luminosities of
 20 lines on the Cartesian product of five axes: gas metallicity Z, ionisation parameter at the
 Stroemgren radius log U_S, dust-to-metal mass ratio xi_d, hydrogen density n_H and the UV slope
 alpha of the accretion-disc spectrum (Feltre+16 sec. 2.1, eq. 4-5, Table 1).
@@ -44,6 +45,8 @@ __all__ = ["NLR_FILE_NAME", "NLR_ZSUN", "NLR_AXES", "NLR_THETA_DEFAULTS", "defau
            "load_nlr_h5", "FeltreNLR", "multilinear"]
 
 NLR_FILE_NAME = "nlr_feltre16.h5"
+# the converter of the source repository (not shipped in the wheel, so named without its path)
+CONVERTER = "build_nlr_h5.py"
 NLR_ZSUN = 0.01524          # Feltre+16 sec. 2.1: "present-age solar metallicity ... 0.01524"
 NLR_MODES = ("corrected", "cigale")
 
@@ -72,13 +75,15 @@ def default_nlr_file() -> Path:
 
 
 def load_nlr_h5(path) -> dict:
-    """Arrays and attributes of an ``nlr_feltre16.h5`` (see ``scripts/agn2/build_nlr_h5.py``)."""
+    """Arrays and attributes of an ``nlr_feltre16.h5`` (see ``CONVERTER``)."""
     import h5py
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(
             f"Feltre+16 NLR grid not found at {path}. Build it once with "
-            "`python scripts/agn2/build_nlr_h5.py <dir with nlr_nebular_Z*.txt>` (writes "
+            f"the converter {CONVERTER} of the CERIDWEN source repository (agn2 converters, not "
+            "installed with the package): `python build_nlr_h5.py <NEOGAL "
+            "AGN_NLR_nebular_feltre16.tar.gz, or its directory of nlr_nebular_Z*.txt>` (writes "
             f"$CERIDWEN_AGN_DATA/{NLR_FILE_NAME}, default ~/.ceridwen/agn/), or pass "
             "AGNConfig(nlr_file=...)")
     with h5py.File(path, "r") as h:
@@ -171,7 +176,7 @@ class FeltreNLR(AGN2LineSet):
                 f"{epath}: {', '.join(unknown)}. The grid's lines are matched to FSPS by name "
                 f"(the list {self.path} was built against is "
                 f"{self.attrs.get('fsps_emlines_file', '?')}); use that FSPS data directory or "
-                "rebuild the grid against this one with scripts/agn2/build_nlr_h5.py.")
+                f"rebuild the grid against this one with the converter {CONVERTER}.")
         src = list(tab["source_name"])
         if "Hbeta" not in src:
             raise ValueError(f"{self.path}: no H beta line; the ratios are normalised to it")
