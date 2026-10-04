@@ -16,6 +16,13 @@ from ceridwen.broadening import Kinematics, DEFAULT_KINEMATICS, TIED
 
 Array = jax.Array
 
+# agn_eline_sigma (the AGN narrow-line dispersion, km/s): its prior / fixed value must lie in
+# (0, AGN_ELINE_SIGMA_MAX], the Kinematics.sigma_max default; a sampled value is warned about
+# when no Spectrum has an instrumental sigma <= AGN_ELINE_SIGMA_RESOLVE x the prior's upper
+# edge at any AGN line it covers
+AGN_ELINE_SIGMA_MAX = float(Kinematics.__dataclass_fields__["sigma_max"].default)
+AGN_ELINE_SIGMA_RESOLVE = 3.0
+
 
 class SedModel:
     """Parameter manager and prediction layer: ``predict(theta)`` returns a dict keyed
@@ -122,6 +129,7 @@ class SedModel:
                     self.param_names.append(p)
 
         self._check_metallicity_setup(free_param_init)
+        self._check_agn_eline_sigma_range()
 
         unknown = sorted(set(self.priors) - set(self.param_names))
         if unknown:
@@ -286,6 +294,128 @@ class SedModel:
         self._check_gas_range()
         self._check_afe_range()
         self._check_refused_alpha_cell()
+
+    def _agn_line_hook(self):
+        """The CSP's AGN hook when its AGN lines (and so ``agn_eline_sigma``) are on, else None."""
+        hook = getattr(self.csp, "_agn", None)
+        if hook is None or getattr(hook.model, "lines", None) is None \
+                or "agn_eline_sigma" not in hook.param_names:
+            return None
+        return hook
+
+    def _check_agn_eline_sigma_range(self):
+        """``agn_eline_sigma`` (the AGN narrow-line dispersion, km/s): its prior, constant
+        transform or fixed value must lie in (0, AGN_ELINE_SIGMA_MAX].  Raises at setup."""
+        key = "agn_eline_sigma"
+        if self._agn_line_hook() is None:
+            return
+        from ..csp.csp import prior_support
+        if key in self.priors:
+            lo, hi = prior_support(self.priors[key])
+            what = f"the prior on {key!r} covers [{lo:g}, {hi:g}]"
+        else:
+            if key in self.transforms:
+                try:                     # its value at theta_init (constant or not)
+                    v = np.atleast_1d(np.asarray(self.transforms[key](dict(self.theta_init)),
+                                                 dtype=float))
+                except Exception:
+                    v = None
+                where = f"the transform for {key!r} gives"
+            elif key in self.theta_init:
+                v = np.atleast_1d(np.asarray(self.theta_init[key], dtype=float))
+                where = f"theta[{key!r}] is"
+            else:
+                return
+            if v is None or v.size == 0:
+                return
+            lo, hi = float(np.min(v)), float(np.max(v))
+            what = f"{where} {np.array2string(v, precision=4)}"
+        fix = (f"Give it a bounded prior inside (0, {AGN_ELINE_SIGMA_MAX:g}], e.g. "
+               "Uniform(low=50.0, high=500.0) (Prospector's), or fix it with a constant "
+               "transform, e.g. transforms={'agn_eline_sigma': lambda th: jnp.array([100.0])}.")
+        if not lo > 0.0:
+            raise ValueError(
+                f"{key} is the Gaussian dispersion [km/s] of the AGN narrow lines and must be "
+                f"> 0, but {what}.  A width <= 0 has no meaning, and the painters divide by it "
+                "(Prospector's AGNSpecModel painter by agn_eline_sigma alone), so it gives NaN "
+                f"predictions and gradients.  {fix}")
+        if not hi <= AGN_ELINE_SIGMA_MAX:
+            raise ValueError(
+                f"{what}, above {AGN_ELINE_SIGMA_MAX:g} km/s (the Kinematics.sigma_max default, "
+                "the widest line the broadening is built for).  The AGN lines are narrow-line-"
+                "region lines with Richardson+14 'a42' NARROW-line ratios; broad-line-region "
+                "widths (thousands of km/s) need a separate BLR component with its own lines, "
+                "ratios and width, which CERIDWEN does not have yet, and fitting broad lines "
+                f"with {key} would give them narrow-line ratios.  {fix}")
+
+    def _check_agn_eline_sigma_resolved(self):
+        """UserWarning when ``agn_eline_sigma`` has a prior (is sampled) but no Spectrum can
+        resolve the AGN lines: no Spectrum, none covers an AGN line with unmasked pixels, or the
+        instrumental sigma at every covered AGN line exceeds AGN_ELINE_SIGMA_RESOLVE x the
+        prior's upper edge (then every width the prior allows is unresolved and the posterior is
+        the prior).  Setup time (``setup_observations``), NumPy only."""
+        key = "agn_eline_sigma"
+        hook = self._agn_line_hook()
+        if hook is None or key not in self.priors:
+            return
+        from ..csp.csp import prior_support
+        from ..broadening import CKMS
+        hi = prior_support(self.priors[key])[1]
+        lines = hook.model.lines
+        lam_rest = np.asarray(lines.line_wave, dtype=np.float64)
+        n_spec, best = 0, None                    # best: (sigma_inst, spectrum, line, z)
+        for obs in self.observations:
+            if getattr(obs, "_kind", None) != "spectrum":
+                continue
+            n_spec += 1
+            proj = getattr(obs, "_proj", None)
+            if proj is None or proj.wave_obs is None:
+                continue
+            w = np.asarray(proj.wave_obs, dtype=np.float64)
+            # the instrument the AGN painter uses (SpectralProjector.setup_agn_lines)
+            s_tab = (0.5 * CKMS * np.gradient(np.log(w)) if proj.instrument is None
+                     else np.asarray(proj.sigma_inst_kms, dtype=np.float64))
+            if proj.free_inst_scale:
+                s_tab = s_tab * float(proj.inst_scale_range[0])
+            m = np.asarray(obs.mask, dtype=bool)
+            used = np.sort(w[m] if m.shape == w.shape else w)
+            if used.size == 0:
+                continue
+            opzs = [float(proj.opz_ref)]
+            if proj.free_z:
+                opzs += [1.0 + float(z) for z in proj.zred_range]
+            for opz in opzs:
+                lam = lam_rest * opz
+                for j in np.flatnonzero((lam >= w.min()) & (lam <= w.max())):
+                    s = float(np.interp(lam[j], w, s_tab))
+                    # covered: an unmasked pixel within 2 instrumental sigma of the centre
+                    half = 2.0 * lam[j] * s / CKMS
+                    k = np.searchsorted(used, lam[j] - half)
+                    if k >= used.size or used[k] > lam[j] + half:
+                        continue
+                    if best is None or s < best[0]:
+                        best = (s, obs.name, lines.line_names[j], opz - 1.0)
+        if n_spec == 0:
+            why = ("the model has no Spectrum: Lines fluxes do not depend on the AGN line width "
+                   "and Photometry only through line light near filter edges")
+        elif best is None:
+            why = ("no Spectrum has unmasked pixels at any AGN line (the 23 Richardson+14 lines "
+                   f"at {lam_rest.min():.0f}-{lam_rest.max():.0f} A rest, at the model redshift)")
+        elif best[0] > AGN_ELINE_SIGMA_RESOLVE * hi:
+            why = (f"the narrowest instrumental dispersion at an AGN line is {best[0]:.0f} km/s "
+                   f"({best[2]} in Spectrum {best[1]!r} at z = {best[3]:.4g}), more than "
+                   f"{AGN_ELINE_SIGMA_RESOLVE:g} x the prior's upper edge {hi:g} km/s, so every "
+                   "width the prior allows is unresolved")
+        else:
+            return
+        warnings.warn(
+            f"{key} is sampled but the data cannot constrain it: {why}.  Its posterior will be "
+            "its prior.  Fix it instead, "
+            "transforms={'agn_eline_sigma': lambda th: jnp.array([100.0])} with no prior, or "
+            "add a Spectrum that resolves the AGN lines (instrumental sigma <= "
+            f"{AGN_ELINE_SIGMA_RESOLVE:g} x {hi:g} km/s at a line, R_FWHM >= "
+            f"{CKMS / (2.3548 * AGN_ELINE_SIGMA_RESOLVE * hi):.0f}).  See docs/agn.md, "
+            "'Fitting the AGN line width'.", UserWarning, stacklevel=4)
 
     def _check_tied_gas_range(self):
         """gas_tied=True (B1-019): the gas metallicity is the stellar logzsol, and a logzsol
@@ -523,6 +653,7 @@ class SedModel:
             self.__dict__.pop(cached, None)
         from ..likelihood.eline_marginal import build_eline_system
         self._eline_system = build_eline_system(self)
+        self._check_agn_eline_sigma_resolved()
 
 
     def _instrument_scale_keys(self) -> tuple:

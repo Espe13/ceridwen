@@ -713,6 +713,16 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
   the lines at their CLOUDY + AGN fluxes. In the reproduction modes the AGN lines are not
   instrument-broadened, dust- or IGM-attenuated (Prospector's convention) and need
   `add_neb=True`.
+- **Sampling `agn_eline_sigma`.** It is the AGN narrow-line dispersion [km/s]: a prior,
+  constant transform or fixed value must lie in (0, 2000] (raises at setup otherwise; broad-
+  line-region widths need a BLR component that does not exist yet). Only a Spectrum that
+  resolves the AGN lines constrains it: with no Spectrum, no unmasked pixel at an AGN line, or
+  an instrumental sigma above 3x the prior's upper edge at every AGN line, `SedModel` warns and
+  the posterior is the prior. A prism (R ~ 100, sigma_inst ~ 1270 km/s) with
+  `Uniform(50, 500)` does NOT trigger the warning but still returns a prior-dominated
+  posterior; fix it then (`transforms={"agn_eline_sigma": lambda th: jnp.array([100.0])}`).
+  The widths do not separate AGN from star formation, the line ratios do (`docs/agn.md`,
+  "Fitting the AGN line width").
 - **PostProcess.** `spectra_model` / `spectra_observed` include the AGN continuum,
   `spectra_intrinsic` / `spectra_dustfree` do not: `A_V = 2.5 log10(dustfree / full)` and
   `LUV`/`MUV` contain the AGN. The AGN alone is `prediction["spectra_agn"]`; `extras["agn"]`

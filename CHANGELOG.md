@@ -14,6 +14,11 @@
   (`L_bol_star`, `L_absorbed`, `mdust` with the energy balance); the summary figure draws the
   AGN. The result file records the AGN set-up in `csp_config["agn"]` (template hashes included).
 - `marginalize_elines=True` with AGN lines is refused at setup (as in Prospector).
+- `agn_eline_sigma` is a supported free parameter: `SedModel` refuses a prior / fixed value
+  outside (0, 2000] km/s at setup, and warns when it is sampled but no Spectrum can resolve the
+  AGN lines (no Spectrum, no unmasked pixel at an AGN line, or sigma_inst > 3x the prior's upper
+  edge at every line). `scripts/agn_injection_recovery.py --spec grating|prism` fits it free;
+  `docs/agn.md`, "Fitting the AGN line width".
 - `scripts/check_api_usage.py` also checks the keyword arguments of base-less dataclasses
   (`AGNConfig`).
 

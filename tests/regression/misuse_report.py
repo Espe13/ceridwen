@@ -89,6 +89,7 @@ WARN_EXPECT = {
     "fagn without agn= (AGN off)": "unrecognized theta key(s) ['fagn']",
     "old label name f_agn with agn=": "unrecognized theta key(s) ['f_agn']",
     "agn_tau outside the Nenkova grid [5, 150]": "outside the Nenkova+08 grid",
+    "agn_eline_sigma sampled with photometry only": "agn_eline_sigma is sampled but the data",
 }
 
 
@@ -241,6 +242,14 @@ def _agn_lines_with_marginalisation():
     return SedModel(c, [spec], zred=0.5,
                     transforms={"gas_logu": lambda th: jnp.array([-2.5]),
                                 "gas_logz": lambda th: jnp.array([0.0])})
+
+
+def _agn_sigma_model(prior):
+    """A corrected-mode AGN SedModel (lines on) on photometry with a prior on agn_eline_sigma."""
+    ph = Photometry(filters=["sdss_g0", "sdss_r0"], flux=[1e-9, 1e-9],
+                    uncertainty=[1e-10, 1e-10], name="p")
+    return SedModel(_agn_csp(agn_mode="corrected"), [ph], zred=0.0,
+                    priors={"agn_eline_sigma": Uniform(low=prior[0], high=prior[1])})
 
 
 def run_scenarios():
@@ -459,6 +468,11 @@ def run_scenarios():
         ("AGN lines in prospector mode without add_neb", {"ERROR"},
          lambda: _agn_csp(agn_mode="prospector")),
         ("marginalize_elines with AGN lines", {"ERROR"}, _agn_lines_with_marginalisation),
+        ("agn_eline_sigma prior reaching 0 km/s", {"ERROR"}, lambda: _agn_sigma_model((0.0, 500.0))),
+        ("agn_eline_sigma prior above 2000 km/s (BLR widths)", {"ERROR"},
+         lambda: _agn_sigma_model((50.0, 3000.0))),
+        ("agn_eline_sigma sampled with photometry only", {"WARN"},
+         lambda: _agn_sigma_model((50.0, 500.0))),
         ("LogUniform with mini <= 0 (log of 0)", {"ERROR"},
          lambda: LogUniform(mini=0.0, maxi=1.0)),
         ("Instrument LSF scale <= 0", {"ERROR"},
