@@ -993,6 +993,9 @@ class CSPBasis:
                 or getattr(self, "diff_dust", None) is not None):
             return jnp.zeros((), dtype=jnp.float64)
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+        # the einsums below repeat the kernel's; the barrier keeps XLA from sharing or fusing them
+        # with the kernel's, which would change the kernel's float32 rounding (V-PIPE-1)
+        W, attn, attn_diffuse = jax.lax.optimization_barrier((W, attn, attn_diffuse))
         tau_age = jnp.einsum("ab,bw->aw", self._age_bin_mix, attn.astype(jnp.float32))
         attn_age = jnp.exp(-tau_age)
         diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
