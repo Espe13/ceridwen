@@ -1189,13 +1189,19 @@ class CSPBasis:
             # CIGALE's agn.* infos (SkirtorTorus.derived), both modes; frac_agn_cigale is
             # P / (P + L_dust,gal) with CIGALE's dust.luminosity (stars + nebular absorbed by the
             # galaxy's dust), which "corrected" computes here only for this summary
-            ldg = ctx.L_dust_gal if ctx.L_dust_gal is not None else self._agn_galaxy_ldust(theta, W)
-            out["L_dust_gal"] = ldg
-            import dataclasses
-            der = hook.model.components["skirtor"].derived(
-                hook.filled(theta), dataclasses.replace(ctx, L_dust_gal=ldg), hook.model.polar)
-            out.update({("frac_agn_cigale" if k == "frac_agn_cigale" else f"cigale_{k}"): v
-                        for k, v in der.items()})
+            # (a SKIRTOR class without ``derived``, e.g. a test double, reports neither)
+            sk = hook.model.components["skirtor"]
+            if hasattr(sk, "derived"):
+                ldg = (ctx.L_dust_gal if ctx.L_dust_gal is not None
+                       else self._agn_galaxy_ldust(theta, W))
+                out["L_dust_gal"] = ldg
+                import dataclasses
+                der = sk.derived(hook.filled(theta), dataclasses.replace(ctx, L_dust_gal=ldg),
+                                 hook.model.polar)
+                out.update({("frac_agn_cigale" if k == "frac_agn_cigale" else f"cigale_{k}"): v
+                            for k, v in der.items()})
+            elif ctx.L_dust_gal is not None:
+                out["L_dust_gal"] = ctx.L_dust_gal
         if hook.energy_balance:
             out["mdust"] = absorbed * hook.dust_response(ctx, self.dust_emi, dth)[0]
         return out
