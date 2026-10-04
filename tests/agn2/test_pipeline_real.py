@@ -8,7 +8,8 @@ V-PIPE-1  zero amplitudes (fagn = agn_elum = blr_lum = 0; every other AGN2 key o
 V-PIPE-2  jit(value_and_grad) of a log-likelihood: finite, non-zero in every AGN2 theta key of
           the config, also at the grid / prior edges; vmap (W = 64) == loop (rel 1e-6 value,
           1e-4 gradient: float32 einsums reorder under vmap).
-V-PIPE-3  linear in the amplitude of each component at the prediction level.
+V-PIPE-3  linear in the amplitude of each component at the prediction level ("cigale" fagn is
+          fracAGN: linear in P = L_dust f / (1 - f), so P is doubled, not f).
 V-PIPE-4  "corrected" with DL07: L_absorbed (CSPBasis._agn_parts) = galaxy-absorbed nuclear
           continuum (from the component's own nuclear_parts) + absorbed line light; the AGN
           luminosity added = its nuclear luminosity minus nothing (DL07 re-emits), rel 2e-4.
@@ -153,8 +154,16 @@ def test_V_PIPE_3_linear_in_amplitudes(name):
     model, _, _, _ = S._model(_csp(name))
     present = [a for a in AMPL if a in model.csp._agn.param_names]
 
+    cigale = model.csp._agn.mode == "cigale"
+
+    def amp(a, scale):
+        if a == "fagn" and cigale:                 # fracAGN: P = L_dust f / (1 - f); scale P
+            r = ON[a] / (1.0 - ON[a]) * scale
+            return r / (1.0 + r)
+        return ON[a] * scale
+
     def pred(scale):
-        d = dict(ON, **{a: ON[a] * scale for a in present})
+        d = dict(ON, **{a: amp(a, scale) for a in present})
         return {k: np.asarray(v, np.float64) for k, v in
                 model.predict({**T._theta(model), **_vals(model.csp, d)}).items()}
 
