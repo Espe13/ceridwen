@@ -932,6 +932,15 @@ class CSPBasis:
                 "line (it asserts 'must add agn and nebular lines'), so without the nebular model "
                 "there is nothing to reproduce. Build the basis with add_neb=True, switch the "
                 "lines off (AGNConfig(..., lines=False)), or use agn_mode='corrected'")
+        if self._agn.need_ldust_gal and getattr(self, "dust_attn", None) is None \
+                and getattr(self, "diff_dust", None) is None:
+            raise ValueError(
+                f"AGNConfig(agn_mode={agn.agn_mode!r}, torus_model={agn.torus_model!r}) needs a "
+                "galaxy dust screen (CSPBasis(add_dust=True) and/or add_diffuse_dust=True): its "
+                "amplitude, CIGALE's fracAGN, is the AGN dust luminosity over AGN + galaxy dust "
+                "luminosity, and without galaxy dust the latter is 0, so fagn would scale "
+                "nothing. (CIGALE silently uses 1 W then; CERIDWEN refuses.) Dust emission "
+                "itself is not needed.")
         if self._agn.need_ldust_gal and getattr(self, "fesc_geometry", None) == "picket":
             raise ValueError(
                 "an AGN component normalised to the galaxy's dust luminosity (CIGALE's fracAGN) "
@@ -984,6 +993,9 @@ class CSPBasis:
                 or getattr(self, "diff_dust", None) is not None):
             return jnp.zeros((), dtype=jnp.float64)
         attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+        # the einsums below repeat the kernel's; the barrier keeps XLA from sharing or fusing them
+        # with the kernel's, which would change the kernel's float32 rounding (V-PIPE-1)
+        W, attn, attn_diffuse = jax.lax.optimization_barrier((W, attn, attn_diffuse))
         tau_age = jnp.einsum("ab,bw->aw", self._age_bin_mix, attn.astype(jnp.float32))
         attn_age = jnp.exp(-tau_age)
         diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
