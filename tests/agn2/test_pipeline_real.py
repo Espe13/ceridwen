@@ -106,6 +106,8 @@ def test_V_PIPE_1_zero_amplitude_byte_identical(name, igm):
     assert S._bytes(got) == S._bytes(base)
     lit = on.predict_jit({**T._theta(on), **_vals(on.csp, ON)})
     for k in base:
+        if k == "lines" and not on.csp._agn.model.line_sets:
+            continue                          # continuum only: line fluxes do not move
         assert np.any(np.asarray(lit[k]) != np.asarray(base[k])), (name, k)
 
 
@@ -159,6 +161,9 @@ def test_V_PIPE_3_linear_in_amplitudes(name):
     p0, p1, p2 = pred(0.0), pred(1.0), pred(2.0)
     for k in p0:
         d1, d2 = p1[k] - p0[k], p2[k] - p0[k]
+        if k == "lines" and not model.csp._agn.model.line_sets:
+            assert np.all(d1 == 0) and np.all(d2 == 0), (name, k)
+            continue
         assert np.any(d1 != 0), (name, k)
         np.testing.assert_allclose(d2, 2 * d1, rtol=1e-4,
                                    atol=1e-4 * np.abs(d2).max() + 1e-6 * np.abs(p0[k]).max())
