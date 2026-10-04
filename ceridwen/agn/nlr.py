@@ -210,16 +210,15 @@ class FeltreNLR(AGN2LineSet):
         return out
 
     def provenance(self) -> dict:
-        """Files and hashes for the result file."""
+        """Files and hashes for the result file (the hook prefixes the keys with ``agn_nlr_``)."""
         import hashlib
-        return {"agn_nlr_model": "feltre16",
-                "agn_nlr_file": str(self.path),
-                "agn_nlr_sha256": hashlib.sha256(self.path.read_bytes()).hexdigest(),
-                "agn_nlr_source_sha256": str(self.attrs.get("source_sha256", "")),
-                "agn_nlr_lines": ",".join(self.line_names),
-                "agn_nlr_not_painted": ",".join(self.dropped_lines),
-                "agn_nlr_zsun": NLR_ZSUN,
-                "agn_lines_emlines_file": self.emlines_file}
+        return {"file": str(self.path),
+                "sha256": hashlib.sha256(self.path.read_bytes()).hexdigest(),
+                "source_tarball_sha256": str(self.attrs.get("source_tarball_sha256", "")),
+                "emlines_file": self.emlines_file,
+                "lines": ",".join(self.line_names),
+                "not_painted": ",".join(self.dropped_lines),
+                "zsun": NLR_ZSUN}
 
     def range_messages(self, theta) -> list:
         """Messages for NLR keys of ``theta`` outside the grid (setup-time, NumPy)."""
