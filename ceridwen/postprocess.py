@@ -67,8 +67,12 @@ Conventions
   ``spectra_agn`` (and ``spectra_agn_observed``) is the AGN continuum alone, and
   ``extras["agn"]`` holds ``L_bol_star`` (the stellar L_bol the torus is scaled to),
   ``L_absorbed`` [L_sun] and, with the energy balance, ``mdust`` [M_sun], the dust mass the
-  absorbed AGN light heats (the stellar dust mass is not reported).  ``LUV``/``MUV`` (from
-  ``spectra_model``) include the AGN.
+  absorbed AGN light heats (the stellar dust mass is not reported).  With the SKIRTOR torus
+  also ``L_skirtor_disk``, ``L_skirtor_dust``, ``L_polar_ir``, ``L_dust_gal`` (CIGALE's galaxy
+  dust luminosity), CIGALE's ``agn.*`` infos as ``cigale_<name>`` [L_sun; L_sun/Hz for
+  ``cigale_intrin_Lnu_2500A_30deg``] and ``frac_agn_cigale`` = P / (P + L_dust,gal), CIGALE's
+  ``fracAGN`` in both modes (equal to ``fagn`` in ``agn_mode="cigale"``).  ``LUV``/``MUV``
+  (from ``spectra_model``) include the AGN.
 * ``LUV`` is the mean L_nu over 1450-1550 A rest [erg/s/Hz];
   ``MUV = -2.5 log10(LUV / (4 pi (10 pc)^2) / 3631 Jy)``; both from ``spectra_model``,
   ``*_intrinsic`` from ``spectra_intrinsic``.
@@ -96,6 +100,7 @@ _LYMAN_LIMIT_AA = 912.0
 _PC_CM = 3.0856775814913673e18
 _AB_ZERO_FNU = 3.631e-20                      # erg s^-1 cm^-2 Hz^-1
 _UV_WINDOW_AA = (1450.0, 1550.0)
+_AGN_RATIOS = ("frac_agn_cigale",)            # extras["agn"] entries that are ratios (not x 10**logmass)
 
 DEFAULT_WINDOWS_MYR = (3.0, 5.0, 10.0, 20.0, 50.0, 100.0, 500.0)
 
@@ -482,7 +487,8 @@ class PostProcess:
                 out["agn_observed"] = csp._apply_mass_redshift_igm(agn, agn, t)[0]
             scale = 10.0 ** jnp.ravel(t["logmass"])[0] if "logmass" in t else 1.0
             out["agn"] = agn * scale
-            out.update({f"agnx_{k}": v * scale for k, v in parts.items()})   # flat: batches concat
+            out.update({f"agnx_{k}": v * (1.0 if k in _AGN_RATIOS else scale)   # flat: batches
+                        for k, v in parts.items()})                              # concat
         out.update({"full": full, "intrinsic": intrinsic, "dustfree": dustfree})
         return out
 

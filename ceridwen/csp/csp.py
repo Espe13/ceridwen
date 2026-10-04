@@ -1161,7 +1161,10 @@ class CSPBasis:
         ``get_spectrum`` adds (``_agn_rest``), ``L_bol_star`` the dust-free stellar L_bol the
         torus is scaled to, ``L_absorbed`` the AGN light the screens absorb (continuum, plus the
         lines in "corrected" mode) [L_sun], and with the energy balance ``mdust`` the DL07 dust
-        mass heated by it [M_sun]."""
+        mass heated by it [M_sun]. With the SKIRTOR torus also ``L_skirtor_disk``,
+        ``L_skirtor_dust``, ``L_polar_ir``, ``L_dust_gal`` (CIGALE's ``dust.luminosity``),
+        CIGALE's ``agn.*`` infos as ``cigale_<name>`` (``SkirtorTorus.derived``) and
+        ``frac_agn_cigale`` (a ratio: not per formed mass)."""
         hook = self._agn
         W = self.calculate_ssp_weights(theta=theta)
         ctx = self._agn_context(theta, W)
@@ -1183,8 +1186,16 @@ class CSPBasis:
             out.update({"L_skirtor_disk": jnp.dot(nuc["disk"], w),
                         "L_skirtor_dust": jnp.dot(nuc["dust"], w),
                         "L_polar_ir": jnp.dot(nuc["polar_ir"], w)})
-            if ctx.L_dust_gal is not None:
-                out["L_dust_gal"] = ctx.L_dust_gal
+            # CIGALE's agn.* infos (SkirtorTorus.derived), both modes; frac_agn_cigale is
+            # P / (P + L_dust,gal) with CIGALE's dust.luminosity (stars + nebular absorbed by the
+            # galaxy's dust), which "corrected" computes here only for this summary
+            ldg = ctx.L_dust_gal if ctx.L_dust_gal is not None else self._agn_galaxy_ldust(theta, W)
+            out["L_dust_gal"] = ldg
+            import dataclasses
+            der = hook.model.components["skirtor"].derived(
+                hook.filled(theta), dataclasses.replace(ctx, L_dust_gal=ldg), hook.model.polar)
+            out.update({("frac_agn_cigale" if k == "frac_agn_cigale" else f"cigale_{k}"): v
+                        for k, v in der.items()})
         if hook.energy_balance:
             out["mdust"] = absorbed * hook.dust_response(ctx, self.dust_emi, dth)[0]
         return out
