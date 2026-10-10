@@ -302,6 +302,16 @@ prefer `predict`/`get_spectrum_components`.
   `NestedSamples.logZ()` when anesthetic is installed (it is a core
   dependency); without it, `log_evidence = logsumexp(log_weights)` and the
   error is NaN. Either way `log_weights` are the aligned per-point weights.
+  anesthetic draws the error from numpy's global RNG; the adapter seeds it from `rng_key` and
+  restores the global state afterwards, so the same key gives the same error bar.
+- **Same `rng_key` reproduces a run byte for byte on CPU, not on GPU.** The default slice
+  kernel is `"lanes"`; on CPU it gives exactly the dead points of `slice_kernel="stock"`
+  (`blackjax.nss`). On a GPU, two runs with the same key, even with the same kernel on two
+  GPUs of one node, differ in the last bits (already in setup-time reductions such as the filter
+  effective wavelengths), and a late slice decision can then send the run along a different
+  but statistically equivalent path (seen once in four `"lanes"` runs: ln Z changed by 2e-5,
+  quoted error 0.24). Compare GPU runs by their posteriors and ln Z within errors, never with
+  `tobytes()`.
 
 ## 11. Sampled redshift, noise terms and fit-time checks
 
@@ -337,7 +347,9 @@ prefer `predict`/`get_spectrum_components`.
   sampled parameters without a prior; `free_param_init` is applied without
   transforms too; prior constructors reject unknown/missing arguments.
 - `CSPBasis(verbose=False)` is silent; `SSPData.load(..., flux_dtype="float32")`
-  halves the grid memory.
+  halves the grid's host memory. `SSPData.ssp_flux` is a read-only host NumPy array (a JAX
+  array passed in is copied to the host); the device holds only the CSP's float32 copy
+  (`csp.flux`).
 - `pp.figures(dir)` writes the summary / corner / diagnostics figures
   (`ceridwen.plotting`).
 
@@ -369,7 +381,9 @@ prefer `predict`/`get_spectrum_components`.
 - **The width is `sigma_gas`**, a dispersion in km/s; `Spectrum(eline_sigma=...)`
   raises (there is no second line width).
 - **Flat prior and many faint lines.** By default every covered grid line is
-  fitted, including ones CLOUDY predicts at ~0. They cost nothing in bias but
+  fitted, including ones CLOUDY predicts at ~0, except FSPS's `"[O II] 3867"` (1.8 Å from
+  `[Ne III] 3869`, whose flux it would share; it stays at its CLOUDY flux and naming it in
+  `elines_to_fit` raises). They cost nothing in bias but
   each adds an Occam factor to the evidence; restrict with `elines_to_fit` when
   you compare evidences between models.
 - **Ly-α** always has a flat prior.
@@ -582,7 +596,8 @@ on your priors/bounds once before sampling instead.
   `num_inner_steps` and the parameter names/shapes must match, and the live points' saved
   `ln L` must equal this model's (rtol 1e-9); anything else raises before sampling. A resumed
   CPU run is byte-identical to the uninterrupted one. `logZ_tol` may differ (it is only the
-  stopping rule). The checkpoint file is named after the PID, so the resumed run writes a new one.
+  stopping rule), and so may `slice_kernel` (the kernels make the same moves, bitwise equal on
+  CPU). The checkpoint file is named after the PID, so the resumed run writes a new one.
 - **A result file stores transforms by name only** (`"sfh <- my_function"`), and not the CSP or
   the observation objects. `rebuild_model` therefore needs them from you, and checks what the
   file does record (priors, free parameters and shapes, transform names, zred, kinematics,
@@ -656,3 +671,24 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
 - **The IGM acts after `σ_gal`** and before the instrument (`docs/conventions.md`,
   Broadening). A fixed `σ_gal = 0` keeps the IGM on the model grid.
 
+
+## 24. `CSPBasis(wavelength_support=True)`: only the pixels the observations read
+
+- **Off by default.** On, `predict` (and so every fit) synthesises only the contiguous range of
+  model pixels the observations read: each Photometry's non-zero filter columns and its
+  sigma_gal window, each Spectrum's projector window (the whole `zred_range` for a sampled
+  redshift); `Lines` read none. The rest is zero, filled after the mass, flux-factor and IGM
+  scaling. The IGM is still evaluated on the whole grid (Madau's optical depth is capped at its
+  peak, a whole-grid maximum) and then cut to the range.
+- **Not byte-identical to the default.** XLA's CPU reductions change their summation order
+  with the array length, so a prediction differs in the last float32 bit (measured: up to
+  1.6e-7 relative; the log-likelihood by about 1e-10 of its value). Compare fits made with
+  the same setting. The result file records it (`csp_config['wavelength_support']`, present
+  only when on), so `check_model_against_result` reports a rebuilt model with the other setting.
+- **Silently the whole grid** (no warning, same numbers as off) for dust emission (the energy
+  balance integrates over every pixel), lines painted on the model grid (free-z Photometry,
+  a sampled `sigma_gas` with `broaden_photometry`, `_force_paint_lines`), a Photometry at a
+  sampled redshift, an observation class that declares no `model_support`, or a range that
+  is the whole grid.
+- `csp.get_spectrum(...)`, `get_spectrum_components`, `PostProcess` spectra and figures are
+  always on the whole grid: only the observation predictions use the range.

@@ -160,8 +160,7 @@ model = build_model([phot, spec])
 ```
 
 **4. Fit with nested sampling.** These settings are sized for a laptop CPU: the fit took
-**21-29 min** (67 800 likelihood calls) in two runs on an 11-core Apple M3 Pro shared with
-other jobs. It prints its progress and writes `./my_fit/ceridwen_result.h5`. For production, raise `num_live` (fitSED's default
+**12 min** (67 800 likelihood calls) on an 11-core Apple M3 Pro shared with other jobs. It prints its progress and writes `./my_fit/ceridwen_result.h5`. For production, raise `num_live` (fitSED's default
 is 500) and lower `logZ_tol`; for NUTS, see [Samplers](https://www.amanda-stoffers.de/ceridwen/samplers/).
 
 ```python
@@ -265,7 +264,7 @@ If you use CERIDWEN in your research, please cite it:
   author       = {Stoffers, Amanda},
   title        = {{CERIDWEN}: Fast and Flexible {GPU}-Accelerated Stellar Population Inference},
   year         = {2026},
-  note         = {Version 1.0.12},
+  note         = {Version 1.0.13},
   howpublished = {\url{https://github.com/Espe13/ceridwen}}
 }
 ```

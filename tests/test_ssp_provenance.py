@@ -19,6 +19,7 @@ import os
 import sys
 
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 # tests/ on sys.path so `_gridfixture` imports from any subdir (mirrors conftest).
@@ -140,7 +141,8 @@ def _legacy_ssp():
     # Perturb the flux so the grid is NOT recognised by the v1.0.5 content-hash table
     # (which would otherwise supply the provenance this helper is meant to lack); Z_sun is
     # then passed explicitly, as any unknown grid must.
-    flux = full.ssp_flux.at[0, 0, 0].multiply(1.0000001)
+    flux = np.array(full.ssp_flux)          # ssp_flux is host NumPy (read-only): a copy
+    flux[0, 0, 0] *= 1.0000001
     return SSPData(full.ssp_lgmet, full.ssp_lg_age_gyr, full.ssp_wave, flux,
                    zsun=float(full.zsun_nominal))
 

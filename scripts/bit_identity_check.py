@@ -6,7 +6,11 @@ a short nested-sampling run between two versions of the package.
     git checkout <new>;          python scripts/bit_identity_check.py --compare /tmp/bits_old.npz
 
 Every array is compared with ``tobytes()`` (dtype, shape and every bit).  Add ``--ns`` to
-include a small nested-sampling run (same rng key; samples, log_weights, logL, logZ).
+include a small nested-sampling run (same rng key; samples, log_weights, logL, logZ) with the
+package's default slice kernel (keys ``plain/ns/...``) and, when the adapter has
+``slice_kernel=``, the same run with every kernel named explicitly (keys ``plain/ns_<kernel>/...``),
+which on CPU must be byte-identical to the default run of the same version (checked in every
+mode; exit 1 if not).
 Needs the test grid (see tests/_gridfixture.py); the nebular block runs only with $SPS_HOME.
 """
 from __future__ import annotations
@@ -58,7 +62,8 @@ def _flat(prefix, obj, out):
 
 
 def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False, lsf=None,
-           interp="step", track=False, zred=ZRED, spec_wave=SPEC_WAVE, filters=FILTERS):
+           interp="step", track=False, zred=ZRED, spec_wave=SPEC_WAVE, filters=FILTERS,
+           marg=False, line_windows=False, support=False):
     path = find_test_grid()
     if path is None:
         sys.exit("no test SSP grid found (tests/_gridfixture.py)")
@@ -72,6 +77,8 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
         kw["track_zred_age"] = True
     if gas_tied:
         kw["gas_tied"] = True          # v1.0.5 path: gas_logz := logzsol
+    if support:                        # only the model pixels the observations read
+        kw["wavelength_support"] = True
     if igm_dla:                        # IGM damping wing + DLA with sampled theta keys
         from ceridwen.igm import MadauDampingDLA
         kw["igm_model"] = MadauDampingDLA(Ob0=0.04897)
@@ -92,7 +99,7 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
                                 # LSF scale: fixed float, or sampled ("lsf_scale") in (0.8, 1.3)
                                 Instrument.sigma_kms(150.0, scale=lsf, scale_range=(
                                     (0.8, 1.3) if isinstance(lsf, str) else None))),
-                    name="spec")]
+                    name="spec", **({"marginalize_elines": True} if marg else {}))]
     if add_neb:
         obs.append(Lines(line_ind=np.arange(len(LINES)), line_names=list(LINES),
                          wavelength=np.array(list(LINES.values())),
@@ -103,9 +110,25 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
         init.update(x_HI=jnp.array([0.5]), logN_HI=jnp.array([20.5]))
     if isinstance(lsf, str):
         init[lsf] = jnp.array([1.1])
-    model = SedModel(csp, obs, priors={}, transforms={"sfh": _sfh},
-                     free_param_init=init, zred=zred,
-                     kinematics=Kinematics(sigma_gal=sigma_losvd))
+    transforms = {"sfh": _sfh}
+    kin = Kinematics(sigma_gal=sigma_losvd)
+    if marg:
+        # marginalised line fluxes (the nebular parameters fixed, as eline_marginal requires)
+        # with a sampled sigma_gas: the line basis is rebuilt at every call
+        transforms.update(gas_logu=lambda th: jnp.array([-2.5]),
+                          gas_logz=lambda th: jnp.array([-0.3]))
+        init["sigma_gas"] = jnp.array([120.0])
+        kin = Kinematics(sigma_gal=sigma_losvd, sigma_gas="sigma_gas", sigma_max=600.0)
+    model = SedModel(csp, obs, priors={}, transforms=transforms,
+                     free_param_init=init, zred=zred, kinematics=kin,
+                     # a sampled sigma_gas in the joint marginal needs unbroadened photometry
+                     **({"broaden_photometry": False} if marg else {}))
+    proj = model.obs_dict["spec"]._proj
+    if line_windows and hasattr(proj, "enable_line_windows"):
+        # the windowed line basis (opt-in); a package without it runs the dense one, which is
+        # what the windowed one must equal bit for bit
+        if proj.enable_line_windows() is None:
+            sys.exit("bit_identity_check: no line window for the neb_marg_windows configuration")
     return model
 
 
@@ -179,7 +202,7 @@ def _mfrac(model, theta_np, tag, out):
         csp.ssp_stellar_mass = saved
 
 
-def _likelihood(model, theta_np, tag, out):
+def _likelihood(model, theta_np, tag, out, gauss_only=False):
     """fitSED's sampled log-posterior (MultiObservationLikelihood.make_lnprobfn): value and
     gradient at every draw, plus the SHA-256 of the lowered StableHLO of jit(value_and_grad).  Then
     the outlier-mixture variant (f_outlier_spec sampled, f_outlier_phot fixed), the profiled
@@ -244,6 +267,8 @@ def _likelihood(model, theta_np, tag, out):
             else DiagonalGaussianLikelihood(nm[k]) for k in keys)))
     except ImportError:
         print("  (package has no marginalised calibration: variant skipped)")
+    if gauss_only:          # marginalised lines: the other likelihoods are refused with them
+        variants = variants[:1]
     n = next(iter(theta_np.values())).shape[0]
     f_draws = rng.uniform(1e-4, 0.3, (n, 1))
     for vname, lhs in variants:
@@ -271,7 +296,8 @@ def _likelihood(model, theta_np, tag, out):
         obs[k].flux, obs[k].uncertainty = flux, unc
 
 
-def _nested(model, tag, out):
+def _nested(model, tag, out, kernel=None):
+    """One short nested run; ``kernel=None`` passes no slice_kernel (the package default)."""
     from ceridwen import fitSED
     from ceridwen.sampler.priors import Uniform, StudentT
     model.priors = {"logsfr_ratios": StudentT(mean=0.0, scale=1.0, df=2.0),
@@ -288,15 +314,28 @@ def _nested(model, tag, out):
     if missing:
         sys.exit(f"bit_identity_check: no prior defined for {missing}")
     model.priors = {k: v for k, v in model.priors.items() if k in model.param_names}
+    skw = {"num_live": 40, "num_delete": 8, "num_inner_steps": 10, "logZ_tol": -1.0}
+    ns = "ns"
+    if kernel is not None:          # the default run keeps the sampler_kwargs (and keys) of old
+        skw["slice_kernel"] = kernel
+        ns = f"ns_{kernel}"
     result = fitSED(model, sampler="nested", rng_key=jax.random.PRNGKey(7),
-                    sampler_kwargs={"num_live": 40, "num_delete": 8, "num_inner_steps": 10,
-                                    "logZ_tol": -1.0},
-                    output_dir="/tmp/ceridwen_bits_ns", verbose=False)
-    _flat(f"{tag}/ns/samples", result.samples, out)
-    out[f"{tag}/ns/log_weights"] = np.asarray(result.log_weights)
-    out[f"{tag}/ns/log_likelihoods"] = np.asarray(result.log_likelihoods)
-    out[f"{tag}/ns/log_likelihoods_birth"] = np.asarray(result.log_likelihoods_birth)
-    out[f"{tag}/ns/logZ"] = np.asarray([result.log_evidence, result.log_evidence_err])
+                    sampler_kwargs=skw, output_dir="/tmp/ceridwen_bits_ns", verbose=False)
+    _flat(f"{tag}/{ns}/samples", result.samples, out)
+    out[f"{tag}/{ns}/log_weights"] = np.asarray(result.log_weights)
+    out[f"{tag}/{ns}/log_likelihoods"] = np.asarray(result.log_likelihoods)
+    out[f"{tag}/{ns}/log_likelihoods_birth"] = np.asarray(result.log_likelihoods_birth)
+    out[f"{tag}/{ns}/logZ"] = np.asarray([result.log_evidence, result.log_evidence_err])
+
+
+def _explicit_kernels():
+    """Every slice kernel, to be run by name (none in versions without ``slice_kernel=``)."""
+    import inspect
+    from ceridwen.sampler.nested import BlackJAXNestedSamplerAdapter
+    if "slice_kernel" not in inspect.signature(BlackJAXNestedSamplerAdapter).parameters:
+        return []
+    from ceridwen.sampler.nested import SLICE_KERNELS
+    return list(SLICE_KERNELS)
 
 
 def collect(args):
@@ -336,15 +375,37 @@ def collect(args):
                spec_wave=np.linspace(1100.0, 1400.0, 300), filters=["jwst_f090w", "jwst_f115w"])
     configs.append(("igm_break_s0", dict(brk, sigma_losvd=0.0)))
     configs.append(("igm_break_s300", dict(brk, sigma_losvd=300.0)))
+    if os.environ.get("SPS_HOME"):
+        # marginalised emission lines with sampled sigma_gas and LSF scale: the per-call line
+        # basis (SpectralProjector.predict_with_line_basis), dense and with the static line
+        # windows; appended last, earlier draws unchanged
+        marg = dict(add_neb=True, add_igm=True, sigma_losvd=250.0, dust_emission=False,
+                    lsf="lsf_scale", marg=True)
+        configs.append(("neb_marg_dense", marg))
+        configs.append(("neb_marg_windows", dict(marg, line_windows=True)))
+    # CSPBasis(wavelength_support=True): the opt-in path that synthesises only the model
+    # pixels the observations read (not byte-identical to the whole grid, so its own
+    # configurations); appended last, earlier draws unchanged
+    import inspect
+    if "wavelength_support" in inspect.signature(CSPBasis.__init__).parameters:
+        configs.append(("support_plain", dict(add_neb=False, add_igm=True, sigma_losvd=250.0,
+                                              dust_emission=False, support=True)))
+        if os.environ.get("SPS_HOME"):
+            configs.append(("support_neb", dict(add_neb=True, add_igm=True, sigma_losvd=250.0,
+                                                dust_emission=False, support=True)))
+    else:
+        print("  (package has no wavelength_support: support configurations skipped)")
     for tag, cfg in configs:
         t0 = time.perf_counter()
         model = _build(**cfg)
         theta = _draws(model, N_THETA, rng)
         _forward(model, theta, tag, out)
         _postprocess(model, theta, tag, out)
-        _likelihood(model, theta, tag, out)
+        _likelihood(model, theta, tag, out, gauss_only=cfg.get("marg", False))
         if args.ns and tag == "plain":
             _nested(model, tag, out)
+            for kernel in _explicit_kernels():
+                _nested(model, tag, out, kernel)
         print(f"{tag:<12} {len(out)} arrays so far  ({time.perf_counter() - t0:.1f} s)")
     return out
 
@@ -358,9 +419,25 @@ def main():
     if not (args.save or args.compare):
         ap.error("--save PATH or --compare PATH")
     out = collect(args)
+    # every named slice kernel against the default-kernel nested run of this same version
+    kernel_bad, n_kernel = [], 0
+    for k in out:
+        parts = k.split("/")
+        if len(parts) > 2 and parts[1].startswith("ns_"):
+            n_kernel += 1
+            a, b = out["/".join([parts[0], "ns", *parts[2:]])], out[k]
+            if a.dtype != b.dtype or a.shape != b.shape or a.tobytes() != b.tobytes():
+                kernel_bad.append(k)
+    if n_kernel:
+        print(f"named slice kernels vs this version's default-kernel run: {n_kernel} arrays, "
+              f"{len(kernel_bad)} differ")
+        for k in kernel_bad:
+            print(f"  DIFF {k}")
     if args.save:
         np.savez(args.save, **out)
         print(f"saved {len(out)} arrays -> {args.save}")
+        if kernel_bad and not args.compare:
+            sys.exit(1)
     if args.compare:
         ref = np.load(args.compare)
         bad, missing = [], []
@@ -379,7 +456,7 @@ def main():
             print(f"  DIFF {k}: max|old-new| = {d}")
         for k in missing[:20]:
             print(f"  MISSING {k}")
-        sys.exit(1 if (bad or missing) else 0)
+        sys.exit(1 if (bad or missing or kernel_bad) else 0)
 
 
 if __name__ == "__main__":

@@ -207,3 +207,27 @@ if __name__ == "__main__":
         from pathlib import Path
         test_periodic_checkpoint_and_rescue(Path(d))
     print("checkpoint tests passed")
+
+
+@pytest.mark.parametrize("killed, resumed", [("stock", "lanes"), ("lanes", "stock"),
+                                             ("carry", "stock")])
+def test_resume_with_another_slice_kernel_reproduces_the_stock_run(tmp_path, monkeypatch,
+                                                                   killed, resumed):
+    """A checkpoint continues under any slice kernel: on CPU the run equals the uninterrupted
+    stock run bit for bit, the seeded ln Z error included."""
+    priors, loglike, logprior, theta_init = _toy()
+    ref = BlackJAXNestedSamplerAdapter(priors, checkpoint_dir=str(tmp_path / "full"),
+                                       **_KW).run(loglike, logprior, theta_init,
+                                                  jax.random.PRNGKey(0))
+    _run_killed_after(monkeypatch, 4, checkpoint_dir=str(tmp_path / "killed"),
+                      slice_kernel=killed, **_KW)
+    ck_path = glob.glob(os.path.join(tmp_path / "killed", "ns_checkpoint_*.pkl"))[0]
+    res = BlackJAXNestedSamplerAdapter(priors, checkpoint_dir=str(tmp_path / "resumed"),
+                                       resume_from=ck_path, slice_kernel=resumed, **_KW).run(
+        loglike, logprior, theta_init, jax.random.PRNGKey(0))
+    for k in theta_init:
+        assert _equal(res.samples[k], ref.samples[k]), k
+    assert _equal(res.log_likelihoods, ref.log_likelihoods)
+    assert _equal(res.log_weights, ref.log_weights)
+    assert res.log_evidence == ref.log_evidence
+    assert res.log_evidence_err == ref.log_evidence_err

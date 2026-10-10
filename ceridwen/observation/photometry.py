@@ -116,10 +116,29 @@ class Photometry(Observation):
         np.add.at(TH.T, idx[inside] + 1, (trans[:, inside] * frac[inside]).T)
         T  = TH * fnu_to_flam[None, :]
 
-        self._T = jnp.array(T.astype(np.float32))
+        T32 = T.astype(np.float32)
+        self._T = jnp.array(T32)
         self._has_precomputed_T = True
         self._broadener = None
         self._line_basis = None
+        cols = np.flatnonzero(np.any(T32 != 0.0, axis=0))
+        self._T_support = (int(cols[0]), int(cols[-1]) + 1) if cols.size else (0, 0)
+
+    @property
+    def model_support(self):
+        """``(lo, hi)``: the model-grid indices ``predict`` reads at the fixed redshift of
+        ``setup_for_model`` (the non-zero columns of ``_T``, joined with the sigma_gal
+        broadener's window when there is one); None before setup.  A Photometry projected at
+        a sampled redshift reads the whole grid (``CSPBasis._support_for`` checks ``free_z``)."""
+        s = getattr(self, "_T_support", None)
+        if s is None:
+            return None
+        b = getattr(self, "_broadener", None)
+        if b is not None:
+            idx = np.asarray(b.window.grid.idx)
+            w = (int(idx[0]), int(idx[-1]) + 1)
+            s = w if s[1] <= s[0] else (min(s[0], w[0]), max(s[1], w[1]))
+        return s
 
     def setup_broadening(self, wave_model, zred, kinematics, *, free_z=False, neb=None):
         """Build the sigma_gal broadener over the rest range the filters cover (the

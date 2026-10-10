@@ -38,11 +38,26 @@ The settings, passed in `sampler_kwargs`:
 - `num_inner_steps`: inner MCMC steps per replacement (fitSED's default 30).
 - `logZ_tol`: the run stops when the evidence left in the live points, ln(Z_live / Z), falls
   below this (default -5).
+- `slice_kernel`: the inner slice kernel, `"lanes"` (default), `"stock"` (`blackjax.nss`
+  unchanged) or `"carry"`. `"lanes"` runs every replacement's chain of slice steps as one lane
+  of a shared loop, so lanes do not wait for the slowest one, candidates below the prior slice
+  level skip the likelihood, and idle batch slots evaluate look-ahead candidates (Dance et al.
+  2025, arXiv:2503.17405; implemented by Liu Hao, @potatoist314). `"carry"` evaluates each stepping-out
+  edge once instead of twice under `vmap`. Both use the same random numbers and the same
+  evaluations as `"stock"`: on CPU the dead points, ln Z and call counts are bitwise equal
+  (`tests/test_nss_slice_kernels.py`). On a GPU the batches differ in composition, so float
+  rounding can separate the trajectories after many iterations; the results then agree
+  statistically, not bitwise. GPU runs are not bit-reproducible between processes with any
+  kernel: two `"stock"` runs with the same key on two A100s differ in the last bits. For a
+  JADES photometry + emission-line model (19 dimensions, `num_live=300`, `num_delete=64`),
+  `"lanes"` sampled 3.5-3.8x faster than `"stock"` on an A100, with the same posteriors and ln Z
+  to 2e-5 or better. On a loaded 11-core laptop CPU it was about 7x faster per iteration (one
+  measurement). Pass `slice_kernel="stock"` to run `blackjax.nss` exactly as released.
 
 The sampler shows a progress bar of dead points. Its cost scales with `num_live`: on a shared
 11-core laptop CPU, the Quick start model at `num_live=100, num_delete=20, logZ_tol=-2.0`
-took 21-29 min in two runs (67 800 likelihood calls), and at `num_live=400` it advanced about 1.3 dead points
-per second, i.e. hours.
+took 12 min with `"lanes"` and 21-29 min with `"stock"`, 67 800 likelihood calls either way; at
+`num_live=400` with `"stock"` it advanced about 1.3 dead points per second, i.e. hours.
 
 ### Checkpoints and resuming
 
@@ -51,7 +66,8 @@ With `checkpoint_dir=` (or `$CERIDWEN_CHECKPOINT_DIR`), the run writes
 pass that file as `resume_from=` with the same `rng_key` and settings: the run continues from
 the saved live and dead points and reproduces the uninterrupted run. It refuses a checkpoint
 whose settings, parameter shapes or live-point log-likelihoods (to a relative 1e-6) do not
-match the model.
+match the model. `slice_kernel` may differ between the killed run and the resumed one: the
+kernels make the same moves with the same random numbers.
 
 ```python
 result = fitSED(model, sampler="nested", output_dir="./my_fit",

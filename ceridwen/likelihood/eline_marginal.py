@@ -39,11 +39,18 @@ from jax.scipy.linalg import cho_solve, solve_triangular
 __all__ = ["ElineSystem", "build_eline_system", "eline_marginal_loglike",
            "eline_marginal_loglike_static",
            "joint_loglike", "eline_line_fluxes", "line_table_for", "line_profiles_on_grid",
-           "LYA_REST_AA", "COND_MAX"]
+           "LYA_REST_AA", "COND_MAX", "PHANTOM_LINES"]
 
 _HALF_LOG_2PI = 0.5 * np.log(2.0 * np.pi)
 LYA_REST_AA = 1215.67
 COND_MAX = 1e10
+# FSPS line names never marginalised by default (they stay at their CLOUDY flux).
+# "[O II] 3867" (3868.16 A in FSPS's emlines_info.dat) has exactly zero flux in the MIST,
+# Padova and Parsec CLOUDY cubes and a negligible one in the BPASS cubes (median 3e-4 of
+# [Ne III] 3869 over the 770 models of ZAU_ND_bpss); the forbidden line there is [Ne III] 3869
+# (3869.92 A), which stays.  With a flat prior this free column 1.8 A from [Ne III] would share
+# its flux.  (Found by Liu Hao, @potatoist314.)
+PHANTOM_LINES = ("[O II] 3867",)
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +323,13 @@ def build_eline_system(model) -> Optional[ElineSystem]:
     to_fix = set(_resolve_names(neb, spec.elines_to_fix, "elines_to_fix"))
     to_ignore = _resolve_names(neb, spec.elines_to_ignore, "elines_to_ignore")
     explicit = spec.elines_to_fit is not None
-    candidates = to_fit if explicit else list(kept)
+    phantom = [r for r in to_fit if name_of(r) in PHANTOM_LINES] if explicit else []
+    if phantom:
+        raise ValueError(
+            f"elines_to_fit lists {[name_of(r) for r in phantom]}, which FSPS names but which is "
+            "not a line to fit: its CLOUDY flux is zero or negligible (it stays at that "
+            "flux), and with a free flux it would share that of [Ne III] 3869, 1.8 A away")
+    candidates = to_fit if explicit else [r for r in kept if name_of(r) not in PHANTOM_LINES]
     candidates = [r for r in candidates if r not in to_fix and r not in set(to_ignore)]
 
     # coverage at every redshift the projector serves, at the start value of sigma_gas
