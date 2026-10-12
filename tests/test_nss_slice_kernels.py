@@ -1,8 +1,7 @@
 """Inner slice kernels of BlackJAXNestedSamplerAdapter: "carry" and "lanes" must be bitwise
 equal to the stock blackjax.nss kernel on CPU (same random numbers, same evaluations).
 
-Adapted from the tests of Liu Hao's fork (potatoist314/ceridwen, tests/test_nss_diagnostics.py
-at 2d5edc9) to this adapter, which has no iteration callback: the comparisons run the kernels'
+Adapted from tests by Liu Hao (@potatoist314) to this adapter, which has no iteration callback: the comparisons run the kernels'
 ``step`` functions directly, and one test compares whole adapter runs.
 """
 import jax
@@ -211,12 +210,26 @@ def test_log_evidence_err_is_reproducible_and_leaves_global_rng_alone():
     assert after_a == expected          # the global RNG continued as if the run never drew
 
 
-def test_result_provenance_records_an_opt_in_kernel_only():
-    """The result file's sampler settings and the fit log name the kernel when it is not
-    "stock"; for "stock" they are unchanged, so earlier files read the same."""
+def test_result_provenance_records_a_non_stock_kernel_only():
+    """The result file's sampler settings name the kernel when it is not "stock"; for "stock"
+    they have no slice_kernel entry, so files written before the option existed (all stock)
+    read the same.  The default, "lanes", is therefore recorded."""
     from ceridwen.fit import adapter_settings
-    stock = adapter_settings(BlackJAXNestedSamplerAdapter({}, verbose=False))
-    lanes = adapter_settings(BlackJAXNestedSamplerAdapter({}, verbose=False,
-                                                          slice_kernel="lanes"))
+    stock = adapter_settings(BlackJAXNestedSamplerAdapter({}, verbose=False,
+                                                          slice_kernel="stock"))
+    default = adapter_settings(BlackJAXNestedSamplerAdapter({}, verbose=False))
     assert "slice_kernel" not in stock
-    assert lanes.pop("slice_kernel") == "lanes" and lanes == stock
+    assert default.pop("slice_kernel") == "lanes" and default == stock
+
+
+def test_default_slice_kernel_is_lanes_everywhere():
+    """The adapter and fitSED(sampler="nested") (the Quick start's path) both run "lanes"
+    unless told otherwise; an explicit "stock" is still honoured."""
+    import types
+    from ceridwen.fit import _build_adapter
+    assert BlackJAXNestedSamplerAdapter({}, verbose=False).slice_kernel == "lanes"
+    model = types.SimpleNamespace(priors={})
+    for name in ("nested", "ns", "nss"):
+        assert _build_adapter(name, model, {}, verbose=False).slice_kernel == "lanes"
+    assert _build_adapter("nested", model, {"slice_kernel": "stock"},
+                          verbose=False).slice_kernel == "stock"

@@ -219,6 +219,8 @@ def main() -> int:
     # library-default logZ_tol (-5.0, ~0.7% of the evidence left in the live
     # set at termination); expect much longer on CPU.  The relaxed -2.0 below
     # is a demo-runtime compromise only.
+    # The inner slice kernel is slice_kernel="lanes", the default and the fastest; it gives
+    # exactly the samples of blackjax.nss (slice_kernel="stock") on CPU.  docs/samplers.md.
     adapter = BlackJAXNestedSamplerAdapter(
         priors=model.priors, num_live=150, num_inner_steps=max(8, n_dims * 2),
         logZ_tol=-2.0, verbose=True,

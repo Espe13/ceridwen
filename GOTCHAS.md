@@ -304,6 +304,14 @@ prefer `predict`/`get_spectrum_components`.
   error is NaN. Either way `log_weights` are the aligned per-point weights.
   anesthetic draws the error from numpy's global RNG; the adapter seeds it from `rng_key` and
   restores the global state afterwards, so the same key gives the same error bar.
+- **Same `rng_key` reproduces a run byte for byte on CPU, not on GPU.** The default slice
+  kernel is `"lanes"`; on CPU it gives exactly the dead points of `slice_kernel="stock"`
+  (`blackjax.nss`). On a GPU, two runs with the same key, even with the same kernel on two
+  GPUs of one node, differ in the last bits (already in setup-time reductions such as the filter
+  effective wavelengths), and a late slice decision can then send the run along a different
+  but statistically equivalent path (seen once in four `"lanes"` runs: ln Z changed by 2e-5,
+  quoted error 0.24). Compare GPU runs by their posteriors and ln Z within errors, never with
+  `tobytes()`.
 
 ## 11. Sampled redshift, noise terms and fit-time checks
 

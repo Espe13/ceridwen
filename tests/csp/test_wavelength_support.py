@@ -1,4 +1,4 @@
-"""C1: ``CSPBasis(wavelength_support=True)`` synthesises only the model pixels the observations
+"""``CSPBasis(wavelength_support=True)`` synthesises only the model pixels the observations
 read and zero-fills the rest after the mass / flux / IGM scaling.
 
 Reference: the same model on the whole grid (the default).  The two are not byte-identical:

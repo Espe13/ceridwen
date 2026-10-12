@@ -139,14 +139,15 @@ rebuilt at every call. Each profile is exactly 0 in float64 more than about 38.6
 sigma from its centre, so an opt-in windowed basis evaluates each line on a static
 window of +-40 of its largest sigma only (that sigma is set by `Kinematics.sigma_max` for a sampled
 `sigma_gas`, the top of the instrument-scale range, and the line centres over `zred_range`) and
-gives bitwise the dense values (its gradients agree to 1-2 ulp, the reverse pass
-summing over the window). Turn it on after building the model and before the first
+gives bitwise the dense values on CPU (its gradients agree to 1-2 ulp, the reverse pass
+summing over the window); on a GPU, XLA may contract the windowed basis into a fused
+multiply-add, so the log-likelihood can differ from the dense one in the last bits. Turn it on after building the model and before the first
 likelihood call: `model.obs_dict["spec"]._proj.enable_line_windows()` (a rebuilt
 projector, as `fitSED(observations=...)` makes, starts with it off). It is off by
-default because on CPU it measured slower (the full likelihood 0.99-1.14 times at batch
-widths 64 and 100, 4000- and 400-pixel spectra): there the cost is filling the matrix,
-not the exponentials. It is meant for GPUs, where it has yet to be timed on
-this code (`scripts/gpu_bench_l1.py`). A sampled `eline_delta_zred` always takes the
+default because on CPU it is no faster (the full likelihood 0.99-1.14 times the dense one's
+time at batch widths 64 and 100, 4000- and 400-pixel spectra): there the cost is filling the
+matrix, not the exponentials. On an A100 it took 0.77-0.96 times the dense time for a
+4000-pixel grating-like spectrum and 0.97-0.99 times for a 400-pixel prism-like one. A sampled `eline_delta_zred` always takes the
 dense path; a sampled redshift outside `zred_range` truncates the windowed lines.
 
 ## Noise terms

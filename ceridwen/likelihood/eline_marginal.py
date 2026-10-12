@@ -49,7 +49,7 @@ COND_MAX = 1e10
 # Padova and Parsec CLOUDY cubes and a negligible one in the BPASS cubes (median 3e-4 of
 # [Ne III] 3869 over the 770 models of ZAU_ND_bpss); the forbidden line there is [Ne III] 3869
 # (3869.92 A), which stays.  With a flat prior this free column 1.8 A from [Ne III] would share
-# its flux.  (Found by Liu Hao's fork, potatoist314/ceridwen 1fae781.)
+# its flux.  (Found by Liu Hao, @potatoist314.)
 PHANTOM_LINES = ("[O II] 3867",)
 
 

@@ -1,7 +1,7 @@
-"""E6: ``SSPData.ssp_flux`` is a read-only host NumPy array, and the device keeps only the
+"""``SSPData.ssp_flux`` is a read-only host NumPy array, and the device keeps only the
 CSP's float32 cube.
 
-Reference: the previous behaviour, a float64 device array cast by XLA on the device
+Reference: a float64 device array cast by XLA on the device
 (``jnp.array(jnp.asarray(flux64), dtype=float32)``).  The CSP's cube must be byte-identical to
 it (XLA's convert flushes float32 subnormals; a NumPy cast would not), the content hash must
 not change, and after building a CSP no float64 grid-sized array may be alive on the device.
@@ -60,7 +60,7 @@ def test_csp_cube_byte_identical_and_no_float64_cube_on_device():
     ssp = SSPData.load(str(GRID))
     ref = np.asarray(jnp.array(jnp.asarray(ssp.ssp_flux), dtype=jnp.float32))
     gc.collect()
-    # other tests of the session may hold grid-sized float64 arrays: only new ones count
+    # other tests in the same process may hold grid-sized float64 arrays: only new ones count
     before = {id(a) for a in _grid_sized_f64_on_device(ssp.ssp_flux.shape)}
     csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 5.0, 4), add_neb=False,
                    verbose=False, cosmo=Cosmology.planck18())

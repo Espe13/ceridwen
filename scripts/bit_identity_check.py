@@ -6,10 +6,11 @@ a short nested-sampling run between two versions of the package.
     git checkout <new>;          python scripts/bit_identity_check.py --compare /tmp/bits_old.npz
 
 Every array is compared with ``tobytes()`` (dtype, shape and every bit).  Add ``--ns`` to
-include a small nested-sampling run (same rng key; samples, log_weights, logL, logZ), and,
-when the adapter has ``slice_kernel=``, the same run with the opt-in kernels "carry" and "lanes"
-(keys ``plain/ns_<kernel>/...``), which on CPU must be byte-identical to the stock run of the
-same version (checked in every mode; exit 1 if not).
+include a small nested-sampling run (same rng key; samples, log_weights, logL, logZ) with the
+package's default slice kernel (keys ``plain/ns/...``) and, when the adapter has
+``slice_kernel=``, the same run with every kernel named explicitly (keys ``plain/ns_<kernel>/...``),
+which on CPU must be byte-identical to the default run of the same version (checked in every
+mode; exit 1 if not).
 Needs the test grid (see tests/_gridfixture.py); the nebular block runs only with $SPS_HOME.
 """
 from __future__ import annotations
@@ -62,7 +63,7 @@ def _flat(prefix, obj, out):
 
 def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False, lsf=None,
            interp="step", track=False, zred=ZRED, spec_wave=SPEC_WAVE, filters=FILTERS,
-           marg=False, line_windows=False, support=False, hoist_ff=False, agn=None):
+           marg=False, line_windows=False, support=False, agn=None):
     path = find_test_grid()
     if path is None:
         sys.exit("no test SSP grid found (tests/_gridfixture.py)")
@@ -76,7 +77,7 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
         kw["track_zred_age"] = True
     if gas_tied:
         kw["gas_tied"] = True          # v1.0.5 path: gas_logz := logzsol
-    if support:                        # C1: only the model pixels the observations read
+    if support:                        # only the model pixels the observations read
         kw["wavelength_support"] = True
     if igm_dla:                        # IGM damping wing + DLA with sampled theta keys
         from ceridwen.igm import MadauDampingDLA
@@ -125,17 +126,10 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
                           gas_logz=lambda th: jnp.array([-0.3]))
         init["sigma_gas"] = jnp.array([120.0])
         kin = Kinematics(sigma_gal=sigma_losvd, sigma_gas="sigma_gas", sigma_max=600.0)
-    hoist_saved = getattr(SedModel, "_hoist_flux_factor", None)
-    if hoist_ff:                       # E2: the fixed-z flux factor computed at construction
-        SedModel._hoist_flux_factor = True
-    try:
-        model = SedModel(csp, obs, priors={}, transforms=transforms,
-                         free_param_init=init, zred=zred, kinematics=kin,
-                         # a sampled sigma_gas in the joint marginal needs unbroadened photometry
-                         **({"broaden_photometry": False} if marg else {}))
-    finally:
-        if hoist_saved is not None:
-            SedModel._hoist_flux_factor = hoist_saved
+    model = SedModel(csp, obs, priors={}, transforms=transforms,
+                     free_param_init=init, zred=zred, kinematics=kin,
+                     # a sampled sigma_gas in the joint marginal needs unbroadened photometry
+                     **({"broaden_photometry": False} if marg else {}))
     proj = model.obs_dict["spec"]._proj
     if line_windows and hasattr(proj, "enable_line_windows"):
         # the windowed line basis (opt-in); a package without it runs the dense one, which is
@@ -309,7 +303,8 @@ def _likelihood(model, theta_np, tag, out, gauss_only=False):
         obs[k].flux, obs[k].uncertainty = flux, unc
 
 
-def _nested(model, tag, out, kernel="stock"):
+def _nested(model, tag, out, kernel=None):
+    """One short nested run; ``kernel=None`` passes no slice_kernel (the package default)."""
     from ceridwen import fitSED
     from ceridwen.sampler.priors import Uniform, StudentT
     model.priors = {"logsfr_ratios": StudentT(mean=0.0, scale=1.0, df=2.0),
@@ -328,7 +323,7 @@ def _nested(model, tag, out, kernel="stock"):
     model.priors = {k: v for k, v in model.priors.items() if k in model.param_names}
     skw = {"num_live": 40, "num_delete": 8, "num_inner_steps": 10, "logZ_tol": -1.0}
     ns = "ns"
-    if kernel != "stock":           # the stock run keeps the sampler_kwargs (and keys) of old
+    if kernel is not None:          # the default run keeps the sampler_kwargs (and keys) of old
         skw["slice_kernel"] = kernel
         ns = f"ns_{kernel}"
     result = fitSED(model, sampler="nested", rng_key=jax.random.PRNGKey(7),
@@ -340,14 +335,14 @@ def _nested(model, tag, out, kernel="stock"):
     out[f"{tag}/{ns}/logZ"] = np.asarray([result.log_evidence, result.log_evidence_err])
 
 
-def _opt_in_kernels():
-    """The adapter's opt-in slice kernels (none in versions without ``slice_kernel=``)."""
+def _explicit_kernels():
+    """Every slice kernel, to be run by name (none in versions without ``slice_kernel=``)."""
     import inspect
     from ceridwen.sampler.nested import BlackJAXNestedSamplerAdapter
     if "slice_kernel" not in inspect.signature(BlackJAXNestedSamplerAdapter).parameters:
         return []
     from ceridwen.sampler.nested import SLICE_KERNELS
-    return [k for k in SLICE_KERNELS if k != "stock"]
+    return list(SLICE_KERNELS)
 
 
 def collect(args):
@@ -395,7 +390,7 @@ def collect(args):
                     lsf="lsf_scale", marg=True)
         configs.append(("neb_marg_dense", marg))
         configs.append(("neb_marg_windows", dict(marg, line_windows=True)))
-    # C1, CSPBasis(wavelength_support=True): the opt-in path that synthesises only the model
+    # CSPBasis(wavelength_support=True): the opt-in path that synthesises only the model
     # pixels the observations read (not byte-identical to the whole grid, so its own
     # configurations); appended last, earlier draws unchanged
     import inspect
@@ -407,11 +402,6 @@ def collect(args):
                                                 dust_emission=False, support=True)))
     else:
         print("  (package has no wavelength_support: support configurations skipped)")
-    # E2, SedModel._hoist_flux_factor (opt-in): byte-identical to the per-call path by test;
-    # its own configuration so the path stays covered; appended last
-    if hasattr(SedModel, "_hoist_flux_factor") and os.environ.get("SPS_HOME"):
-        configs.append(("neb_ffhoist", dict(add_neb=True, add_igm=True, sigma_losvd=250.0,
-                                            dust_emission=False, hoist_ff=True)))
     # ceridwen.agn (CSPBasis(agn=...)): the torus of each mode, the disc + dust4 screen + lines,
     # the energy balance and the C1 support path with the AGN on; appended last, earlier draws
     # unchanged
@@ -442,7 +432,7 @@ def collect(args):
         _likelihood(model, theta, tag, out, gauss_only=cfg.get("marg", False))
         if args.ns and tag == "plain":
             _nested(model, tag, out)
-            for kernel in _opt_in_kernels():
+            for kernel in _explicit_kernels():
                 _nested(model, tag, out, kernel)
         print(f"{tag:<12} {len(out)} arrays so far  ({time.perf_counter() - t0:.1f} s)")
     return out
@@ -457,7 +447,7 @@ def main():
     if not (args.save or args.compare):
         ap.error("--save PATH or --compare PATH")
     out = collect(args)
-    # the opt-in slice kernels against the stock nested run of this same version
+    # every named slice kernel against the default-kernel nested run of this same version
     kernel_bad, n_kernel = [], 0
     for k in out:
         parts = k.split("/")
@@ -467,7 +457,7 @@ def main():
             if a.dtype != b.dtype or a.shape != b.shape or a.tobytes() != b.tobytes():
                 kernel_bad.append(k)
     if n_kernel:
-        print(f"opt-in slice kernels vs this version's stock run: {n_kernel} arrays, "
+        print(f"named slice kernels vs this version's default-kernel run: {n_kernel} arrays, "
               f"{len(kernel_bad)} differ")
         for k in kernel_bad:
             print(f"  DIFF {k}")

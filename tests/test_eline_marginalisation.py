@@ -753,7 +753,7 @@ def _model_on(csp0, wave, **spec_kw):
 def test_phantom_oii_3867_is_not_marginalised():
     """FSPS's "[O II] 3867" (3868.16 A) has zero or negligible CLOUDY flux: it is not
     a default marginalised line next to [Ne III] 3869, and naming it explicitly is refused
-    (fork 1fae781)."""
+    """
     from ceridwen.likelihood.eline_marginal import line_table_for, PHANTOM_LINES
     if not __import__("os").environ.get("SPS_HOME"):
         pytest.skip("SPS_HOME not set (the line list is $SPS_HOME/data/emlines_info.dat)")

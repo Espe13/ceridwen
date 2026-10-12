@@ -100,7 +100,8 @@ def test_write_read_roundtrip(model, tmp_path):
     n_dims = sum(int(np.size(v)) for v in model.theta_init.values())
     assert prov["sampler"] == {"adapter": "BlackJAXNestedSamplerAdapter", "num_live": 40,
                                "num_inner_steps": 5 * n_dims, "num_delete": 8,
-                               "logZ_tol": -2.5, "checkpoint_interval_s": 1200.0}
+                               "logZ_tol": -2.5, "checkpoint_interval_s": 1200.0,
+                               "slice_kernel": "lanes"}      # the default; absent = "stock"
     np.testing.assert_array_equal(prov["rng_key"], np.asarray(key))
     assert read_provenance(path).keys() == prov.keys()
 

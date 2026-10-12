@@ -17,6 +17,7 @@ one gather + select.  The contract is byte identity with the dense ``line_basis`
 """
 from __future__ import annotations
 
+import inspect
 import os
 import pathlib
 import sys
@@ -32,6 +33,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from ceridwen.broadening import (SpectralProjector, Kinematics, Instrument,  # noqa: E402
                                  _LINE_WINDOW_NSIGMA, _line_windows)
+from ceridwen import SSPData, CSPBasis, SedModel, Cosmology            # noqa: E402
+from ceridwen.model.transforms import logsfr_ratios_to_sfh             # noqa: E402
+from ceridwen.observation import Spectrum                              # noqa: E402
+from ceridwen.priors import Uniform                                    # noqa: E402
+from ceridwen.sampler.nested import BlackJAXNestedSamplerAdapter       # noqa: E402
+from _gridfixture import find_test_grid                                # noqa: E402
 
 WAVE_MODEL = np.geomspace(300.0, 40000.0, 30000)
 _rng = np.random.default_rng(3)
@@ -201,16 +208,71 @@ def test_gradients_finite_and_equal_to_the_dense_ones():
 # the full model (test grid + CLOUDY)
 # ---------------------------------------------------------------------------
 
+_N_TIME = 7
+_WORKLOADS = {"grating": GRATING, "prism": PRISM}
+
+
+def _num_delete_default() -> int:
+    num_live = inspect.signature(BlackJAXNestedSamplerAdapter.__init__).parameters["num_live"].default
+    return max(1, int(num_live) // 5)
+
+
+def _build_csp():
+    path = find_test_grid()
+    if path is None:
+        pytest.skip("no test SSP grid (see tests/_gridfixture.py)")
+    if not os.environ.get("SPS_HOME"):
+        pytest.skip("SPS_HOME not set (CLOUDY nebular grids)")
+    cosmo = Cosmology.planck18()
+    return CSPBasis(SSPData.load(str(path)),
+                    lookback_time=jnp.linspace(0.0, float(cosmo.age(ZRED)), _N_TIME),
+                    zh_const=True, sfh_interp="step", add_dust=True, add_diffuse_dust=True,
+                    add_neb=True, add_igm=False, verbose=False, cosmo=cosmo,
+                    sps_home=os.environ["SPS_HOME"])
+
+
+def _build_model(csp, wave, R, sigma_max):
+    t = np.array(csp.sfh_times)
+    init = {"logsfr_ratios": jnp.zeros(len(t) - 1), "logmass": jnp.array([10.0]),
+            "sigma_gas": jnp.array([0.3 * sigma_max])}
+    tr = {"sfh": lambda th, _t=t: logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t),
+          # marginalised line fluxes: the nebular parameters are fixed (eline_marginal refuses
+          # them sampled)
+          "gas_logu": lambda th: jnp.array([-2.5]), "gas_logz": lambda th: jnp.array([-0.3])}
+    n = wave.size
+    spec = Spectrum(wavelength=wave, flux=np.ones(n), uncertainty=np.full(n, 0.1),
+                    instrument=Instrument.R_fwhm(R), name="spec", marginalize_elines=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        model = SedModel(csp, [spec], transforms=tr, free_param_init=init, zred=ZRED,
+                         priors={"sigma_gas": Uniform(low=0.0, high=sigma_max)},
+                         kinematics=Kinematics(sigma_gal=150.0, sigma_gas="sigma_gas",
+                                               sigma_max=sigma_max))
+    y = np.asarray(model.predict({k: jnp.asarray(v) for k, v in model.theta_init.items()})["spec"])
+    rng = np.random.default_rng(0)
+    e = 0.05 * np.abs(y) + 1e-3 * np.median(np.abs(y))
+    spec.flux = jnp.asarray(y + e * rng.standard_normal(n))
+    spec.uncertainty = jnp.asarray(e)
+    return model
+
+
+def _bench_draws(model, W, sigma_max, seed):
+    rng = np.random.default_rng(seed)
+    th = {}
+    for k, v in model.theta_init.items():
+        base = np.asarray(v, dtype=float)
+        th[k] = base[None, :] + 0.05 * rng.standard_normal((W,) + base.shape)
+    th["sigma_gas"] = rng.uniform(0.0, sigma_max, (W, 1))
+    return {k: jnp.asarray(v) for k, v in th.items()}
+
+
 @pytest.fixture(scope="module")
 def bench():
-    from _gridfixture import find_test_grid
     if find_test_grid() is None:
         pytest.skip("no test SSP grid (see tests/_gridfixture.py)")
     if not os.environ.get("SPS_HOME"):
         pytest.skip("SPS_HOME not set (CLOUDY nebular grids)")
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
-    import gpu_bench_l1 as B
-    return B, B.build_csp()
+    return _build_csp()
 
 
 @pytest.mark.fsps
@@ -218,15 +280,15 @@ def bench():
 def test_marginalised_likelihood_bitwise_at_production_width(bench, workload):
     from ceridwen.fit import _likelihood_for
     from ceridwen.likelihood import MultiObservationLikelihood
-    B, csp = bench
-    wave, R = B.WORKLOADS[workload]
+    csp = bench
+    wave, R = _WORKLOADS[workload]
     smax = 500.0
-    model = B.build_model(csp, wave, R, smax)
+    model = _build_model(csp, wave, R, smax)
     proj = model.obs_dict["spec"]._proj
     lh = MultiObservationLikelihood(
         keys=tuple(model.obs_dict),
         likelihoods=tuple(_likelihood_for(o, model.param_names) for o in model.observations))
-    th = B.draws(model, B.num_delete_default(), smax, seed=11)
+    th = _bench_draws(model, _num_delete_default(), smax, seed=11)
     out = {}
     for arm in ("dense", "windowed"):
         if arm == "windowed":

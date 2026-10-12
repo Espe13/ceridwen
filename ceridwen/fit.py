@@ -1017,7 +1017,8 @@ def adapter_settings(adapter, model=None) -> dict:
                                else max(1, adapter.num_live // 5)),
                    logZ_tol=adapter.logZ_tol,
                    checkpoint_interval_s=adapter.checkpoint_interval_s)
-        # the opt-in inner slice kernel; absent for "stock", so earlier files read the same
+        # the inner slice kernel (default "lanes"); absent means "stock", as in every file
+        # written before slice_kernel= existed, so those files still read correctly
         kernel = getattr(adapter, "slice_kernel", "stock")
         if kernel != "stock":
             out["slice_kernel"] = kernel
