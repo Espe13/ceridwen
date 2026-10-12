@@ -10,6 +10,7 @@ own keys (``IGMModel.param_names``; x_HI, logN_HI, z_dla for MadauDampingDLA).
 
 import math
 import os
+import types
 import warnings
 
 import numpy as np
@@ -159,6 +160,21 @@ def _per_pixel(fn):
 def _sel(x, support):
     """``x[..., support]`` (a static slice of the wavelength axis), or ``x`` itself for None."""
     return x if support is None else x[..., support]
+
+
+def spectrum_model_name(csp, default=None):
+    """The kernel name recorded (``ceridwen/fit.py``) and displayed (``SedModel.summary``,
+    ``display_model``) for ``csp``: ``<kernel>_agn`` while ``get_spectrum`` is the AGN wrapper,
+    else ``get_spectrum.__name__`` (``default`` without one).
+
+    ``CSPBasis._with_agn`` installs the AGN wrapper as a BOUND METHOD, so that a copy can be
+    re-bound to itself (``explorer/reports/AGN_COPY_BUG.md``); a bound method's ``__name__`` is
+    its function's, so the wrapped kernel's name is read from ``csp._agn_base_name``."""
+    fn = getattr(csp, "get_spectrum", None)
+    if getattr(fn, "__func__", None) in (CSPBasis._agn_get_spectrum,
+                                         CSPBasis._agn_get_spectrum_support):
+        return csp._agn_base_name + "_agn"
+    return getattr(fn, "__name__", default)
 
 
 class CSPBasis:
@@ -725,35 +741,47 @@ class CSPBasis:
 
 
     def set_attenuation_function(self, add_diffuse_dust, add_dust):
-        """Assign ``self.attenuate_dust(wave, theta) -> (attn_birthcloud (n_bins, n_wave), attn_diffuse (n_wave,))`` as optical depths."""
+        """Assign ``self.attenuate_dust(wave, theta) -> (attn_birthcloud (n_bins, n_wave), attn_diffuse (n_wave,))`` as optical depths.
+
+        The attribute is a BOUND METHOD of this instance (one of ``_attenuate_*``), not a closure
+        over ``self``: a shallow copy whose stored bound methods are re-bound to the copy then
+        reads the COPY's dust models.  The expressions are unchanged (bit-identical).  It is set
+        only when dust is configured, so ``hasattr(csp, "attenuate_dust")`` keeps meaning
+        "this CSP attenuates" (``model.py``, ``_agn_galaxy_ldust``)."""
         if add_diffuse_dust and add_dust:
-            def attenuate(wave, theta):
-                attn         = self.dust_attn.compute_attenuation(wave, theta)
-                attn_diffuse = self.diff_dust.compute_attenuation(wave, theta)
-                return attn, attn_diffuse
             if self.verbose:
                 print("Using combined (binwise + diffuse) dust attenuation.")
-            self.attenuate_dust = attenuate
+            self.attenuate_dust = types.MethodType(CSPBasis._attenuate_bc_and_diffuse, self)
 
         elif add_dust and not add_diffuse_dust:
-            def attenuate_without_diffuse(wave, theta):
-                attn         = self.dust_attn.compute_attenuation(wave, theta)
-                attn_diffuse = jnp.zeros((wave.shape[0],))
-                return attn, attn_diffuse
             if self.verbose:
                 print("Using only binwise dust attenuation.")
-            self.attenuate_dust = attenuate_without_diffuse
+            self.attenuate_dust = types.MethodType(CSPBasis._attenuate_bc_only, self)
 
         elif add_diffuse_dust and not add_dust:
             self.bin_low  = jnp.array([-jnp.inf])
             self.bin_high = jnp.array([jnp.inf])
-            def attenuate_diffuse_only(wave, theta):
-                attn_diffuse = self.diff_dust.compute_attenuation(wave, theta)
-                attn         = jnp.zeros((1, wave.shape[0]))
-                return attn, attn_diffuse
             if self.verbose:
                 print("Using only diffuse dust attenuation.")
-            self.attenuate_dust = attenuate_diffuse_only
+            self.attenuate_dust = types.MethodType(CSPBasis._attenuate_diffuse_only, self)
+
+    def _attenuate_bc_and_diffuse(self, wave, theta):
+        """Birth-cloud and diffuse optical depths (``add_dust`` and ``add_diffuse_dust``)."""
+        attn         = self.dust_attn.compute_attenuation(wave, theta)
+        attn_diffuse = self.diff_dust.compute_attenuation(wave, theta)
+        return attn, attn_diffuse
+
+    def _attenuate_bc_only(self, wave, theta):
+        """Birth-cloud optical depths only; the diffuse screen is zero (``add_diffuse_dust=False``)."""
+        attn         = self.dust_attn.compute_attenuation(wave, theta)
+        attn_diffuse = jnp.zeros((wave.shape[0],))
+        return attn, attn_diffuse
+
+    def _attenuate_diffuse_only(self, wave, theta):
+        """Diffuse optical depths only; the birth-cloud term is zero (``add_dust=False``)."""
+        attn_diffuse = self.diff_dust.compute_attenuation(wave, theta)
+        attn         = jnp.zeros((1, wave.shape[0]))
+        return attn, attn_diffuse
 
     def initialize_neb(self, add_neb, theta, init_neb_params, sps_home):
         if add_neb:
@@ -1207,22 +1235,50 @@ class CSPBasis:
         return out
 
     def _with_agn(self, base):
-        """``base`` (a ``get_spectrum_*`` kernel) plus the AGN continuum, cast to its dtype; keeps
-        its ``_per_pixel`` mark and ``support=`` (the AGN is computed on the whole grid, then
-        sliced)."""
+        """``base`` (a ``get_spectrum_*`` kernel) plus the AGN continuum, cast to its dtype, as a
+        BOUND METHOD of this instance.
+
+        Nothing is captured in a closure.  The returned method resolves the kernel through
+        ``self._agn_base`` (by name, ``self._agn_base_name``) and the AGN term through
+        ``self._agn_rest`` when it is CALLED, so a shallow copy whose stored bound methods are
+        re-bound to the copy (the shared-template recipe: ``copy.copy`` + re-bind +
+        ``initialize_model_structure``) evaluates the COPY's stars and AGN, not the template's.
+        A closure could not be re-bound, which is the bug in
+        ``explorer/reports/AGN_COPY_BUG.md``.
+
+        Keeps the base's ``_per_pixel`` mark and its ``support=`` signature (the AGN is computed
+        on the whole grid, then sliced).  The kernel-name provenance ``<base>_agn`` that
+        ``fit.py`` records comes from ``spectrum_model_name`` (``self._agn_base_name``), since a
+        bound method's ``__name__`` is its function's."""
+        self._agn_base_name = getattr(base, "__func__", base).__name__
+        if getattr(getattr(self, self._agn_base_name, None), "__func__", None) \
+                is not getattr(base, "__func__", None):
+            raise TypeError(
+                f"CSPBasis._with_agn: the spectrum kernel {self._agn_base_name!r} is not a method "
+                f"of {type(self).__name__} under that name, so the AGN wrapper cannot resolve it "
+                "on the instance (a copy would evaluate the wrong kernel)")
+        fn = (CSPBasis._agn_get_spectrum_support
+              if getattr(base, "_per_pixel", False) else CSPBasis._agn_get_spectrum)
+        return types.MethodType(fn, self)
+
+    def _agn_base(self, theta, *, include_lines=None, support=None):
+        """The ``get_spectrum_*`` kernel the AGN wrapper adds to, resolved on THIS instance
+        (``self._agn_base_name``).  ``support`` is forwarded only to a ``_per_pixel`` kernel."""
+        base = getattr(self, self._agn_base_name)
         if getattr(base, "_per_pixel", False):
-            def get_spectrum(theta, *, include_lines=None, support=None):
-                spec = base(theta, include_lines=include_lines, support=support)
-                return spec + _sel(self._agn_rest(theta), support).astype(spec.dtype)
-            get_spectrum._per_pixel = True
-        else:
-            def get_spectrum(theta, *, include_lines=None):
-                spec = base(theta, include_lines=include_lines)
-                return spec + self._agn_rest(theta).astype(spec.dtype)
-        get_spectrum.__name__ = getattr(base, "__name__", "get_spectrum") + "_agn"
-        get_spectrum.__doc__ = base.__doc__
-        get_spectrum._agn_base = base
-        return get_spectrum
+            return base(theta, include_lines=include_lines, support=support)
+        return base(theta, include_lines=include_lines)
+
+    @_per_pixel
+    def _agn_get_spectrum_support(self, theta, *, include_lines=None, support=None):
+        """``_agn_base`` + the AGN continuum, on ``support`` (a ``_per_pixel`` kernel)."""
+        spec = self._agn_base(theta, include_lines=include_lines, support=support)
+        return spec + _sel(self._agn_rest(theta), support).astype(spec.dtype)
+
+    def _agn_get_spectrum(self, theta, *, include_lines=None):
+        """``_agn_base`` + the AGN continuum, on the whole model grid."""
+        spec = self._agn_base(theta, include_lines=include_lines)
+        return spec + self._agn_rest(theta).astype(spec.dtype)
 
     def _agn_after_igm(self, theta, trans, dtype, support=None, flux_factor=None):
         """Reproduction modes (``AGNHook.own_igm``): ``agn * (T_agn - T_gal)`` scaled by mass and

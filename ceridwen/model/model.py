@@ -13,6 +13,7 @@ import numpy as np
 
 from ceridwen.observation.observation import Observation, Photometry, Spectrum, Lines
 from ceridwen.broadening import Kinematics, DEFAULT_KINEMATICS, TIED
+from ceridwen.csp.csp import spectrum_model_name as _spectrum_model_name
 
 Array = jax.Array
 
@@ -876,7 +877,7 @@ class SedModel:
         lines = [
             "SedModel",
             "=" * 50,
-            f"CSP spectrum model : {self.csp.get_spectrum.__name__}",
+            f"CSP spectrum model : {_spectrum_model_name(self.csp)}",
             f"Wavelength range   : {float(self.wave.min()):.0f} – "
                                    f"{float(self.wave.max()):.0f} Å",
             f"Cosmology          : {self.cosmo.describe()}",
@@ -1271,9 +1272,7 @@ class SedModel:
             r"$f_\nu(\lambda\,;\,\boldsymbol{\theta})$",
             fs=13, weight="bold", color=C["sed_ec"])
 
-        variant_raw = getattr(
-            getattr(self.csp, "get_spectrum", None), "__name__", "get_spectrum"
-        )
+        variant_raw = _spectrum_model_name(self.csp, "get_spectrum")
         _VARIANT_MAP = {
             "dattn_dem_neb":       "dust  ·  dust-em.  ·  neb.",
             "dattn_nodem_neb":     "dust  ·  neb.",

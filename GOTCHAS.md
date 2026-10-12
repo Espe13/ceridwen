@@ -737,6 +737,17 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
   once. Real Prospector's AGN-only torus photometry is 1.39-1.90x CERIDWEN's prospector mode.
 - **The torus templates** are read from `$SPS_HOME/dust/Nenkova08_y010_torusg_n10_q2.0.dat`
   (`python -m ceridwen.check` reports them); the result file records their sha256.
+- **Copying a CSP with `agn=`.** The AGN wrapper is a BOUND METHOD (`CSPBasis._with_agn`
+  returns `types.MethodType(...)`), so the shared-template recipe — `copy.copy`, re-bind every
+  bound method stored on the instance to the copy, then `initialize_model_structure` with new
+  age bins — gives a copy that evaluates its OWN stars and AGN
+  (`tests/agn/test_copy_rebind.py`). A driver that copies a template must re-bind the bound
+  methods stored on the instance (`get_spectrum`, `calculate_ssp_weights`, and `attenuate_dust`
+  with dust); a plain
+  `copy.copy` without re-binding still leaves the copy pointing at the template's kernels, as
+  it does without `agn=`. Until 2026-10-09 the wrapper was a closure, which no re-binding can
+  reach: such a copy silently returned the TEMPLATE's spectrum
+  (`explorer/reports/AGN_COPY_BUG.md`).
 
 ## 26. AGN2: SKIRTOR, polar dust, Feltre+16 NLR, BLR (`docs/agn.md`, "AGN2")
 
@@ -767,3 +778,30 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
 - **Line profiles differ from CIGALE's at order sigma/c.** CERIDWEN paints every line as a
   Gaussian in ln lambda; CIGALE's AGN lines are Gaussian in lambda (4.7e-4 of the peak at FWHM
   800 km/s, 4.1e-3 at 7000 km/s; same area). `"cigale"` mode keeps CERIDWEN's painter.
+
+## 27. AGN2: what is fixed by design (`docs/agn.md`, "Fixed by design")
+
+- **`agn_elum` and `blr_lum` are luminosities per formed solar mass, and `fagn` does not scale
+  them.** The three line sets return `agn_elum * ratio` / `blr_lum * ratio_halpha`
+  (`ceridwen/agn/nlr.py:283`, `lines.py:154`, `blr.py:160`) and read no continuum quantity, so
+  **broad lines without an AGN continuum are a legal model** (`fagn = fagn_bbb = 0`,
+  `blr_lum > 0`). Only the lines constrain them WITHOUT the energy balance; with
+  `agn_energy_balance=True` the line light the galaxy's dust absorbs joins DL07
+  (`hook.py:293-304`, `blr_absorbed` at `hook.py:337-349`), so the IR constrains them too.
+  Judge a prior against the galaxy's own
+  nebular H beta, of order 1e-3 to 1 L_sun per M_sun formed: `agn_elum = 1` is an NLR H beta
+  comparable with the whole galaxy's.
+- **The NLR does not see the disc.** The ratios come from the tabulated Feltre+16 grid at its
+  own axes; `nlr_alpha` is that grid's disc UV slope, a free key, not the model's disc (which
+  has no slope: the Temple+21 disc's only parameter is `fagn_bbb`). Fitting `nlr_alpha` tells
+  you which Feltre grid point fits the lines, not what the continuum in the same fit looks like.
+- **The BLR is inclination-independent** — `blr_lum`, `blr_sigma`, and a polar-dust transmission
+  that depends only on `polar_ebv` (`polar.py:195-199`). The disc gets the polar screen only for
+  a type-1 view, the broad lines always: a type-2 geometry that should hide the broad lines is
+  not represented, so express that in the prior on `blr_lum`, not in `skirtor_i`.
+- **No X-ray or corona component** — nothing like CIGALE's `xray` module, nothing normalised
+  through `alpha_ox`: expect neither an X-ray prediction nor an X-ray constraint from a
+  CERIDWEN AGN fit. But do not read that as "nothing emits in the EUV": the Temple+21 disc
+  template ends at 91 A and `"corrected"` zeroes it blueward (`disk.py:98-100`), while the
+  SKIRTOR parametric disc is defined from 8 A (`skirtor.py:113-116`). What reaches a prediction
+  is set by the model grid's blue end and the IGM, not by the AGN model.

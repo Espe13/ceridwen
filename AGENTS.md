@@ -225,7 +225,9 @@ projection → likelihood → sampler.
   `screen.py`: `AGNScreen` (dust4), `ProspectorDiffuseCurve`. `lines.py`: `AGNLines`
   (`data/richardson14_a42.csv`, by FSPS line name). `hook.py`: `AGNHook`, the single CSP wiring
   point (screens, energy balance, the IGM order per mode, provenance). The CSP wraps its
-  spectrum kernel once (`CSPBasis._with_agn`) and adds the AGN lines in `predict`
+  spectrum kernel once (`CSPBasis._with_agn`, a BOUND METHOD resolving `self._agn_base` /
+  `self._agn_rest` at call time, so a re-bound copy evaluates its own model) and adds the AGN
+  lines in `predict`
   (`_agn_line_terms`); theta keys `fagn`, `agn_tau`, `fagn_bbb`, `dust4`, `dust4_index`,
   `agn_elum`, `agn_eline_sigma` exist only with `agn=`.
 - `cosmology.py` — JAX-native flat ΛCDM (Planck 18) with an astropy fallback.

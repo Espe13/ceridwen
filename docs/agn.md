@@ -269,6 +269,99 @@ power, intrinsic L_nu at 2500 A at 30 deg, L_6um, L_12um, disc / torus / polar l
 amplitude); `blr_sigma` LogUniform(400, 3000) km/s (JWST broad H alpha FWHM 890-6279 km/s).
 Only a resolved spectrum constrains `blr_sigma`; line fluxes alone do not.
 
+## Fixed by design — four things the AGN model does not do
+
+These are deliberate, not omissions in progress. Each says what the code does, and what an
+option would have to add.
+
+### The line luminosities are absolute, and `fagn` does not scale them
+
+`agn_elum` (narrow lines, both the Richardson+14 `a42` set and the Feltre+16 NLR) and `blr_lum`
+(broad lines) are **luminosities per formed solar mass**, not fractions:
+`FeltreNLR.line_luminosity` returns `agn_elum * R_line(theta)` (`ceridwen/agn/nlr.py:283`),
+`AGNLines` returns `agn_elum * ratio` (`lines.py:154`) and `BroadLines` returns
+`blr_lum * ratio_halpha` (`blr.py:160`). None of the three reads `fagn`, `fagn_bbb` or any
+continuum quantity; the CSP multiplies them by the SFH's formed mass `sum(W)` and then by
+`10**logmass`, exactly like the stellar light.
+
+Consequences:
+
+* **Broad or narrow AGN lines without an AGN continuum are a legal model** (`fagn = 0`,
+  `fagn_bbb = 0`, `blr_lum > 0`). Nothing couples the two, so a fit can put a BLR on a galaxy
+  whose continuum shows no AGN at all. That is a modelling choice you make with the priors, not
+  something the model forbids.
+* Without the energy balance, `agn_elum` and `blr_lum` are constrained only by the lines, so
+  photometry with no resolved line fixes them barely at all. **With `agn_energy_balance=True`
+  they also reach the broadband IR**: the line light the galaxy's dust absorbs joins the DL07
+  reservoir and is re-emitted (`hook.py:293-304` for the narrow lines, `hook.py:337-349`
+  `blr_absorbed` for the broad ones), so IR photometry constrains them too.
+* Typical scale to judge a prior against: the galaxy's own nebular H beta is of order
+  `1e-3` to `1` L_sun per M_sun formed, so `agn_elum = 1` is an NLR H beta comparable with the
+  whole galaxy's. (That range is the one quoted in the AGN2 brief; it is not recomputed here.)
+
+An option (`agn_elum` tied to the AGN continuum, as CIGALE ties its AGN lines to the ionising
+photon rate) would need: an ionising-photon integral of the nuclear SED on the model grid, a
+Case-B (or Cloudy-table) conversion to H beta, a covering factor as a new theta key, a config
+switch that removes `agn_elum` from `param_names`, and a new golden configuration — the lines
+would then stop being linear in a single amplitude, which several AGN2 tests assert.
+
+### The NLR is a fixed Feltre+16 grid, not the model's own disc
+
+The narrow-line ratios come from the tabulated Feltre, Charlot & Gutkin (2016) grid at its own
+five axes (`nlr_logu`, `nlr_logz`, `nlr_xid`, `nlr_lognh`, `nlr_alpha`; `nlr.py:54-60`).
+`nlr_alpha` is the **grid's** accretion-disc UV slope, a free theta key of the NLR — it is not
+read from the disc component: the SKIRTOR torus has no slope parameter at all
+(`AGN2_THETA_KEYS["skirtor16"]`, `ceridwen/agn/__init__.py:155`) and the Temple+21 disc's only
+parameter is its amplitude `fagn_bbb` (`disk.py:80`). The NLR therefore never sees the
+luminosity or the shape of the continuum the same fit puts in.
+
+An option would need an ionising continuum predicted on the Feltre grid's own axes — i.e. a
+disc model parameterised by `alpha` — plus the photon-rate normalisation of the point above;
+with the tabulated grid the most one can do cheaply is tie `nlr_alpha` to a disc slope through
+a `transforms` entry once a disc with a slope exists.
+
+### The BLR does not depend on inclination
+
+`BroadLines` has exactly two parameters, `blr_lum` and `blr_sigma` (`blr.py:112`), and the
+transmission the hook gives it is the nuclear screen (polar dust, or the `dust4` power law) times
+the galaxy's diffuse curve in `"corrected"` (`hook.py:315-327`). `PolarDust.transmission` depends
+only on `polar_ebv` (`polar.py:195-199`): `skirtor_i` does not enter. This matches CIGALE, whose
+line module has no inclination term either.
+
+Note the asymmetry it creates, which is also CIGALE's: the SKIRTOR **disc** receives the polar
+screen only for a type-1 view (`skirtor_i <= 90 - skirtor_oa`, `skirtor.py:405-406` and
+`SkirtorTorus.nuclear_parts`), while the **broad lines** receive it at every inclination. A
+type-2 geometry in which the broad lines should be hidden altogether is not represented: put
+that in the prior on `blr_lum`, not in `skirtor_i`.
+
+An option would need a BLR covering/obscuration factor as a function of `skirtor_i` (CIGALE has
+none to copy, so it would be a new model, e.g. the lines x a step or smooth function of
+`skirtor_i - (90 - skirtor_oa)`), a decision about whether the hidden light is re-emitted, and
+a golden configuration; `blr_lum` would stop being the observed broad H alpha.
+
+### There is no X-ray or corona component
+
+No component is tied to an X-ray luminosity: there is nothing like CIGALE's `xray` module and
+nothing normalised through `alpha_ox`, so an AGN fit neither predicts an X-ray flux nor can be
+constrained by one.
+
+What the components cover blueward of the Lyman limit differs, and is not "nothing":
+
+* the **Temple+21 disc** template ends at 91 A, and `"corrected"` sets the disc to exactly zero
+  blueward of it rather than extrapolating a flat `F_nu` (`disk.py:98-100`);
+* the **SKIRTOR parametric disc** is defined from **8 A** (`skirtor_disk` /
+  `schartmann2005_disk`, `skirtor.py:113-116`: the broken power law's first limit is 8 A), so it
+  does carry flux in the EUV on the templates' own grid.
+
+What survives into a prediction is then set by the model grid's blue end (the SSP grid's first
+wavelength) and by the IGM, not by the AGN model.
+
+An option (a Corona/X-ray power law, as CIGALE's `xray` module has) would need the component
+itself, its own amplitude convention (CIGALE uses `alpha_ox`, which couples it to the 2500 A
+disc flux — so it would also need the disc's monochromatic luminosity), an extension of the
+model grid blueward of the SSP grid's first wavelength (so the grid, the IGM and the filter
+projection all come in), and a golden configuration.
+
 ## What the AGN changes elsewhere
 
 * **PostProcess**: `spectra_model` and `spectra_observed` include the AGN continuum;

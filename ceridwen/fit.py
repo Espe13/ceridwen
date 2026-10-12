@@ -1082,10 +1082,13 @@ def _provenance_from_group(g) -> dict:
 
 def _write_csp_config(mod_grp, model) -> None:
     """The CSP choices a rebuilt model is checked against (``ceridwen.resultfile``)."""
+    from .csp.csp import spectrum_model_name as _spectrum_model_name
     csp = model.csp
     igm = getattr(csp, "igm", None)
     cfg = {"class": type(csp).__name__,
-           "spectrum_model": getattr(getattr(csp, "get_spectrum", None), "__name__", None),
+           # with agn= the kernel is a bound method, whose __name__ is its function's, so the
+           # "<kernel>_agn" name comes from csp.spectrum_model_name (csp._agn_base_name)
+           "spectrum_model": _spectrum_model_name(csp, None),
            "sfh_interp": getattr(csp, "sfh_interp", None),
            "zh_const": getattr(csp, "zh_const", None),
            "track_zred_age": getattr(csp, "track_zred_age", None),

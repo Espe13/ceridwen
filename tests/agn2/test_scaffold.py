@@ -279,7 +279,7 @@ def test_V_SCAF_4_5_continuum_wiring(mode):
         exp = nuc * gal
         np.testing.assert_allclose(got, exp, rtol=1e-12, atol=1e-14 * np.abs(exp).max())
         # added to the base kernel in its dtype, nothing else
-        base = csp.get_spectrum._agn_base(mt)
+        base = csp._agn_base(mt)        # the wrapped kernel, resolved on the instance
         full = csp.get_spectrum(mt)
         assert np.array_equal(np.asarray(full),
                               np.asarray(base + jnp.asarray(got).astype(base.dtype)))
