@@ -3,7 +3,10 @@ Regression test for the CERIDWEN review-driven refactor.
 
 Re-runs every Step-0 baseline evaluation (via ``capture_baseline.compute_baselines``,
 the single source of truth) and compares against the committed ``baselines/*.npz``
-with ``numpy.testing.assert_allclose(atol=1e-10, rtol=1e-7)``.
+with ``numpy.testing.assert_allclose(rtol=1e-7, atol=1e-10 * max|baseline|)`` per array.
+The absolute part scales with each array: a fixed ``atol=1e-10`` (as before 2026-10-12) is
+larger than every value of the cgs arrays (fluxes ~1e-21, flux factors ~1e-58), so it passed
+any change to them.
 
 This must pass identically before and after every refactor phase.  Run:
 
@@ -22,7 +25,9 @@ from capture_baseline import compute_baselines, BASELINE_DIR
 # Tag the whole module so `-m "not fsps"` skips it on FSPS-free machines/CI.
 pytestmark = pytest.mark.fsps
 
-ATOL = 1e-10
+#: absolute tolerance as a fraction of the array's largest finite |value| (``ATOL_SCALE * max``);
+#: an element far below the array's peak is compared to that floor, every other at ``RTOL``
+ATOL_SCALE = 1e-10
 RTOL = 1e-7
 
 
@@ -103,8 +108,9 @@ def test_category_matches_baseline(category, fresh):
         assert np.array_equal(act[~finite], exp[~finite], equal_nan=True), (
             f"{category}/{key}: non-finite entries changed"
         )
+        atol = ATOL_SCALE * float(np.max(np.abs(exp[finite])))
         np.testing.assert_allclose(
-            act[finite], exp[finite], atol=ATOL, rtol=RTOL,
+            act[finite], exp[finite], atol=atol, rtol=RTOL,
             err_msg=f"{category}/{key} changed beyond tolerance",
         )
 

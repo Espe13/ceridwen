@@ -292,8 +292,8 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
     k1, k2 = jax.random.split(key)
     mu_phot = predictions["phot"]
     mu_spec = predictions["spec"]
-    sig_phot = 0.05 * jnp.abs(mu_phot) + 1e-12
-    sig_spec = 0.05 * jnp.abs(mu_spec) + 1e-12
+    sig_phot = _sigma(mu_phot) + 1e-12
+    sig_spec = _sigma(mu_spec) + 1e-12
     y_phot = mu_phot + sig_phot * jax.random.normal(k1, mu_phot.shape)
     y_spec = mu_spec + sig_spec * jax.random.normal(k2, mu_spec.shape)
     mask_phot = jnp.ones(mu_phot.shape, dtype=bool)
@@ -532,6 +532,13 @@ def _logzsol_baselines(p) -> dict:
     return out
 
 
+def _sigma(mu):
+    """The mock's 5 % error, 0.05 |mu|, in float64 whatever the prediction's dtype: in a fit the
+    error comes from the data (float64), and a float32 sigma at cgs scale (~1e-21) underflows
+    when squared, since (1e-21)^2 is below float32's smallest normal number."""
+    return 0.05 * jnp.abs(jnp.asarray(mu, dtype=jnp.float64))
+
+
 def _calibration_likelihood_baseline(wave, mu, mask, key) -> dict:
     """v1.0.7: the profiled polynomial calibration (Spectrum(polynomial_order > 0), Prospector's
     PolyOptCal) and a per-observation noise key.  Data = the "csp_spectrum" prediction times a
@@ -545,7 +552,7 @@ def _calibration_likelihood_baseline(wave, mu, mask, key) -> dict:
     from ceridwen.likelihood.poly_calibration import (PolynomialCalibration,
                                                       chebyshev_design_matrix)
     A = chebyshev_design_matrix(wave, np.asarray(mask), 3)
-    sig = 0.05 * jnp.abs(mu)
+    sig = _sigma(mu)
     y_cal = (mu * (1.0 + jnp.asarray(A) @ jnp.array([0.0, 0.05, -0.03, 0.01]))
              + sig * jax.random.normal(key, mu.shape))
     pc = PolynomialCalibration(A)
@@ -579,7 +586,7 @@ def _gp_likelihood_baseline(wave, mu, key) -> dict:
                                                    GP_JITTER)
     mu = jnp.asarray(mu, dtype=jnp.float64)
     n = mu.size
-    sig = 0.05 * jnp.abs(mu)
+    sig = _sigma(mu)
     D = gp_sqdist(wave)
     C = np.exp(-0.5 * np.asarray(D) / 100.0 ** 2) + (1.0 + GP_JITTER) * np.eye(n)
     y = mu + sig * (jnp.asarray(np.linalg.cholesky(C)) @ jax.random.normal(key, (n,)))
@@ -629,7 +636,7 @@ def _poly_marginal_baseline(wave, mu, mask, key) -> dict:
     from ceridwen.likelihood.poly_marginal import (PolyMarginalGaussianLikelihood,
                                                    PolynomialMarginal)
     A = chebyshev_design_matrix(wave, np.asarray(mask), 3)
-    sig = 0.05 * jnp.abs(mu)
+    sig = _sigma(mu)
     y = (mu * (1.0 + jnp.asarray(A) @ jnp.array([0.02, 0.05, -0.03, 0.01]))
          + sig * jax.random.normal(key, mu.shape))
     jit = 0.05 * float(jnp.median(jnp.abs(mu)))

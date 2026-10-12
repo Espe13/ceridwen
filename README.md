@@ -210,8 +210,9 @@ Everything `PostProcess` returns is described in
 
 The test suite checks units and conventions, the broadening against direct quadrature, the
 likelihoods, the samplers, post-processing and the misuse guards. Two layers compare the
-forward model with stored arrays: 18 regression categories at `atol=1e-10, rtol=1e-7` with a
-maximum relative residual of 1e-6 (`tests/regression/test_regression.py`), and six SFH and
+forward model with stored arrays: 22 regression categories (plus optional ones that need a grid or the AGN tables) at
+`rtol=1e-7` with an absolute tolerance of 1e-10 times each array's maximum
+(`tests/regression/test_regression.py`), and six SFH and
 metallicity configurations (`tests/csp/test_lookback_flip_invariant.py`) with SSP weights at
 `rtol=1e-12` and spectra, line fluxes and photometry at `rtol=1e-6`. See
 [For developers](#for-developers) to run them.
