@@ -175,6 +175,7 @@ def _nodes(ax, n=6, seed=0):
 LAWS = {"smc": 0, "calzetti": 1, "gaskell": 2}
 
 
+@pytest.mark.usefixtures("polar_data")
 @pytest.mark.parametrize("law", list(LAWS))
 @pytest.mark.parametrize("polar_on", [False, True])
 def test_T_SK_1_cigale_nodes(law, polar_on):
@@ -206,6 +207,7 @@ def test_T_SK_1_cigale_nodes(law, polar_on):
     assert worst < 1e-12
 
 
+@pytest.mark.usefixtures("polar_data")
 def test_T_SK_2_off_node_multilinear():
     from ceridwen.agn.skirtor import SkirtorTorus
     from ceridwen.agn.polar import PolarDust
@@ -251,6 +253,7 @@ def _nu_int(y):
     return float(np.asarray(y) @ -np.asarray(trapezoid_nu_weights(WAVE)))
 
 
+@pytest.mark.usefixtures("polar_data")
 @pytest.mark.parametrize("polar_on", [False, True])
 def test_T_SK_3_corrected_energy(polar_on):
     """Torus + polar dust carry P = fagn L_bol to the model grid's quadrature (|L/P - 1| measured
@@ -277,6 +280,7 @@ def test_T_SK_3_corrected_energy(polar_on):
         assert np.all(np.asarray(p["polar_t"]) <= 1.0)
 
 
+@pytest.mark.usefixtures("polar_data")
 def test_T_SK_10_corrected_pixels_independent_of_grid_coverage():
     """VERDICT_TORUS_r1 R1: the corrected SED at a pixel does not depend on the grid's extent."""
     from ceridwen.agn.skirtor import SkirtorTorus
@@ -296,6 +300,7 @@ def test_T_SK_10_corrected_pixels_independent_of_grid_coverage():
         np.testing.assert_array_equal(np.asarray(a[k])[sel], np.asarray(b[k]), err_msg=k)
 
 
+@pytest.mark.usefixtures("polar_data")
 def test_T_SK_4_polar_reemission_is_angle_averaged_absorption():
     from ceridwen.agn.skirtor import SkirtorTorus
     from ceridwen.agn.polar import PolarDust, k_ext
@@ -328,6 +333,7 @@ def test_T_SK_4_polar_reemission_is_angle_averaged_absorption():
     assert got > 0
 
 
+@pytest.mark.usefixtures("polar_data")
 @pytest.mark.parametrize("mode", ["corrected", "cigale"])
 def test_T_SK_5_zero_and_linear(mode):
     from ceridwen.agn.skirtor import SkirtorTorus
@@ -347,6 +353,7 @@ def test_T_SK_5_zero_and_linear(mode):
     np.testing.assert_allclose(np.asarray(b), ratio * np.asarray(a), rtol=1e-13, atol=0)
 
 
+@pytest.mark.usefixtures("polar_data")
 def test_T_SK_6_clamp_continuity_grads():
     from ceridwen.agn.skirtor import SkirtorTorus, SKIRTOR_AXES, THETA_OF_AXIS
     from ceridwen.agn.polar import PolarDust
@@ -382,6 +389,7 @@ def test_T_SK_6_clamp_continuity_grads():
             assert all(np.isfinite(np.asarray(v)) for v in g.values()), (a, x)
 
 
+@pytest.mark.usefixtures("polar_data")
 @pytest.mark.parametrize("mode", ["corrected", "cigale"])
 def test_T_SK_7_jit_vmap(mode):
     from ceridwen.agn.skirtor import SkirtorTorus
@@ -421,6 +429,7 @@ def test_T_SK_8_setup_errors(tmp_path):
             SkirtorTorus(WAVE, mode=mode, file=str(path))
 
 
+@pytest.mark.usefixtures("polar_data")
 @pytest.mark.parametrize("polar_on", [False, True])
 def test_T_SK_9_derived(polar_on):
     from ceridwen.agn.skirtor import SkirtorTorus

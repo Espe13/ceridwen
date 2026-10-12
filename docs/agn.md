@@ -223,6 +223,24 @@ converters `scripts/agn2/build_skirtor_h5.py` and `build_nlr_h5.py` of the sourc
 file is a teaching error at construction. The tests that need them skip with "MISSING ...: did NOT
 run". Data licences (SKIRTOR, Feltre+16) have not been checked for redistribution.
 
+### CIGALE extinction curves
+
+The polar dust reads CIGALE's three dust-model curves below 100 nm (`extFun_SMC.dat`,
+`extFun_MRN.dat`, `extFun_Gaskel04.dat`, from `pcigale/sed_modules/curves/` at cigale 29cb909f).
+They are CIGALE's files under CeCILL-2.0, so ceridwen does not ship them. Put them into
+`$CERIDWEN_AGN_DATA` (default `~/.ceridwen/agn/`) once:
+
+```bash
+python -m ceridwen.agn.fetch --from /path/to/cigale   # a CIGALE checkout or installed pcigale; no network
+python -m ceridwen.agn.fetch --download               # from gitlab.lam.fr, through the system curl
+```
+
+or from Python, `ceridwen.agn.fetch_grids(from_cigale=...)` / `fetch_grids(download=True)`. Every
+file is checked against the sha256 of the table the parity tests were built against, and a file
+that differs is never written. Copying them by hand works too: either CIGALE's name or the former
+`cigale_extFun_*.txt` is read. Without them `polar_dust=True` raises at construction with these
+commands; with a changed table it raises naming the file. The tests that need them skip.
+
 **What is refused.** The AGN2 switches in `"fsps"` / `"prospector"` modes; the Temple disc with
 SKIRTOR (SKIRTOR carries its own disc); `dust4_type=1` with SKIRTOR (its nuclear screen is the
 polar dust); `polar_dust=True` without SKIRTOR; in `"cigale"` mode the Nenkova torus, the Temple

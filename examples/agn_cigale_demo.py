@@ -25,7 +25,8 @@ energy balance into DL07). Both report CIGALE's fracAGN as ``frac_agn_cigale`` i
 
 The SKIRTOR and NLR tables are not shipped (SKIRTOR 227 MB): build them once with the converters
 of the source repository (``scripts/agn2/build_skirtor_h5.py``, ``build_nlr_h5.py``) into
-``$CERIDWEN_AGN_DATA`` (default ``~/.ceridwen/agn``).
+``$CERIDWEN_AGN_DATA`` (default ``~/.ceridwen/agn``). The polar dust also needs CIGALE's
+extinction curves there: ``python -m ceridwen.agn.fetch --from /path/to/cigale`` (or ``--download``).
 
     export SPS_HOME=/path/to/fsps CERIDWEN_AGN_DATA=/path/to/agn_tables
     python examples/agn_cigale_demo.py            # per-band AGN fraction, both modes

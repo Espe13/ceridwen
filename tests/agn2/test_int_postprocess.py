@@ -64,12 +64,14 @@ def _extras(mode):
     return model, out["extras"]["agn"]
 
 
+@pytest.mark.usefixtures("polar_data")
 def test_cigale_frac_is_fagn():
     _m, ex = _extras("cigale")
     assert "frac_agn_cigale" in ex and "cigale_accretion_power" in ex
     np.testing.assert_allclose(ex["frac_agn_cigale"], FAGN, rtol=1e-10)
 
 
+@pytest.mark.usefixtures("polar_data")
 def test_corrected_frac_is_cigale_definition():
     _m, ex = _extras("corrected")
     P = ex["cigale_total_dust_luminosity"]

@@ -64,6 +64,7 @@ def _rel(m, r):
     return float(np.max(np.abs(m[big] - r[big]) / np.abs(r[big]))) if big.any() else 0.0
 
 
+@pytest.mark.usefixtures("polar_data")
 def test_T_PC_1_vs_pcigale(tmp_path):
     if not PY.exists() or not (SRC / "pcigale/data/skirtor2016/parameters.pickle").exists():
         pytest.skip(f"MISSING pcigale env {PY} or built database under {SRC}: T-PC-1 did NOT run")

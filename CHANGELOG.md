@@ -10,7 +10,9 @@
 - `agn_mode="cigale"`: reproduces CIGALE (fagn = CIGALE's fracAGN, no galaxy dust or energy
   balance on the AGN); the components are refused in `"fsps"` / `"prospector"` modes.
 - The SKIRTOR and NLR tables are built by `scripts/agn2/build_skirtor_h5.py` /
-  `build_nlr_h5.py` into `$CERIDWEN_AGN_DATA` (not shipped).
+  `build_nlr_h5.py` into `$CERIDWEN_AGN_DATA` (not shipped). CIGALE's three extinction curves
+  of the polar dust are not shipped either (CeCILL-2.0): `python -m ceridwen.agn.fetch --from
+  <cigale>` or `--download` puts them there (`ceridwen.agn.fetch_grids`), sha256-checked.
 - `PostProcess`: with SKIRTOR, `extras["agn"]` adds `frac_agn_cigale` (CIGALE's fracAGN, both
   modes), CIGALE's `agn.*` infos (`cigale_<name>`), `L_dust_gal` and the SKIRTOR luminosities.
 - `SedModel` refuses a prior that leaves the SKIRTOR or Feltre+16 grid (as for `gas_logz`), and a

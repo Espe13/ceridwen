@@ -6,6 +6,9 @@
 * Exposes an ``ssp_grid_path`` session fixture that resolves the test SSP
   grid (``_gridfixture``; the fetch_grid cache counts) and skips with the reason when
   it is not present.
+* Exposes ``polar_data``: the directory holding CIGALE's extinction curves for the AGN
+  polar dust (``ceridwen.agn.agn_data_dir()``, not shipped; ``python -m ceridwen.agn.fetch``);
+  skips with the reason when they are absent.
 """
 from __future__ import annotations
 
@@ -27,3 +30,17 @@ def ssp_grid_path():
     if g is None:
         pytest.skip(missing_reason())
     return str(g)
+
+
+@pytest.fixture(scope="session")
+def polar_data():
+    """``agn_data_dir()`` when CIGALE's three extinction curves are there; skips otherwise."""
+    from ceridwen.agn import agn_data_dir
+    from ceridwen.agn.polar import EXTFUN_ALIASES, EXTFUN_FILES
+    d = agn_data_dir()
+    missing = [EXTFUN_FILES[k] for k in EXTFUN_FILES
+               if not ((d / EXTFUN_FILES[k]).is_file() or (d / EXTFUN_ALIASES[k]).is_file())]
+    if missing:
+        pytest.skip(f"CIGALE's extinction curves {missing} not in {d} (not shipped; "
+                    "python -m ceridwen.agn.fetch --download)")
+    return d

@@ -1,8 +1,10 @@
 """CIGALE polar dust pieces (session TORUS development tests).
 
 T-PO-1  k_ext above 100 nm == the closed forms of skirtor2016.py l.57-99, written out again here.
-T-PO-2  below 100 nm: the vendored curve / (ext(440) - ext(550)), joined at the last point < 100 nm.
-T-PO-3  vendored curves are CIGALE's files (sha256).
+T-PO-2  below 100 nm: CIGALE's curve / (ext(440) - ext(550)), joined at the last point < 100 nm.
+T-PO-3  the curves read are CIGALE's files (sha256).
+
+Needs CIGALE's extinction curves (``polar_data``; python -m ceridwen.agn.fetch); skips without.
 T-PO-4  grey body == CIGALE's expression (l.371-384) where exp does not overflow; finite and
         with finite gradients in T and beta where it does.
 T-PO-5  transmission: 10^(-0.4 k E(B-V)); E(B-V) = 0 -> exactly 1.
@@ -21,10 +23,12 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp  # noqa: E402
 
 from ceridwen.agn import AGNContext  # noqa: E402
-from ceridwen.agn.polar import (EXTFUN_FILES, EXTFUN_SHA256, PolarDust, greybody_shape,  # noqa
-                                k_ext)
+from ceridwen.agn.polar import (EXTFUN_SHA256, PolarDust, extfun_paths,  # noqa: E402
+                                greybody_shape, k_ext)
 
 WL = np.geomspace(1.0, 1e7, 3000)          # nm
+
+pytestmark = pytest.mark.usefixtures("polar_data")
 
 
 def _closed(wl, law):
@@ -51,7 +55,7 @@ def test_T_PO_1_closed_forms(law):
 @pytest.mark.parametrize("law", [0, 1, 2])
 def test_T_PO_2_short_wavelengths(law):
     k = k_ext(WL, law)
-    d = np.loadtxt(EXTFUN_FILES[law])
+    d = np.loadtxt(extfun_paths()[law])
     wl_c = d[:, 0] * 1e3
     ab, av = np.interp([440.0, 550.0], wl_c, d[:, 1])
     short = np.interp(WL, wl_c, d[:, 1] / (ab - av))
@@ -62,8 +66,8 @@ def test_T_PO_2_short_wavelengths(law):
     assert np.isclose(k[j], _closed(WL, law)[j], rtol=1e-13)
 
 
-def test_T_PO_3_vendored_curves():
-    for law, path in EXTFUN_FILES.items():
+def test_T_PO_3_cigale_curves():
+    for law, path in extfun_paths().items():
         assert hashlib.sha256(path.read_bytes()).hexdigest() == EXTFUN_SHA256[law]
 
 

@@ -775,6 +775,11 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
   source repository into `$CERIDWEN_AGN_DATA` (default `~/.ceridwen/agn/`); without them the
   CSP raises at construction and their tests skip with "MISSING ...: did NOT run" (a run with
   those skips is not a pass).
+- **Polar dust needs CIGALE's extinction curves, which are not shipped** (CeCILL-2.0). Fetch them
+  once: `python -m ceridwen.agn.fetch --from /path/to/cigale` (no network) or
+  `python -m ceridwen.agn.fetch --download`; or copy `extFun_{SMC,MRN,Gaskel04}.dat` from
+  `pcigale/sed_modules/curves/` into `$CERIDWEN_AGN_DATA` yourself (`docs/agn.md`, "CIGALE
+  extinction curves"). They are sha256-checked at construction.
 - **Line profiles differ from CIGALE's at order sigma/c.** CERIDWEN paints every line as a
   Gaussian in ln lambda; CIGALE's AGN lines are Gaussian in lambda (4.7e-4 of the peak at FWHM
   800 km/s, 4.1e-3 at 7000 km/s; same area). `"cigale"` mode keeps CERIDWEN's painter.

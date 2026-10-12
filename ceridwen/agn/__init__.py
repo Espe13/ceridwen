@@ -131,6 +131,8 @@ __all__ = [
     "SkirtorTorus",
     "PolarDust",
     "AGNModel",
+    "agn_data_dir",
+    "fetch_grids",
 ]
 
 AGN_MODE_FSPS = "fsps"
@@ -657,6 +659,21 @@ class PolarDust:
 
     def reemission(self, theta, disk, transmission, ctx):
         raise NotImplementedError
+
+
+def agn_data_dir():
+    """``$CERIDWEN_AGN_DATA``, else ``~/.ceridwen/agn``: the directory of the AGN data files
+    ceridwen does not ship (CIGALE's extinction curves, ``fetch_grids``)."""
+    import os
+    from pathlib import Path
+    return Path(os.environ.get("CERIDWEN_AGN_DATA") or Path.home() / ".ceridwen" / "agn")
+
+
+def fetch_grids(save=None, from_cigale=None, download=False, overwrite=False) -> dict:
+    """CIGALE's extinction curves for the polar dust into ``save`` (default ``agn_data_dir()``);
+    see ``ceridwen.agn.fetch.fetch_grids``."""
+    from .fetch import fetch_grids as _fetch
+    return _fetch(save=save, from_cigale=from_cigale, download=download, overwrite=overwrite)
 
 
 def _agn2_class(name):

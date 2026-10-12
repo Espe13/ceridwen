@@ -16,8 +16,9 @@ Extinction ``k(lambda) = A(lambda) / E(B-V)``, ``polar_law``:
 Below 100 nm the law is replaced by CIGALE's dust-model curve (``extFun_SMC`` for law 0,
 ``extFun_MRN`` for law 1, ``extFun_Gaskel04`` for law 2; ``k = ext / (ext(440 nm) -
 ext(550 nm))``), scaled to match the analytic law at the LAST grid point below 100 nm. That point
-depends on the grid, so ``k_ext`` is a function of the grid it is evaluated on; the curves are
-vendored as ``data/cigale_extFun_*.txt`` (unchanged; sha256 in ``EXTFUN_SHA256``). CIGALE's
+depends on the grid, so ``k_ext`` is a function of the grid it is evaluated on. The curves are
+CIGALE's files (CeCILL-2.0), not shipped with ceridwen: they are read from ``agn_data_dir()``
+(``fetch_grids`` puts them there) and checked against ``EXTFUN_SHA256``. CIGALE's
 ``interp1d`` raises below 1 nm (the curves start there); here the curve is held constant below
 1 nm (only the model-grid ``transmission`` reaches there; the SKIRTOR grid starts at 1 nm).
 
@@ -42,24 +43,27 @@ arithmetic, finite with finite gradients where ``exp(x)`` overflows, which CIGAL
 
 from __future__ import annotations
 
-import os
+import hashlib
 from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
 
-from . import AGN2_THETA_KEYS, AGN_MODE_CIGALE, AGN_MODE_CORRECTED, POLAR_LAWS
+from . import AGN2_THETA_KEYS, AGN_MODE_CIGALE, AGN_MODE_CORRECTED, POLAR_LAWS, agn_data_dir
 from . import PolarDust as _PolarDustContract
 
 __all__ = ["PolarDust", "POLAR_DEFAULTS", "LAW_INDEX", "k_ext", "k_ext_short",
-           "greybody_shape", "polar_geometry", "EXTFUN_FILES", "EXTFUN_SHA256"]
+           "greybody_shape", "polar_geometry", "EXTFUN_FILES", "EXTFUN_ALIASES",
+           "EXTFUN_SHA256", "extfun_path", "extfun_paths"]
 
 # CIGALE skirtor2016 ``parameters`` defaults: EBV 0.03, temperature 100 K, emissivity 1.6
 POLAR_DEFAULTS = {"polar_ebv": 0.03, "polar_temp": 100.0, "polar_emis": 1.6}
 LAW_INDEX = {"smc": 0, "calzetti": 1, "gaskell": 2}
-_DATA = Path(os.path.dirname(__file__)) / "data"
-EXTFUN_FILES = {0: _DATA / "cigale_extFun_SMC.txt", 1: _DATA / "cigale_extFun_MRN.txt",
-                2: _DATA / "cigale_extFun_Gaskel04.txt"}
+# CIGALE's dust-model curves (pcigale/sed_modules/curves at 29cb909f), in agn_data_dir() under
+# CIGALE's own name or the name ceridwen vendored them under before 1.0.13
+EXTFUN_FILES = {0: "extFun_SMC.dat", 1: "extFun_MRN.dat", 2: "extFun_Gaskel04.dat"}
+EXTFUN_ALIASES = {0: "cigale_extFun_SMC.txt", 1: "cigale_extFun_MRN.txt",
+                  2: "cigale_extFun_Gaskel04.txt"}
 EXTFUN_SHA256 = {
     0: "6200117d5f1a5f5fccc9be1e5b02e408541742e836aec458d72b608878e3b189",
     1: "19b3dc8e7f9752500070a63e2684e548464bcc40afb77588108db5de7e6334a0",
@@ -72,20 +76,77 @@ H_SI = 6.62607015e-34
 K_SI = 1.380649e-23
 
 _SHORT_CACHE = {}
+_HASH_OK = set()
+
+
+def _missing_message(names, data_dir):
+    return (f"PolarDust: MISSING CIGALE's extinction curve(s) {', '.join(names)} in {data_dir} "
+            "($CERIDWEN_AGN_DATA, default ~/.ceridwen/agn). They are CIGALE's files "
+            "(CeCILL-2.0) and are not shipped with ceridwen. Fetch them into that directory "
+            "with\n    python -m ceridwen.agn.fetch --download\nor copy them, without network, "
+            "from a CIGALE checkout or an installed pcigale:\n"
+            "    python -m ceridwen.agn.fetch --from /path/to/cigale\n"
+            "(docs/agn.md, \"CIGALE extinction curves\").")
+
+
+def _find(law, data_dir):
+    for name in (EXTFUN_FILES[law], EXTFUN_ALIASES[law]):
+        p = data_dir / name
+        if p.is_file():
+            return p
+    return None
+
+
+def _check_hash(law, path):
+    st = path.stat()
+    key = (str(path.resolve()), st.st_mtime_ns, st.st_size)
+    if key in _HASH_OK:
+        return
+    got = hashlib.sha256(path.read_bytes()).hexdigest()
+    if got != EXTFUN_SHA256[law]:
+        raise ValueError(
+            f"PolarDust: {path} has sha256 {got}; CIGALE's {EXTFUN_FILES[law]} that the parity "
+            f"tests were built against (cigale 29cb909f) has {EXTFUN_SHA256[law]}. This is not "
+            "that table. Replace it: python -m ceridwen.agn.fetch --download --overwrite (or "
+            "--from /path/to/cigale --overwrite).")
+    _HASH_OK.add(key)
+
+
+def extfun_path(law, data_dir=None) -> Path:
+    """Path of CIGALE's curve for ``law`` (0 SMC, 1 MRN, 2 Gaskel04) in ``data_dir`` (default
+    ``agn_data_dir()``), sha256-checked. FileNotFoundError naming the fetcher when it is
+    absent, ValueError when it is not CIGALE's table."""
+    if law not in EXTFUN_FILES:
+        raise ValueError(f"Extinction law {law} unknown (0 SMC, 1 Calzetti, 2 Gaskell).")
+    d = Path(data_dir) if data_dir is not None else agn_data_dir()
+    p = _find(law, d)
+    if p is None:
+        raise FileNotFoundError(_missing_message([EXTFUN_FILES[law]], d))
+    _check_hash(law, p)
+    return p
+
+
+def extfun_paths(data_dir=None) -> dict:
+    """``{law: path}`` of all three curves (``extfun_path``); one error naming every missing
+    file."""
+    d = Path(data_dir) if data_dir is not None else agn_data_dir()
+    missing = [EXTFUN_FILES[law] for law in EXTFUN_FILES if _find(law, d) is None]
+    if missing:
+        raise FileNotFoundError(_missing_message(missing, d))
+    return {law: extfun_path(law, d) for law in EXTFUN_FILES}
 
 
 def k_ext_short(law):
     """``(wl_nm, k_short)`` of CIGALE's ``k_ext_short``: the dust-model curve divided by
     ``ext(440 nm) - ext(550 nm)`` (``np.interp`` on the curve, as CIGALE)."""
-    if law not in EXTFUN_FILES:
-        raise ValueError(f"Extinction law {law} unknown (0 SMC, 1 Calzetti, 2 Gaskell).")
-    hit = _SHORT_CACHE.get(law)
+    path = extfun_path(law)
+    hit = _SHORT_CACHE.get((law, str(path)))
     if hit is None:
-        d = np.loadtxt(EXTFUN_FILES[law], comments="#", dtype=np.float64)
+        d = np.loadtxt(path, comments="#", dtype=np.float64)
         wl = d[:, 0] * 1e3
         ab, av = np.interp([440.0, 550.0], wl, d[:, 1])
         hit = (wl, d[:, 1] / (ab - av))
-        _SHORT_CACHE[law] = hit
+        _SHORT_CACHE[(law, str(path))] = hit
     return hit
 
 
@@ -170,10 +231,7 @@ class PolarDust(_PolarDustContract):
                 or not np.all(np.diff(wave) > 0):
             raise ValueError("PolarDust: wave must be a 1-D ascending grid of positive "
                              "wavelengths [A].")
-        for law_i, path in EXTFUN_FILES.items():
-            if not path.exists():
-                raise FileNotFoundError(f"PolarDust: missing {path} (CIGALE extinction curve, "
-                                        "shipped with ceridwen).")
+        self.extfun_paths = extfun_paths()        # setup time: missing or changed -> raise
         self.mode = mode
         self.law = law
         self.law_index = LAW_INDEX[law]
@@ -224,5 +282,5 @@ class PolarDust(_PolarDustContract):
 
     def provenance(self) -> dict:
         return {"law": self.law, "law_cigale": self.law_index,
-                "extfun_file": str(EXTFUN_FILES[self.law_index]),
+                "extfun_file": str(self.extfun_paths[self.law_index]),
                 "extfun_sha256": EXTFUN_SHA256[self.law_index]}
