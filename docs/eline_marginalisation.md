@@ -48,7 +48,7 @@ marginal likelihood, for
 |---|---|
 | `marginalize_elines` | switch it on (default `False`: every line keeps its CLOUDY flux, nothing changes) |
 | `eline_prior_width` | 0 = flat; > 0 = Gaussian, fractional width about the CLOUDY flux |
-| `elines_to_fit` | FSPS names (`$SPS_HOME/data/emlines_info.dat`, e.g. `"[O III] 5007"`); default: every line the spectrum covers, except FSPS's `"[O II] 3867"` (3868.16 Å: zero CLOUDY flux in the MIST, Padova and Parsec cubes, negligible in the BPASS cubes; it stays at that flux, since with a free flux it would share that of `[Ne III] 3869`, 1.8 Å away), which is also refused when named |
+| `elines_to_fit` | FSPS names (`$SPS_HOME/data/emlines_info.dat`, e.g. `"[O III] 5007"`); default: every line the spectrum covers |
 | `elines_to_fix` | lines kept at their CLOUDY flux |
 | `elines_to_ignore` | lines removed from every observation |
 

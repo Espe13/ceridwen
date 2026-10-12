@@ -50,8 +50,7 @@ class Spectrum(Observation):
         Ly-alpha is always flat.
     elines_to_fit, elines_to_fix, elines_to_ignore : sequences of FSPS line names
         (``$SPS_HOME/data/emlines_info.dat``, e.g. ``"[O III] 5007"``).  Default: fit every
-        grid line covered by the spectrum except ``"[O II] 3867"`` (1.8 A from [Ne III] 3869,
-        kept at its CLOUDY flux; naming it in ``elines_to_fit`` raises); fixed lines keep their CLOUDY flux; ignored
+        grid line covered by the spectrum; fixed lines keep their CLOUDY flux; ignored
         lines are removed from every observation.
     polynomial_order : int -- 0 (default): no profiled calibration.  M > 0: the likelihood
         multiplies the model by ``1 + sum_{m=0}^{M} c_m T_m(x)`` with the coefficients solved

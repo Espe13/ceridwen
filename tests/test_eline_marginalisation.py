@@ -734,36 +734,3 @@ def test_static_fast_path_refuses_a_mask_changed_after_setup(csp):
         _lnl(model, lh)(_theta(model))
     model.setup_observations()
     assert np.isfinite(float(_lnl(model, lh)(_theta(model))))
-
-
-def _model_on(csp0, wave, **spec_kw):
-    t = np.array(csp0.sfh_times)
-    obs = [Spectrum(wavelength=wave, flux=None, uncertainty=None, name="spec",
-                    instrument=Instrument.R_fwhm(T.R_FWHM), marginalize_elines=True, **spec_kw)]
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        return SedModel(csp0, obs, zred=T.ZRED,
-                        kinematics=Kinematics(sigma_gal=150.0, sigma_gas=T.SIGMA_GAS),
-                        transforms={"sfh": lambda th, _t=t: logsfr_ratios_to_sfh(
-                            th["logsfr_ratios"], sfh_times_yr=_t)},
-                        free_param_init={"logsfr_ratios": jnp.zeros(len(t) - 1),
-                                         "logmass": jnp.array([9.0])})
-
-
-def test_phantom_oii_3867_is_not_marginalised():
-    """FSPS's "[O II] 3867" (3868.16 A) has zero or negligible CLOUDY flux: it is not
-    a default marginalised line next to [Ne III] 3869, and naming it explicitly is refused
-    """
-    from ceridwen.likelihood.eline_marginal import line_table_for, PHANTOM_LINES
-    if not __import__("os").environ.get("SPS_HOME"):
-        pytest.skip("SPS_HOME not set (the line list is $SPS_HOME/data/emlines_info.dat)")
-    csp0 = T._csp(add_neb=False)
-    tab = line_table_for(csp0)
-    assert "[O II] 3867" in tab["names"]            # FSPS does list it
-    wave = np.exp(np.arange(np.log(3700 * (1 + T.ZRED)), np.log(4100 * (1 + T.ZRED)),
-                            1 / (2.3548 * T.R_FWHM) / 2.5))
-    es = _model_on(csp0, wave)._eline_system
-    assert "[Ne III] 3869" in es.names
-    assert not set(PHANTOM_LINES) & set(es.names)
-    with pytest.raises(ValueError, match="not a line to fit"):
-        _model_on(csp0, wave, elines_to_fit=["[O II] 3867", "[Ne III] 3869"])
