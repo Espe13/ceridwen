@@ -29,6 +29,25 @@ class Observation:
     # default: CSPBasis.predict then synthesises every model pixel).
     model_support = None
 
+    # flux and uncertainty are stored float64 however they are set (here or by assignment after
+    # construction): the predictions are float32 (docs/conventions.md "Precision"), and a
+    # float32 sigma at cgs scale (~1e-30) underflows when the likelihood squares it
+    @property
+    def flux(self):
+        return self._flux
+
+    @flux.setter
+    def flux(self, value):
+        self._flux = None if value is None else jnp.asarray(value, dtype=float)
+
+    @property
+    def uncertainty(self):
+        return self._uncertainty
+
+    @uncertainty.setter
+    def uncertainty(self, value):
+        self._uncertainty = None if value is None else jnp.asarray(value, dtype=float)
+
     def __init__(self,
                  flux=None,
                  uncertainty=None,
@@ -50,8 +69,8 @@ class Observation:
                 f"{sorted(kwargs)}.{' ' + hint if hint else ''}"
             )
 
-        self.flux        = None if flux        is None else jnp.asarray(flux,        dtype=float)
-        self.uncertainty = None if uncertainty is None else jnp.asarray(uncertainty, dtype=float)
+        self.flux        = flux                # float64 (the properties above)
+        self.uncertainty = uncertainty
 
         if isinstance(mask, slice):
             if self.flux is None:
