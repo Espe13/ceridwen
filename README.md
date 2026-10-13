@@ -39,9 +39,10 @@ conda create -n ceridwen python=3.11 -y && conda activate ceridwen
 pip install ceridwen
 ```
 
-On Linux this installs the CUDA 12 JAX wheels, and JAX uses an NVIDIA GPU when one is present
-(it needs a recent NVIDIA driver, see [JAX's install page](https://docs.jax.dev/en/latest/installation.html)).
-Everywhere else, and on Linux without a GPU, JAX runs on the CPU. On Windows, use WSL2.
+This runs on the CPU, on any platform. For an NVIDIA GPU (Linux, or WSL2 on Windows), install
+the CUDA build instead: `pip install "ceridwen[cuda12]"` (NVIDIA driver >= 525) or
+`pip install "ceridwen[cuda13]"` (driver >= 580); the CUDA libraries come as pip wheels, see
+[JAX's install page](https://docs.jax.dev/en/latest/installation.html).
 
 CERIDWEN reads the nebular CLOUDY grids and the dust-emission templates from the FSPS data
 files. Clone FSPS into `$SPS_HOME` (3.4 GB) and make the variable permanent (replace

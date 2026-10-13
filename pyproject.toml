@@ -50,18 +50,13 @@ classifiers = [
 #                     ceridwen/__init__.py patches jax.interpreters.xla back in
 #                     for it; that shim is written against tfp 0.25 on jax 0.9+.
 dependencies = [
-    # GPU by default where CUDA exists: on Linux the CUDA 12 jaxlib wheels are
-    # installed (CUDA libraries bundled -- a recent enough NVIDIA driver is the
-    # only system requirement; jax's install page states the current minimum,
-    # which rose after the CUDA 12.0 wheels of jax 0.4.x).  JAX picks the GPU automatically at import time; on
-    # a Linux box WITHOUT a usable NVIDIA GPU the same install falls back to
-    # CPU at runtime (one warning at import, identical results).  macOS and
-    # native Windows have no CUDA wheels, so they get the CPU build; Windows
-    # users with an NVIDIA GPU should install inside WSL2 (which is Linux, so
-    # the CUDA path applies).  The fitSED header "Device : ..." shows which
-    # backend a fit is actually using.
-    "jax[cuda12]>=0.9.0; sys_platform == 'linux'",
-    "jax>=0.9.0; sys_platform != 'linux'",
+    # CPU everywhere by default: a plain `pip install ceridwen` gives JAX's CPU build on every
+    # platform, so a laptop without an NVIDIA GPU imports cleanly (the CUDA plugin, if
+    # installed on a machine without a usable GPU, prints a traceback at every import). An
+    # NVIDIA GPU (Linux, or Windows through WSL2) takes one of the CUDA extras below:
+    # `pip install "ceridwen[cuda12]"` or `"ceridwen[cuda13]"`. The fitSED header
+    # "Device : ..." shows which backend a fit is using.
+    "jax>=0.9.0",
     "jaxlib>=0.9.0",
     "numpy>=2.0",
     "scipy>=1.13",
@@ -86,6 +81,12 @@ dependencies = [
 # (see docs/installation.md, "Building your own SSP grid"): install it with `pip install fsps`.
 
 [project.optional-dependencies]
+# NVIDIA GPUs (Linux / WSL2): JAX with its CUDA libraries bundled as pip wheels; the NVIDIA
+# driver is the only system requirement (jax's install page gives the minimum). cuda12 needs a
+# driver >= 525; cuda13 >= 580. RTX 50-series (Blackwell, sm_120) needs CUDA >= 12.8: a fresh
+# cuda12 install resolves nvidia-cuda-nvcc-cu12 12.9 (verified 2026-10-13), cuda13 always does.
+cuda12 = ["jax[cuda12]>=0.9.0"]
+cuda13 = ["jax[cuda13]>=0.9.0"]
 # Maintainer-only: tooling to build the documentation site. Not needed to use
 # or test CERIDWEN.
 docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.24", "black>=24.0"]

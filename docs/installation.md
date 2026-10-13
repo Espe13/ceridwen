@@ -10,11 +10,23 @@ pip install ceridwen
 ```
 
 This installs JAX, the samplers, the filter curves and attenuation laws, posterior plotting
-and the test runner. On Linux it installs the CUDA 12 JAX wheels, with the CUDA libraries
-bundled: JAX uses an NVIDIA GPU when one is present and needs only a recent NVIDIA driver
-(see [JAX's install page](https://docs.jax.dev/en/latest/installation.html) for the minimum).
-On macOS, and on Linux without a GPU, JAX runs on the CPU with the same results. On Windows,
-use WSL2. Every `fitSED` call prints the device it runs on:
+and the test runner, and runs on the CPU on any platform (a laptop is fine; importing prints
+nothing).
+
+**NVIDIA GPU** (Linux, or Windows through WSL2): install the CUDA build instead,
+
+```bash
+pip install "ceridwen[cuda12]"      # NVIDIA driver >= 525
+pip install "ceridwen[cuda13]"      # NVIDIA driver >= 580
+```
+
+The CUDA libraries come as pip wheels; the driver is the only system requirement (minimums
+from [JAX's install page](https://docs.jax.dev/en/latest/installation.html)). RTX 50-series
+cards (Blackwell) need CUDA >= 12.8: `cuda13` always provides it, and a fresh `cuda12` install
+resolves CUDA 12.9. Do not install a CUDA extra on a machine without an NVIDIA GPU: JAX's CUDA
+plugin then prints a traceback at every import (it still falls back to the CPU).
+
+Every `fitSED` call prints the device it runs on:
 
 ```
 ceridwen.fitSED
