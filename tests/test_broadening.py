@@ -159,6 +159,37 @@ def test_stage_a_conserves_sum(wm):
     assert np.isclose(out.sum(), y.sum(), rtol=1e-10)
 
 
+def test_float32_smoothing_finite_at_cgs_scale(wm):
+    """A float32 spectrum at cgs scale (F_nu ~ 1e-29) under cotangents of ~1e36 per pixel
+    (residual / sigma^2 times a photometry matrix, as in a fit): value and gradient finite and
+    equal to the float64 smoothing to float32 precision. Unscaled, the FFT's backward pass sums
+    the cotangents past float32's maximum (3.4e38) and returns NaN. An all-zero spectrum stays
+    finite too: the double where returns 0 and sends no cotangent into the FFT (its gradient is
+    0, where the float64 path gives S^T w; the window adds nothing to the prediction)."""
+    g = LogGrid.build(wm, 3600., 7000., sigma_max_kms=500.)
+    smooth = make_gaussian_fft(g)
+    rng = np.random.default_rng(3)
+    y = 1e-29 * (1.0 + 0.5 * np.sin(np.arange(g.n) / 50.0))
+    w = 1e36 * rng.uniform(0.5, 1.5, g.n)
+
+    def loss(x, dt):
+        return jnp.sum(jnp.asarray(w, dt) * smooth(x, jnp.asarray(300.0, dt)))
+
+    for x0 in (y, np.zeros(g.n)):
+        v32, g32 = jax.value_and_grad(loss)(jnp.asarray(x0, jnp.float32), jnp.float32)
+        v64, g64 = jax.value_and_grad(loss)(jnp.asarray(x0, jnp.float64), jnp.float64)
+        assert np.isfinite(float(v32)) and np.all(np.isfinite(np.asarray(g32)))
+        if not np.any(x0):
+            assert float(v32) == 0.0
+            continue
+        # the edge pixels' gradients collect the padded buffer (the edge value is continued
+        # over n_pad - n points): a float32 sum of K terms is good to K * eps
+        k_eps = (g.n_pad - g.n) * 2.0 ** -24
+        np.testing.assert_allclose(np.asarray(g32), np.asarray(g64), rtol=k_eps)
+        np.testing.assert_allclose(np.asarray(g32)[1:-1], np.asarray(g64)[1:-1], rtol=1e-5)
+        assert float(v32) == pytest.approx(float(v64), rel=1e-5)
+
+
 @pytest.mark.parametrize("sigma_gal,inst", [
     (0.0, Instrument.R_fwhm(3000.)),
     (120.0, Instrument.R_fwhm(3000.)),

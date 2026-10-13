@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional, Union
 
 import numpy as np
+import jax
 import jax.numpy as jnp
 
 __all__ = [
@@ -387,12 +388,25 @@ def make_gaussian_fft(grid: LogGrid) -> Callable:
 
     def smooth(spec_log, sigma_kms):
         sigma_px = sigma_kms / dv
+        # float32: smooth spec / m and multiply back (the smoothing is linear, so this is the
+        # same operator, and m = stop_gradient(max |spec|) leaves the gradient unchanged). Both
+        # passes then run on numbers of order one: unscaled, the backward pass sums cotangents of
+        # ~1e35 (residual / sigma^2 times the photometry matrix, at cgs scale) over ~1e4 FFT
+        # points, past float32's maximum 3.4e38, and returns NaN gradients; scaled, the FFT sees
+        # m * cotangent. An all-zero window (m = 0) returns 0 through a second where, so no
+        # cotangent reaches the FFT and value and gradient stay finite. Float64 is untouched.
+        scaled = spec_log.dtype == jnp.float32
+        if scaled:
+            m = jax.lax.stop_gradient(jnp.max(jnp.abs(spec_log)))
+            nonzero = m > 0
+            m = jnp.where(nonzero, m, jnp.ones_like(m))
+            spec_log = spec_log / m
         pad_r = jnp.full((n_right,), 0.0, spec_log.dtype) + spec_log[-1]
         pad_l = jnp.full((n_left,), 0.0, spec_log.dtype) + spec_log[0]
         padded = jnp.concatenate([spec_log, pad_r, pad_l])
         taper = jnp.exp(-2.0 * jnp.pi ** 2 * sigma_px ** 2 * nu ** 2)
-        out = jnp.fft.irfft(jnp.fft.rfft(padded) * taper, n=M)
-        return out[:n].astype(spec_log.dtype)
+        out = jnp.fft.irfft(jnp.fft.rfft(padded) * taper, n=M)[:n].astype(spec_log.dtype)
+        return jnp.where(nonzero, out * m, jnp.zeros_like(out)) if scaled else out
 
     return smooth
 
