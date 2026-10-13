@@ -170,6 +170,10 @@ class DiagonalNoiseModel(NoiseModelBase):
         def get(key):
             return params[key] if isinstance(key, str) else key
 
+        # float64 (dynamic range that underflows when squared): the predictions are float32,
+        # and at cgs scale (|mu| ~ 1e-30) (noise_floor * |mu|)**2 is below float32's smallest
+        # number; mu takes sigma_obs's dtype (float64: the Observation constructors store data so)
+        mu = jnp.asarray(mu, dtype=jnp.result_type(sigma_obs, mu))
         var: Array = sigma_obs ** 2
         if self.use_error_scale:
             var = var * jnp.exp(2.0 * get(self.err_scale_key))

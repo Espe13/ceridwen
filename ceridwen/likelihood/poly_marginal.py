@@ -73,6 +73,9 @@ def poly_marginal_loglike(y, mu, inv_var, log_det, mask, A, prior_sigma,
     Occam terms are global, not per pixel).  With ``return_posterior`` also the conditional
     mean (k,) and covariance (k, k) of the coefficients.
     """
+    # the factorisation in the data's float64 (the likelihood's linear algebra), whatever the
+    # prediction's dtype: D^T W D spans ~1e-60 * 1e60 at cgs scale
+    mu = jnp.asarray(mu, dtype=jnp.result_type(y, mu))
     A = jnp.asarray(A, dtype=mu.dtype)
     s = jnp.asarray(prior_sigma, dtype=mu.dtype)
     r, D, w, L, g, v, logdet_P = _factor(y, mu, inv_var, mask, A, s)
@@ -93,6 +96,7 @@ def poly_marginal_loglike(y, mu, inv_var, log_det, mask, A, prior_sigma,
 
 def poly_marginal_posterior(y, mu, inv_var, mask, A, prior_sigma):
     """``(mean (k,), cov (k, k))`` of the coefficients given the model ``mu``."""
+    mu = jnp.asarray(mu, dtype=jnp.result_type(y, mu))     # as in poly_marginal_loglike
     A = jnp.asarray(A, dtype=mu.dtype)
     s = jnp.asarray(prior_sigma, dtype=mu.dtype)
     r, D, w, L, g, _v, _ld = _factor(y, mu, inv_var, mask, A, s)
@@ -175,7 +179,10 @@ class PolyMarginalGaussianLikelihood(LikelihoodBase):
         nout = self.noise_model.compute(sigma_obs, mu, mask, params, data=y)
         mean, cov = poly_marginal_posterior(y, mu, nout.inv_var, mask,
                                             self.poly_marginal.A, self.poly_marginal.sigma)
-        return mean, cov, 1.0 + jnp.asarray(self.poly_marginal.A, dtype=mu.dtype) @ mean
+        # the response in the data's float64, as the posterior it comes from (a float32 design
+        # matrix would round the response, ~1, to 6e-8, and its small values far worse)
+        dt = jnp.result_type(y, mu)
+        return mean, cov, 1.0 + jnp.asarray(self.poly_marginal.A, dtype=dt) @ mean
 
     def make_lnprobfn(self, observations, model, prior) -> Callable[[dict[str, Array]], Array]:
         """Return a jitted log-posterior for one observation (``.flux``, ``.uncertainty``, ``.mask``)."""

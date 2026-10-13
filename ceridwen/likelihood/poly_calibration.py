@@ -87,6 +87,9 @@ class PolynomialCalibration:
     def solve(self, y, mu, inv_var, mask):
         """``(coefficients (order+1,), response (n_pix,))`` maximising the likelihood; a
         column-scaled normal-equation solve, differentiable in ``mu`` and ``inv_var``."""
+        # the normal equations in the data's float64 (the likelihood's linear algebra), whatever
+        # the prediction's dtype: mu**2 * inv_var spans ~1e-60 * 1e60 at cgs scale
+        mu = jnp.asarray(mu, dtype=jnp.result_type(y, mu))
         A = jnp.asarray(self.A, dtype=mu.dtype)
         w = jnp.where(mask, inv_var, 0.0)
         D = mu[:, None] * A
