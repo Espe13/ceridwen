@@ -30,6 +30,7 @@ from ceridwen.likelihood.poly_marginal import (PolyMarginalGaussianLikelihood,
                                                PolynomialMarginal, poly_marginal_loglike,
                                                poly_marginal_posterior)
 from ceridwen.observation import Photometry, Spectrum
+from _f32bounds import B8, lnl_bound, fft_atol   # noqa: E402,F401  (float32 bounds)
 
 
 # ------------------------------------------------------------------ small problems -----
@@ -451,7 +452,8 @@ def test_postprocess_conditional_polynomial_and_result_file(fits):
     # the conditional-mean polynomial matches the injected one within its posterior spread
     A = chebyshev_design_matrix(WAVE, np.ones(WAVE.size, bool), 3)
     resp = out["prediction"]["calibration"]["s"]
-    np.testing.assert_allclose(resp, 1.0 + blk["mean"] @ A.T, rtol=1e-10)
+    # the conditional mean is solved from float32 predictions in two places: B8 (was 1e-10)
+    np.testing.assert_allclose(resp, 1.0 + blk["mean"] @ A.T, rtol=B8)
     true_resp = 1.0 + A @ C_TRUE
     spread = np.std(1.0 + blk["draws"] @ A.T, axis=0)
     assert np.max(np.abs(np.median(resp, axis=0) - true_resp) / spread) < 4.0
@@ -469,7 +471,9 @@ def test_postprocess_conditional_polynomial_and_result_file(fits):
     y, sig, mask, _c, _u = observation_data(m.obs_dict["s"])
     mu = m.predict(m.apply_transforms(th))["s"]
     mean, _cov, want = lh.conditional(y, mu, sig, mask, th)
-    np.testing.assert_allclose(blk["mean"][0], np.asarray(mean), rtol=1e-6, atol=1e-10)
+    # batched vs single draw on float32 predictions: a coefficient moves by ~B8 x the response
+    # scale (~1), so its absolute error is B8 (was atol=1e-10)
+    np.testing.assert_allclose(blk["mean"][0], np.asarray(mean), rtol=1e-6, atol=B8)
     np.testing.assert_allclose(out["prediction"]["spectra"]["s"][0], np.asarray(mu * want),
                                rtol=1e-6)
     # result file: mode, order and prior widths

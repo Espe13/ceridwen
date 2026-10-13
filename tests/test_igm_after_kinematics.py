@@ -19,6 +19,7 @@ from _gridfixture import find_test_grid                                   # noqa
 
 from ceridwen import SSPData, CSPBasis, SedModel, Cosmology, Kinematics, Instrument  # noqa: E402
 from ceridwen.observation import Spectrum, Photometry                      # noqa: E402
+from _f32bounds import B8, lnl_bound, fft_atol   # noqa: E402,F401  (float32 bounds)
 
 Z = 6.0
 CKMS = 299792.458
@@ -141,6 +142,6 @@ def test_free_z_paths_match_fixed_z(csp):
         a = free.predict(dict(base, zred=jnp.array([z])))
         b = fixed.predict(base)
         for k in ("s", "p"):
-            tol = 1e-9 if (z == Z and k == "s") else 1e-2
+            tol = B8 if (z == Z and k == "s") else 1e-2      # float32 projector (was 1e-9)
             ra, rb = np.asarray(a[k]), np.asarray(b[k])
             assert np.max(np.abs(ra - rb)) < tol * np.max(np.abs(rb)), (k, z)

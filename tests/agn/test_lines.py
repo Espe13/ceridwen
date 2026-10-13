@@ -33,6 +33,7 @@ from ceridwen.broadening import (Instrument, Kinematics, SpectralProjector,
                                  agn_line_profiles_on_grid, make_agn_line_painter_prospector,
                                  make_line_painter_free_z, C_AA_S)
 from ceridwen.observation import Lines, Photometry, Spectrum
+from _f32bounds import B8   # noqa: E402,F401  (float32 bounds)
 
 SPS_HOME = os.environ.get("SPS_HOME")
 pytestmark = pytest.mark.skipif(not SPS_HOME, reason="SPS_HOME not set: the AGN line table is "
@@ -240,7 +241,16 @@ def test_corrected_painter_is_the_nebular_profile(agn):
     th = {"sigma_gas": jnp.array([90.0])}
     got = np.asarray(p.agn_lines(F, 250.0, th))
     ref = make_line_painter_free_z(WAVE_OBS, agn.line_wave, p.sigma_inst_kms)(F, 250.0, 1 + Z)
-    assert np.array_equal(got, np.asarray(ref))
+    # bitwise wherever the scaled profile stays a normal float32: the projector paints F / s and
+    # multiplies by s, s a power of two (exact). Values within a factor s of float32's smallest
+    # normal become subnormal (XLA CPU flushes them) and are compared to tiny x s (was
+    # array_equal)
+    from ceridwen.broadening import _pow2_scale
+    ref = np.asarray(ref)
+    tiny_s = np.finfo(np.float32).tiny * max(float(_pow2_scale(F)[0]), 1.0)
+    normal = np.abs(ref) >= tiny_s
+    assert np.array_equal(got[normal], ref[normal])
+    assert np.all(np.abs(got[~normal] - ref[~normal]) <= tiny_s)
     # flux conservation of an isolated line: [O III] 5007 alone
     k = agn.line_names.index("[O III] 5007")
     one = jnp.zeros(agn.n_lines).at[k].set(1.0)
@@ -398,7 +408,9 @@ def test_B4_linear_in_agn_elum(agn, setup):
                 assert np.array_equal(x[big], y[big]), (k, fac)
                 assert np.all(np.abs((x - y)[~big]) <= 1e-100 * np.abs(x).max()), (k, fac)
             else:
-                np.testing.assert_allclose(y, x, rtol=1e-14, atol=1e-15 * np.abs(x).max())
+                # float32 profiles: a non-power-of-two factor changes the rounding (B8; was
+                # rtol=1e-14, atol=1e-15 x peak); powers of two stay bitwise above
+                np.testing.assert_allclose(y, x, rtol=B8, atol=B8 * np.abs(x).max())
 
 
 # ---------------------------------------------------------------------------

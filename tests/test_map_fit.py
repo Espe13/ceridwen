@@ -24,6 +24,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "examples"))
 from _gridfixture import find_test_grid  # noqa: E402
+from _f32bounds import B8, lnl_bound, fft_atol   # noqa: E402,F401  (float32 bounds)
 
 GRID = find_test_grid()
 pytestmark = pytest.mark.skipif(GRID is None, reason="no test SSP grid")
@@ -112,7 +113,9 @@ def test_map_beats_best_of_1000_prior_draws(mock, fitted):
     assert res.lnp >= best_draw
     # the reported value is the log-posterior of the returned theta
     lnp_theta = float(lnprob({k: jnp.asarray(v) for k, v in res.theta.items()}))
-    assert lnp_theta == pytest.approx(res.lnp, rel=1e-9, abs=0)
+    # float32 predictions, two evaluations: first-order lnL bound (was rel=1e-9)
+    assert lnp_theta == pytest.approx(res.lnp, rel=0,
+                                      abs=lnl_bound(mock["model"], res.theta))
 
 
 def test_map_is_deterministic(fitted):
@@ -143,7 +146,8 @@ def test_map_theta_is_a_free_param_init(mock, fitted):
     for k in model.theta_init:
         assert np.array_equal(np.asarray(rebuilt.theta_init[k]), np.asarray(res.theta[k])), k
     lnp = float(build_lnprob(rebuilt)(rebuilt.theta_init))
-    assert lnp == pytest.approx(res.lnp, rel=1e-9, abs=0)
+    # float32 predictions, two evaluations: first-order lnL bound (was rel=1e-9)
+    assert lnp == pytest.approx(res.lnp, rel=0, abs=lnl_bound(rebuilt, rebuilt.theta_init))
 
 
 def test_map_setup_errors(mock):
@@ -189,7 +193,9 @@ def test_fitsed_optimize_starts_nuts_at_the_map_and_records_it(mock, tmp_path, m
     ref = map_fit(mock["model"], rng_key=jax.random.fold_in(jax.random.PRNGKey(5), 1), **okw)
     for k, v in ref.theta.items():
         assert np.asarray(seen["theta_init"][k]).tobytes() == np.asarray(v).tobytes(), k
-    assert seen["lnp"] == pytest.approx(ref.lnp, rel=1e-9, abs=0)
+    # float32 predictions, two evaluations: first-order lnL bound (was rel=1e-9)
+    assert seen["lnp"] == pytest.approx(ref.lnp, rel=0,
+                                        abs=lnl_bound(mock["model"], ref.theta))
     rec = read_result_h5(tmp_path / "ceridwen_result.h5")["map"]
     assert rec["lnp"] == ref.lnp and rec["best_start"] == ref.best_start
     for k, v in ref.theta.items():

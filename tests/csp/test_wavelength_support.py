@@ -25,6 +25,7 @@ jax.config.update("jax_enable_x64", True)
 from ceridwen import SSPData, CSPBasis, SedModel, Cosmology   # noqa: E402
 from ceridwen.observation import Photometry, Spectrum, Lines  # noqa: E402
 from ceridwen.broadening import Instrument, Kinematics        # noqa: E402
+from _f32bounds import B8, lnl_bound, fft_atol   # noqa: E402,F401  (float32 bounds)
 
 GRID = require_test_grid()
 NEB = pytest.mark.skipif(not os.environ.get("SPS_HOME"), reason="nebular model needs $SPS_HOME")
@@ -72,11 +73,14 @@ def _theta(model, k=0):
         np.shape(model.theta_init[n])))) for n in model.param_names}
 
 
-def _close(a, b):
+def _close(a, b, n_pad=2 ** 16):
+    """rtol RTOL (8 float32 roundings) plus the float32 FFT smoothing's absolute error,
+    fft_atol (the two paths smooth different windows; GOTCHAS section 24). n_pad bounds the FFT
+    length from above (2**14 .. 2**15 in these models)."""
     for k in a:
         x, y = np.asarray(a[k], dtype=np.float64), np.asarray(b[k], dtype=np.float64)
         assert x.shape == y.shape and np.all(np.isfinite(y)), k
-        np.testing.assert_allclose(y, x, rtol=RTOL, atol=0.0, err_msg=k)
+        np.testing.assert_allclose(y, x, rtol=RTOL, atol=fft_atol(x, n_pad), err_msg=k)
 
 
 def _pair(build):

@@ -21,6 +21,7 @@ from ceridwen.broadening import Kinematics, Instrument                     # noq
 from ceridwen.observation import Photometry, Spectrum                      # noqa: E402
 from ceridwen.model.transforms import logsfr_ratios_to_sfh                # noqa: E402
 from ceridwen.sampler.priors import Uniform, Normal                        # noqa: E402
+from _f32bounds import B8, lnl_bound, fft_atol   # noqa: E402,F401  (float32 bounds)
 
 Z_LO, Z_HI, Z_INIT = 0.7, 0.9, 0.8
 N_TIME = 5
@@ -110,7 +111,8 @@ def test_free_z_spectrum_model_builds_and_matches_fixed_z(csp):
         # fixed-z one (exact); elsewhere the two grids differ in node phase and the linear
         # interpolation of the model onto them differs at the per-mille level
         for k in ("spec", "phot"):
-            tol = 1e-9 if (z == Z_INIT and k == "spec") else 1e-2
+            # shared nodes: equal up to the float32 projector's rounding, B8 (was 1e-9)
+            tol = B8 if (z == Z_INIT and k == "spec") else 1e-2
             ra = np.asarray(a[k]); rb = np.asarray(b[k])
             assert np.all(np.isfinite(ra))
             assert np.max(np.abs(ra - rb)) < tol * np.max(np.abs(rb)), (k, z)
@@ -127,7 +129,7 @@ def test_free_z_spectrum_with_lines(csp_neb):
             fixed = _model(csp_neb, [spec_f, phot_f], zred_fixed=z)
         ra = np.asarray(free.predict(_theta(free, z))["spec"])
         rb = np.asarray(fixed.predict(_theta(fixed))["spec"])
-        tol = 1e-9 if z == Z_INIT else 1e-2
+        tol = B8 if z == Z_INIT else 1e-2       # float32 projector, B8 (was 1e-9)
         assert np.max(np.abs(ra - rb)) < tol * np.max(np.abs(rb)), z
 
 

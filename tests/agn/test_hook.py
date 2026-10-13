@@ -17,6 +17,7 @@ from ceridwen import SedModel
 from ceridwen.agn import AGNConfig
 from ceridwen.observation import Photometry, Spectrum
 from ceridwen.broadening import Instrument
+from _f32bounds import B8, lnl_bound, fft_atol   # noqa: E402,F401  (float32 bounds)
 
 MODES = ("fsps", "prospector", "corrected")
 ZRED = 2.0
@@ -440,7 +441,10 @@ def test_B8_vmap_grad_predict(csps, mode):
         pv = m.predict_vmap(batch)["phot"]
         for i in (0, W // 2, W - 1):
             pi = m.predict_jit({k: v[i] for k, v in batch.items()})["phot"]
-            np.testing.assert_allclose(np.asarray(pv[i]), np.asarray(pi), rtol=1e-5)
+            # float32 FFT smoothing in the photometric broadening, batched vs single: rtol B8
+            # plus the FFT bound (was rtol=1e-5)
+            np.testing.assert_allclose(np.asarray(pv[i]), np.asarray(pi), rtol=B8,
+                                       atol=fft_atol(pi, 2 ** 16))
 
     def loss(fagn, tau):
         p = m.predict({**base, "fagn": fagn, "agn_tau": tau})["phot"]

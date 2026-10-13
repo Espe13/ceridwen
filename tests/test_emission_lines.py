@@ -36,6 +36,7 @@ from ceridwen.broadening import (                                          # noq
 )
 from ceridwen.observation import Photometry, Spectrum, Lines              # noqa: E402
 from ceridwen.model.transforms import logsfr_ratios_to_sfh               # noqa: E402
+from _f32bounds import B8   # noqa: E402,F401  (float32 bounds)
 
 ZRED = 0.3
 SIGMA_GAS = 80.0
@@ -90,7 +91,7 @@ def test_painter_is_linear_in_flux():
     a, b = jnp.array([1.0, 0.0]), jnp.array([0.0, 1.0])
     np.testing.assert_allclose(np.asarray(paint(2.0 * a + 3.0 * b, 80.0)),
                                2.0 * np.asarray(paint(a, 80.0)) + 3.0 * np.asarray(paint(b, 80.0)),
-                               rtol=1e-12, atol=0.0)
+                               rtol=B8, atol=0.0)      # float32 profiles (was rtol=1e-12)
 
 
 def test_free_z_painter_equals_fixed_painter_at_every_redshift():

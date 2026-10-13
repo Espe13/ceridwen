@@ -23,6 +23,7 @@ from ceridwen.broadening import (                                   # noqa: E402
     Instrument, Kinematics, TIED, DEFAULT_KINEMATICS, LogGrid, make_gaussian_fft, build_response,
     apply_response, make_line_painter, make_line_painter_free_z, SpectralProjector,
     PhotometricBroadener, FWHM_TO_SIGMA)
+from _f32bounds import B8, lnl_bound, fft_atol   # noqa: E402,F401  (float32 bounds)
 
 FAKE = getattr(jax, "__fake__", False)
 needs_jax = pytest.mark.skipif(FAKE, reason="needs a real JAX")
@@ -275,7 +276,9 @@ def test_line_painter_flux_and_profile(wo):
         out = np.asarray(paint(jnp.asarray(flux), jnp.asarray(s_gas)))
         s_tot = np.sqrt(s_gas ** 2 + s_inst ** 2)
         ref = sum(analytic_line_fnu(wo, l0, f, s) for l0, f, s in zip(lines, flux, s_tot))
-        assert np.allclose(out, ref, rtol=1e-10, atol=1e-12 * ref.max())
+        # the profile is float32 (one exp, one divide, one product): B8 of the peak
+        # (was rtol=1e-10, atol=1e-12 * peak)
+        assert np.allclose(out, ref, rtol=0.0, atol=B8 * ref.max())
         assert np.isclose(integrate_fnu_dnu(wo, out), flux.sum(), rtol=2e-3)
     paint2 = make_line_painter(wo, np.array([6562.8 * (1 + Z)]), np.array([80.]))
     out2 = np.asarray(paint2(jnp.asarray([1.0]), jnp.asarray(50.0)))

@@ -34,6 +34,7 @@ from ceridwen.csp.spectrum_calibration import (
     legendre_design_matrix, spectrum_calibration_factor,
 )
 from ceridwen.cosmology import Cosmology
+from _f32bounds import B8, lnl_bound, fft_atol   # noqa: E402,F401  (float32 bounds)
 
 FILTERS = ["sdss_g0", "sdss_r0", "sdss_i0", "sdss_z0"]
 SPEC_WAVE = np.linspace(4000.0, 8000.0, 120)     # observed-frame vacuum A
@@ -197,7 +198,9 @@ def test_spectrum_calib_under_jit(ssp_grid_path):
     f = jax.jit(lambda th: csp.predict(th, [spec])["spec"])
     eager = csp.predict({**theta, "spectrum_calib": jnp.asarray(COEFF)}, [spec])["spec"]
     jitted = f({**theta, "spectrum_calib": jnp.asarray(COEFF)})
-    np.testing.assert_allclose(np.asarray(jitted), np.asarray(eager), rtol=1e-6)
+    # float32 FFT smoothing, jit vs eager: rtol B8 plus the FFT bound (was rtol=1e-6)
+    np.testing.assert_allclose(np.asarray(jitted), np.asarray(eager), rtol=B8,
+                               atol=fft_atol(eager, 2 ** 16))
 
 
 # --------------------------------------------------------------------------

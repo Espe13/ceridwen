@@ -40,6 +40,7 @@ from ceridwen.agn import AGNConfig  # noqa: E402
 from ceridwen.broadening import Instrument, Kinematics  # noqa: E402
 from ceridwen.model.transforms import logsfr_ratios_to_sfh  # noqa: E402
 from ceridwen.observation import Lines, Spectrum  # noqa: E402
+from _f32bounds import B8   # noqa: E402,F401  (float32 bounds)
 
 ZRED = 0.3
 HA = 6564.7229
@@ -248,7 +249,7 @@ def test_V_BLR_7_cigale_fwhm_convention(fwhm):
     cig = _cigale_profile(wl / 10.0, lam0 / 10.0, fwhm) / 10.0        # per nm -> per A
     area_c = np.trapezoid(lam_l, wl)
     area_g = np.trapezoid(cig, wl)
-    assert area_c == pytest.approx(1.0, rel=1e-9)
+    assert area_c == pytest.approx(1.0, rel=B8)          # a float32 profile (was rel=1e-9)
     assert area_g == pytest.approx(1.0, rel=1e-9)
     f_c = _ref.fwhm_kms(wl, fnu, lam0)
     # CIGALE's FWHM is defined on L_lambda in lambda: measure it there (half-max crossings)

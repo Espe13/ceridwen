@@ -34,6 +34,7 @@ from ceridwen.likelihood.eline_marginal import (                          # noqa
 from ceridwen.model.transforms import logsfr_ratios_to_sfh               # noqa: E402
 from ceridwen.observation import Photometry, Spectrum, Lines             # noqa: E402
 from ceridwen.sampler.priors import Uniform                               # noqa: E402
+from _f32bounds import B8, lnl_bound, fft_atol   # noqa: E402,F401  (float32 bounds)
 
 REF = pathlib.Path(__file__).resolve().parent / "reference" / "prospector_elines.npz"
 LOG2PI = np.log(2.0 * np.pi)
@@ -268,8 +269,10 @@ def test_zero_prior_width_is_the_ordinary_likelihood(csp):
     pred, aux = pin.predict_with_elines(th)
     back = {k: np.asarray(pred[k], float) + np.asarray(aux["cols"][k]) @ np.asarray(aux["prior_mean"])
             for k in pred}
-    np.testing.assert_allclose(back["spec"], np.asarray(ref["spec"]), rtol=1e-11,
-                               atol=1e-11 * float(np.abs(ref["spec"]).max()))
+    # the marginal path re-adds the lines through the float64 basis, the ordinary one paints
+    # them in float32: B8 (was rtol=atol/peak=1e-11)
+    np.testing.assert_allclose(back["spec"], np.asarray(ref["spec"]), rtol=B8,
+                               atol=B8 * float(np.abs(ref["spec"]).max()))
     np.testing.assert_array_equal(back["lines"], np.asarray(ref["lines"]))
     # the ordinary photometric line path is float32 (G @ F in obs._T's dtype); ours is float64
     np.testing.assert_allclose(back["phot"], np.asarray(ref["phot"], float), rtol=1e-6)
@@ -301,7 +304,14 @@ def test_noise_free_mock_recovers_the_true_fluxes(csp):
     model.obs_dict["spec"].flux = jnp.asarray(_truth(csp)["spec"])
     post = eline_line_fluxes(model, _theta(model), lh)
     mean, sd, F = map(np.asarray, (post["mean"], post["sd"], post["cloudy"]))
-    assert np.all(np.abs(mean - F) < 1e-6 * sd)
+    # the mock is a float32 prediction: each pixel carries <= B8 |mu| of rounding, and the
+    # posterior mean moves by at most sd x the chi of that perturbation (Cauchy-Schwarz on the
+    # linear solve): sd (1e-6 + chi_f32) (was 1e-6 sd)
+    spec = model.obs_dict["spec"]
+    m = np.asarray(spec.mask, dtype=bool) if np.size(spec.mask) else slice(None)
+    chi_f32 = float(np.sqrt(np.sum((B8 * np.abs(np.asarray(spec.flux))
+                                    / np.asarray(spec.uncertainty))[m] ** 2)))
+    assert np.all(np.abs(mean - F) < (1e-6 + chi_f32) * sd), chi_f32
 
 
 def test_line_fluxes_differ_from_cloudy_only_through_the_data(csp):
@@ -348,8 +358,9 @@ def test_jit_vmap_production_width_and_gradients(csp):
         # 3e-7: the CSP and photometry have float32 stages whose summation order vmap changes;
         # the ordinary likelihood shows the same (8.7e-9 measured at this theta); 1.35e-7
         # measured here with the default (dust-free, ZAU_ND) CLOUDY grid, < 1e-7 with ZAU_WD
-        assert vm[i] == pytest.approx(float(f(dict(th, logmass=jnp.array([xs[i]])))),
-                                      rel=3e-7, abs=0.0)
+        # with the float32 projector: the first-order lnL bound (was rel=3e-7)
+        t_i = dict(th, logmass=jnp.array([xs[i]]))
+        assert vm[i] == pytest.approx(float(f(t_i)), rel=0.0, abs=lnl_bound(model, t_i))
     g = float(jax.grad(lambda x: f(dict(th, logmass=jnp.array([x]))))(x0))
     h = 1e-4            # mass enters as float32(10**logmass): steps must exceed its resolution
     fd = (float(f(dict(th, logmass=jnp.array([x0 + h]))))

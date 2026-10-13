@@ -42,6 +42,7 @@ from ceridwen.broadening import (Kinematics, Instrument, ScaledResponse,   # noq
 from ceridwen.observation import Photometry, Spectrum, Lines              # noqa: E402
 from ceridwen.priors import Uniform, Normal                               # noqa: E402
 from ceridwen.model.transforms import logsfr_ratios_to_sfh                # noqa: E402
+from _f32bounds import B8, lnl_bound, fft_atol   # noqa: E402,F401  (float32 bounds)
 
 ZRED = 0.8
 N_TIME = 5
@@ -194,9 +195,9 @@ def test_sampled_scale_matches_fixed(csp, make):
     th2 = dict(th, eline_delta_zred=jnp.array([0.0]))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        # the two line painters order their products differently (pre-existing): 1e-10
+        # the two line painters order their products differently, in float32: B8 (was 1e-10)
         np.testing.assert_allclose(np.asarray(ms.predict(th2)["spec"]),
-                                   np.asarray(ms.predict(th)["spec"]), rtol=1e-10, atol=0)
+                                   np.asarray(ms.predict(th)["spec"]), rtol=B8, atol=0)
 
 
 def test_sampled_scale_matches_fixed_free_z(csp):
@@ -371,7 +372,10 @@ def test_jit_vmap_equal_loop(grad_model):
     for i, p in enumerate(pts):
         v, g = vg(p)
         dv = max(dv, abs(float(vals[i]) / float(v) - 1))
-        np.testing.assert_allclose(float(vals[i]), float(v), rtol=1e-7, atol=0)
+        # vmap and the single call sum the float32 stages in different orders: first-order lnL
+        # bound (was rtol=1e-7)
+        np.testing.assert_allclose(float(vals[i]), float(v), rtol=0,
+                                   atol=lnl_bound(grad_model, p))
         for k in g:
             a, b = np.asarray(grads[k][i]), np.asarray(g[k])
             dg = max(dg, float(np.max(np.abs(a - b) / np.maximum(np.abs(b), 1.0))))

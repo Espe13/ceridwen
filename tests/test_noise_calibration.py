@@ -35,6 +35,7 @@ from ceridwen.likelihood.poly_calibration import (PolynomialCalibration,
 from ceridwen.csp.spectrum_calibration import legendre_design_matrix
 from ceridwen.observation import Photometry, Spectrum
 from ceridwen.sampler.priors import Uniform
+from _f32bounds import B8, lnl_bound, fft_atol   # noqa: E402,F401  (float32 bounds)
 
 REF = pathlib.Path(__file__).resolve().parent / "reference" / "prospector_polyopt.npz"
 FILTERS = ["sdss_g0", "sdss_r0", "sdss_i0", "sdss_z0"]
@@ -117,7 +118,8 @@ def test_single_spectrum_kind_names(csp):
         else:
             var = var * np.exp(2 * 0.3)
         want += _gauss_lnl(y, pred[k], var, mask)
-    assert float(_lnl(m, _lhs(m), th)) == pytest.approx(want, rel=1e-10, abs=0.0)
+    # float32 predictions, jit vs eager: first-order lnL bound (was rel=1e-10)
+    assert float(_lnl(m, _lhs(m), th)) == pytest.approx(want, rel=0.0, abs=lnl_bound(m, th))
 
 
 def test_two_spectra_each_their_own(csp):
@@ -133,7 +135,8 @@ def test_two_spectra_each_their_own(csp):
     for k, j in (("blue", 1e-30), ("red", 5e-30)):
         y, sig, mask, _c, _u = observation_data(m.obs_dict[k])
         want += _gauss_lnl(y, pred[k], np.asarray(sig) ** 2 + j ** 2, mask)
-    assert float(_lnl(m, _lhs(m), th)) == pytest.approx(want, rel=1e-10, abs=0.0)
+    # float32 predictions, jit vs eager: first-order lnL bound (was rel=1e-10)
+    assert float(_lnl(m, _lhs(m), th)) == pytest.approx(want, rel=0.0, abs=lnl_bound(m, th))
 
 
 @pytest.mark.parametrize("old", ["log_jitter", "log_err_scale", "log_f_calib", "log_f_data"])
@@ -297,7 +300,8 @@ def test_profile_is_the_maximum_over_the_sampled_calibration(csp):
     samp.obs_dict["s"].flux, samp.obs_dict["s"].uncertainty = o.flux, o.uncertainty
     ths = {k: jnp.asarray(v) for k, v in samp.theta_init.items()}
     lnl_samp = float(_lnl(samp, _lhs(samp), ths))
-    assert lnl_prof == pytest.approx(lnl_samp, rel=1e-9, abs=0.0)
+    # float32 predictions, two routes: first-order lnL bound (was rel=1e-9)
+    assert lnl_prof == pytest.approx(lnl_samp, rel=0.0, abs=lnl_bound(samp, ths))
     ths2 = dict(ths, spectrum_calib=ths["spectrum_calib"] * 1.1)       # any other c is lower
     assert float(_lnl(samp, _lhs(samp), ths2)) < lnl_samp
 
