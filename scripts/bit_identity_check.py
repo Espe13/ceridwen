@@ -220,7 +220,11 @@ def _likelihood(model, theta_np, tag, out, gauss_only=False):
     rng = np.random.default_rng(SEED + 2)
     obs = model.obs_dict
     keys = tuple(obs)
-    y_fake = {k: np.asarray(model.predict({n: jnp.asarray(v[0]) for n, v in theta_np.items()})[k])
+    # float64, as the Observation constructors store data (observation/base.py): the arrays are
+    # assigned below without the constructor, and a float32 sigma at cgs scale underflows when
+    # squared
+    y_fake = {k: np.asarray(model.predict({n: jnp.asarray(v[0]) for n, v in theta_np.items()})[k],
+                            dtype=np.float64)
               for k in keys}
     saved = {k: (obs[k].flux, obs[k].uncertainty) for k in keys}
     for k in keys:                      # data = draw 0's prediction + 10 % noise, 3 % outliers
