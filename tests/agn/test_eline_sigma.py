@@ -36,6 +36,7 @@ from ceridwen.broadening import Instrument, Kinematics  # noqa: E402
 from ceridwen.model.model import AGN_ELINE_SIGMA_MAX  # noqa: E402
 from ceridwen.observation import Spectrum  # noqa: E402
 from ceridwen.priors import Normal, Uniform  # noqa: E402
+from _f32bounds import B8   # noqa: E402  (float32 bounds)
 
 KEY = "agn_eline_sigma"
 WARN = "agn_eline_sigma is sampled but the data cannot constrain it"
@@ -176,12 +177,18 @@ def test_G1_grad_finite_near_lower_edge(mode):
         v, g = vg(jnp.asarray(x))
         g = np.asarray(g)
         assert np.isfinite(float(v)) and np.all(np.isfinite(g)), (mode, s)
-        h = 1e-3 * s
+        # h-scan on the float32 model (2026-10-13): corrected agrees to <= 1.1e-4 at h = 0.5;
+        # prospector has a kink at s = 5 (the lines enter the 5-width window) that h >= 0.5
+        # straddles, so h = 0.01 s there (4.6e-3 at s = 5, 5.8e-6 at s = 50). Was h = 1e-3 s.
+        h = min(0.5, (0.5 if mode == "corrected" else 0.01) * s)
         e = np.zeros_like(x)
         e[i] = h
         fd = (float(f(jnp.asarray(x + e))) - float(f(jnp.asarray(x - e)))) / (2 * h)
         if mode == "corrected" or s >= 5.0:
             assert g[i] != 0.0
-            assert g[i] == pytest.approx(fd, rel=2e-3), (mode, s, g[i], fd)
+            # rel 2e-3 as before, plus the float32 noise floor of the gradient, B8 |lnL| (the
+            # forward model rounds lnL at that level; measured |dg| from float32: 4.7e-5 at
+            # s = 1e-3, where every central difference is 0, and 8.6e-5 at prospector s = 5)
+            assert abs(g[i] - fd) <= 2e-3 * abs(fd) + B8 * abs(float(v)), (mode, s, g[i], fd)
         else:                     # prospector: no pixel within 5 s / sigma_gas widths
             assert abs(g[i]) <= 1e-10 * max(1.0, abs(float(v))) and abs(fd) <= 1e-6

@@ -180,7 +180,10 @@ def test_B8_full_model_jit_vmap_grad(csp, mode):
     v, g = vg(jnp.asarray(x0))
     g = np.asarray(g)
     assert np.isfinite(float(v)) and np.all(np.isfinite(g))
-    for i, h in ((i_agn, 1e-8), (i_agn + 1, 1e-3)):
+    # steps from an h-scan on the float32 model (2026-10-13): agn_elum (x = 2e-3) agrees to
+    # 1.1e-7 at h = 1e-4 (1e-8 was rounding noise, 3.4e-3); agn_eline_sigma (180) to 3.3e-5
+    # at h = 1 (1e-3: 2.6e-2). Tolerance unchanged.
+    for i, h in ((i_agn, 1e-4), (i_agn + 1, 1.0)):
         e = np.zeros_like(x0); e[i] = h
         fd = (float(f(jnp.asarray(x0 + e))) - float(f(jnp.asarray(x0 - e)))) / (2 * h)
         assert g[i] == pytest.approx(fd, rel=1e-4), (i, g[i], fd)

@@ -462,10 +462,15 @@ def test_B8_grad_finite_and_matches_finite_differences(agn, setup, x0):
     x = jnp.asarray(x0)
     g = np.asarray(jax.grad(f)(x))
     assert np.all(np.isfinite(g))
-    for i, h in ((0, 1e-9 * max(x0[0], 1e-6)), (1, 1e-4)):
+    # steps and bounds from an h-scan on the float32 model (2026-10-14): agn_elum agrees to
+    # <= 8.5e-7 at h = 1e-2 x (1e-9 x was float32 noise: 1.4 at x = 1e-6, the "factor 2.4"
+    # against an autodiff gradient that equals the float64 one to 4.5e-8); agn_eline_sigma has a
+    # noise floor at every step, best h = 0.1 (worst 6.6e-5 over the three points; was h = 1e-4,
+    # rel 2e-5): bound 2x that worst
+    for i, h, rel in ((0, 1e-2 * x0[0], 2e-5), (1, 0.1, 1.3e-4)):
         e = np.zeros(2); e[i] = h
         fd = (float(f(x + e)) - float(f(x - e))) / (2 * h)
-        assert g[i] == pytest.approx(fd, rel=2e-5), (i, g[i], fd)
+        assert g[i] == pytest.approx(fd, rel=rel), (i, g[i], fd)
 
 
 def test_B8_free_z_and_sampled_instrument_scale(agn):

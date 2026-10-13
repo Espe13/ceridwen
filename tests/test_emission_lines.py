@@ -112,9 +112,15 @@ def test_free_z_painter_is_differentiable_in_redshift():
     wave = np.exp(np.linspace(np.log(8000.0), np.log(9500.0), 4000))
     free = make_line_painter_free_z(wave, np.array([6564.72]), np.full(wave.size, 50.0))
 
+    # the centroid relative to the line's ln-lambda at opz = 1.3: summing f * ln(lambda) with
+    # ln(lambda) ~ 9.1 and differentiating cancels to ~3e-4 of it (sum df ~ 0 across a shifted
+    # profile), which amplified the float32 profile's rounding ~3e4 x (1.6e-5 measured);
+    # subtracting a constant does not change the derivative (was sum f ln(lambda) / sum f)
+    l0 = np.log(6564.72 * 1.3)
+
     def centre(opz):
         f = free(jnp.array([1.0]), 90.0, opz)
-        return jnp.sum(f * jnp.log(wave) / wave) / jnp.sum(f / wave)
+        return jnp.sum(f * (jnp.log(wave) - l0) / wave) / jnp.sum(f / wave) + l0
 
     g = float(jax.grad(centre)(1.3))
     assert np.isfinite(g)

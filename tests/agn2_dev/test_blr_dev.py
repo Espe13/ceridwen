@@ -238,7 +238,9 @@ def test_D_BLR_9_grad_fd_and_vmap():
     def f(lum, sig):
         out = model.predict({**th0, "blr_lum": jnp.reshape(lum, (1,)),
                              "blr_sigma": jnp.reshape(sig, (1,))})
-        return (jnp.sum(out["spec"] ** 2) * 1e54 + jnp.sum(out["lines"]) * 1e15
+        # the spectrum is float32: square and scale it in float64 (1e54 is float32 inf), as the
+        # photometry below already is
+        return (jnp.sum(out["spec"].astype(jnp.float64) ** 2) * 1e54 + jnp.sum(out["lines"]) * 1e15
                 + jnp.sum(out["phot"].astype(jnp.float64)) * 1e9)
 
     vg = jax.jit(jax.value_and_grad(f, argnums=(0, 1)))
@@ -250,8 +252,12 @@ def test_D_BLR_9_grad_fd_and_vmap():
         fd = (float(f(0.5, sig + h)) - float(f(0.5, sig - h))) / (2 * h)
         rel = abs(float(gs) - fd) / abs(fd)
         worst = max(worst, rel)
-        assert rel < 1e-5, (sig, float(gs), fd)
-        fdl = (float(f(0.5 + 1e-4, sig)) - float(f(0.5 - 1e-4, sig))) / 2e-4
+        # h-scan on the float32 model (2026-10-13): h = 1e-3 sigma is the best step (1.8e-5 ..
+        # 6.8e-5 over the four widths; 1e-4 sigma: up to 9.3e-4, 1e-2: ~1e-4), so the bound is
+        # 2x the worst at that step (was 1e-5)
+        assert rel < 2e-4, (sig, float(gs), fd)
+        # blr_lum: h = 1e-3 (was 1e-4: up to 6.9e-5; 1e-3: <= 1.6e-6), tolerance unchanged
+        fdl = (float(f(0.5 + 1e-3, sig)) - float(f(0.5 - 1e-3, sig))) / 2e-3
         assert float(gl) == pytest.approx(fdl, rel=1e-5), sig
     print(f"D-BLR-9 largest relative grad-vs-FD difference in blr_sigma: {worst:.2e}")
     lums = jnp.array([0.1, 0.5, 1.0])

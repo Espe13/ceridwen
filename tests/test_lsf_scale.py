@@ -337,7 +337,12 @@ def test_gradient_matches_finite_differences(grad_model):
         for i in range(v.size):
             # sigma_gal (~170 km/s): a 0.017 km/s step is float32 noise with the ZAU_ND line
             # strengths (AD 0.50133; FD 0.5132 at h 0.01, 0.50120 at h 1: rel 1.3e-4, 2026-09-24)
-            h = 1.0 if k == "sigma_gal" else 1e-4 * max(1.0, abs(v.flat[i]))
+            # per-parameter steps from an h-scan on the float32 model (2026-10-14, with the
+            # projector scaling): sigma_gal 10 km/s (1 km/s is float32 noise at ~150 km/s: 3.9e-3;
+            # 10: 4.9e-5); gas_logu 3e-3 max(1, |x|) (1e-3: 3.3e-3; 3e-3: 5.6e-4); the others
+            # 1e-3 max(1, |x|) (3e-3 is truncation-limited in logmass, 6.8e-3); worst 7.6e-4
+            h = (10.0 if k == "sigma_gal" else
+                 (3e-3 if k == "gas_logu" else 1e-3) * max(1.0, abs(v.flat[i])))
             up, dn = v.copy(), v.copy()
             up.flat[i] += h
             dn.flat[i] -= h
@@ -348,7 +353,8 @@ def test_gradient_matches_finite_differences(grad_model):
             worst[k] = max(worst.get(k, 0.0), rel)
     print("max relative |grad - central FD| per parameter:",
           {k: f"{v:.1e}" for k, v in worst.items()})
-    assert worst["lsf_scale"] < 1e-6, worst
+    # the LSF scale acts in the projector, which is float32 now: it has the CSP parameters'
+    # bound (measured 1.55e-4; it was < 1e-6 while the projector was float64)
     assert max(worst.values()) < 2e-3, worst
 
 
@@ -421,10 +427,13 @@ def test_marginalised_lines_with_sampled_scale(csp):
         b = float(ff({k: v for k, v in th.items() if k != "lsf_scale"}))
         assert abs(a - b) <= 1e-6 * max(1.0, abs(b)), (sc, a, b)
     g = jax.grad(fs)({**th, "lsf_scale": jnp.array([1.1])})["lsf_scale"][0]
-    h = 1e-5
+    # h-scan on the float32 model (2026-10-13): 1e-5 is float32 noise (1e-2 off); 1e-4 .. 2e-3
+    # agree to 3e-5 .. 1.5e-4, non-monotone (the noise floor): h = 1e-3 and 2x that floor
+    # (was h = 1e-5, 1e-5)
+    h = 1e-3
     fd = (float(fs({**th, "lsf_scale": jnp.array([1.1 + h])}))
           - float(fs({**th, "lsf_scale": jnp.array([1.1 - h])}))) / (2 * h)
-    assert np.isfinite(float(g)) and abs(float(g) - fd) <= 1e-5 * max(abs(fd), 1.0), (g, fd)
+    assert np.isfinite(float(g)) and abs(float(g) - fd) <= 2e-4 * max(abs(fd), 1.0), (g, fd)
 
 
 class _NoPrior:
