@@ -94,7 +94,8 @@ def fixed_params() -> dict:
         diffuse_tau_kc=0.5,      # tau_v
         diffuse_dust_index=-0.1,  # delta
         tau_pow=0.3,
-        alpha=-1.0,
+        alpha_pow=-1.0,          # birth-cloud power-law slope (was the key "alpha", which
+                                 # CSPBasis ignored: the default, also -1.0, applied)
         gas_logu=-2.5,           # log_u
         gas_logz=0.0,            # log_zsol
         zred=2.0,
@@ -198,7 +199,7 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
     theta["diffuse_tau_kc"] = jnp.array([p["diffuse_tau_kc"]])
     theta["diffuse_dust_index"] = jnp.array([p["diffuse_dust_index"]])
     theta["tau_pow"] = jnp.array([p["tau_pow"]])
-    theta["alpha"] = jnp.array([p["alpha"]])
+    theta["alpha_pow"] = jnp.array([p["alpha_pow"]])
     theta["gas_logz"] = jnp.array([p["gas_logz"]])
     theta["gas_logu"] = jnp.array([p["gas_logu"]])
     theta["duste_qpah"] = jnp.array([p["duste_qpah"]])
