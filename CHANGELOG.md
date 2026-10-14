@@ -1,4 +1,48 @@
-## Unreleased (AGN2: the CIGALE-standard AGN)
+## 1.0.13 (2026-10-14)
+
+### float32 forward model, cheap GPUs, blackjax 1.7
+- The large arrays of the forward model are float32: the SSP contraction, attenuation curves,
+  the nebular profile contraction, the projector (resampling, FFT smoothing, instrument
+  response, painted line profiles) and the photometry. A consumer GPU with slow float64 (1:64)
+  does its work in float32; `jax_enable_x64` stays on, and float64 is kept where float32 would
+  be wrong (dust-emission energy balance, AGN `L_bol`, sigma and chi², the likelihood's linear
+  algebra, line fluxes, wavelengths). Every site is listed in `docs/conventions.md`,
+  "Precision". A fit at the defaults peaked at 2.75-2.91 GB of device memory (A100), so an
+  8 GB card runs it (`docs/installation.md`).
+- The float32 projection is evaluated on `x / s`, `s` an exact power of two near max|x|, and
+  multiplied back in float64: the same values, and the likelihood's cotangent (|r| / sigma² ~
+  1e35-1e41 at cgs scale) no longer overflows float32 into a NaN gradient.
+- `Observation` stores flux and uncertainty as float64 whatever dtype is passed (a float32 FITS
+  spectrum is fine), also when assigned later; the likelihood promotes the float32 prediction to
+  the data's float64 before squaring (sigma² ~ 1e-60 underflowed float32).
+- Install: `pip install ceridwen` is CPU-only everywhere; CUDA is the extra `ceridwen[cuda12]`
+  or `ceridwen[cuda13]` (RTX 50-series needs CUDA >= 12.8: `cuda13`, or a fresh `cuda12`).
+- blackjax 1.6 and 1.7 both work (floor 1.6, no cap). With 1.7 the lane kernel takes the
+  Cholesky factor that `blackjax.nss` now passes (the same directions up to rounding), and on
+  every version a replacement particle is born at the contour it replaced, including chains
+  whose moves were all rejected: blackjax 1.7's fix (on a two-level plateau toy, the ln Z bias
+  fell from +0.34 to +0.11; on a Gaussian nothing changes). Checkpoints resume across kernels as before.
+- Euclid NISP Y, J, H passbands (`euclid_nisp_y`, `_j`, `_h`; ESA NISP-PHOTO-PASSBANDS V1.0,
+  total throughput).
+- Verification: a new gate tier, T5 (`scripts/physical_check.py`, `docs/development.md`): no
+  spectrum, photometry, `Lines` prediction or line flux may move by more than 1e-3 relative
+  (per element above 1e-4 of the array maximum), at 16 draws and four prior extremes.
+- Numerical (CPU; the physical standard of `docs/development.md`, worst per element above 1e-4
+  of the array maximum, `|diff| / max` below it), against the code before the float32
+  projector, painters and nebular contraction: model-grid
+  spectra <= 3.3e-6, projected spectra <= 2.5e-5, photometry <= 4.2e-4 (a faint band at the
+  faint prior extreme), `Lines` predictions <= 3.3e-7, line fluxes <= 1.2e-6,
+  over 20 configurations at 16 draws and four prior extremes. ln L moves by <= 6.2e-6 relative,
+  gradients by <= 4.3e-5. Stored baselines that moved and were re-captured: the regression
+  categories `agn_blr`, `agn_disk`, `agn_lines`, `agn_nlr`, `agn_polar`, `agn_skirtor`,
+  `agn_torus` (<= 8.7e-6), `csp_components` (<= 1.3e-4: the model-grid line profiles' far
+  wings), `csp_spectrum`, `dust_emission_themis`, `dust_laws`, `eline_marginal`, `lsf_scale`
+  (<= 6.9e-7); the AGN golden spectra `agn_fsps`, `agn_corrected_dustemi`,
+  `agn2_skirtor_polar_cigale`, `agn2_skirtor_polar_corrected_dustemi`, `agn2_nlr_blr_corrected`
+  (spectra <= 1.2e-6, model-grid line spectra <= 5.2e-4, photometry <= 2.8e-8); the BLR golden
+  (<= 1.5e-6). The SSP weights `W` do not move.
+
+### AGN2: the CIGALE-standard AGN
 - `AGNConfig(torus_model="skirtor16")`: the SKIRTOR 2016 torus + disc as CIGALE's `skirtor2016`
   (theta `skirtor_t`, `_pl`, `_q`, `_oa`, `_i`; static `skirtor_R`); `polar_dust=True` (+
   `polar_law`): CIGALE's polar dust (`polar_ebv`, `polar_temp`, `polar_emis`);
@@ -20,7 +64,7 @@
 - Tests: `tests/agn2/` (validation suite), `tests/agn2_dev/`; T2 categories `agn_skirtor`,
   `agn_polar`, `agn_nlr` (need `$CERIDWEN_AGN_DATA`), `agn_blr`; T3 goldens `agn2_*`.
 
-## Unreleased (AGN)
+### AGN
 - AGN in the forward model: `CSPBasis(agn=AGNConfig(...))` / `CSPBasis_afe(agn=...)`, package
   `ceridwen.agn` (`docs/agn.md`). Everything Prospector has: the Nenkova+08 clumpy torus
   (`fagn`, `agn_tau`), the Temple+21 accretion disc (`fagn_bbb`), the AGN dust screen
@@ -44,7 +88,7 @@
 - `scripts/check_api_usage.py` also checks the keyword arguments of base-less dataclasses
   (`AGNConfig`).
 
-## Unreleased (speedups, adapted from work by Liu Hao, @potatoist314)
+### Speedups (adapted from work by Liu Hao, @potatoist314)
 - Nested sampling is faster: `slice_kernel` option on `BlackJAXNestedSamplerAdapter` (and
   `fitSED(sampler_kwargs=...)`), default `"lanes"` (every particle's slice chain as one lane of a
   shared loop, Dance et al. 2025); `"stock"` is the unchanged `blackjax.nss`, `"carry"` evaluates
