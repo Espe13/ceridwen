@@ -111,12 +111,16 @@ def lane_update(logprior_fn, loglikelihood_fn, num_inner_steps, num_delete,
     from functools import partial
     from blackjax.mcmc.slice import SliceInfo
     from blackjax.ns.base import init_state_strategy
-    from blackjax.ns.nss import sample_direction_from_covariance
+    from blackjax.ns import nss as _nss
 
     depth = free_moves + lookahead   # candidates looked at per lane and round
     slots = 2 * lookahead            # stored results per lane
 
-    def update_function(rng_key, state, loglikelihood_0, cov):
+    def update_function(rng_key, state, loglikelihood_0, cov=None, covariance_factor=None):
+        # the proposal's live-point covariance as blackjax's nss provides it: blackjax 1.6 passes
+        # ``cov``; 1.7 passes its Cholesky factor once per outer step (``covariance_factor``,
+        # directions 2 L z / ||z||, the same draw as 1.6's MVN(0, cov) up to rounding). The lane
+        # samples its directions with the same blackjax function as the stock kernel, either way.
         choice_key, sample_key = jax.random.split(rng_key)
         particles = state.particles
         evaluate = jax.vmap(partial(init_state_strategy, logprior_fn=logprior_fn,
@@ -137,8 +141,11 @@ def lane_update(logprior_fn, loglikelihood_fn, num_inner_steps, num_delete,
                 # The random numbers of one slice step: blackjax.mcmc.slice
                 # build_kernel, _univariate_slice and stepping_out.
                 prop_key, slice_key = jax.random.split(key)
-                direction, _ = ravel_pytree(sample_direction_from_covariance(
-                    prop_key, position, cov))
+                direction, _ = ravel_pytree(
+                    _nss.sample_direction_from_covariance_factor(
+                        prop_key, position, covariance_factor)
+                    if covariance_factor is not None else
+                    _nss.sample_direction_from_covariance(prop_key, position, cov))
                 level_key, interval_key, shrink_key = jax.random.split(slice_key, 3)
                 log_u = jnp.log(jax.random.uniform(level_key))
                 u_key, jk_key = jax.random.split(interval_key)
@@ -350,6 +357,10 @@ def lane_update(logprior_fn, loglikelihood_fn, num_inner_steps, num_delete,
             next=jnp.zeros(num_delete, dtype=i.dtype))
         _, lane, _, info, _ = jax.lax.while_loop(
             lambda c: jnp.any(c[0] < num_inner_steps), round_, (i, start, s, info, stored))
+        # every replacement particle is born at the contour it replaced (blackjax 1.7's
+        # update_with_mcmc_take_last), including chains whose moves were all rejected
+        lane = lane._replace(loglikelihood_birth=jnp.full_like(lane.loglikelihood_birth,
+                                                               loglikelihood_0))
         return lane, SliceInfo(
             is_accepted=info[..., 0] != 0,
             num_expansions=info[..., 1].astype(caps.dtype),
@@ -387,7 +398,10 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         particle's chain of slice steps as one lane of a shared loop (:func:`lane_update`;
         Dance et al. 2025): lanes do not wait for the slowest one inside each slice step,
         candidates below the prior slice level skip the likelihood, and idle batch slots
-        evaluate look-ahead candidates.  Bitwise equal to ``"stock"`` on CPU; on GPU the
+        evaluate look-ahead candidates.  Bitwise equal to ``"stock"`` on CPU, except that a
+        particle whose moves were all rejected is born at the contour it replaced (blackjax
+        1.7's rule, which ``"stock"`` follows from 1.7 on; with 1.6 the births, weights and
+        ln Z of such chains differ); on GPU the
         likelihood batches differ in composition, so float rounding can make the trajectories
         separate after many iterations (statistically equivalent, not bitwise; GPU runs of
         either kernel are not bit-reproducible between processes anyway).  The default since
@@ -512,7 +526,8 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
     def _run_config(self, theta_init, num_inner_steps, num_delete):
         """What must match between a checkpoint and the run that resumes it.  ``slice_kernel``
         is not part of it: the kernels make the same moves with the same random numbers, so a
-        checkpoint may be continued with any of them (bitwise equal on CPU)."""
+        checkpoint may be continued with any of them (bitwise equal on CPU, up to the births of
+        fully rejected chains with blackjax 1.6: see ``slice_kernel``)."""
         return {"num_live": self.num_live, "num_delete": int(num_delete),
                 "num_inner_steps": int(num_inner_steps),
                 "params": [(k, tuple(int(d) for d in jnp.shape(v)))
@@ -537,11 +552,15 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         from blackjax.ns import adaptive, base, from_mcmc, nss
         init_state_fn = partial(base.init_state_strategy,
                                 logprior_fn=logprior_fn, loglikelihood_fn=loglike_fn)
+        # the inner-kernel parameters the stock kernel of the installed blackjax uses: the
+        # Cholesky factor of the live covariance (1.7: live_covariance_factor) or the covariance
+        # itself (1.6), so a state (and a checkpoint) is the same for every slice kernel
+        live_params = getattr(nss, "live_covariance_factor", nss.live_covariance)
         if self.slice_kernel == "lanes":
             kernel = adaptive.build_kernel(
                 partial(base.delete_fn, num_delete=num_delete),
                 lane_update(logprior_fn, loglike_fn, num_inner_steps, num_delete),
-                update_inner_kernel_params_fn=nss.live_covariance)
+                update_inner_kernel_params_fn=live_params)
         else:
             constrained_step = nss.slice_constrained_step(
                 init_state_fn,
@@ -549,12 +568,12 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
                                    max_expansions=10, max_shrinkage=100),
                 nss.covariance_proposal)
             kernel = from_mcmc.build_kernel(
-                constrained_step, num_inner_steps, nss.live_covariance, num_delete)
+                constrained_step, num_inner_steps, live_params, num_delete)
 
         def init_fn(position, rng_key=None):
             return adaptive.init(
                 position, init_state_fn=jax.vmap(init_state_fn),
-                update_inner_kernel_params_fn=nss.live_covariance,
+                update_inner_kernel_params_fn=live_params,
                 rng_key=rng_key)
 
         return blackjax.SamplingAlgorithm(init_fn, kernel)

@@ -25,6 +25,17 @@ def _assert_trees_equal(want, got):
         np.testing.assert_array_equal(np.asarray(a), np.asarray(b))
 
 
+def _born_at_contour(state, step_out, num_delete):
+    """The stock step's output with blackjax 1.7's birth rule (ns.from_mcmc
+    update_with_mcmc_take_last): every replacement particle is born at the contour it replaced,
+    including chains whose moves were all rejected. blackjax 1.6 kept the start particle's birth
+    for those; the lane kernel follows 1.7 on every version. A no-op on 1.7."""
+    new, info = step_out
+    _, idx = jax.lax.top_k(-state.particles.loglikelihood, num_delete)
+    births = new.particles.loglikelihood_birth.at[idx].set(info.particles.loglikelihood.max())
+    return new._replace(particles=new.particles._replace(loglikelihood_birth=births)), info
+
+
 def test_carry_stepping_out_counts_the_same_calls_as_stock():
     counts = {}
     for interval in (stepping_out, stepping_out_carry):
@@ -97,7 +108,9 @@ def test_kernel_steps_are_bitwise_equal_to_stock(kernel):
 
 def test_lane_kernel_matches_stock_when_shrinkage_runs_out():
     """Two likelihood levels: once every live point is on the upper level, no candidate is
-    above the contour and each slice uses all of max_shrinkage."""
+    above the contour and each slice uses all of max_shrinkage. Chains whose moves were all
+    rejected are born at the contour (blackjax 1.7's rule, _born_at_contour); everything else
+    is bitwise the stock kernel's."""
     inside = lambda p: jnp.all(jnp.abs(p['x']) < 1.2) & (jnp.abs(p['y']) < 1.2)  # noqa: E731
     loglike = lambda p: jnp.where(inside(p), 1., 0.)  # noqa: E731
     logprior = lambda p: jnp.where(  # noqa: E731
@@ -113,7 +126,8 @@ def test_lane_kernel_matches_stock_when_shrinkage_runs_out():
     stock_step, lane_step = jax.jit(stock.step), jax.jit(lanes.step)
     accepted, shrinks = [], []
     for key in jax.random.split(keys[2], 12):
-        want, got = stock_step(key, state), lane_step(key, state)
+        want = _born_at_contour(state, stock_step(key, state), 6)
+        got = lane_step(key, state)
         _assert_trees_equal(want, got)
         state = want[0]
         accepted.append(np.asarray(want[1].update_info.is_accepted))
