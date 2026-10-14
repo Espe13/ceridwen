@@ -12,6 +12,8 @@ nebular emission and star formation histories. The forward model is written in J
 same code runs on a laptop CPU or a GPU, and is differentiable for gradient-based samplers.
 It is for astronomers who want a Bayesian SED fit with the evidence or with Hamiltonian Monte
 Carlo. Documentation: [www.amanda-stoffers.de/ceridwen](https://www.amanda-stoffers.de/ceridwen/).
+The [Ingredient Explorer](https://www.amanda-stoffers.de/ceridwen-explorer/#explorer) shows,
+in the browser, how each model ingredient changes a spectrum.
 
 ## Features
 

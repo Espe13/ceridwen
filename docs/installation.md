@@ -33,6 +33,22 @@ ceridwen.fitSED
   Device      : GPU  (CudaDevice(id=0))
 ```
 
+**GPU memory.** The forward model's large arrays are float32 (see
+[Conventions](conventions.md), "Precision"), so a consumer card with slow float64 does its
+work in float32. A nested-sampling fit at the defaults (`num_live=500`, `num_delete=100`,
+the `lanes` slice kernel) peaked at these device memories (A100, JAX 0.11.2; photometry plus a
+600-pixel spectrum, measured with `peak_bytes_in_use`):
+
+| model | parameters | peak device memory |
+|---|---|---|
+| stellar only | 7 | 2.75 GB |
+| + nebular emission, IGM | 9 | 2.87 GB |
+| + dust emission | 12 | 2.91 GB |
+
+An 8 GB card runs these defaults. Memory grows linearly with the number of parameter vectors
+evaluated at once: the compiled log-likelihood and gradient of the nebular model take 0.81 GB
+for a batch of 100 and 4.3 GB for 500 (0.94 and 4.8 GB with dust emission).
+
 ## 2. FSPS and `$SPS_HOME`
 
 CERIDWEN reads the nebular CLOUDY grids (`nebular/`), the dust-emission templates
