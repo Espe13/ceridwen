@@ -379,6 +379,32 @@ class LogGrid:
         return int(self.wave.size)
 
 
+def _pow2_scale(x):
+    """``(s, nonzero)``: ``s`` the power of two with max|x| <= s < 2 max|x| (1 when x is all
+    zero), from frexp, under stop_gradient. Dividing and multiplying by ``s`` is exact in binary
+    floating point (barring under/overflow), so scaling by it changes no mantissa."""
+    m = jax.lax.stop_gradient(jnp.max(jnp.abs(x)))
+    nonzero = m > 0
+    _, e = jnp.frexp(m)
+    s = jnp.where(nonzero, jnp.ldexp(jnp.ones((), jnp.float64), e), 1.0)
+    return s, nonzero
+
+
+def _scaled_to_float64(f, x):
+    """``f(x)`` for an ``f`` LINEAR in ``x`` that works in float32, as ``s * f(x / s)`` with ``s``
+    a stop-gradient power of two near max|x| and the final multiply in float64.
+
+    Same values bit for bit (the scaling is exact) and the same gradient, but the backward pass
+    reaches the float32 work as ``s * cotangent``: the likelihood's cotangent |r| / sigma^2 is
+    ~1e35 .. 1e41 at cgs scale (sigma ~ 1e-31) for a model far from the data, past float32's
+    maximum 3.4e38, and cast to float32 unscaled it becomes inf and the gradient NaN. The result
+    is float64. An all-zero ``x`` returns 0 through a second where (no cotangent reaches ``f``),
+    so value and gradient stay finite. Plain JAX (no custom_vjp): jax.hessian still works."""
+    s, nonzero = _pow2_scale(x)
+    y = f(x / s.astype(x.dtype))
+    return jnp.where(nonzero, y.astype(jnp.float64) * s, jnp.zeros(y.shape, jnp.float64))
+
+
 def make_gaussian_fft(grid: LogGrid) -> Callable:
     """f(spec_log, sigma_kms): Gaussian on the log grid; FFT buffer continues the edge values."""
     n, M, dv = grid.n, grid.n_pad, grid.dv
@@ -388,18 +414,17 @@ def make_gaussian_fft(grid: LogGrid) -> Callable:
 
     def smooth(spec_log, sigma_kms):
         sigma_px = sigma_kms / dv
-        # float32: smooth spec / m and multiply back (the smoothing is linear, so this is the
-        # same operator, and m = stop_gradient(max |spec|) leaves the gradient unchanged). Both
-        # passes then run on numbers of order one: unscaled, the backward pass sums cotangents of
-        # ~1e35 (residual / sigma^2 times the photometry matrix, at cgs scale) over ~1e4 FFT
-        # points, past float32's maximum 3.4e38, and returns NaN gradients; scaled, the FFT sees
-        # m * cotangent. An all-zero window (m = 0) returns 0 through a second where, so no
-        # cotangent reaches the FFT and value and gradient stay finite. Float64 is untouched.
+        # float32: smooth spec / m and multiply back, m the power of two near max|spec|
+        # (_pow2_scale: exact, so the values are those of the unscaled smoothing, and the
+        # gradient is the same). Both passes then run on numbers of order one: unscaled, the
+        # backward pass sums cotangents of ~1e35 (residual / sigma^2 times the photometry
+        # matrix, at cgs scale) over ~1e4 FFT points, past float32's maximum 3.4e38, and returns
+        # NaN gradients; scaled, the FFT sees m * cotangent. An all-zero window returns 0
+        # through a second where, so no cotangent reaches the FFT. Float64 is untouched.
         scaled = spec_log.dtype == jnp.float32
         if scaled:
-            m = jax.lax.stop_gradient(jnp.max(jnp.abs(spec_log)))
-            nonzero = m > 0
-            m = jnp.where(nonzero, m, jnp.ones_like(m))
+            m, nonzero = _pow2_scale(spec_log)
+            m = m.astype(spec_log.dtype)
             spec_log = spec_log / m
         pad_r = jnp.full((n_right,), 0.0, spec_log.dtype) + spec_log[-1]
         pad_l = jnp.full((n_left,), 0.0, spec_log.dtype) + spec_log[0]
@@ -983,25 +1008,33 @@ class SpectralProjector:
         callable ``T(rest wavelengths)`` (the IGM) applied after the sigma_gal kernel and before
         the instrument, on the log grid; ``spec_rest`` is then the spectrum before the IGM."""
         scale = None if opz is None else self.opz_ref / opz
-        spec_log = self.window.smooth(self.window.to_log(spec_rest, scale), sigma_gal_kms)
-        if transmission is not None:
-            w_log = self.window._wave_log if scale is None else self.window._wave_log * scale
-            spec_log = spec_log * transmission(w_log).astype(spec_log.dtype)
-        if inst_scale is None:
-            return apply_response(self.J, self.W, spec_log)
-        return apply_response(self.scaled.J, self.scaled.weights(inst_scale), spec_log)
+
+        def project(x):                       # linear in x; float32 for a float32 spectrum
+            spec_log = self.window.smooth(self.window.to_log(x, scale), sigma_gal_kms)
+            if transmission is not None:
+                w_log = self.window._wave_log if scale is None else self.window._wave_log * scale
+                spec_log = spec_log * transmission(w_log).astype(spec_log.dtype)
+            if inst_scale is None:
+                return apply_response(self.J, self.W, spec_log)
+            return apply_response(self.scaled.J, self.scaled.weights(inst_scale), spec_log)
+        # float64 out, the float32 work scaled (the likelihood's cotangent must not enter
+        # float32 unscaled: _scaled_to_float64)
+        return _scaled_to_float64(project, spec_rest)
 
     def lines(self, line_flux_obs_all, sigma_gas_kms, opz=None, inst_scale=None):
         if self.paint is None:
             return 0.0
         flux = line_flux_obs_all[self._line_idx_j]
-        if self.free_z:
+
+        def paint(f):                         # linear in the line fluxes; float32 profiles
+            if self.free_z:
+                if inst_scale is None:
+                    return self.paint(f, sigma_gas_kms, opz)
+                return self.paint(f, sigma_gas_kms, opz, inst_scale)
             if inst_scale is None:
-                return self.paint(flux, sigma_gas_kms, opz)
-            return self.paint(flux, sigma_gas_kms, opz, inst_scale)
-        if inst_scale is None:
-            return self.paint(flux, sigma_gas_kms)
-        return self.paint(flux, sigma_gas_kms, inst_scale)
+                return self.paint(f, sigma_gas_kms)
+            return self.paint(f, sigma_gas_kms, inst_scale)
+        return _scaled_to_float64(paint, flux)        # float64 out (see continuum)
 
     def predict(self, spec_rest, line_flux_obs_all, theta, transmission=None):
         s_gal, s_gas = self.kinematics.resolve(theta)
@@ -1170,8 +1203,9 @@ class SpectralProjector:
             opz = opz + jnp.ravel(jnp.asarray(theta["eline_delta_zred"]))[0]
         s_ins = self.inst_scale(theta)
         a = self._agn if key == "nlr" else self._agn_sets[key]
-        if a["mode"] == "corrected":
-            return a["paint"](line_flux_obs, sigma_agn_kms, opz, s_ins)
+        if a["mode"] == "corrected":                  # float32 profiles: float64 out, scaled
+            return _scaled_to_float64(
+                lambda f: a["paint"](f, sigma_agn_kms, opz, s_ins), line_flux_obs)
         # Prospector's nebular widths (cache_eline_parameters): hypot(eline_sigma, lib), then
         # hypot with sqrt(inst^2 - lib^2) (0 where negative) when the spectrum has a resolution
         lib = a["lib"]

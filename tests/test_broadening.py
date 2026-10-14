@@ -191,6 +191,32 @@ def test_float32_smoothing_finite_at_cgs_scale(wm):
         assert float(v32) == pytest.approx(float(v64), rel=1e-5)
 
 
+def test_projection_gradient_finite_far_from_data(wm, wo):
+    """A float32 model spectrum at ~1e-22 (10 Jy) with lines, against data 0 +- 1e-31 (10 nJy):
+    the likelihood's cotangent |r| / sigma^2 ~ 1e40 at the projector's output exceeds float32's
+    maximum (3.4e38). Value and gradient in the float64 parameters (line fluxes, sampled
+    sigma_gal and sigma_gas) must be finite: the projector returns float64 and scales its float32
+    work by a power of two (broadening._scaled_to_float64); without that they are NaN. (The
+    spectrum itself is held fixed: in a model its cotangent is diluted by the resampling onto
+    the ~25x finer model grid; a float32 leaf at cgs scale cannot hold a gradient of 1e40.)"""
+    line_rest = np.array([4861.3, 5006.8])
+    kin = Kinematics(sigma_gal="sigma_gal", sigma_gas="sigma_gas", sigma_max=600.0)
+    proj = SpectralProjector.build(kin, Instrument.R_fwhm(1000.), wm, wo, Z,
+                                   line_wave_rest=line_rest)
+    x0 = jnp.asarray(1e-22 * (1.0 + 0.1 * np.sin(np.arange(wm.size) / 30.0)), jnp.float32)
+    f0 = jnp.asarray([3e-12, 9e-12])
+
+    def lnl(x, flux, sg, sgas):
+        mu = proj.predict(x, flux, {"sigma_gal": sg, "sigma_gas": sgas})
+        return -0.5 * jnp.sum((mu / 1e-31) ** 2)
+
+    val, grads = jax.value_and_grad(lnl, argnums=(1, 2, 3))(
+        x0, f0, jnp.array([150.0]), jnp.array([80.0]))
+    assert np.isfinite(float(val))
+    for g in grads:
+        assert np.all(np.isfinite(np.asarray(g)))
+
+
 @pytest.mark.parametrize("sigma_gal,inst", [
     (0.0, Instrument.R_fwhm(3000.)),
     (120.0, Instrument.R_fwhm(3000.)),
