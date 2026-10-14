@@ -77,7 +77,7 @@ its reason.
 |---|---|
 | SSP cube and its contraction | `csp.flux`, the `W`-weighted einsums |
 | attenuation curves | evaluated on `csp._wave32` with float32 parameters |
-| nebular line/continuum arrays, once interpolated | cast before the kernel's contraction |
+| nebular line/continuum arrays, once interpolated | the grid interpolation and `10**x` in float64 (log values near 50), then float32: the line-profile contraction (`NebularGridModel`) and the kernel's |
 | the projector's work | resampling, FFT smoothing, the instrument response and the painted line profiles of a `Spectrum` prediction |
 | photometry matrices and maggies | `Photometry._T`, `Photometry` predictions |
 | scaled, exactly | the projector's float32 work runs on `x / s`, `s` a power of two near max&#124;x&#124;, and is multiplied back by `s` in float64: exact in binary floating point, so the values are those of the unscaled float32 work, and the likelihood's cotangent reaches float32 already multiplied by `s` (unscaled, `\|r\| / sigma^2` ~ 1e35 .. 1e41 at cgs scale exceeds float32's maximum 3.4e38 and the gradient is NaN) |
@@ -95,8 +95,7 @@ its reason.
 | the returned `Spectrum` prediction | the float64 multiply that undoes the projector's scaling (one per pixel), so the likelihood's cotangent never enters float32 unscaled |
 | `DustEmission`'s output spectrum | kept by decision: converting it removes no measurable float64 work (8.5 % of FLOPs with or without it in `neb_duste`) and moves two goldens |
 
-Not yet converted: the nebular grid's line-profile contraction (`NebularGridModel`). With dust
-emission the model-grid spectrum is float64 (`DustEmission`, above).
+With dust emission the model-grid spectrum is float64 (`DustEmission`, above).
 
 Data are stored float64 by every `Observation`, whatever dtype you pass, at construction or
 by assigning `obs.flux` / `obs.uncertainty` later (a float32 FITS spectrum is fine).

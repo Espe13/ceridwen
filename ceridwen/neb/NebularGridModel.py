@@ -539,13 +539,17 @@ class NebularModel:
         ref   = jnp.where(jnp.isfinite(ref), ref, 0.0)
         scale = jnp.power(10.0, logqq_young - ref[None, :])            # (n_z, n_young)
 
-        base = jnp.power(10.0, log_cont + ref[None, :])                # (nspec, n_young)
+        # the interpolation and 10**(...) in float64 (log values near 50: float32 would overflow
+        # or cost ~1e-5 in 10**x); the profiles and their (n_wave, n_lines) contraction in
+        # float32, the precision csp.py keeps of this result anyway (it casts it to float32
+        # before its own contraction)
+        base = jnp.power(10.0, log_cont + ref[None, :]).astype(jnp.float32)   # (nspec, n_young)
         if include_lines:
             log_line = _interp_cube(self.nebem_line, self.nebem_line_logz,
                                     self.nebem_line_age, self.nebem_line_logu)
             base_full = base + jnp.einsum(
-                'wl,ly->wy', self.gaussnebarr,
-                jnp.power(10.0, log_line + ref[None, :]))
+                'wl,ly->wy', self.gaussnebarr.astype(jnp.float32),
+                jnp.power(10.0, log_line + ref[None, :]).astype(jnp.float32))
             if include_lines == "both":
                 return base.T, base_full.T, scale
             base = base_full
