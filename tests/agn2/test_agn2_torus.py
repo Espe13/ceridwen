@@ -65,6 +65,10 @@ def _build(cls, wave, mode, test, **kw):
         return cls(wave, mode=mode, **kw)
     except (FileNotFoundError, OSError) as e:
         _ref.missing(f"SKIRTOR data ({e})", test)
+    except ValueError as e:
+        if "MISSING the SKIRTOR template file" not in str(e):
+            raise
+        _ref.missing(f"SKIRTOR data ({e})", test)
 
 
 def _ctx(wave, mode, L_bol=1.0, L_dust=1.0):
