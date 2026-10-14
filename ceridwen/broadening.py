@@ -586,12 +586,15 @@ class ScaledResponse:
         return int(np.sum((px(lo) < 0.5) & (px(hi) >= 0.5)))
 
 
-def make_line_painter(wave_obs, line_wave_obs, sigma_inst_lines_kms) -> Callable:
+def make_line_painter(wave_obs, line_wave_obs, sigma_inst_lines_kms,
+                      dtype=jnp.float32) -> Callable:
     """paint(line_flux, sigma_gas_kms, inst_scale=None) -> f_nu on wave_obs.
 
     line_flux: observed-frame integrated flux [spectrum unit x Hz].
     f_nu = F phi(ln lambda) lambda / c_AA, phi unit-area in ln lambda with
     sigma = sqrt(sigma_gas^2 + (inst_scale sigma_inst)^2) / c (inst_scale None = 1).
+    ``dtype``: of the profile and its product (float32, as the spectrum; float64 only to test
+    the profile's arithmetic against a float64 reference).
     """
     wave_obs = np.asarray(wave_obs, dtype=np.float64)
     lnw = jnp.asarray(np.log(wave_obs))
@@ -605,7 +608,7 @@ def make_line_painter(wave_obs, line_wave_obs, sigma_inst_lines_kms) -> Callable
         # ln-lambda offsets in float64; the (n_pix, n_lines) profile and its product in float32,
         # as the spectrum it is added to (the line fluxes themselves stay float64: a handful of
         # numbers, docs/conventions.md "Precision")
-        dt = jnp.float32
+        dt = dtype
         x = ((lnw[:, None] - lnl[None, :]) / s[None, :]).astype(dt)
         phi = jnp.exp(-0.5 * x * x) / (jnp.sqrt(2.0 * jnp.pi) * s[None, :]).astype(dt)
         return (phi @ jnp.asarray(line_flux).astype(dt)) * lam_over_c.astype(dt)
@@ -613,11 +616,12 @@ def make_line_painter(wave_obs, line_wave_obs, sigma_inst_lines_kms) -> Callable
     return paint
 
 
-def make_line_painter_free_z(wave_obs, line_wave_rest, sigma_inst_table_kms) -> Callable:
+def make_line_painter_free_z(wave_obs, line_wave_rest, sigma_inst_table_kms,
+                             dtype=jnp.float32) -> Callable:
     """paint(line_flux, sigma_gas_kms, opz, inst_scale=None) -> f_nu on wave_obs for a
     traced 1 + z: lines at line_wave_rest * opz, instrument width interpolated from the
     per-pixel table ``sigma_inst_table_kms`` (on wave_obs) at those positions, times
-    ``inst_scale`` when given."""
+    ``inst_scale`` when given. ``dtype`` as in :func:`make_line_painter`."""
     wave_obs = np.asarray(wave_obs, dtype=np.float64)
     lnw = jnp.asarray(np.log(wave_obs))
     wo = jnp.asarray(wave_obs)
@@ -635,7 +639,7 @@ def make_line_painter_free_z(wave_obs, line_wave_rest, sigma_inst_table_kms) -> 
         # ln-lambda offsets in float64; the (n_pix, n_lines) profile and its product in float32,
         # as the spectrum it is added to (the line fluxes themselves stay float64: a handful of
         # numbers, docs/conventions.md "Precision")
-        dt = jnp.float32
+        dt = dtype
         x = ((lnw[:, None] - lnl[None, :]) / s[None, :]).astype(dt)
         phi = jnp.exp(-0.5 * x * x) / (jnp.sqrt(2.0 * jnp.pi) * s[None, :]).astype(dt)
         return (phi @ jnp.asarray(line_flux).astype(dt)) * lam_over_c.astype(dt)

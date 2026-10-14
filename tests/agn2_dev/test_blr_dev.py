@@ -5,10 +5,12 @@ D-BLR-1  the committed Case-B table is RESEARCH's file byte for byte (sha256), H
 D-BLR-2  table and config refusals (teaching errors at setup, never in a kernel).
 D-BLR-3  CIGALE width convention: a CERIDWEN broad line with sigma = FWHM / 2.35482 is CIGALE's
          Gaussian of that FWHM (nebular_AGN.py:143-159 on branch nebular_agn_new), to rounding.
-D-BLR-4  the painted Spectrum equals an independent NumPy recomputation of every broad line
-         (Gaussian in ln lambda, sigma^2 = blr_sigma^2 + sigma_inst^2, flux from the
-         definitions) to 1e-10 of the peak; the Lines observation of H alpha and H beta equals
-         the recomputed fluxes to 1e-12.
+D-BLR-4  the painter's profile, evaluated in float64, equals an independent NumPy
+         recomputation of every broad line (Gaussian in ln lambda, sigma^2 = blr_sigma^2 +
+         sigma_inst^2, flux from the definitions) to 1e-10 of the peak; the painted Spectrum
+         (float32 profiles) equals that float64 profile within the float32 profile bound
+         (tests/_f32bounds.py); the Lines observation of H alpha and H beta equals the
+         recomputed fluxes to 1e-12.
 D-BLR-5  photometry: the BLR photometry equals the delta-function estimate
          sum T(lam) lam F / ab_zero_counts within 1 % (the line is narrow next to the filter).
 D-BLR-6  transmission: corrected with the dust4 screen, T_BLR = T_d4 x T_gal at each line;
@@ -38,6 +40,8 @@ from _blr_model import _ref, jax, jnp  # noqa: E402
 from ceridwen.agn import AGNConfig  # noqa: E402
 from ceridwen.agn import blr as blrmod  # noqa: E402
 from ceridwen.broadening import agn_line_profiles_on_grid  # noqa: E402
+from ceridwen.broadening import CKMS, make_line_painter_free_z  # noqa: E402
+from _f32bounds import assert_profile_bound  # noqa: E402
 
 STAGED = pathlib.Path(os.path.expanduser(
     "~/Desktop/PhD/Tools/ceridwen_workspace/agn2_ref/data/blr/blr_caseB_T1e4_ne1e4.csv"))
@@ -157,14 +161,30 @@ def _analytic_spectrum(model, csp, spec, F, sig, **kw):
     return out
 
 
+def assert_painted_spectrum(got, model, csp, spec, F, sig):
+    """The BLR spectrum ``got`` (float32 profiles, as predicted) against the NumPy reference:
+    the projector's own painter evaluated in float64 equals ``_analytic_spectrum`` to 1e-10 of
+    the peak (the profile's arithmetic, at the tolerance it always had), and ``got`` equals that
+    float64 profile within the float32 profile bound (the cast; measured 2026-10-14: <= 1.5e-6
+    relative above 1e-4 of the peak, bound 9.3e-6)."""
+    want = _analytic_spectrum(model, csp, spec, F, sig)
+    proj = spec._proj
+    s_table = (0.5 * CKMS * np.gradient(np.log(proj.wave_obs)) if proj.instrument is None
+               else np.asarray(proj.sigma_inst_kms, np.float64))    # as setup_agn_lines
+    paint64 = make_line_painter_free_z(proj.wave_obs, csp._agn.model.blr.line_wave, s_table,
+                                       dtype=jnp.float64)
+    prof64 = np.asarray(paint64(jnp.asarray(F), sig, 1.0 + B.ZRED))
+    np.testing.assert_allclose(prof64, want, rtol=0, atol=1e-10 * want.max())
+    assert_profile_bound(got, prof64)
+
+
 @pytest.mark.parametrize("sig", [400.0, 1500.0, 5000.0])
 def test_D_BLR_4_spectrum_and_lines_vs_numpy(sig):
     model, csp, spec = B.build("D-BLR-4")
     kw = dict(blr_sigma=sig, diffuse_tau_kc=0.4)
     d = B.broad(model, blr_lum=0.8, **kw)
     F = B.expected_fluxes(model, csp, blr_lum=0.8, **kw)
-    want = _analytic_spectrum(model, csp, spec, F, sig)
-    np.testing.assert_allclose(d["spec"], want, rtol=0, atol=1e-10 * want.max())
+    assert_painted_spectrum(d["spec"], model, csp, spec, F, sig)
     names = list(csp._agn.model.blr.line_names)
     np.testing.assert_allclose(d["lines"], F[[names.index("Ba-alpha 6563"),
                                               names.index("Ba-beta 4861")]], rtol=1e-12)

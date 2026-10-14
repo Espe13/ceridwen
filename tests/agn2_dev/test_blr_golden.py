@@ -5,9 +5,11 @@ of a Spectrum (R = 2000 around H alpha), a Lines observation (H alpha, H beta) a
 (sdss_i0, sdss_z0) at z = 0.3, corrected mode, BLR only, for three (blr_lum, blr_sigma,
 diffuse_tau_kc) settings, and the cigale-mode spectrum of the second.
 
-Why the numbers are right (checked before capture, and again here on every run): the spectrum
-and Lines equal the independent NumPy recomputation of test_blr_dev.py D-BLR-4 (Gaussian in
-ln lambda, fluxes from the definitions) to 1e-10 of the peak / 1e-12, and the photometry equals
+Why the numbers are right (checked before capture, and again here on every run): the painter's
+profile in float64 and the Lines equal the independent NumPy recomputation of test_blr_dev.py
+D-BLR-4 (Gaussian in ln lambda, fluxes from the definitions) to 1e-10 of the peak / 1e-12, the
+spectrum (float32 profiles) equals that profile within the float32 profile bound, and the
+photometry equals
 the delta-function estimate to 1 % (D-BLR-5). Capture: ``BLR_CAPTURE=1 pytest <this file>``
 (writes the npz only when those checks pass); never re-capture to make the test pass.
 """
@@ -35,8 +37,7 @@ def _compute():
         kw = dict(blr_sigma=sig, diffuse_tau_kc=tau)
         d = B.broad(model, blr_lum=lum, **kw)
         F = B.expected_fluxes(model, csp, blr_lum=lum, **kw)
-        want = D._analytic_spectrum(model, csp, spec, F, sig)
-        np.testing.assert_allclose(d["spec"], want, rtol=0, atol=1e-10 * want.max())
+        D.assert_painted_spectrum(d["spec"], model, csp, spec, F, sig)
         names = list(csp._agn.model.blr.line_names)
         np.testing.assert_allclose(
             d["lines"], F[[names.index("Ba-alpha 6563"), names.index("Ba-beta 4861")]],
@@ -61,7 +62,8 @@ def test_blr_golden():
     ref = np.load(GOLDEN)
     assert sorted(ref.files) == sorted(got)
     for k in ref.files:
-        # spec / lines are float64 end to end; photometry passes float32 filters
+        # spec / lines: deterministic on CPU (the spectrum's float32 profiles included);
+        # photometry passes float32 filters
         rtol = 2e-6 if k.startswith("phot") else 1e-10
         np.testing.assert_allclose(got[k], ref[k], rtol=rtol,
                                    atol=1e-12 * float(np.abs(ref[k]).max()), err_msg=k)
