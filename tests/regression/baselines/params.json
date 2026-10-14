@@ -27,7 +27,7 @@
   "diffuse_tau_kc": 0.5,
   "diffuse_dust_index": -0.1,
   "tau_pow": 0.3,
-  "alpha": -1.0,
+  "alpha_pow": -1.0,
   "gas_logu": -2.5,
   "gas_logz": 0.0,
   "zred": 2.0,

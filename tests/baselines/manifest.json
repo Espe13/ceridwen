@@ -400,5 +400,12 @@
       }
     }
   ],
-  "spectra_recaptured": "2026-09-10 broadening merge (W_*.npy untouched)"
+  "spectra_recaptured": "2026-09-10 broadening merge (W_*.npy untouched)",
+  "spectra_recaptured_by_tag": {
+    "agn_fsps": "2026-10-14 float32 projector, painters and nebular contraction (1.0.13): within the physical standard, worst spectrum 1.2e-6, model-grid lines 5.2e-4 (far wings), photometry 2.8e-8; approved by Amanda",
+    "agn_corrected_dustemi": "2026-10-14 float32 projector, painters and nebular contraction (1.0.13): within the physical standard, worst spectrum 1.2e-6, model-grid lines 5.2e-4 (far wings), photometry 2.8e-8; approved by Amanda",
+    "agn2_skirtor_polar_cigale": "2026-10-14 float32 projector, painters and nebular contraction (1.0.13): within the physical standard, worst spectrum 1.2e-6, model-grid lines 5.2e-4 (far wings), photometry 2.8e-8; approved by Amanda",
+    "agn2_skirtor_polar_corrected_dustemi": "2026-10-14 float32 projector, painters and nebular contraction (1.0.13): within the physical standard, worst spectrum 1.2e-6, model-grid lines 5.2e-4 (far wings), photometry 2.8e-8; approved by Amanda",
+    "agn2_nlr_blr_corrected": "2026-10-14 float32 projector, painters and nebular contraction (1.0.13): within the physical standard, worst spectrum 1.2e-6, model-grid lines 5.2e-4 (far wings), photometry 2.8e-8; approved by Amanda"
+  }
 }
