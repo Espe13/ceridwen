@@ -173,6 +173,10 @@ class DustEmission:
         f_attn = spec_attn.ravel()
         f_free = spec_dustfree.ravel()
 
+        # float64 on purpose (catastrophic cancellation): the trapezoid weights w are float64, so
+        # these dots accumulate in float64, and labs0 = lboln - lbold below is a difference of two
+        # nearly equal numbers (the absorbed luminosity), which float32 would leave with few
+        # correct digits when little light is absorbed
         lbold = jnp.dot(f_attn, w)
         lboln = jnp.dot(f_free, w)
 

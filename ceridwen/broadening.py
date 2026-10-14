@@ -429,7 +429,9 @@ def make_gaussian_fft(grid: LogGrid) -> Callable:
         pad_r = jnp.full((n_right,), 0.0, spec_log.dtype) + spec_log[-1]
         pad_l = jnp.full((n_left,), 0.0, spec_log.dtype) + spec_log[0]
         padded = jnp.concatenate([spec_log, pad_r, pad_l])
-        taper = jnp.exp(-2.0 * jnp.pi ** 2 * sigma_px ** 2 * nu ** 2)
+        # the taper in the spectrum's dtype, so a float32 spectrum is smoothed in float32 (a
+        # float64 taper would promote the FFT to complex128)
+        taper = jnp.exp(-2.0 * jnp.pi ** 2 * sigma_px ** 2 * nu ** 2).astype(spec_log.dtype)
         out = jnp.fft.irfft(jnp.fft.rfft(padded) * taper, n=M)[:n].astype(spec_log.dtype)
         return jnp.where(nonzero, out * m, jnp.zeros_like(out)) if scaled else out
 
@@ -456,10 +458,12 @@ class WindowSmoother:
         """Model window interpolated onto the log grid; ``scale`` (traced) reads it at
         ``wave_log * scale`` instead, i.e. the rest-frame model seen at another redshift."""
         x = self._wave_log if scale is None else self._wave_log * scale
-        return jnp.interp(x, self._wave_win, spec_rest[self.idx])
+        # positions in float64, values back in the spectrum's dtype (float32 from the CSP):
+        # float64 wavelength grids would otherwise promote the whole projector to float64
+        return jnp.interp(x, self._wave_win, spec_rest[self.idx]).astype(spec_rest.dtype)
 
     def from_log(self, spec_log):
-        return jnp.interp(self._wave_win, self._wave_log, spec_log)
+        return jnp.interp(self._wave_win, self._wave_log, spec_log).astype(spec_log.dtype)
 
 
 def build_response(grid: LogGrid, lnw_obs_rest, sigma_fix_kms, band_nsigma=BAND_NSIGMA):
@@ -495,7 +499,7 @@ def build_response(grid: LogGrid, lnw_obs_rest, sigma_fix_kms, band_nsigma=BAND_
 
 
 def apply_response(J, W, spec_log):
-    return jnp.sum(W * spec_log[J], axis=1)
+    return jnp.sum(W.astype(spec_log.dtype) * spec_log[J], axis=1)
 
 
 class ScaledResponse:
@@ -598,9 +602,13 @@ def make_line_painter(wave_obs, line_wave_obs, sigma_inst_lines_kms) -> Callable
     def paint(line_flux, sigma_gas_kms, inst_scale=None):
         si = s_inst if inst_scale is None else s_inst * inst_scale
         s = jnp.sqrt(sigma_gas_kms ** 2 + si ** 2) / CKMS
-        x = (lnw[:, None] - lnl[None, :]) / s[None, :]
-        phi = jnp.exp(-0.5 * x * x) / (jnp.sqrt(2.0 * jnp.pi) * s[None, :])
-        return (phi @ line_flux) * lam_over_c
+        # ln-lambda offsets in float64; the (n_pix, n_lines) profile and its product in float32,
+        # as the spectrum it is added to (the line fluxes themselves stay float64: a handful of
+        # numbers, docs/conventions.md "Precision")
+        dt = jnp.float32
+        x = ((lnw[:, None] - lnl[None, :]) / s[None, :]).astype(dt)
+        phi = jnp.exp(-0.5 * x * x) / (jnp.sqrt(2.0 * jnp.pi) * s[None, :]).astype(dt)
+        return (phi @ jnp.asarray(line_flux).astype(dt)) * lam_over_c.astype(dt)
 
     return paint
 
@@ -624,9 +632,13 @@ def make_line_painter_free_z(wave_obs, line_wave_rest, sigma_inst_table_kms) -> 
         if inst_scale is not None:
             s_inst = s_inst * inst_scale
         s = jnp.sqrt(sigma_gas_kms ** 2 + s_inst ** 2) / CKMS
-        x = (lnw[:, None] - lnl[None, :]) / s[None, :]
-        phi = jnp.exp(-0.5 * x * x) / (jnp.sqrt(2.0 * jnp.pi) * s[None, :])
-        return (phi @ line_flux) * lam_over_c
+        # ln-lambda offsets in float64; the (n_pix, n_lines) profile and its product in float32,
+        # as the spectrum it is added to (the line fluxes themselves stay float64: a handful of
+        # numbers, docs/conventions.md "Precision")
+        dt = jnp.float32
+        x = ((lnw[:, None] - lnl[None, :]) / s[None, :]).astype(dt)
+        phi = jnp.exp(-0.5 * x * x) / (jnp.sqrt(2.0 * jnp.pi) * s[None, :]).astype(dt)
+        return (phi @ jnp.asarray(line_flux).astype(dt)) * lam_over_c.astype(dt)
 
     return paint
 
@@ -1119,7 +1131,10 @@ class SpectralProjector:
         else:
             basis = jnp.asarray(basis)
         if line_flux_obs_all is not None:
-            out = out + basis @ line_flux_obs_all[self._line_idx_j]
+            out = out + (basis @ line_flux_obs_all[self._line_idx_j]).astype(out.dtype)
+        # A stays float64 (the likelihood's linear algebra): the line marginal solves normal
+        # equations in it whose condition number may reach COND_MAX = 1e10
+        # (likelihood/eline_marginal.py), where float32 columns would leave few correct digits
         A = None if fit_pos is None else basis[:, np.asarray(fit_pos, dtype=np.int64)]
         return out, A
 

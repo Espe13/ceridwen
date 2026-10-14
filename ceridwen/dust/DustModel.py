@@ -32,6 +32,10 @@ def make_law_wrapper(f, param_names, defaults=None):
                 warned.append(True)
         args = tuple(fit_params[name] if name in fit_params else defaults[name]
                      for name in param_names)
+        if getattr(wave, "dtype", None) == jnp.float32:
+            # a float32 grid (the CSP kernels') gets a float32 curve: float64 parameters
+            # would promote it back
+            args = tuple(jnp.asarray(a, dtype=jnp.float32) for a in args)
         return f(wave, *args)
     return wrapped
 

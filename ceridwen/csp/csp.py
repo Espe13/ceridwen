@@ -334,6 +334,9 @@ class CSPBasis:
         self.flux      = _f64.astype(jnp.float32)          # (n_z, n_age, n_wave)
         del _f64
         self.wave      = jnp.array(SSPData.ssp_wave)       # (n_wave,)
+        # the attenuation curves are evaluated on this float32 copy: the kernels use them in
+        # float32 (the wavelengths that place lines and pixels stay float64, self.wave)
+        self._wave32   = self.wave.astype(jnp.float32)
         self.ages      = jnp.array(SSPData.ssp_lg_age_gyr) # (n_age,)  log10(Gyr)
         self._setup_metallicity(SSPData)                   # self.zmet: logzsol axis
         self.lib_resolution = (
@@ -975,7 +978,9 @@ class CSPBasis:
                 "with fesc_geometry='picket': the AGN context computes that luminosity with the "
                 "screen geometry only; use the default fesc_geometry for this AGN configuration")
         # L_bol of every SSP: the dust-free stellar spectrum integrated over frequency with the
-        # DL07 trapezoid weights, float64 from the grid's own (host) cube
+        # DL07 trapezoid weights, float64 from the grid's own (host) cube (a frequency integral:
+        # an accumulation over ~1e4 pixels spanning many decades, kept float64 by the contract in
+        # docs/conventions.md)
         w = np.asarray(self._agn._w, dtype=np.float64)
         flux64 = np.asarray(ssp.ssp_flux, dtype=np.float64)
         self._agn_lbol = jnp.asarray(flux64 @ w)                 # (..., n_z, n_age)
@@ -1020,7 +1025,10 @@ class CSPBasis:
                 getattr(self, "dust_attn", None) is not None
                 or getattr(self, "diff_dust", None) is not None):
             return jnp.zeros((), dtype=jnp.float64)
-        attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+        # the kernel's float32 curves (self._wave32), so this integral is the kernel's own; the
+        # spectra are float32 like the kernel's, and the frequency integral at the end is
+        # float64 (an accumulator: the AGN energy balance)
+        attn, attn_diffuse = self.attenuate_dust(self._wave32, theta)
         # the einsums below repeat the kernel's; the barrier keeps XLA from sharing or fusing them
         # with the kernel's, which would change the kernel's float32 rounding (V-PIPE-1)
         W, attn, attn_diffuse = jax.lax.optimization_barrier((W, attn, attn_diffuse))
@@ -1730,7 +1738,7 @@ class CSPBasis:
         attn_age_lines = jnp.ones((n_young, lam.shape[0]))
         diff_lines = jnp.ones(lam.shape[0])
         if hasattr(self, "attenuate_dust"):
-            attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+            attn, attn_diffuse = self.attenuate_dust(self._wave32, theta)
             if hasattr(self, "_age_bin_mix"):
                 M = self._age_bin_mix
                 tau_age = jnp.einsum("ab,bw->aw", M, attn)   # (n_age, n_wave)
@@ -1744,6 +1752,9 @@ class CSPBasis:
             diff_lines = jnp.exp(-((1.0 - lf) * attn_diffuse[li]
                                    + lf * attn_diffuse[li + 1]))
 
+        # float64 (a handful of numbers: free on any GPU): the line luminosities span ~1e-51 to
+        # ~1e2 L_sun, the AGN line sets add to these fluxes, and the painters and apertures that
+        # spread them over pixels work in float32 (docs/conventions.md "Precision")
         F = jnp.einsum("zy,zyl,yl->l",
                        W[:, self._neb_young_idx], line_lum, attn_age_lines)
         F = F * diff_lines
@@ -2179,7 +2190,7 @@ class CSPBasis:
         scaled by 1 - fo.  ``support``: on those model pixels only."""
         W  = self.calculate_ssp_weights(theta=theta).astype(jnp.float32)
         fo = jnp.ravel(theta["frac_obrun"])[0].astype(jnp.float32)
-        attn, attn_diffuse = self.attenuate_dust(_sel(self.wave, support), theta)
+        attn, attn_diffuse = self.attenuate_dust(_sel(self._wave32, support), theta)
         tau_age = jnp.einsum("ab,bw->aw", self._age_bin_mix, attn.astype(jnp.float32))
         attn_age = jnp.exp(-tau_age)                 # full birth-cloud, no bypass
         diffuse_curve = jnp.exp(-attn_diffuse.astype(jnp.float32))
@@ -2251,7 +2262,7 @@ class CSPBasis:
 
         ion_mult, neb_amp = self._ion_multiplier(theta, support)
 
-        attn, attn_diffuse = self.attenuate_dust(_sel(self.wave, support), theta)
+        attn, attn_diffuse = self.attenuate_dust(_sel(self._wave32, support), theta)
         M        = self._age_bin_mix
         tau_age  = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age = jnp.exp(-tau_age)
@@ -2286,7 +2297,7 @@ class CSPBasis:
 
         ion_mult, neb_amp = self._ion_multiplier(theta)
 
-        attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+        attn, attn_diffuse = self.attenuate_dust(self._wave32, theta)
         M             = self._age_bin_mix
         tau_age       = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
         attn_age      = jnp.exp(-tau_age)
@@ -2331,7 +2342,7 @@ class CSPBasis:
     def get_spectrum_dattn_nodem_noneb(self, theta, *, include_lines=None, support=None):
         """Dust attenuation only (``include_lines`` ignored); ``support``: those pixels only."""
         _ = include_lines
-        attn, attn_diffuse = self.attenuate_dust(_sel(self.wave, support), theta)
+        attn, attn_diffuse = self.attenuate_dust(_sel(self._wave32, support), theta)
 
         M       = self._age_bin_mix
         tau_age = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
@@ -2350,7 +2361,7 @@ class CSPBasis:
     def get_spectrum_dattn_dem_noneb(self, theta, *, include_lines=None):
         """Dust attenuation + dust emission, no nebular (``include_lines`` ignored)."""
         _ = include_lines
-        attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+        attn, attn_diffuse = self.attenuate_dust(self._wave32, theta)
 
         M             = self._age_bin_mix
         tau_age       = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))

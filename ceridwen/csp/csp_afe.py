@@ -144,6 +144,9 @@ class CSPBasis_afe(CSPBasis):
                 self.flux.shape[2], -1, self.flux.shape[3])))
         self._afe_solar_idx = int(np.argmin(np.abs(np.asarray(_afe_in))))
         self.wave      = jnp.array(SSPData.ssp_wave)       # (n_wave,)
+        # the attenuation curves are evaluated on this float32 copy: the kernels use them in
+        # float32 (the wavelengths that place lines and pixels stay float64, self.wave)
+        self._wave32   = self.wave.astype(jnp.float32)
         self.ages      = jnp.array(SSPData.ssp_lg_age_gyr) # (n_age,)  log10(Gyr)
         self._setup_metallicity(SSPData)                   # self.zmet: logzsol axis
         self.lib_resolution = (
@@ -474,7 +477,7 @@ class CSPBasis_afe(CSPBasis):
     def get_spectrum_dattn_nodem_noneb(self, theta, *, include_lines=None, support=None):
         """Dust attenuation only (``include_lines`` ignored); ``support``: those pixels only."""
         _ = include_lines
-        attn, attn_diffuse = self.attenuate_dust(_sel(self.wave, support), theta)
+        attn, attn_diffuse = self.attenuate_dust(_sel(self._wave32, support), theta)
 
         M       = self._age_bin_mix
         tau_age = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))
@@ -493,7 +496,7 @@ class CSPBasis_afe(CSPBasis):
     def get_spectrum_dattn_dem_noneb(self, theta, *, include_lines=None):
         """Dust attenuation + dust emission (``include_lines`` ignored)."""
         _ = include_lines
-        attn, attn_diffuse = self.attenuate_dust(self.wave, theta)
+        attn, attn_diffuse = self.attenuate_dust(self._wave32, theta)
 
         M             = self._age_bin_mix
         tau_age       = jnp.einsum("ab,bw->aw", M, attn.astype(jnp.float32))

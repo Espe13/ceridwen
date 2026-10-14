@@ -64,6 +64,43 @@ stretched SFH forms the same mass. It is unit mass, and `logmass` the formed mas
 `logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)` arranges (below), with a fixed or
 a free redshift; a directly sampled `sfh` carries its own normalisation.
 
+## Precision: float32 values, float64 where float32 would be wrong
+
+`jax_enable_x64` stays on (`import ceridwen` sets it): evidence estimates and gradients depend
+on it. Within that, every large array, one that holds a spectrum, a curve or a projection on
+the model grid or the observed pixels, is **float32**, so that a GPU with slow float64 (most
+consumer cards) spends its time in float32. Float64 is kept where float32 would give a wrong
+answer, and for small arrays where it costs nothing. Each float64 site carries a comment naming
+its reason.
+
+| float32 | |
+|---|---|
+| SSP cube and its contraction | `csp.flux`, the `W`-weighted einsums |
+| attenuation curves | evaluated on `csp._wave32` with float32 parameters |
+| nebular line/continuum arrays, once interpolated | cast before the kernel's contraction |
+| the projector's work | resampling, FFT smoothing, the instrument response and the painted line profiles of a `Spectrum` prediction |
+| photometry matrices and maggies | `Photometry._T`, `Photometry` predictions |
+| scaled, exactly | the projector's float32 work runs on `x / s`, `s` a power of two near max&#124;x&#124;, and is multiplied back by `s` in float64: exact in binary floating point, so the values are those of the unscaled float32 work, and the likelihood's cotangent reaches float32 already multiplied by `s` (unscaled, `\|r\| / sigma^2` ~ 1e35 .. 1e41 at cgs scale exceeds float32's maximum 3.4e38 and the gradient is NaN) |
+| line apertures and painted line profiles | `Lines` aperture matrices; the `(n_pix, n_lines)` profiles the projector paints |
+| `PostProcess` model-grid spectra | `prediction/spectra_model`, `spectra_observed`, ... (its observation predictions are stored float64) |
+
+| float64 | reason |
+|---|---|
+| `DustEmission`'s trapezoid dots and `labs0 = lboln - lbold` | catastrophic cancellation: the absorbed luminosity is a difference of two nearly equal numbers |
+| the AGN `L_bol` and energy balance (`csp.py`, `agn/blr.py`) | frequency integrals and accumulators |
+| `sigma`, `sigma**2`, chi² terms; the noise model, profiled and marginalised calibration | dynamic range: at cgs scale `sigma**2` ~ 1e-60 underflows float32. The likelihood promotes the float32 prediction to the data's float64 |
+| the line-marginal basis `A` and its normal equations | the likelihood's linear algebra, conditioned up to `COND_MAX = 1e10` |
+| likelihood sums, sampler scalars, cosmology and distances, wavelength grids | accumulation over many terms; positions where 1e-7 relative is a measurable shift |
+| line fluxes (`predict_line_fluxes`) and `Lines` predictions | small arrays (one number per line): free on any GPU; the AGN line sets add into them, and their span (~1e-51 to 1e2 L_sun) suits float64 |
+| the returned `Spectrum` prediction | the float64 multiply that undoes the projector's scaling (one per pixel), so the likelihood's cotangent never enters float32 unscaled |
+| `DustEmission`'s output spectrum | kept by decision: converting it removes no measurable float64 work (8.5 % of FLOPs with or without it in `neb_duste`) and moves two goldens |
+
+Not yet converted: the nebular grid's line-profile contraction (`NebularGridModel`). With dust
+emission the model-grid spectrum is float64 (`DustEmission`, above).
+
+Data are stored float64 by every `Observation`, whatever dtype you pass, at construction or
+by assigning `obs.flux` / `obs.uncertainty` later (a float32 FITS spectrum is fine).
+
 ## SFH mass normalisation
 
 The `logsfr_ratios_to_sfh` transform normalises the SFH so the trapezoidal
