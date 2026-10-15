@@ -136,6 +136,8 @@ def test_gradient_finite_with_broadened_photometry_at_cgs_scale(ssp_grid_path):
     so residual / sigma^2 is ~1e18 per band and, through the photometry matrix, the FFT's
     backward pass overflows float32. Before the FFT scaling (broadening.make_gaussian_fft)
     every gradient here was NaN."""
+    if not os.environ.get("SPS_HOME"):          # CSPBasis builds its nebular model by default
+        pytest.skip("SPS_HOME not set (CLOUDY grids)")
     ssp = SSPData.load(str(ssp_grid_path))
     csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 0.5, 5), zh_const=True, verbose=False,
                    cosmo=Cosmology.planck18(), add_igm=True)
