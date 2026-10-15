@@ -9,6 +9,8 @@ from typing import Any, Callable
 
 import jax
 import jax.numpy as jnp
+
+from ..precision import float_dtype
 import numpy as np
 
 Array = jax.Array
@@ -175,8 +177,8 @@ class IAFMap(VariationalMap):
         ]
         params = {
             "flows": flows_params,
-            "base_mu": x_init.astype(jnp.float64),
-            "base_log_sigma": jnp.zeros(D, dtype=jnp.float64),
+            "base_mu": x_init.astype(float_dtype()),
+            "base_log_sigma": jnp.zeros(D, dtype=float_dtype()),
         }
         aux = {
             "D": D,

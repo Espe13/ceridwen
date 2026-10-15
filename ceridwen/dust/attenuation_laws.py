@@ -9,8 +9,11 @@ imports and data paths repointed at ``ceridwen``.
 proposed attenuation curves.
 """
 
+import numpy as np
 import jax.numpy as jnp
 import warnings, sys
+
+from ..precision import float_dtype
 
 
 # ==============================================================================
@@ -430,8 +433,8 @@ _G03_AXAV = (
     4.243, 4.013, 3.866, 3.637, 3.489, 3.293, 3.161, 2.947, 2.661, 2.428,
     2.220, 2.000, 1.672, 1.374, 1.000, 0.801, 0.567, 0.131, 0.169, 0.016,
 )
-_G03_LAM_AA = jnp.array(_G03_LAM_UM, dtype=jnp.float64) * 1e4
-_G03_Y = jnp.array(_G03_AXAV, dtype=jnp.float64)
+_G03_LAM_AA = jnp.array(np.asarray(_G03_LAM_UM, dtype=np.float64) * 1e4, dtype=float_dtype())
+_G03_Y = jnp.array(_G03_AXAV, dtype=float_dtype())
 
 
 def gordon03_smcbar(wave, tau_g03smc=1.0, **kwargs):
@@ -443,7 +446,7 @@ def gordon03_smcbar(wave, tau_g03smc=1.0, **kwargs):
     :returns: optical depth tau(lambda); linear in lambda between the 30 table nodes,
         constant blueward of 1160 A, 0 redward of 21980 A (as FSPS).
     """
-    wave = jnp.asarray(wave, dtype=jnp.float64)
+    wave = jnp.asarray(wave, dtype=float_dtype())
     curve = jnp.interp(wave, _G03_LAM_AA, _G03_Y, left=_G03_Y[0], right=0.0)
     return tau_g03smc * curve
 
@@ -470,7 +473,7 @@ def reddy15(wave, tau_reddy=1.0, **kwargs):
         (k(0.55 um) / R_V with R_V = 2.505, not renormalised, so ``dust2`` means the same thing)
     :returns: optical depth tau(lambda) = tau_reddy * k(lambda) / 2.505
     """
-    wave = jnp.asarray(wave, dtype=jnp.float64)
+    wave = jnp.asarray(wave, dtype=float_dtype())
     mic = wave / 1e4
     # evaluate each branch only where it is used, so the gradient stays finite everywhere
     mic_blue = jnp.where((wave >= 1500.0) & (wave < 6000.0), mic, 0.55)

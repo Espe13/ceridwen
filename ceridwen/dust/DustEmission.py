@@ -1,4 +1,5 @@
 import jax.numpy as jnp
+from ..precision import safe_tiny
 import jax
 
 import numpy as np
@@ -167,7 +168,7 @@ class DustEmission:
     def compute_dust_emission(self, spec_attn, spec_dustfree, spec_lambda, diffuse_curve,
                                         duste_qpah, duste_umin, duste_gamma):
         """Return (spec_attn + dust emission, dust mass, dust emission); diffuse_curve is exp(-tau_diffuse)."""
-        tiny = 1e-70
+        tiny = safe_tiny(1e-70)                       # float32 mode: 1.2e-38
         w = self._trap_w
         dc = diffuse_curve.ravel()
         f_attn = spec_attn.ravel()

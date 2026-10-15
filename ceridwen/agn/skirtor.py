@@ -64,6 +64,7 @@ import os
 from pathlib import Path
 
 import jax.numpy as jnp
+from ..precision import float_dtype
 import numpy as np
 
 from . import (AGN2_THETA_KEYS, AGN_MODE_CIGALE, AGN_MODE_CORRECTED)
@@ -352,18 +353,18 @@ class SkirtorTorus(_SkirtorContract):
             a = self.axes[ax]
             x = theta[THETA_OF_AXIS[ax]] if THETA_OF_AXIS[ax] in theta \
                 else SKIRTOR_DEFAULTS[THETA_OF_AXIS[ax]]
-            x = jnp.ravel(jnp.asarray(x, dtype=jnp.float64))[0]
+            x = jnp.ravel(jnp.asarray(x, dtype=float_dtype()))[0]
             n = a.shape[0]
             if n == 1:
                 lo[ax] = jnp.zeros((), dtype=jnp.int32)
-                fr[ax] = jnp.zeros((), dtype=jnp.float64)
+                fr[ax] = jnp.zeros((), dtype=float_dtype())
                 continue
             j = jnp.clip(jnp.searchsorted(a, x, side="right") - 1, 0, n - 2)
             lo[ax] = j
             fr[ax] = jnp.clip((x - a[j]) / (a[j + 1] - a[j]), 0.0, 1.0)
         bits = np.array([[(c >> d) & 1 for d in range(len(SKIRTOR_AXES))]
                          for c in range(2 ** len(SKIRTOR_AXES))])           # (32, 5) static
-        idx, w = {}, jnp.ones(bits.shape[0], dtype=jnp.float64)
+        idx, w = {}, jnp.ones(bits.shape[0], dtype=float_dtype())
         for d, ax in enumerate(SKIRTOR_AXES):
             b = jnp.asarray(bits[:, d])
             n = self.axes[ax].shape[0]
@@ -391,18 +392,18 @@ class SkirtorTorus(_SkirtorContract):
             self._polar_k[polar.law_index] = k
         k = jnp.asarray(k)
         ebv = jnp.ravel(jnp.asarray(theta.get("polar_ebv", POLAR_DEFAULTS["polar_ebv"]),
-                                    dtype=jnp.float64))[0]
+                                    dtype=float_dtype()))[0]
         temp = jnp.ravel(jnp.asarray(theta.get("polar_temp", POLAR_DEFAULTS["polar_temp"]),
-                                     dtype=jnp.float64))[0]
+                                     dtype=float_dtype()))[0]
         emis = jnp.ravel(jnp.asarray(theta.get("polar_emis", POLAR_DEFAULTS["polar_emis"]),
-                                     dtype=jnp.float64))[0]
+                                     dtype=float_dtype()))[0]
         ext = 10.0 ** (-0.4 * k * ebv)                          # (n_wl,)
         J = jnp.dot(self.S * (1.0 - ext), self.tw)               # trapz(S (1 - ext))
         oa_c = self.axes["oa"][idx["oa"]]
         i_c = self.axes["i"][idx["i"]]
         l_c = polar_geometry(oa_c) * self.agn1_int[sel] * J      # (32,)
         a_c = w / (1.0 + l_c)
-        type1 = (i_c <= 90.0 - oa_c).astype(jnp.float64)
+        type1 = (i_c <= 90.0 - oa_c).astype(float_dtype())
         disk = ext * ((a_c * type1) @ D) + (a_c * (1.0 - type1)) @ D
         dust = a_c @ U
         bb = greybody_shape(self.wl_j, temp, emis)
@@ -415,13 +416,13 @@ class SkirtorTorus(_SkirtorContract):
     def amplitude(self, theta, ctx):
         """P [L_sun per M_formed]: the luminosity of torus dust + polar dust."""
         f = jnp.ravel(jnp.asarray(theta.get("fagn", SKIRTOR_DEFAULTS["fagn"]),
-                                  dtype=jnp.float64))[0]
+                                  dtype=float_dtype()))[0]
         if self.mode == AGN_MODE_CIGALE:
             if ctx.L_dust_gal is None:
                 raise ValueError("SkirtorTorus(mode='cigale') needs ctx.L_dust_gal (CIGALE's "
                                  "fracAGN is relative to the galaxy's dust luminosity).")
-            return jnp.asarray(ctx.L_dust_gal, dtype=jnp.float64) * (f / (1.0 - f))
-        return f * jnp.asarray(ctx.L_bol_star, dtype=jnp.float64)
+            return jnp.asarray(ctx.L_dust_gal, dtype=float_dtype()) * (f / (1.0 - f))
+        return f * jnp.asarray(ctx.L_bol_star, dtype=float_dtype())
 
     def loglog_scale(self, y):
         """``"corrected"``: trapz(y) / (exact integral of the log-log interpolant of y), both over
@@ -515,7 +516,7 @@ class SkirtorTorus(_SkirtorContract):
                "luminosity": P + P * l_disk, "accretion_power": P * intrin * 0.493,
                "intrin_Lnu_2500A_30deg": P * l2500, "L_6um": P * l6, "L_12um": P * l12}
         if ctx.L_dust_gal is not None:
-            ld = jnp.asarray(ctx.L_dust_gal, dtype=jnp.float64)
+            ld = jnp.asarray(ctx.L_dust_gal, dtype=float_dtype())
             out["frac_agn_cigale"] = P / jnp.where(P + ld > 0, P + ld, 1.0)
         return out
 

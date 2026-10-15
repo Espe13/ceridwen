@@ -36,6 +36,8 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.linalg import cho_solve, solve_triangular
 
+from ..precision import float_dtype
+
 __all__ = ["ElineSystem", "build_eline_system", "eline_marginal_loglike",
            "eline_marginal_loglike_static",
            "joint_loglike", "eline_line_fluxes", "line_table_for", "line_profiles_on_grid",
@@ -63,7 +65,7 @@ def eline_marginal_loglike(blocks, prior_mean, prior_sd, is_flat, *, return_post
     Returns ln Z, or ``(ln Z, mean, cov)`` of the line-flux posterior with ``return_posterior``.
     """
     is_flat = np.asarray(is_flat, dtype=bool)
-    prior = jnp.asarray(~is_flat, dtype=jnp.float64)
+    prior = jnp.asarray(~is_flat, dtype=float_dtype())
     abar = jnp.where(is_flat, 0.0, prior_mean)
     M = 0.0
     b = 0.0
@@ -77,7 +79,7 @@ def eline_marginal_loglike(blocks, prior_mean, prior_sd, is_flat, *, return_post
         chi2 = chi2 + jnp.sum(w * r1 * r1)
         lognorm = lognorm + log_det_sum
     diag = jnp.diagonal(M)
-    tiny = jnp.finfo(jnp.float64).tiny
+    tiny = jnp.finfo(float_dtype()).tiny
     d = jnp.where(is_flat, 1.0 / jnp.sqrt(jnp.maximum(diag, tiny)), prior_sd)
     P = d[:, None] * M * d[None, :] + jnp.diag(prior)
     L = jnp.linalg.cholesky(P)
@@ -503,13 +505,13 @@ def eline_marginal_loglike_static(r, st, prior_mean, prior_sd, is_flat):
         chi2 = sum(jnp.sum(jnp.asarray(st["w"][k]) * r[k] * r[k]) for k in keys)
         v = sum(jnp.asarray(st["G"][k]) @ r[k] for k in keys)
         return -0.5 * chi2 + 0.5 * jnp.dot(v, v) + st["const"] - st["lognorm"]
-    prior = jnp.asarray(~is_flat, dtype=jnp.float64)
+    prior = jnp.asarray(~is_flat, dtype=float_dtype())
     abar = jnp.where(is_flat, 0.0, prior_mean)
     r1 = {k: r[k] - jnp.asarray(st["A"][k]) @ abar for k in keys}
     chi2 = sum(jnp.sum(jnp.asarray(st["w"][k]) * r1[k] * r1[k]) for k in keys)
     b = sum(jnp.asarray(st["B"][k]) @ r1[k] for k in keys)
     M = jnp.asarray(st["M"])
-    d = jnp.where(is_flat, 1.0 / jnp.sqrt(jnp.maximum(jnp.diagonal(M), jnp.finfo(jnp.float64).tiny)),
+    d = jnp.where(is_flat, 1.0 / jnp.sqrt(jnp.maximum(jnp.diagonal(M), jnp.finfo(float_dtype()).tiny)),
                   prior_sd)
     L = jnp.linalg.cholesky(d[:, None] * M * d[None, :] + jnp.diag(prior))
     v = solve_triangular(L, d * b, lower=True)

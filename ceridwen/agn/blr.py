@@ -37,6 +37,7 @@ from pathlib import Path
 
 import numpy as np
 import jax.numpy as jnp
+from ..precision import float_dtype
 
 from . import AGN_MODE_CIGALE, AGN_MODE_CORRECTED, AGN2LineSet
 from .lines import read_emlines_info
@@ -151,8 +152,8 @@ class BroadLines(AGN2LineSet):
     def _scalar(theta, key):
         # float64 whatever the caller's dtype (a float32 theta must not lower the BLR's precision)
         if key in theta:
-            return jnp.ravel(jnp.asarray(theta[key], dtype=jnp.float64))[0]
-        return jnp.asarray(BLR_THETA_DEFAULTS[key], dtype=jnp.float64)
+            return jnp.ravel(jnp.asarray(theta[key], dtype=float_dtype()))[0]
+        return jnp.asarray(BLR_THETA_DEFAULTS[key], dtype=float_dtype())
 
     def line_luminosity(self, theta):
         """(n_lines,) ``blr_lum * ratio_halpha`` [L_sun per M_formed], in the order of

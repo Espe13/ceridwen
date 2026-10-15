@@ -123,17 +123,30 @@ def fitSED(
     logger.addHandler(_file_handler)
 
     try:
+        from .precision import is_x64, precision_name
         _devices = jax.devices()
         _backend = jax.default_backend().upper()
         _device_str = ", ".join(str(d) for d in _devices)
+        _apple_gpu = _backend in ("MTL", "MPS")       # jax-graft (mtl) / jax-mps: float32 only
+        if _apple_gpu and is_x64():
+            raise ValueError(
+                f"fitSED on the {_backend} backend ({_device_str}) with float64 on: an Apple GPU "
+                "has no float64.  Unset CERIDWEN_X64 (float32 mode on the GPU, docs/mac_gpu.md) or "
+                "keep this fit on the CPU with JAX_PLATFORMS=cpu")
 
         logger.info(f"ceridwen.fitSED")
         logger.info(f"  Device      : {_backend}  ({_device_str})")
+        logger.info(f"  Precision   : {precision_name()}"
+                    + ("" if is_x64() else
+                       "  (float32 mode, docs/mac_gpu.md: ln Z and gradients are float32, not "
+                       "comparable bit for bit with a float64 fit)"))
         if _backend == "CPU":
             logger.info(
                 "                ^ running on CPU — for GPU check that a "
                 "CUDA-enabled jaxlib is installed and JAX_PLATFORMS is unset"
             )
+        elif _apple_gpu:
+            logger.info("                ^ Apple GPU (float32)")
         logger.info(f"  Sampler     : {sampler}")
         logger.info(f"  Cosmology   : {model.cosmo.describe()}")
         logger.info(f"  Redshift    : {model._redshift_line()}")
@@ -1049,6 +1062,10 @@ def _write_run_provenance(f, adapter, rng_key, model=None) -> None:
     if dirty is not None:
         g.attrs["git_dirty"] = bool(dirty)
     g.attrs["jax_version"] = str(jax.__version__)
+    from .precision import precision_name
+    cfg = f.create_group("config")
+    cfg.attrs["precision"] = precision_name()               # "float64" | "float32" (CERIDWEN_X64=0)
+    cfg.attrs["platform"] = str(jax.default_backend())      # "cpu" | "gpu" | "mtl" | ...
     from importlib.metadata import version, PackageNotFoundError
     for dist in ("blackjax", "numpy"):
         try:
@@ -1394,7 +1411,8 @@ def read_derived_h5(path: str | Path) -> dict:
 
 def read_result_h5(path: str | Path) -> dict:
     """Read a result HDF5 file into a nested dict with keys ``'obs'``, ``'model'``,
-    ``'samples'``, ``'provenance'``, ``'elines'``
+    ``'samples'``, ``'provenance'``, ``'config'`` (``precision``: float64 / float32,
+    ``platform``: the JAX backend the fit ran on), ``'elines'``
     (when the fit marginalised the emission lines), ``'map'`` (when it ran with
     ``optimize=True``) and ``'derived'`` (``read_derived_h5``; when fitSED wrote
     ``/derived/mfrac``)."""
@@ -1445,6 +1463,8 @@ def read_result_h5(path: str | Path) -> dict:
 
         if "provenance" in f:
             out["provenance"] = _provenance_from_group(f["provenance"])
+        if "config" in f:
+            out["config"] = dict(f["config"].attrs)
 
         if "elines" in f:
             g = f["elines"]

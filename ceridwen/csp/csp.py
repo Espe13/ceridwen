@@ -16,6 +16,7 @@ import warnings
 import numpy as np
 import jax
 import jax.numpy as jnp
+from ..precision import safe_tiny, float_dtype
 import pprint
 
 from ceridwen.dust.DustModel import Dust, DiffuseDust
@@ -491,8 +492,11 @@ class CSPBasis:
         self.grid_chash   = getattr(ssp, "chash", None)
         self._refused_cells = tuple(getattr(ssp, "refused_cells", ()) or ())
         self._refused_reason = getattr(ssp, "refused_reason", None)
-        self.zmet_native  = jnp.asarray(np.asarray(ssp.ssp_lgmet, dtype=np.float64))
-        self.zmet         = self.zmet_native - self.log10_zsun      # (n_z,) logzsol
+        _lgmet = np.asarray(ssp.ssp_lgmet, dtype=np.float64)
+        self.zmet_native  = jnp.asarray(_lgmet)
+        # the subtraction on the host in float64, so the solar node is exactly 0 on the device
+        # axis in float32 mode too (one IEEE subtraction either way: same bits under x64)
+        self.zmet         = jnp.asarray(_lgmet - self.log10_zsun)   # (n_z,) logzsol
         self.zlegend      = 10 ** self.zmet_native                  # native linear Z (FSPS label)
 
     def _gas_logz(self, theta):
@@ -1009,7 +1013,7 @@ class CSPBasis:
         dust-free stellar spectrum (only when a component needs it) and exp(-tau_diffuse)."""
         from ..agn import AGNContext
         lbol = jnp.sum(W * self._agn_lbol_at(theta))
-        gal = (self._dustfree_stellar(theta, W).astype(jnp.float64)
+        gal = (self._dustfree_stellar(theta, W).astype(float_dtype())
                if self._agn.need_galaxy else None)
         if getattr(self._agn, "need_ldust_gal", False):
             return AGNContext(self.wave, lbol, gal, self._agn_diffuse_curve(theta),
@@ -1024,7 +1028,7 @@ class CSPBasis:
         if getattr(self, "attenuate_dust", None) is None or not (
                 getattr(self, "dust_attn", None) is not None
                 or getattr(self, "diff_dust", None) is not None):
-            return jnp.zeros((), dtype=jnp.float64)
+            return jnp.zeros((), dtype=float_dtype())
         # the kernel's float32 curves (self._wave32), so this integral is the kernel's own; the
         # spectra are float32 like the kernel's, and the frequency integral at the end is
         # float64 (an accumulator: the AGN energy balance)
@@ -1056,14 +1060,14 @@ class CSPBasis:
             free = jnp.einsum("za,zaw->w", W_f32, self.flux)
             att = jnp.einsum("za,zaw,aw->w", W_f32, self.flux, attn_age)
         att = att * diffuse_curve
-        return jnp.dot((free - att).astype(jnp.float64), self._agn._w)
+        return jnp.dot((free - att).astype(float_dtype()), self._agn._w)
 
     def _agn_diffuse_curve(self, theta):
         """(n_wave,) float64 exp(-tau_diffuse) of the galaxy's diffuse screen (1 without one)."""
         if getattr(self, "diff_dust", None) is not None:
             return jnp.exp(-jnp.asarray(self.diff_dust.compute_attenuation(self.wave, theta),
-                                        dtype=jnp.float64))
-        return jnp.ones(self.wave.shape, dtype=jnp.float64)
+                                        dtype=float_dtype()))
+        return jnp.ones(self.wave.shape, dtype=float_dtype())
 
     def _agn_line_terms(self, theta):
         """The AGN narrow lines (the "nlr" line set) of this theta, or None without them: the
@@ -1116,7 +1120,7 @@ class CSPBasis:
             grid = None
             if in_csp:
                 t_l = hook.line_set_transmission(key, th, self._agn_diffuse_curve(theta))
-                trans = (self._igm_transmission(z, theta).astype(jnp.float64)
+                trans = (self._igm_transmission(z, theta).astype(float_dtype())
                          if (self.igm is not None and z_in) else None)
                 from ..broadening import agn_line_profiles_on_grid
                 rff = getattr(getattr(self, "neb", None), "res_floor_factor", 2.0)
@@ -2085,7 +2089,7 @@ class CSPBasis:
 
         z0 = self.zmet[k]
         z1 = self.zmet[k + 1]
-        dz = jnp.clip((zbin - z0) / jnp.maximum(z1 - z0, tiny_number), 0.0, 1.0)
+        dz = jnp.clip((zbin - z0) / jnp.maximum(z1 - z0, safe_tiny(tiny_number)), 0.0, 1.0)
 
         n_bin = self.n_time - 1
         rows  = jnp.arange(n_bin)

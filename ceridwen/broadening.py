@@ -28,6 +28,7 @@ from typing import Callable, Optional, Union
 import numpy as np
 import jax
 import jax.numpy as jnp
+from .precision import float_dtype
 
 __all__ = [
     "CKMS", "C_AA_S", "FWHM_TO_SIGMA", "BAND_NSIGMA",
@@ -386,7 +387,7 @@ def _pow2_scale(x):
     m = jax.lax.stop_gradient(jnp.max(jnp.abs(x)))
     nonzero = m > 0
     _, e = jnp.frexp(m)
-    s = jnp.where(nonzero, jnp.ldexp(jnp.ones((), jnp.float64), e), 1.0)
+    s = jnp.where(nonzero, jnp.ldexp(jnp.ones((), float_dtype()), e), 1.0)
     return s, nonzero
 
 
@@ -402,7 +403,7 @@ def _scaled_to_float64(f, x):
     so value and gradient stay finite. Plain JAX (no custom_vjp): jax.hessian still works."""
     s, nonzero = _pow2_scale(x)
     y = f(x / s.astype(x.dtype))
-    return jnp.where(nonzero, y.astype(jnp.float64) * s, jnp.zeros(y.shape, jnp.float64))
+    return jnp.where(nonzero, y.astype(float_dtype()) * s, jnp.zeros(y.shape, float_dtype()))
 
 
 def make_gaussian_fft(grid: LogGrid) -> Callable:

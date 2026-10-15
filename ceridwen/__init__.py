@@ -1,11 +1,50 @@
+import importlib.util
 import os
 import warnings as _warnings
 import jax
-jax.config.update("jax_enable_x64", os.environ.get("CERIDWEN_X64", "1") != "0")
-if os.environ.get("CERIDWEN_X64", "1") == "0":
-    _warnings.warn("CERIDWEN_X64=0: float64 is OFF for this process; evidences and gradients "
-                   "lose the precision CERIDWEN relies on.  Unset it for any real fit",
-                   stacklevel=2)
+
+
+def _apple_gpu_is_default_backend() -> str | None:
+    """The default JAX backend when it is an Apple GPU (``"mtl"``, registered by jax-graft), else
+    None.  Only asked when jax-graft is installed, so a CPU/CUDA install does not initialise its
+    backend at import."""
+    if importlib.util.find_spec("jax_graft") is None:
+        return None
+    try:
+        backend = jax.default_backend()
+    except Exception:                                         # noqa: BLE001  (plugin failed to load)
+        return None
+    return backend if backend in ("mtl", "mps") else None
+
+
+# Precision.  float64 is the default (evidences, gradients and the sampler state need it).
+# An Apple GPU has no float64: when jax-graft has made it JAX's default backend and
+# CERIDWEN_X64 is unset, the package runs in float32 (docs/mac_gpu.md).  CERIDWEN_X64=0 forces
+# float32 anywhere; CERIDWEN_X64=1 forces float64 (refused on an Apple GPU: use
+# JAX_PLATFORMS=cpu for a float64 fit on such a Mac).
+_x64_env = os.environ.get("CERIDWEN_X64")
+_apple_gpu = _apple_gpu_is_default_backend()
+if _x64_env is None:
+    _x64 = _apple_gpu is None
+elif _x64_env == "0":
+    _x64 = False
+else:
+    _x64 = True
+    if _apple_gpu is not None:
+        raise RuntimeError(
+            f"CERIDWEN_X64={_x64_env!r} asks for float64, but JAX's default backend is the Apple GPU "
+            f"({_apple_gpu}), which has no float64.  Unset CERIDWEN_X64 to run in float32 on the GPU, "
+            "or set JAX_PLATFORMS=cpu for a float64 fit on the CPU (docs/mac_gpu.md)")
+jax.config.update("jax_enable_x64", _x64)
+if not _x64:
+    _warnings.warn(
+        ("float32 mode: JAX's default backend is the Apple GPU (%s), which has no float64.  "
+         "Evidences, gradients and the sampler state are float32 (docs/mac_gpu.md); for a float64 fit "
+         "set JAX_PLATFORMS=cpu" % _apple_gpu) if _x64_env is None else
+        "CERIDWEN_X64=0: float64 is OFF for this process (float32 mode: evidences, gradients and "
+        "sampler state are float32).  See docs/mac_gpu.md for what this mode guarantees; float64 "
+        "(unset) is the default for fits",
+        stacklevel=2)
 
 # CERIDWEN_MATMUL_PRECISION=high: TF32 matmuls (off by default)
 _matmul_prec = os.environ.get("CERIDWEN_MATMUL_PRECISION")

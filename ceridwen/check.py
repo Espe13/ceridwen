@@ -51,12 +51,39 @@ def check_environment(verbose: bool = True) -> bool:
     jax, _ = _try_import("jax")
     if jax is not None:
         x64 = bool(jax.config.read("jax_enable_x64"))
+        try:
+            backend = jax.default_backend()
+            devices = ", ".join(str(d) for d in jax.devices())
+        except Exception as e:                                # noqa: BLE001
+            backend, devices = None, f"no usable device: {e}"
         if x64:
             record(_OK, "jax float64", "enabled")
+        elif backend == "mtl" and os.environ.get("CERIDWEN_X64") is None:
+            record(_OK, "jax float64",
+                   "off: float32 mode, chosen because the Apple GPU is JAX's default backend "
+                   "(docs/mac_gpu.md). ln Z and gradients are float32; JAX_PLATFORMS=cpu "
+                   "gives a float64 fit on the CPU")
+        elif os.environ.get("CERIDWEN_X64") == "0":
+            record(_OK, "jax float64",
+                   "disabled by CERIDWEN_X64=0 (float32 mode; docs/mac_gpu.md). Evidences "
+                   "and gradients are float32: not comparable bit for bit with a float64 fit")
         else:
             record(_WARN, "jax float64",
                    "disabled; `import ceridwen` enables it. Evidence/gradients "
                    "need it.")
+        try:
+            if backend is None:
+                record(_WARN, "jax backend", devices)
+            elif backend == "mtl" and x64:
+                record(_WARN, "jax backend",
+                       f"{backend} ({devices}): an Apple GPU has no float64; unset CERIDWEN_X64 "
+                       "(float32 on the GPU) or set JAX_PLATFORMS=cpu")
+            elif backend == "mtl":
+                record(_OK, "jax backend", f"{backend} ({devices}): Apple GPU via jax-graft, float32")
+            else:
+                record(_OK, "jax backend", f"{backend} ({devices})")
+        except Exception as e:                                # noqa: BLE001
+            record(_WARN, "jax backend", f"no usable device: {e}")
 
     # Filters and attenuation curves are part of ceridwen itself (vendored
     # from sedpy-jax, which is not a dependency), so what is worth checking is

@@ -47,6 +47,7 @@ import hashlib
 from pathlib import Path
 
 import jax.numpy as jnp
+from ..precision import float_dtype
 import numpy as np
 
 from . import AGN2_THETA_KEYS, AGN_MODE_CIGALE, AGN_MODE_CORRECTED, POLAR_LAWS, agn_data_dir
@@ -205,7 +206,7 @@ def greybody_shape(wl_nm, temp, emis):
 
 def _get(theta, key):
     v = theta[key] if key in theta else POLAR_DEFAULTS[key]
-    return jnp.ravel(jnp.asarray(v, dtype=jnp.float64))[0]
+    return jnp.ravel(jnp.asarray(v, dtype=float_dtype()))[0]
 
 
 class PolarDust(_PolarDustContract):

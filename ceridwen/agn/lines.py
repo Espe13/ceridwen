@@ -35,6 +35,7 @@ from pathlib import Path
 
 import numpy as np
 import jax.numpy as jnp
+from ..precision import float_dtype
 
 from . import AGN_MODES, AGN_THETA_DEFAULTS, LineComponent
 
@@ -147,7 +148,7 @@ class AGNLines(LineComponent):
     def _scalar(theta, key):
         if key in theta:
             return jnp.ravel(jnp.asarray(theta[key]))[0]
-        return jnp.asarray(AGN_THETA_DEFAULTS[key], dtype=jnp.float64)
+        return jnp.asarray(AGN_THETA_DEFAULTS[key], dtype=float_dtype())
 
     def line_luminosity(self, theta):
         """(n_lines,) ``agn_elum * ratio`` [L_sun per M_formed], in the order of ``line_names``."""

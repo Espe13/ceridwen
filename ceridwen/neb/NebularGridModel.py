@@ -13,6 +13,8 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
+from ..precision import float_dtype, is_x64
+
 
 CLIGHT_AA_S    = 2.9979e18     # A/s
 HPLANK_ERG_S   = 6.6261e-27    # erg s
@@ -372,12 +374,22 @@ class NebularModel:
         self.nebem_logu = self.nebem_line_logu
 
     def compute_log_qq(self, ssp_flux):
-        """log10 Q [photons/s] for every SSP: (L_sun/h) * int_{lambda<912} L_nu / lambda dlambda (float64)."""
+        """log10 Q [photons/s] for every SSP: (L_sun/h) * int_{lambda<912} L_nu / lambda dlambda (the working float dtype, float64 by default)."""
         mask = self.csp_lambda < LYMAN_LIMIT_AA
-        wave_ion = self.csp_lambda[mask].astype(jnp.float64)
-        flux_ion = ssp_flux[..., mask].astype(jnp.float64)
-        qq = jnp.trapezoid(flux_ion / wave_ion, x=wave_ion)
         scale = LSUN_ERG_S / HPLANK_ERG_S
+        if not is_x64():
+            # float32 mode (docs/mac_gpu.md): scale (5.8e59) and TINY (1e-95) are outside float32
+            # (qq * scale overflowed to inf and made every prediction NaN).  The table is a
+            # construction-time constant, so it is computed on the host in float64, as the
+            # float64 path does on the device, and stored in the working dtype.
+            m = np.asarray(mask)
+            wave_ion = np.asarray(self.csp_lambda, dtype=np.float64)[m]
+            flux_ion = np.asarray(ssp_flux, dtype=np.float64)[..., m]
+            qq = np.trapezoid(flux_ion / wave_ion, x=wave_ion)
+            return jnp.asarray(np.log10(np.maximum(qq * scale, TINY)), dtype=float_dtype())
+        wave_ion = self.csp_lambda[mask].astype(float_dtype())
+        flux_ion = ssp_flux[..., mask].astype(float_dtype())
+        qq = jnp.trapezoid(flux_ion / wave_ion, x=wave_ion)
         return jnp.log10(jnp.maximum(qq * scale, TINY))
 
     def _compute_resolution_elements(self):

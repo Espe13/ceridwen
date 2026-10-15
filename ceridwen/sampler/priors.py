@@ -8,6 +8,8 @@ import numpy as np
 import jax.numpy as jnp
 
 import tensorflow_probability.substrates.jax as tfp
+
+from ..precision import float_dtype
 tfd = tfp.distributions
 
 Array = jax.Array
@@ -341,7 +343,7 @@ class LogUniform(Prior):
     (``scipy.stats.reciprocal(mini, maxi)``).  The parameter itself (not its log) is
     sampled; ``fitSED``'s NUTS path maps it to ``(mini, maxi)`` with a logit.
 
-    ``logpdf``/``cdf``/``ppf``/``sample`` are analytic ``jnp`` (exact, float64,
+    ``logpdf``/``cdf``/``ppf``/``sample`` are analytic ``jnp`` (exact, in the working float dtype,
     jit/grad/vmap-safe); ``tfp_dist()`` gives the equivalent TFP distribution
     (``Exp`` of a ``Uniform(ln mini, ln maxi)``) for interoperability.
     """
@@ -370,7 +372,7 @@ class LogUniform(Prior):
                                            bijector=tfp.bijectors.Exp())
 
     def logpdf(self, x: Array) -> Array:
-        x = jnp.asarray(x, dtype=jnp.float64)
+        x = jnp.asarray(x, dtype=float_dtype())
         a, b = self.params["mini"], self.params["maxi"]
         lna, lnb = self._log_limits()
         inside = (x >= a) & (x <= b)
@@ -378,7 +380,7 @@ class LogUniform(Prior):
         return jnp.where(inside, -jnp.log(x_safe) - jnp.log(lnb - lna), -jnp.inf)
 
     def _cdf(self, x: Array) -> Array:
-        x = jnp.asarray(x, dtype=jnp.float64)
+        x = jnp.asarray(x, dtype=float_dtype())
         a, b = self.params["mini"], self.params["maxi"]
         lna, lnb = self._log_limits()
         x_safe = jnp.clip(x, a, b)
@@ -386,7 +388,7 @@ class LogUniform(Prior):
         return jnp.where(x >= b, 1.0, jnp.where(x <= a, 0.0, c))   # exact 0 / 1 at the ends
 
     def _ppf(self, u: Array) -> Array:
-        u = jnp.asarray(u, dtype=jnp.float64)
+        u = jnp.asarray(u, dtype=float_dtype())
         lna, lnb = self._log_limits()
         return jnp.exp(lna + u * (lnb - lna))
 
@@ -394,7 +396,7 @@ class LogUniform(Prior):
         if shape is None:
             shape = ()
         full = tuple(shape) + tuple(jnp.shape(self.params["mini"] * self.params["maxi"]))
-        u = jax.random.uniform(key, full, dtype=jnp.float64)
+        u = jax.random.uniform(key, full, dtype=float_dtype())
         return self._ppf(u)
 
     @property

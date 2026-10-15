@@ -567,10 +567,13 @@ class SSPData:
                 chash = chash_arrays(raw['ssp_wave'], raw['ssp_lg_age_gyr'], raw['ssp_lgmet'],
                                      raw['ssp_flux'], raw_extra.get('ssp_afe'))
                 remember_chash(filename, chash, extras)
+            # the axes stay host NumPy float64: Z_sun is resolved by an exact node match
+            # (grid_metadata.resolve_zsun), which float32 mode (jax_enable_x64 off, docs/mac_gpu.md)
+            # would break by truncating them; every consumer wraps them itself
             arrays = {
-                'ssp_lgmet':      jnp.array(raw['ssp_lgmet']),
-                'ssp_lg_age_gyr': jnp.array(raw['ssp_lg_age_gyr']),
-                'ssp_wave':       jnp.array(raw['ssp_wave']),
+                'ssp_lgmet':      np.asarray(raw['ssp_lgmet'], dtype=np.float64),
+                'ssp_lg_age_gyr': np.asarray(raw['ssp_lg_age_gyr'], dtype=np.float64),
+                'ssp_wave':       np.asarray(raw['ssp_wave'], dtype=np.float64),
                 'ssp_flux':       (raw['ssp_flux'] if flux_dtype is None
                                    else raw['ssp_flux'].astype(flux_dtype)),   # host NumPy
             }

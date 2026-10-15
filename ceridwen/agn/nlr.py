@@ -37,6 +37,7 @@ from pathlib import Path
 
 import numpy as np
 import jax.numpy as jnp
+from ..precision import float_dtype
 
 from . import AGN2LineSet, AGN_THETA_DEFAULTS
 from .lines import read_emlines_info
@@ -269,9 +270,9 @@ class FeltreNLR(AGN2LineSet):
     @staticmethod
     def _scalar(theta, key):
         if key in theta:
-            return jnp.ravel(jnp.asarray(theta[key], dtype=jnp.float64))[0]
+            return jnp.ravel(jnp.asarray(theta[key], dtype=float_dtype()))[0]
         d = NLR_THETA_DEFAULTS.get(key, AGN_THETA_DEFAULTS.get(key))
-        return jnp.asarray(d, dtype=jnp.float64)
+        return jnp.asarray(d, dtype=float_dtype())
 
     def ratios(self, theta):
         """(n_lines,) L_line / L_Hbeta at the theta point (float64)."""

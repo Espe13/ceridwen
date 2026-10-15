@@ -45,6 +45,7 @@ Without ``agn=`` none of this exists and the kernels are called as before.
 from __future__ import annotations
 
 import jax.numpy as jnp
+from ..precision import float_dtype
 import numpy as np
 
 from . import (AGN_MODE_CIGALE, AGN_MODE_CORRECTED, AGN_MODE_FSPS, AGN_MODE_PROSPECTOR,
@@ -69,8 +70,8 @@ def prospector_igm_transmission(wave_rest, zred, igm_factor=1.0):
     """exp(-tau * igm_factor) of ``fake_fsps.add_igm`` on the rest-frame grid (pure JAX,
     float64). Its final ``clip(spec * T, 1e-70)`` acts on the spectrum, not on T, and is not
     reproduced (it is below float32's range)."""
-    zred = jnp.asarray(zred, dtype=jnp.float64)
-    rw = jnp.asarray(wave_rest, dtype=jnp.float64) * (1.0 + zred)
+    zred = jnp.asarray(zred, dtype=float_dtype())
+    rw = jnp.asarray(wave_rest, dtype=float_dtype()) * (1.0 + zred)
     tau_line = jnp.zeros_like(rw)
     for lyw, c in zip(_LYW, _LYCOEFF):
         inside = (rw >= lyw) & (rw <= lyw * (1.0 + zred))
@@ -218,15 +219,15 @@ class AGNHook:
     def agn_transmission(self, zred, igm_factor):
         """(n_wave,) T_agn of the reproduction modes (see the module docstring)."""
         if self.mode == AGN_MODE_FSPS:
-            return jnp.ones(self.wave.shape, dtype=jnp.float64)
+            return jnp.ones(self.wave.shape, dtype=float_dtype())
         return prospector_igm_transmission(self.wave, zred, igm_factor)
 
     def components(self, theta, ctx: AGNContext):
         """``(intrinsic, attenuated)`` (n_wave,) float64 sums over the continuum components."""
         th = self.filled(theta)
         dc = ctx.diffuse_curve
-        intrinsic = jnp.zeros_like(self.wave, dtype=jnp.float64)
-        attenuated = jnp.zeros_like(self.wave, dtype=jnp.float64)
+        intrinsic = jnp.zeros_like(self.wave, dtype=float_dtype())
+        attenuated = jnp.zeros_like(self.wave, dtype=float_dtype())
         for name, comp in self.model.components.items():
             if name == "skirtor":
                 continue                      # AGN2: nuclear_parts below
@@ -265,18 +266,18 @@ class AGNHook:
         own = getattr(sk, "nuclear_parts", None)
         if own is not None:
             p = own(theta, ctx, self.model.polar)
-            return {k: jnp.asarray(p[k], dtype=jnp.float64)
+            return {k: jnp.asarray(p[k], dtype=float_dtype())
                     for k in ("disk", "dust", "polar_t", "polar_ir", "nuclear")}
         parts = sk.rest_parts(theta, ctx)
-        disk = jnp.asarray(parts["disk"], dtype=jnp.float64)
-        dust = jnp.asarray(parts["dust"], dtype=jnp.float64)
+        disk = jnp.asarray(parts["disk"], dtype=float_dtype())
+        dust = jnp.asarray(parts["dust"], dtype=float_dtype())
         polar = self.model.polar
         if polar is None:
             t = jnp.ones_like(disk)
             ir = jnp.zeros_like(disk)
         else:
-            t = jnp.asarray(polar.transmission(theta), dtype=jnp.float64)
-            ir = jnp.asarray(polar.reemission(theta, disk, t, ctx), dtype=jnp.float64)
+            t = jnp.asarray(polar.transmission(theta), dtype=float_dtype())
+            ir = jnp.asarray(polar.reemission(theta, disk, t, ctx), dtype=float_dtype())
         return {"disk": disk, "dust": dust, "polar_t": t, "polar_ir": ir,
                 "nuclear": disk * t + dust + ir}
 
@@ -339,7 +340,7 @@ class AGNHook:
         each line ("corrected"; 0 otherwise). What the nuclear screen removes is not galaxy
         dust and is not re-emitted (the polar re-emission is fed by the disc only)."""
         if self.mode != AGN_MODE_CORRECTED:
-            return jnp.zeros((), dtype=jnp.float64)
+            return jnp.zeros((), dtype=float_dtype())
         blr = self.model.blr
         L = blr.line_luminosity(theta) * formed_mass
         lam = jnp.asarray(blr.line_wave)
