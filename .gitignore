@@ -252,7 +252,6 @@ GPU/
 **/big_comparison*.py
 **/fsps_step_*.py
 **/sfh_interp_*.py
-**/test_float32_*.py
 **/test_predict.py
 
 # ── Non-package trees ─────────────────────────────────────────────
