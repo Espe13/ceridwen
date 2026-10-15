@@ -28,7 +28,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "tests"))
 
 import jax                                                     # noqa: E402
-jax.config.update("jax_enable_x64", True)
+import ceridwen  # noqa: F401  (sets the precision: float64, or float32 on an Apple GPU)
 import jax.numpy as jnp                                        # noqa: E402
 
 from _gridfixture import find_test_grid                        # noqa: E402

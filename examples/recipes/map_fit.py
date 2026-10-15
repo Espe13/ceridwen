@@ -84,7 +84,7 @@ from ceridwen.likelihood.likelihood import MultiObservationLikelihood, make_lnpr
 from ceridwen.sampler.nuts import (BlackJAXNUTSAdapter, _build_transforms,
                                    _to_constrained, _to_unconstrained)
 
-jax.config.update("jax_enable_x64", True)
+import ceridwen  # noqa: F401  (sets the precision: float64, or float32 on an Apple GPU)
 
 __all__ = ["build_lnprob", "map_fit", "laplace_sigma", "MAPResult"]
 

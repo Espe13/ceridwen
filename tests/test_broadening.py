@@ -29,7 +29,7 @@ FAKE = getattr(jax, "__fake__", False)
 needs_jax = pytest.mark.skipif(FAKE, reason="needs a real JAX")
 
 if not FAKE:
-    jax.config.update("jax_enable_x64", True)
+    import ceridwen  # noqa: F401  (sets the precision: float64, or float32 on an Apple GPU)
 
 
 def model_grid(dv_fine=8.0, dv_coarse=40.0):

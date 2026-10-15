@@ -25,7 +25,7 @@ from ceridwen.likelihood.gp_likelihood import (GP_JITTER, GPGaussianLikelihood, 
                                                lnlike_gp_gaussian, gp_conditional_mean)
 from ceridwen.observation import GaussianProcess, Photometry, Spectrum
 
-jax.config.update("jax_enable_x64", True)
+import ceridwen  # noqa: F401  (sets the precision: float64, or float32 on an Apple GPU)
 
 GP_NAMES = ("log_gp_amp_spec", "log_gp_length_spec")
 

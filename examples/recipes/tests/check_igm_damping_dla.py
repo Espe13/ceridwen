@@ -30,7 +30,7 @@ sys.path.insert(0, _src)
 import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
 
-jax.config.update("jax_enable_x64", True)
+import ceridwen  # noqa: F401  (sets the precision: float64, or float32 on an Apple GPU)
 
 from ceridwen.cosmology import Cosmology  # noqa: E402
 from ceridwen.igm import Madau1995  # noqa: E402

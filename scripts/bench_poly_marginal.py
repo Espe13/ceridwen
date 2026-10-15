@@ -4,7 +4,8 @@
 (b) full: the fitSED log-posterior (forward model + likelihood) on the test grid.
 Median of repeats after a warm-up; the machine is shared with other jobs, so +-20 %."""
 import sys, time, warnings
-import jax; jax.config.update("jax_enable_x64", True)
+import jax
+import ceridwen  # noqa: F401  (sets the precision: float64, or float32 on an Apple GPU)
 import numpy as np, jax.numpy as jnp
 from ceridwen.likelihood.likelihood import DiagonalGaussianLikelihood
 from ceridwen.likelihood.poly_calibration import PolynomialCalibration, chebyshev_design_matrix

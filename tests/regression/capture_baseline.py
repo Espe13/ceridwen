@@ -58,7 +58,7 @@ import jax
 import jax.numpy as jnp
 from ceridwen.broadening import Instrument, Kinematics
 
-jax.config.update("jax_enable_x64", True)
+import ceridwen  # noqa: F401  (sets the precision: float64, or float32 on an Apple GPU)
 
 HERE = pathlib.Path(__file__).resolve().parent
 BASELINE_DIR = HERE / "baselines"

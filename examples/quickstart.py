@@ -38,8 +38,9 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-# 64-bit floats are required for accurate Bayesian evidence estimates.
-jax.config.update("jax_enable_x64", True)
+# `import ceridwen` (below) sets the precision: 64-bit floats, which Bayesian evidence
+# estimates need, or float32 on an Apple GPU, which has no float64 (docs/mac_gpu.md).
+# Do not force jax_enable_x64 here: on that GPU float64 cannot compile.
 
 from ceridwen import SSPData, CSPBasis, SedModel, PostProcess
 from ceridwen.observation import Photometry

@@ -17,7 +17,7 @@ import io
 
 import numpy as np
 import jax
-jax.config.update("jax_enable_x64", True)
+import ceridwen  # noqa: F401  (sets the precision: float64, or float32 on an Apple GPU)
 import jax.numpy as jnp
 import pytest
 

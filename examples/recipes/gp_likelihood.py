@@ -41,7 +41,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-jax.config.update("jax_enable_x64", True)
+import ceridwen  # noqa: F401  (sets the precision: float64, or float32 on an Apple GPU)
 
 from ceridwen import CSPBasis, SSPData, SedModel, Cosmology, fitSED   # noqa: E402
 from ceridwen.observation import Spectrum                              # noqa: E402

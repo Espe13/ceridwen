@@ -42,7 +42,7 @@ sys.path[:0] = [str(HERE), str(HERE.parent / "tests")]
 warnings.simplefilter("ignore")
 
 import jax                                                     # noqa: E402
-jax.config.update("jax_enable_x64", True)
+import ceridwen  # noqa: F401  (sets the precision: float64, or float32 on an Apple GPU)
 import jax.numpy as jnp                                        # noqa: E402
 
 import bit_identity_check as b                                 # noqa: E402
