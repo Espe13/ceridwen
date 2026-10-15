@@ -358,3 +358,6 @@ examples/quickstart_figures/
 CHANGES_sept2026.md
 docs/dev/
 scripts_afe/
+
+# output of examples/apple_gpu_mock_fit.ipynb
+examples/apple_gpu_mock_fit/

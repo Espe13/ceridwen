@@ -7,6 +7,11 @@ what to install, what the mode changes, what it guarantees and what it refuses.
 
 ## Install and run
 
+`examples/apple_gpu_mock_fit.ipynb` is the whole story in one notebook: a mock galaxy
+(photometry and a spectrum), its figure, a nested-sampling fit on the GPU and the recovered
+parameters against the truth; about six minutes on an M3 Pro.
+
+
 `pip install ceridwen` installs jax-graft on an Apple Silicon Mac with macOS 26 and
 Python 3.12 or newer (the only platform jax-graft ships wheels for; the marker in
 `pyproject.toml` keeps older Macs and Python 3.11 on the CPU build). Nothing else is needed:
