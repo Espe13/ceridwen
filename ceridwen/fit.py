@@ -1354,9 +1354,11 @@ def load_result_h5(path: str | Path):
         param_names = list(f["model"]["param_names"].asstr()[()])
 
         samples = {p: jnp.asarray(np.array(samp[p])) for p in param_names}
-        log_likelihoods = jnp.asarray(np.array(samp["log_likelihoods"]))
-        log_weights     = jnp.asarray(np.array(samp["log_weights"]))
-        llb = (jnp.asarray(np.array(samp["log_likelihoods_birth"]))
+        # ln L and the weights stay float64 on the host, as run_sampler returns them in float32
+        # mode (runner._with_loglike_offset): float32 resolves ln L ~ 4e4 only to 4e-3
+        log_likelihoods = np.asarray(samp["log_likelihoods"], dtype=np.float64)
+        log_weights     = np.asarray(samp["log_weights"], dtype=np.float64)
+        llb = (np.asarray(samp["log_likelihoods_birth"], dtype=np.float64)
                if "log_likelihoods_birth" in samp else None)
 
         raw = {}
