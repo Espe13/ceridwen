@@ -682,14 +682,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../resolved/" class="md-nav__link">
+      <a href="../agn/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Resolved mode (prototype)
+    AGN
   
 
     
@@ -892,18 +892,41 @@ Bayesian evidence (log Z) for model comparison. Every free parameter needs a pro
 <li><code>num_inner_steps</code>: inner MCMC steps per replacement (fitSED's default 30).</li>
 <li><code>logZ_tol</code>: the run stops when the evidence left in the live points, ln(Z_live / Z), falls
   below this (default -5).</li>
+<li><code>slice_kernel</code>: the inner slice kernel, <code>"lanes"</code> (default), <code>"stock"</code> (<code>blackjax.nss</code>
+  unchanged) or <code>"carry"</code>. <code>"lanes"</code> runs every replacement's chain of slice steps as one lane
+  of a shared loop, so lanes do not wait for the slowest one, candidates below the prior slice
+  level skip the likelihood, and idle batch slots evaluate look-ahead candidates (Dance et al.
+  2025, arXiv:2503.17405; implemented by Liu Hao, @potatoist314). <code>"carry"</code> evaluates each stepping-out
+  edge once instead of twice under <code>vmap</code>. Both use the same random numbers and the same
+  evaluations as <code>"stock"</code>. <code>"carry"</code> is bitwise equal to it on CPU; <code>"lanes"</code> is bitwise equal
+  on Apple-silicon CPUs and equal to the last bits on x86 CPUs (XLA orders its batched
+  arithmetic differently there), so long x86 runs of the two can separate and then agree
+  statistically. One exception, by design: <code>"lanes"</code> gives a replacement
+  particle whose moves were all rejected the contour it replaced as its birth, which is
+  blackjax 1.7's rule (1.6 kept the birth of the particle it started from, which biases ln Z
+  where the likelihood is flat). With blackjax &gt;= 1.7 <code>"stock"</code> follows the same
+  rule; with 1.6 they differ in those births and in what depends on them (the weights
+  and ln Z), only where a chain had no accepted move. On a GPU the batches differ in composition, so float
+  rounding can separate the trajectories after many iterations; the results then agree
+  statistically, not bitwise. GPU runs are not bit-reproducible between processes with any
+  kernel: two <code>"stock"</code> runs with the same key on two A100s differ in the last bits. For a
+  JADES photometry + emission-line model (19 dimensions, <code>num_live=300</code>, <code>num_delete=64</code>),
+  <code>"lanes"</code> sampled 3.5-3.8x faster than <code>"stock"</code> on an A100, with the same posteriors and ln Z
+  to 2e-5 or better. On a loaded 11-core laptop CPU it was about 7x faster per iteration (one
+  measurement). Pass <code>slice_kernel="stock"</code> to run <code>blackjax.nss</code> exactly as released.</li>
 </ul>
 <p>The sampler shows a progress bar of dead points. Its cost scales with <code>num_live</code>: on a shared
 11-core laptop CPU, the Quick start model at <code>num_live=100, num_delete=20, logZ_tol=-2.0</code>
-took 21-29 min in two runs (67 800 likelihood calls), and at <code>num_live=400</code> it advanced about 1.3 dead points
-per second, i.e. hours.</p>
+took 12 min with <code>"lanes"</code> and 21-29 min with <code>"stock"</code>, 67 800 likelihood calls either way; at
+<code>num_live=400</code> with <code>"stock"</code> it advanced about 1.3 dead points per second, i.e. hours.</p>
 <h3 id="checkpoints-and-resuming">Checkpoints and resuming<a class="headerlink" href="#checkpoints-and-resuming" title="Permanent link">&para;</a></h3>
 <p>With <code>checkpoint_dir=</code> (or <code>$CERIDWEN_CHECKPOINT_DIR</code>), the run writes
 <code>ns_checkpoint_&lt;pid&gt;.pkl</code> every <code>checkpoint_interval_s</code> seconds (default 1200). After a kill,
 pass that file as <code>resume_from=</code> with the same <code>rng_key</code> and settings: the run continues from
 the saved live and dead points and reproduces the uninterrupted run. It refuses a checkpoint
 whose settings, parameter shapes or live-point log-likelihoods (to a relative 1e-6) do not
-match the model.</p>
+match the model. <code>slice_kernel</code> may differ between the killed run and the resumed one: the
+kernels make the same moves with the same random numbers.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nested&quot;</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;./my_fit&quot;</span><span class="p">,</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>                <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>                <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;checkpoint_dir&quot;</span><span class="p">:</span> <span class="s2">&quot;./ckpt&quot;</span><span class="p">,</span>

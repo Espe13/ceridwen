@@ -1,0 +1,1686 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="JAX-native, GPU-capable spectral energy distribution (SED) fitting">
+      
+      
+      
+        <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/agn/">
+      
+      
+        <link rel="prev" href="../afe/">
+      
+      
+        <link rel="next" href="../conventions/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>AGN - CERIDWEN</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#agn" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="CERIDWEN" class="md-header__button md-logo" aria-label="CERIDWEN" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CERIDWEN
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              AGN
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Espe13/ceridwen" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Espe13/ceridwen
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="CERIDWEN" class="md-nav__button md-logo" aria-label="CERIDWEN" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CERIDWEN
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Espe13/ceridwen" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Espe13/ceridwen
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: joint fit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../samplers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Samplers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../noise_calibration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Noise and calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gp_likelihood/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GP likelihood (correlated residuals)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../outlier_model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outlier mixture likelihood
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eline_marginalisation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Emission-line marginalisation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../afe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    [α/Fe]
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AGN
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AGN
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#components-and-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Components and parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fitting-the-agn-line-width" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fitting the AGN line width
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-three-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The three modes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parity-with-fsps-and-prospector-agn_plan-4-a" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parity with FSPS and Prospector (AGN_PLAN §4 A)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#corrected-mode-physics-agn_plan-4-b" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Corrected-mode physics (AGN_PLAN §4 B)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#agn2-the-cigale-standard-skirtor-polar-dust-feltre16-nlr-blr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AGN2: the CIGALE standard (SKIRTOR, polar dust, Feltre+16 NLR, BLR)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AGN2: the CIGALE standard (SKIRTOR, polar dust, Feltre+16 NLR, BLR)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cigale-extinction-curves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CIGALE extinction curves
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agn_modecigale-and-corrected" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        agn_mode="cigale" and "corrected"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#parity-with-cigale-and-the-literature-testsagn2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parity with CIGALE and the literature (tests/agn2/)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fixed-by-design-four-things-the-agn-model-does-not-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed by design — four things the AGN model does not do
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Fixed by design — four things the AGN model does not do">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-line-luminosities-are-absolute-and-fagn-does-not-scale-them" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The line luminosities are absolute, and fagn does not scale them
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-nlr-is-a-fixed-feltre16-grid-not-the-models-own-disc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The NLR is a fixed Feltre+16 grid, not the model's own disc
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-blr-does-not-depend-on-inclination" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The BLR does not depend on inclination
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#there-is-no-x-ray-or-corona-component" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        There is no X-ray or corona component
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-agn-changes-elsewhere" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the AGN changes elsewhere
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conventions & gotchas
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development and verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="agn">AGN<a class="headerlink" href="#agn" title="Permanent link">&para;</a></h1>
+<p><code>CSPBasis(..., agn=AGNConfig(...))</code> adds an active nucleus to the forward model: everything
+Prospector has for AGN, built so that it can <strong>reproduce</strong> FSPS and Prospector exactly
+(<code>agn_mode="fsps"</code>, <code>"prospector"</code>), and then <strong>correctly</strong> (<code>agn_mode="corrected"</code>, the
+default). The CIGALE-standard components (SKIRTOR torus, polar dust, Feltre+16 narrow-line
+region, broad-line region; section "AGN2") come with a fourth mode, <code>agn_mode="cigale"</code>, that
+reproduces CIGALE. Without <code>agn=</code> nothing changes: every existing prediction is byte-identical
+(<code>scripts/bit_identity_check.py</code>), and so does <code>AGNConfig()</code> with the AGN2 switches off.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">CSPBasis</span><span class="p">,</span> <span class="n">Cosmology</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.agn</span><span class="w"> </span><span class="kn">import</span> <span class="n">AGNConfig</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="n">lookback_time</span><span class="o">=</span><span class="n">lb</span><span class="p">,</span> <span class="n">zh_const</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_neb</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_dust_emission</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>               <span class="n">cosmo</span><span class="o">=</span><span class="n">Cosmology</span><span class="o">.</span><span class="n">planck18</span><span class="p">(),</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>               <span class="n">agn</span><span class="o">=</span><span class="n">AGNConfig</span><span class="p">())</span>                       <span class="c1"># corrected mode, torus + disc + lines</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">agn</span><span class="o">=</span><span class="n">AGNConfig</span><span class="p">(</span><span class="n">agn_mode</span><span class="o">=</span><span class="s2">&quot;fsps&quot;</span><span class="p">))</span>         <span class="c1"># FSPS add_agn_dust</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">agn</span><span class="o">=</span><span class="n">AGNConfig</span><span class="p">(</span><span class="n">agn_mode</span><span class="o">=</span><span class="s2">&quot;prospector&quot;</span><span class="p">,</span> <span class="n">dust4_type</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
+</code></pre></div>
+<p><code>agn=True</code> is short for <code>AGNConfig()</code> and <code>agn="fsps"</code> (etc.) for <code>AGNConfig(agn_mode="fsps")</code>.
+<code>CSPBasis_afe</code> takes the same argument. A worked example is <code>examples/agn_demo.py</code>.</p>
+<h2 id="components-and-parameters">Components and parameters<a class="headerlink" href="#components-and-parameters" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>component</th>
+<th>theta keys (default)</th>
+<th>meaning</th>
+<th>source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Nenkova+08 clumpy torus</td>
+<td><code>fagn</code> (0), <code>agn_tau</code> (10)</td>
+<td>L_torus / L_bol,* ; torus optical depth, grid 5-150</td>
+<td>FSPS <code>agn_dust.f90</code>, <code>$SPS_HOME/dust/Nenkova08_y010_torusg_n10_q2.0.dat</code></td>
+</tr>
+<tr>
+<td>Temple+21 accretion disc (Wang+24)</td>
+<td><code>fagn_bbb</code> (0)</td>
+<td>F_nu,disc / F_nu,* at rest 5500 A (dust-free young + old stellar spectrum)</td>
+<td><code>ceridwen/agn/data/temple21.txt</code> (Prospector's <code>temple.txt</code>)</td>
+</tr>
+<tr>
+<td>AGN dust screen</td>
+<td><code>dust4</code> (0), <code>dust4_index</code> (-1.0)</td>
+<td>extra screen on the AGN: <code>exp(-dust4 (lam/5500)^dust4_index)</code> times the galaxy's diffuse curve; <code>AGNConfig(dust4_type=1)</code></td>
+<td>Prospector <code>fake_fsps.attenuate</code></td>
+</tr>
+<tr>
+<td>AGN narrow lines</td>
+<td><code>agn_elum</code> (0), <code>agn_eline_sigma</code> (100)</td>
+<td>L_Hbeta [L_sun] per formed M_sun; Gaussian width [km/s]; 23 lines with Richardson+14 'a42' ratios by FSPS name</td>
+<td>Prospector <code>AGNSpecModel</code></td>
+</tr>
+</tbody>
+</table>
+<p>L_bol,* is the dust-free stellar spectrum integrated over frequency on the model grid (the
+DL07 trapezoid weights), per formed mass, so every AGN component scales with the SFH's formed
+mass like the stars do. Static options of <code>AGNConfig</code>: <code>agn_mode</code>, <code>torus</code>/<code>disk</code>/<code>lines</code>
+(<code>None</code> = the mode's default: torus only in <code>fsps</code>, all three otherwise), <code>dust4_type</code> (0 or
+1; 2 is refused as in Prospector), <code>tau_interp</code> (<code>"linear"</code>, FSPS; <code>"log"</code> in corrected mode
+only), <code>agn_energy_balance</code> (corrected mode; <code>None</code> = on with dust emission), <code>torus_file</code>.</p>
+<p><strong>Sampling.</strong> <code>fagn</code> and <code>fagn_bbb</code> span decades: sample their logarithms with transforms,</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">priors</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;log_fagn&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="mf">3.0</span><span class="p">)),</span>       <span class="c1"># Prospector: LogUniform(1e-5, 3)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>          <span class="s2">&quot;agn_tau&quot;</span><span class="p">:</span> <span class="n">LogUniform</span><span class="p">(</span><span class="n">mini</span><span class="o">=</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">maxi</span><span class="o">=</span><span class="mf">150.0</span><span class="p">),</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>          <span class="s2">&quot;log_fagn_bbb&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">5.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">2.0</span><span class="p">),</span>               <span class="c1"># LogUniform(1e-5, 100)</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>          <span class="s2">&quot;dust4_index&quot;</span><span class="p">:</span> <span class="n">TopHat</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">1.8</span><span class="p">,</span> <span class="n">high</span><span class="o">=-</span><span class="mf">0.8</span><span class="p">),</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>          <span class="s2">&quot;agn_elum&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">1e-6</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">1e-2</span><span class="p">),</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>          <span class="s2">&quot;agn_eline_sigma&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">50.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">500.0</span><span class="p">)}</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">transforms</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;fagn&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="mf">10.0</span> <span class="o">**</span> <span class="n">th</span><span class="p">[</span><span class="s2">&quot;log_fagn&quot;</span><span class="p">],</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>              <span class="s2">&quot;fagn_bbb&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="mf">10.0</span> <span class="o">**</span> <span class="n">th</span><span class="p">[</span><span class="s2">&quot;log_fagn_bbb&quot;</span><span class="p">]}</span>
+</code></pre></div>
+<h2 id="fitting-the-agn-line-width">Fitting the AGN line width<a class="headerlink" href="#fitting-the-agn-line-width" title="Permanent link">&para;</a></h2>
+<p><code>agn_eline_sigma</code> is the Gaussian dispersion [km/s] of the 23 AGN narrow lines. In the
+corrected mode they are painted with width sqrt(agn_eline_sigma^2 + sigma_inst^2), the
+instrument at each line (<code>SpectralProjector.setup_agn_lines</code>), on every pixel: no window
+truncates them, and the gradient in <code>agn_eline_sigma</code> is finite down to 1e-3 km/s
+(<code>tests/agn/test_eline_sigma.py</code>).</p>
+<p><strong>Allowed values.</strong> A prior, a constant transform or a fixed value must lie in (0, 2000] km/s
+(2000 = the <code>Kinematics.sigma_max</code> default); <code>SedModel</code> refuses anything else at setup. These
+are narrow-line-region lines with Richardson+14 narrow-line ratios: broad-line-region widths
+(thousands of km/s) are the BLR component's (<code>AGNConfig(blr=True)</code>, <code>blr_sigma</code>, below).</p>
+<p><strong>When to sample it, when to fix it.</strong> Only a Spectrum that resolves the AGN lines constrains
+the width: Lines fluxes do not depend on it, and Photometry only through line light near a
+filter edge. <code>SedModel</code> warns at setup when it has a prior but no Spectrum, no unmasked
+pixel at an AGN line, or an instrumental sigma above 3x the prior's upper edge at every AGN
+line. Then fix it:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">transforms</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;agn_eline_sigma&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">100.0</span><span class="p">])}</span>   <span class="c1"># and no prior on it</span>
+</code></pre></div>
+<p>The instrumental sigma is sigma_inst = c / (2.3548 R_FWHM):</p>
+<table>
+<thead>
+<tr>
+<th>R_FWHM</th>
+<th>sigma_inst [km/s]</th>
+<th>resolves (sigma_inst &lt;= 3 x prior upper edge) for an upper edge &gt;=</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>30</td>
+<td>4244</td>
+<td>1415 km/s</td>
+</tr>
+<tr>
+<td>100</td>
+<td>1273</td>
+<td>424 km/s</td>
+</tr>
+<tr>
+<td>300</td>
+<td>424</td>
+<td>141 km/s</td>
+</tr>
+<tr>
+<td>1000</td>
+<td>127</td>
+<td>42 km/s</td>
+</tr>
+<tr>
+<td>2700</td>
+<td>47</td>
+<td>16 km/s</td>
+</tr>
+</tbody>
+</table>
+<p>The warning is a floor, not a guarantee: a prism at R ~ 100 with <code>Uniform(50, 500)</code> passes it
+(1273 &lt; 3 x 500) and the width is still prior-dominated (below). Sample the width with
+a grating, fix it with a prism.</p>
+<p><strong>Recovery on CPU</strong> (<code>scripts/agn_injection_recovery.py --spec grating|prism</code>; z = 3, the
+JADES-like photometry plus a noiseless spectrum of rest 3600-6900 A at continuum S/N 20 per
+pixel; corrected mode with nebular emission; truths agn_elum = 3e-3, agn_eline_sigma = 250,
+sigma_gas = 60; all free with every stellar and continuum-AGN parameter; nested sampling,
+<code>slice_kernel="lanes"</code>):</p>
+<table>
+<thead>
+<tr>
+<th>parameter</th>
+<th>truth</th>
+<th>grating, R 1000 (num_live 400): median, 16-84 %</th>
+<th>in 2.5-97.5 %</th>
+<th>prism, R 100 (num_live 100): median, 16-84 %</th>
+<th>in 2.5-97.5 %</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>agn_elum</code></td>
+<td>0.003</td>
+<td>0.0033 (0.00312 to 0.00348)</td>
+<td>yes</td>
+<td>0.00368 (0.00306 to 0.00435)</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>agn_eline_sigma</code></td>
+<td>250</td>
+<td>252 (248 to 255)</td>
+<td>yes</td>
+<td>267 (141 to 378)</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>sigma_gas</code></td>
+<td>60</td>
+<td>60.4 (58.1 to 62.8)</td>
+<td>yes</td>
+<td>139 (62.6 to 224)</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>log_fagn</code></td>
+<td>-0.523</td>
+<td>-0.417 (-0.61 to -0.231)</td>
+<td>yes</td>
+<td>-0.517 (-0.654 to -0.249)</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>agn_tau</code></td>
+<td>20</td>
+<td>28 (14.8 to 46.2)</td>
+<td>yes</td>
+<td>21.4 (11.9 to 46)</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>log_fagn_bbb</code></td>
+<td>0</td>
+<td>-0.0036 (-0.0178 to 0.0124)</td>
+<td>yes</td>
+<td>0.0397 (-0.025 to 0.107)</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>logmass</code></td>
+<td>10</td>
+<td>9.956 (9.934 to 9.979)</td>
+<td>NO (97.5 %: 9.999)</td>
+<td>9.931 (9.9 to 9.974)</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>logzsol</code></td>
+<td>-0.5</td>
+<td>-0.543 (-0.585 to -0.493)</td>
+<td>yes</td>
+<td>-0.558 (-0.659 to -0.478)</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>diffuse_tau_kc</code></td>
+<td>0.4</td>
+<td>0.4 (0.387 to 0.417)</td>
+<td>yes</td>
+<td>0.439 (0.377 to 0.502)</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<p><code>agn_eline_sigma</code> posterior / prior standard deviation: 0.029 with the
+grating, 0.85 with the prism (prior-dominated). With the grating the line
+parameters are recovered to a few per cent; <code>logmass</code> sits just outside its 95 % interval
+(97.5 % at 9.999; 9.991 with num_live 100) although the truth has chi^2 = 0 (the best
+sample of the num_live 100 run has chi^2 = 0.9): the SFH directions projected onto the mass
+in the marginal, not a missed likelihood peak. <code>agn_elum</code> is per formed solar mass, so it trades with <code>logmass</code> (correlation -0.92).
+Posteriors: <code>sigma_&lt;spec&gt;[_nl400].npz</code> written by the script.</p>
+<p><strong>Degeneracy with sigma_gas.</strong> The AGN lines sit on the same wavelengths as the star-forming
+lines (H beta, [O III], H alpha, [N II], [S II], ...), so a line is the sum of two Gaussians,
+sqrt(sigma_gas^2 + sigma_inst^2) and sqrt(agn_eline_sigma^2 + sigma_inst^2) wide. The data
+fix the blended profile; how it splits into the two widths depends on how much of each line
+is AGN. With the prism the two widths are both unconstrained (sigma_gas 139 +85/-76 km/s
+against a truth of 60, agn_eline_sigma posterior / prior width 0.85); with the grating
+the two widths are measured separately (agn_eline_sigma 252 +3/-4, sigma_gas 60.4 +2.4/-2.3
+km/s) with a posterior correlation of only -0.17: the AGN and the nebular lines carry
+different ratios, so different lines constrain different mixtures of the two widths.</p>
+<p><strong>What separates AGN from star formation is the line RATIOS, not the widths.</strong> The AGN lines
+carry fixed Richardson+14 'a42' ratios (strong [O III]/H beta, [N II]/H alpha, [S II], [O I]),
+the nebular lines the CLOUDY ratios of the gas parameters, so <code>agn_elum</code> is set by the
+ratios: in the prism fit above the width is prior-dominated while <code>agn_elum</code> is recovered
+(3.68e-3, 16/84 % 3.06e-3 to 4.35e-3, truth 3e-3). Do not read an AGN detection off a
+width.</p>
+<h2 id="the-three-modes">The three modes<a class="headerlink" href="#the-three-modes" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>"fsps"</code></th>
+<th><code>"prospector"</code></th>
+<th><code>"corrected"</code> (default)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>reproduces</td>
+<td>FSPS <code>add_agn_dust</code></td>
+<td>Prospector <code>AGNSSPBasis</code> + <code>AGNSpecModel</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>torus resampling</td>
+<td><code>sps_setup.f90</code>: log-log with FSPS's float32 <code>tiny30</code>, <code>locate</code> edges</td>
+<td><code>fake_fsps.agn_torus</code>: argmin edges, log-log</td>
+<td>positive rows only, zero outside, renormalised so that the torus carries exactly <code>fagn * L_bol</code> on any grid</td>
+</tr>
+<tr>
+<td><code>agn_tau</code> outside [5, 150]</td>
+<td>clamped (flat likelihood)</td>
+<td>extrapolated linearly (can go negative)</td>
+<td>clamped (flat likelihood)</td>
+</tr>
+<tr>
+<td>torus screen</td>
+<td>galaxy diffuse curve</td>
+<td>none</td>
+<td>galaxy diffuse curve</td>
+</tr>
+<tr>
+<td>disc screen</td>
+<td>(no disc)</td>
+<td>diffuse curve x dust4 screen</td>
+<td>diffuse curve x dust4 screen</td>
+</tr>
+<tr>
+<td>IGM on the AGN</td>
+<td>none (FSPS adds the torus after <code>igm_absorb</code>)</td>
+<td>Prospector's <code>fake_fsps.add_igm</code> (17 Lyman lines, no metal term)</td>
+<td>the CSP's IGM, like every other component</td>
+</tr>
+<tr>
+<td>AGN lines</td>
+<td>painted with Prospector's painter (no instrument, no dust, no IGM); photometry as delta functions</td>
+<td>same as fsps</td>
+<td>nebular painter with <code>agn_eline_sigma</code> (instrument included), the galaxy's diffuse dust and the IGM at each line; photometry through the model grid like the nebular lines</td>
+</tr>
+<tr>
+<td>energy balance</td>
+<td>no</td>
+<td>no</td>
+<td>absorbed AGN light (continuum and lines) re-emitted by DL07 when <code>add_dust_emission=True</code></td>
+</tr>
+</tbody>
+</table>
+<p>Without dust emission the corrected mode loses the absorbed AGN light exactly as absorbed
+starlight is lost. FSPS and Prospector have no AGN energy balance, so <code>agn_energy_balance=True</code>
+is refused in the reproduction modes. AGN lines need <code>add_neb=True</code> in the reproduction
+modes (Prospector paints them only near nebular lines); the corrected mode paints them
+without the nebular model.</p>
+<h2 id="parity-with-fsps-and-prospector-agn_plan-4-a">Parity with FSPS and Prospector (AGN_PLAN §4 A)<a class="headerlink" href="#parity-with-fsps-and-prospector-agn_plan-4-a" title="Permanent link">&para;</a></h2>
+<p>References: python-fsps 0.5.0 (libfsps <code>05b5e55</code>) and prospect <code>91f8e13</code>, written by
+<code>scripts/agn_reference/make_refs.py</code> into <code>tests/reference/agn/*.npz</code>; tests in <code>tests/agn/</code>.</p>
+<table>
+<thead>
+<tr>
+<th>test</th>
+<th>what</th>
+<th>result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A1</td>
+<td>fsps-mode torus vs python-fsps <code>spec(fagn) - spec(0)</code>: fagn {1e-3, 0.1, 1, 3} x agn_tau {5, 7.5, 10, 40, 150} x dust2 {0, 0.5, 1.5} x z {0, 2, 7}</td>
+<td>max rel 1.7e-8, inside FSPS's own cancellation floor (REF's rule); a float64 numpy port of FSPS agrees to the same floor</td>
+</tr>
+<tr>
+<td>A2</td>
+<td>prospector-mode torus vs <code>fake_fsps.agn_torus</code>, agn_tau 1-300 (extrapolation)</td>
+<td>max rel 3.1e-14</td>
+</tr>
+<tr>
+<td>A3</td>
+<td>disc + dust4 screen vs <code>agnssp_basis.get_spectrum</code> (140 configs, dust_type 0/2/4/6, dust4_type 0/1, z 0/6)</td>
+<td>max rel 5.7e-14</td>
+</tr>
+<tr>
+<td>A4</td>
+<td>AGN lines vs <code>AGNSpecModel</code> (agn_eline_sigma 50, 300)</td>
+<td>luminosities exact; spectrum 1.2e-13 of peak; Lines 8.9e-18; photometry 1.7e-16 with sedpy's curves (6e-5 with CERIDWEN's vendored NIRCam curves, a filter-data difference)</td>
+</tr>
+<tr>
+<td>A5</td>
+<td>whole model vs python-fsps + <code>AGNPolySpecModel</code> (z = 3, 15 NIRCam + MIRI bands)</td>
+<td>torus spectrum 1.7e-14 (Prospector's L_bol fed in); disc spectrum 1.7e-14 in shape; full-CSP AGN-only photometry = Prospector's x the galaxy scalars to 1.1e-3 (the filter-curve term, the same on the galaxy)</td>
+</tr>
+</tbody>
+</table>
+<p>A5 cannot be one number: the AGN-only difference depends on the galaxy through two scalars
+that two SPS codes compute differently by design — L_bol (the torus) and the galaxy at
+5500 A (the disc normalisation) — and on the filter curves. On the A5 SFH with the BPASS test
+grid: CERIDWEN / Prospector L_bol = 0.8515, disc normalisation 0.8300, flux normalisation
+0.99447 (cosmology implementation). With those applied the whole CSP reproduces Prospector to
+the filter term.</p>
+<p><strong>Prospector counts the torus twice.</strong> <code>AGNSSPBasis</code> passes <code>fagn</code> / <code>agn_tau</code> to python-fsps,
+whose libfsps always adds its own torus (<code>add_agn_dust = 1</code> is a Fortran default python-fsps
+cannot switch off), and then adds <code>fake_fsps.agn_torus</code> on top: the AGN-only torus photometry
+of real Prospector is 1.39-1.90x the torus term alone. The prospector mode reproduces the
+torus term alone (Prospector's evident intent); <code>tests/agn/test_a5_whole_model.py</code> records the
+size of the double count.</p>
+<h2 id="corrected-mode-physics-agn_plan-4-b">Corrected-mode physics (AGN_PLAN §4 B)<a class="headerlink" href="#corrected-mode-physics-agn_plan-4-b" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>test</th>
+<th>result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B1 resampled torus integrates to 1 on any grid</td>
+<td><code>abs(sum(T w) - 1) &lt;= 2e-15</code> for every tau node</td>
+</tr>
+<tr>
+<td>B2 node exactness, clamping, no negative flux, no NaN for tau in [0.1, 1e4]</td>
+<td>pass</td>
+</tr>
+<tr>
+<td>B3 fagn = fagn_bbb = agn_elum = 0 equals AGN off</td>
+<td>byte-identical, all modes, all eight kernels, a/Fe, <code>wavelength_support=True</code>, Photometry + Spectrum + Lines</td>
+</tr>
+<tr>
+<td>B4 linear in fagn, fagn_bbb, agn_elum</td>
+<td>exact in the float64 AGN term; to float32 rounding in the predictions</td>
+</tr>
+<tr>
+<td>B5 L_torus = fagn x L_bol (screen off)</td>
+<td>rtol 1e-10</td>
+</tr>
+<tr>
+<td>B6 energy balance</td>
+<td>absorbed AGN light (continuum + lines) re-emitted; conserved to DL07's own self-absorption loss, 4.6e-7 of the absorbed light, the same as the stellar path</td>
+</tr>
+<tr>
+<td>B7 IGM order (corrected vs fsps at z = 8)</td>
+<td>the difference is the AGN light blueward of Ly-alpha times the IGM: 0.36 % (tau 5) to 1.33 % (tau 150) of L_AGN</td>
+</tr>
+<tr>
+<td>B8 jit, vmap (W = 64, 100), grad</td>
+<td>finite gradients in every AGN key; vmap = loop to float32 reordering</td>
+</tr>
+<tr>
+<td>B9 <code>marginalize_elines</code> with AGN lines</td>
+<td>refused at setup</td>
+</tr>
+</tbody>
+</table>
+<p>The Nenkova+08 SEDs integrate to 0.989-0.996 of the file's own trapezoid on any dense grid
+(the log-log SED is not the trapezoid of its nodes); the corrected mode renormalises to
+exactly <code>fagn * L_bol</code>, the fsps mode keeps FSPS's normalisation (a 0.4-1.1 % difference).</p>
+<h2 id="agn2-the-cigale-standard-skirtor-polar-dust-feltre16-nlr-blr">AGN2: the CIGALE standard (SKIRTOR, polar dust, Feltre+16 NLR, BLR)<a class="headerlink" href="#agn2-the-cigale-standard-skirtor-polar-dust-feltre16-nlr-blr" title="Permanent link">&para;</a></h2>
+<p>Four static switches of <code>AGNConfig</code>, all off by default (<code>AGNConfig()</code> is unchanged, byte for byte):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.agn</span><span class="w"> </span><span class="kn">import</span> <span class="n">AGNConfig</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">agn</span> <span class="o">=</span> <span class="n">AGNConfig</span><span class="p">(</span><span class="n">agn_mode</span><span class="o">=</span><span class="s2">&quot;corrected&quot;</span><span class="p">,</span>            <span class="c1"># or &quot;cigale&quot;</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>                <span class="n">torus_model</span><span class="o">=</span><span class="s2">&quot;skirtor16&quot;</span><span class="p">,</span>         <span class="c1"># SKIRTOR torus + its disc (replaces Nenkova+08)</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>                <span class="n">polar_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">polar_law</span><span class="o">=</span><span class="s2">&quot;smc&quot;</span><span class="p">,</span>  <span class="c1"># CIGALE polar dust (&quot;smc&quot;, &quot;calzetti&quot;, &quot;gaskell&quot;)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>                <span class="n">nlr_model</span><span class="o">=</span><span class="s2">&quot;feltre16&quot;</span><span class="p">,</span>            <span class="c1"># Feltre+16 narrow lines (replace the a42 ratios)</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>                <span class="n">blr</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>                        <span class="c1"># broad H I lines</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>component</th>
+<th>theta keys (default)</th>
+<th>meaning</th>
+<th>source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SKIRTOR 2016 torus + disc</td>
+<td><code>fagn</code> (0), <code>skirtor_t</code> (7), <code>skirtor_pl</code> (1), <code>skirtor_q</code> (1), <code>skirtor_oa</code> (40), <code>skirtor_i</code> (30)</td>
+<td>amplitude (below); tau_9.7 {3..11}, p, q {0..1.5}, opening angle [deg, equator to torus edge] {10..80}, inclination [deg, 0 = face-on] {0..90}; <code>AGNConfig(skirtor_R=10/20/30)</code> static (default 20)</td>
+<td>Stalevski+12, +16 templates as CIGALE's <code>skirtor2016</code> uses them (Schartmann 2005 disc, delta 0; cigale 29cb909f)</td>
+</tr>
+<tr>
+<td>polar dust</td>
+<td><code>polar_ebv</code> (0.03), <code>polar_temp</code> (100 K), <code>polar_emis</code> (1.6)</td>
+<td>E(B-V) of the polar screen; grey body T, beta (lambda_0 = 200 um)</td>
+<td>CIGALE <code>skirtor2016.py</code> (Yang+20, +22)</td>
+</tr>
+<tr>
+<td>Feltre+16 NLR</td>
+<td><code>agn_elum</code> (0), <code>agn_eline_sigma</code> (100), <code>nlr_logu</code> (-2.5), <code>nlr_logz</code> (0), <code>nlr_alpha</code> (-1.7), <code>nlr_xid</code> (0.3), <code>nlr_lognh</code> (3)</td>
+<td>L_Hbeta,NLR [L_sun] per formed M_sun; sigma [km/s]; log U_S [-5, -1]; log Z/Z_sun [-2.18, +0.66] (Z_sun = 0.01524); alpha [-2, -1.2]; xi_d [0.1, 0.5]; log n_H [2, 4]</td>
+<td>public NEOGAL grid (<code>AGN_NLR_nebular_feltre16.tar.gz</code>), 17 of its 20 lines (N V 1240, [Si III] 1883, Si III] 1888 are not in the FSPS line list); [O II] 3726+3729 sits on <code>[O II] 3726</code> as in the a42 table</td>
+</tr>
+<tr>
+<td>BLR</td>
+<td><code>blr_lum</code> (0), <code>blr_sigma</code> (1500)</td>
+<td>L_Halpha,BLR [L_sun] per formed M_sun, before attenuation; Gaussian <strong>sigma</strong> [km/s] (FWHM = 2.35482 sigma; support [400, 5000])</td>
+<td>8 H I lines (H alpha-delta, Pa alpha-delta), Case B (Storey &amp; Hummer 1995 via PyNeb), T = 1e4 K, n_e = 1e4: H alpha / H beta = 2.847 (<code>ceridwen/agn/data/blr_caseB_T1e4_ne1e4.csv</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Interpolation is multilinear in the tabulated variables (log line ratios for the NLR), clamped at
+the grid edges; a fixed value outside a grid warns at setup and a <strong>prior</strong> reaching outside it
+raises (<code>SedModel</code>, as for <code>gas_logz</code>). The SKIRTOR (227 MB) and NLR tables are not shipped: the
+converters <code>scripts/agn2/build_skirtor_h5.py</code> and <code>build_nlr_h5.py</code> of the source repository write
+<code>$CERIDWEN_AGN_DATA/skirtor2016.h5</code> and <code>nlr_feltre16.h5</code> (default <code>~/.ceridwen/agn/</code>); a missing
+file is a teaching error at construction. The tests that need them skip with "MISSING ...: did NOT
+run". Data licences (SKIRTOR, Feltre+16) have not been checked for redistribution.</p>
+<h3 id="cigale-extinction-curves">CIGALE extinction curves<a class="headerlink" href="#cigale-extinction-curves" title="Permanent link">&para;</a></h3>
+<p>The polar dust reads CIGALE's three dust-model curves below 100 nm (<code>extFun_SMC.dat</code>,
+<code>extFun_MRN.dat</code>, <code>extFun_Gaskel04.dat</code>, from <code>pcigale/sed_modules/curves/</code> at cigale 29cb909f).
+They are CIGALE's files under CeCILL-2.0, so ceridwen does not ship them. Put them into
+<code>$CERIDWEN_AGN_DATA</code> (default <code>~/.ceridwen/agn/</code>) once:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>python<span class="w"> </span>-m<span class="w"> </span>ceridwen.agn.fetch<span class="w"> </span>--from<span class="w"> </span>/path/to/cigale<span class="w">   </span><span class="c1"># a CIGALE checkout or installed pcigale; no network</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>python<span class="w"> </span>-m<span class="w"> </span>ceridwen.agn.fetch<span class="w"> </span>--download<span class="w">               </span><span class="c1"># from gitlab.lam.fr, through the system curl</span>
+</code></pre></div>
+<p>or from Python, <code>ceridwen.agn.fetch_grids(from_cigale=...)</code> / <code>fetch_grids(download=True)</code>. Every
+file is checked against the sha256 of the table the parity tests were built against, and a file
+that differs is never written. Copying them by hand works too: either CIGALE's name or the former
+<code>cigale_extFun_*.txt</code> is read. Without them <code>polar_dust=True</code> raises at construction with these
+commands; with a changed table it raises naming the file. The tests that need them skip.</p>
+<p><strong>What is refused.</strong> The AGN2 switches in <code>"fsps"</code> / <code>"prospector"</code> modes; the Temple disc with
+SKIRTOR (SKIRTOR carries its own disc); <code>dust4_type=1</code> with SKIRTOR (its nuclear screen is the
+polar dust); <code>polar_dust=True</code> without SKIRTOR; in <code>"cigale"</code> mode the Nenkova torus, the Temple
+disc, the dust4 screen and the a42 lines (CIGALE has none of them), a CSP without any galaxy dust
+screen with SKIRTOR (CIGALE's <code>fagn</code> is relative to the galaxy's dust luminosity) or with
+<code>fesc_geometry="picket"</code> (that luminosity is computed with the screen geometry), and a <code>fagn</code>
+prior reaching 1. <code>marginalize_elines=True</code> with AGN lines (narrow or broad) is refused as before.</p>
+<h3 id="agn_modecigale-and-corrected"><code>agn_mode="cigale"</code> and <code>"corrected"</code><a class="headerlink" href="#agn_modecigale-and-corrected" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>"cigale"</code></th>
+<th><code>"corrected"</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fagn</code> (SKIRTOR)</td>
+<td>CIGALE's <code>fracAGN</code> = P / (P + L_dust,gal): P = torus + polar-dust luminosity, L_dust,gal what the galaxy's dust absorbs from stars and nebular emission (CIGALE's <code>dust.luminosity</code>); must be &lt; 1</td>
+<td>P / L_bol,* (as the Nenkova torus); CIGALE's fracAGN is reported as <code>frac_agn_cigale</code></td>
+</tr>
+<tr>
+<td>galaxy dust on the AGN</td>
+<td>none (CIGALE adds the AGN after its dust modules)</td>
+<td>the diffuse curve on the disc, torus, polar re-emission, NLR and BLR</td>
+</tr>
+<tr>
+<td>energy balance</td>
+<td>none</td>
+<td>what the galaxy's dust absorbs from the AGN goes to DL07 (with <code>add_dust_emission=True</code>)</td>
+</tr>
+<tr>
+<td>polar dust</td>
+<td>CIGALE: the disc extinguished only for a type-1 view (i &lt;= 90 - oa); the re-emitted luminosity is the angle-averaged absorption of the face-on disc; disc, torus and grey body renormalised together</td>
+<td>the same 4 pi accounting; CIGALE's Calzetti k (negative above ~3.1 um) clipped at 0</td>
+</tr>
+<tr>
+<td>resampling onto the model grid</td>
+<td>CIGALE's <code>np.interp</code> of L_lambda, 0 outside the template grid</td>
+<td>log-log between positive template points, scaled to the template's own integral (pixels independent of the model grid's extent)</td>
+</tr>
+<tr>
+<td>NLR attenuation</td>
+<td>none (the Feltre NLR is not a CIGALE component; CIGALE's unreleased <code>nebular_AGN</code> would apply the polar screen)</td>
+<td>galaxy diffuse curve at each line</td>
+</tr>
+<tr>
+<td>BLR</td>
+<td><code>blr_lum</code> with the Case-B table, polar-dust transmission at each line (CIGALE's <code>nebular_AGN</code> convention); CIGALE's own BLR scaling (ionising photons x covering factor, Cloudy tables with H alpha / H beta = 46 at its defaults) is not reproduced</td>
+<td>polar (or dust4) transmission x galaxy curve at each line; what the polar screen removes is not re-emitted (CIGALE re-emits only disc light)</td>
+</tr>
+<tr>
+<td>line profile</td>
+<td>Gaussian in ln lambda (CERIDWEN's painter); CIGALE's AGN lines are Gaussian in lambda: they differ at order sigma/c (4.7e-4 of the peak at FWHM 800 km/s, 4.1e-3 at 7000), same area</td>
+<td>same</td>
+</tr>
+<tr>
+<td>IGM</td>
+<td>after the AGN (CIGALE's redshifting module acts on every contribution)</td>
+<td>the same</td>
+</tr>
+</tbody>
+</table>
+<p><code>PostProcess</code> reports, with SKIRTOR, <code>extras["agn"]["frac_agn_cigale"]</code> (CIGALE's fracAGN, both
+modes; equal to <code>fagn</code> in <code>"cigale"</code>), CIGALE's <code>agn.*</code> infos as <code>cigale_&lt;name&gt;</code> (accretion
+power, intrinsic L_nu at 2500 A at 30 deg, L_6um, L_12um, disc / torus / polar luminosities),
+<code>L_dust_gal</code>, <code>L_skirtor_disk</code>, <code>L_skirtor_dust</code> and <code>L_polar_ir</code>.</p>
+<h3 id="parity-with-cigale-and-the-literature-testsagn2">Parity with CIGALE and the literature (<code>tests/agn2/</code>)<a class="headerlink" href="#parity-with-cigale-and-the-literature-testsagn2" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>test</th>
+<th>what</th>
+<th>result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>L1</td>
+<td><code>"cigale"</code> SKIRTOR (disc, torus separately) vs pcigale <code>skirtor2016</code> (CIGALE 29cb909f), 71 node sets incl. both sides of the type-1/2 boundary, CIGALE's 948-point grid</td>
+<td>max rel 1.6e-14 where flux &gt; 1e-6 x peak</td>
+</tr>
+<tr>
+<td>L2</td>
+<td>the template files (Stalevski+16): torus-dust shape at 40 nodes; the disc anisotropy cos i (2 cos i + 1)</td>
+<td>5.1e-15; 1.5e-9</td>
+</tr>
+<tr>
+<td>L3</td>
+<td>with polar dust: 218 sets (3 laws, E(B-V) 0.03-3, T 50-300 K, i 30/70, oa 20/40/60) vs pcigale</td>
+<td>max rel 1.7e-12</td>
+</tr>
+<tr>
+<td>L4</td>
+<td>Feltre+16 NLR through the CSP vs the public grid files, all nodes; BPT (their Fig. 2)</td>
+<td>4.4e-16 dex</td>
+</tr>
+<tr>
+<td>L5</td>
+<td>BLR: line ratios vs the Case-B table; the profile vs CIGALE's AGN-line Gaussian</td>
+<td>ratios exact; profile as in the table above</td>
+</tr>
+<tr>
+<td>corrected SKIRTOR energy</td>
+<td>torus + polar IR luminosity vs <code>fagn</code> x L_bol,* on the 15000-point test grid</td>
+<td>0.9e-6 to 5.5e-6 (the model grid's quadrature)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Recommended priors</strong> (PLAN_AGN2; BEAGLE-AGN, Vidal-Garcia+24, for the NLR): <code>fagn</code> Uniform(0,
+0.99) in <code>"cigale"</code>, <code>log_fagn</code> Uniform(-5, log10 3) in <code>"corrected"</code>; fix <code>skirtor_t</code> 7,
+<code>skirtor_pl</code> 1, <code>skirtor_q</code> 1, <code>skirtor_oa</code> 40 without mid-IR coverage, <code>skirtor_i</code> Uniform(0, 90);
+<code>polar_ebv</code> Uniform(0, 1); <code>nlr_logu</code> Uniform(-4, -1.5), <code>nlr_logz</code> Uniform(-2.18, 0.24), with
+<code>nlr_xid</code> 0.3, <code>nlr_alpha</code> -1.7 and <code>nlr_lognh</code> 3 fixed (they are degenerate with log U and the
+amplitude); <code>blr_sigma</code> LogUniform(400, 3000) km/s (JWST broad H alpha FWHM 890-6279 km/s).
+Only a resolved spectrum constrains <code>blr_sigma</code>; line fluxes alone do not.</p>
+<h2 id="fixed-by-design-four-things-the-agn-model-does-not-do">Fixed by design — four things the AGN model does not do<a class="headerlink" href="#fixed-by-design-four-things-the-agn-model-does-not-do" title="Permanent link">&para;</a></h2>
+<p>These are deliberate, not omissions in progress. Each says what the code does, and what an
+option would have to add.</p>
+<h3 id="the-line-luminosities-are-absolute-and-fagn-does-not-scale-them">The line luminosities are absolute, and <code>fagn</code> does not scale them<a class="headerlink" href="#the-line-luminosities-are-absolute-and-fagn-does-not-scale-them" title="Permanent link">&para;</a></h3>
+<p><code>agn_elum</code> (narrow lines, both the Richardson+14 <code>a42</code> set and the Feltre+16 NLR) and <code>blr_lum</code>
+(broad lines) are <strong>luminosities per formed solar mass</strong>, not fractions:
+<code>FeltreNLR.line_luminosity</code> returns <code>agn_elum * R_line(theta)</code> (<code>ceridwen/agn/nlr.py:283</code>),
+<code>AGNLines</code> returns <code>agn_elum * ratio</code> (<code>lines.py:154</code>) and <code>BroadLines</code> returns
+<code>blr_lum * ratio_halpha</code> (<code>blr.py:160</code>). None of the three reads <code>fagn</code>, <code>fagn_bbb</code> or any
+continuum quantity; the CSP multiplies them by the SFH's formed mass <code>sum(W)</code> and then by
+<code>10**logmass</code>, exactly like the stellar light.</p>
+<p>Consequences:</p>
+<ul>
+<li><strong>Broad or narrow AGN lines without an AGN continuum are a legal model</strong> (<code>fagn = 0</code>,
+  <code>fagn_bbb = 0</code>, <code>blr_lum &gt; 0</code>). Nothing couples the two, so a fit can put a BLR on a galaxy
+  whose continuum shows no AGN at all. That is a modelling choice you make with the priors, not
+  something the model forbids.</li>
+<li>Without the energy balance, <code>agn_elum</code> and <code>blr_lum</code> are constrained only by the lines, so
+  photometry with no resolved line fixes them barely at all. <strong>With <code>agn_energy_balance=True</code>
+  they also reach the broadband IR</strong>: the line light the galaxy's dust absorbs joins the DL07
+  reservoir and is re-emitted (<code>hook.py:293-304</code> for the narrow lines, <code>hook.py:337-349</code>
+  <code>blr_absorbed</code> for the broad ones), so IR photometry constrains them too.</li>
+<li>Typical scale to judge a prior against: the galaxy's own nebular H beta is of order
+  <code>1e-3</code> to <code>1</code> L_sun per M_sun formed, so <code>agn_elum = 1</code> is an NLR H beta comparable with the
+  whole galaxy's. (That range is the one quoted in the AGN2 brief; it is not recomputed here.)</li>
+</ul>
+<p>An option (<code>agn_elum</code> tied to the AGN continuum, as CIGALE ties its AGN lines to the ionising
+photon rate) would need: an ionising-photon integral of the nuclear SED on the model grid, a
+Case-B (or Cloudy-table) conversion to H beta, a covering factor as a new theta key, a config
+switch that removes <code>agn_elum</code> from <code>param_names</code>, and a new golden configuration — the lines
+would then stop being linear in a single amplitude, which several AGN2 tests assert.</p>
+<h3 id="the-nlr-is-a-fixed-feltre16-grid-not-the-models-own-disc">The NLR is a fixed Feltre+16 grid, not the model's own disc<a class="headerlink" href="#the-nlr-is-a-fixed-feltre16-grid-not-the-models-own-disc" title="Permanent link">&para;</a></h3>
+<p>The narrow-line ratios come from the tabulated Feltre, Charlot &amp; Gutkin (2016) grid at its own
+five axes (<code>nlr_logu</code>, <code>nlr_logz</code>, <code>nlr_xid</code>, <code>nlr_lognh</code>, <code>nlr_alpha</code>; <code>nlr.py:54-60</code>).
+<code>nlr_alpha</code> is the <strong>grid's</strong> accretion-disc UV slope, a free theta key of the NLR — it is not
+read from the disc component: the SKIRTOR torus has no slope parameter at all
+(<code>AGN2_THETA_KEYS["skirtor16"]</code>, <code>ceridwen/agn/__init__.py:155</code>) and the Temple+21 disc's only
+parameter is its amplitude <code>fagn_bbb</code> (<code>disk.py:80</code>). The NLR therefore never sees the
+luminosity or the shape of the continuum the same fit puts in.</p>
+<p>An option would need an ionising continuum predicted on the Feltre grid's own axes — i.e. a
+disc model parameterised by <code>alpha</code> — plus the photon-rate normalisation of the point above;
+with the tabulated grid the most one can do cheaply is tie <code>nlr_alpha</code> to a disc slope through
+a <code>transforms</code> entry once a disc with a slope exists.</p>
+<h3 id="the-blr-does-not-depend-on-inclination">The BLR does not depend on inclination<a class="headerlink" href="#the-blr-does-not-depend-on-inclination" title="Permanent link">&para;</a></h3>
+<p><code>BroadLines</code> has exactly two parameters, <code>blr_lum</code> and <code>blr_sigma</code> (<code>blr.py:112</code>), and the
+transmission the hook gives it is the nuclear screen (polar dust, or the <code>dust4</code> power law) times
+the galaxy's diffuse curve in <code>"corrected"</code> (<code>hook.py:315-327</code>). <code>PolarDust.transmission</code> depends
+only on <code>polar_ebv</code> (<code>polar.py:195-199</code>): <code>skirtor_i</code> does not enter. This matches CIGALE, whose
+line module has no inclination term either.</p>
+<p>Note the asymmetry it creates, which is also CIGALE's: the SKIRTOR <strong>disc</strong> receives the polar
+screen only for a type-1 view (<code>skirtor_i &lt;= 90 - skirtor_oa</code>, <code>skirtor.py:405-406</code> and
+<code>SkirtorTorus.nuclear_parts</code>), while the <strong>broad lines</strong> receive it at every inclination. A
+type-2 geometry in which the broad lines should be hidden altogether is not represented: put
+that in the prior on <code>blr_lum</code>, not in <code>skirtor_i</code>.</p>
+<p>An option would need a BLR covering/obscuration factor as a function of <code>skirtor_i</code> (CIGALE has
+none to copy, so it would be a new model, e.g. the lines x a step or smooth function of
+<code>skirtor_i - (90 - skirtor_oa)</code>), a decision about whether the hidden light is re-emitted, and
+a golden configuration; <code>blr_lum</code> would stop being the observed broad H alpha.</p>
+<h3 id="there-is-no-x-ray-or-corona-component">There is no X-ray or corona component<a class="headerlink" href="#there-is-no-x-ray-or-corona-component" title="Permanent link">&para;</a></h3>
+<p>No component is tied to an X-ray luminosity: there is nothing like CIGALE's <code>xray</code> module and
+nothing normalised through <code>alpha_ox</code>, so an AGN fit neither predicts an X-ray flux nor can be
+constrained by one.</p>
+<p>What the components cover blueward of the Lyman limit differs, and is not "nothing":</p>
+<ul>
+<li>the <strong>Temple+21 disc</strong> template ends at 91 A, and <code>"corrected"</code> sets the disc to exactly zero
+  blueward of it rather than extrapolating a flat <code>F_nu</code> (<code>disk.py:98-100</code>);</li>
+<li>the <strong>SKIRTOR parametric disc</strong> is defined from <strong>8 A</strong> (<code>skirtor_disk</code> /
+  <code>schartmann2005_disk</code>, <code>skirtor.py:113-116</code>: the broken power law's first limit is 8 A), so it
+  does carry flux in the EUV on the templates' own grid.</li>
+</ul>
+<p>What survives into a prediction is then set by the model grid's blue end (the SSP grid's first
+wavelength) and by the IGM, not by the AGN model.</p>
+<p>An option (a Corona/X-ray power law, as CIGALE's <code>xray</code> module has) would need the component
+itself, its own amplitude convention (CIGALE uses <code>alpha_ox</code>, which couples it to the 2500 A
+disc flux — so it would also need the disc's monochromatic luminosity), an extension of the
+model grid blueward of the SSP grid's first wavelength (so the grid, the IGM and the filter
+projection all come in), and a golden configuration.</p>
+<h2 id="what-the-agn-changes-elsewhere">What the AGN changes elsewhere<a class="headerlink" href="#what-the-agn-changes-elsewhere" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>PostProcess</strong>: <code>spectra_model</code> and <code>spectra_observed</code> include the AGN continuum;
+  <code>spectra_intrinsic</code> and <code>spectra_dustfree</code> do not (so <code>A_V = 2.5 log10(dustfree/full)</code>
+  contains the AGN). New: <code>spectra_agn</code> (the AGN continuum alone), <code>extras["agn"]</code> with
+  <code>L_bol_star</code>, <code>L_absorbed</code> and, with the energy balance, <code>mdust</code> (the dust mass the AGN
+  heats; the stellar dust mass is not reported). <code>LUV</code>/<code>MUV</code> include the AGN. The AGN narrow
+  lines reach only the per-observation predictions.</li>
+<li><strong>Result files</strong> record the AGN in <code>/model@csp_config["agn"]</code> (mode, components, energy
+  balance, template and table hashes); a model with a different AGN set-up differs in
+  <code>check_model_against_result</code>.</li>
+<li><strong>Line marginalisation</strong> (<code>marginalize_elines=True</code>) with AGN lines is refused: the
+  marginalised fluxes would absorb the AGN lines. Switch the lines off
+  (<code>AGNConfig(lines=False)</code>) to marginalise.</li>
+<li><code>fagn</code> without <code>agn=</code> is an unknown theta key (a warning, and no AGN): build the CSP with
+  <code>agn=</code>.</li>
+<li>GPU: the AGN paths are dense (no scatter-add), so CPU tolerances hold.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

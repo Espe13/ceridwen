@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/conventions/">
       
       
-        <link rel="prev" href="../resolved/">
+        <link rel="prev" href="../agn/">
       
       
         <link rel="next" href="../troubleshooting/">
@@ -563,14 +563,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../resolved/" class="md-nav__link">
+      <a href="../agn/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Resolved mode (prototype)
+    AGN
   
 
     
@@ -676,6 +676,17 @@
     <span class="md-ellipsis">
       
         Units
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#precision-float32-values-float64-where-float32-would-be-wrong" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Precision: float32 values, float64 where float32 would be wrong
       
     </span>
   </a>
@@ -1025,6 +1036,100 @@ stretched SFH forms the same mass. It is unit mass, and <code>logmass</code> the
 <code>theta['sfh']</code> integrates to 1 M☉ on the construction grid, as
 <code>logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)</code> arranges (below), with a fixed or
 a free redshift; a directly sampled <code>sfh</code> carries its own normalisation.</p>
+<h2 id="precision-float32-values-float64-where-float32-would-be-wrong">Precision: float32 values, float64 where float32 would be wrong<a class="headerlink" href="#precision-float32-values-float64-where-float32-would-be-wrong" title="Permanent link">&para;</a></h2>
+<p><code>jax_enable_x64</code> stays on (<code>import ceridwen</code> sets it): evidence estimates and gradients depend
+on it. Within that, every large array, one that holds a spectrum, a curve or a projection on
+the model grid or the observed pixels, is <strong>float32</strong>, so that a GPU with slow float64 (most
+consumer cards) spends its time in float32. Float64 is kept where float32 would give a wrong
+answer, and for small arrays where it costs nothing. Each float64 site carries a comment naming
+its reason.</p>
+<table>
+<thead>
+<tr>
+<th>float32</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SSP cube and its contraction</td>
+<td><code>csp.flux</code>, the <code>W</code>-weighted einsums</td>
+</tr>
+<tr>
+<td>attenuation curves</td>
+<td>evaluated on <code>csp._wave32</code> with float32 parameters</td>
+</tr>
+<tr>
+<td>nebular line/continuum arrays, once interpolated</td>
+<td>the grid interpolation and <code>10**x</code> in float64 (log values near 50), then float32: the line-profile contraction (<code>NebularGridModel</code>) and the kernel's</td>
+</tr>
+<tr>
+<td>the projector's work</td>
+<td>resampling, FFT smoothing, the instrument response and the painted line profiles of a <code>Spectrum</code> prediction</td>
+</tr>
+<tr>
+<td>photometry matrices and maggies</td>
+<td><code>Photometry._T</code>, <code>Photometry</code> predictions</td>
+</tr>
+<tr>
+<td>scaled, exactly</td>
+<td>the projector's float32 work runs on <code>x / s</code>, <code>s</code> a power of two near max&#124;x&#124;, and is multiplied back by <code>s</code> in float64: exact in binary floating point, so the values are those of the unscaled float32 work, and the likelihood's cotangent reaches float32 already multiplied by <code>s</code> (unscaled, <code>\|r\| / sigma^2</code> ~ 1e35 .. 1e41 at cgs scale exceeds float32's maximum 3.4e38 and the gradient is NaN)</td>
+</tr>
+<tr>
+<td>line apertures and painted line profiles</td>
+<td><code>Lines</code> aperture matrices; the <code>(n_pix, n_lines)</code> profiles the projector paints</td>
+</tr>
+<tr>
+<td><code>PostProcess</code> model-grid spectra</td>
+<td><code>prediction/spectra_model</code>, <code>spectra_observed</code>, ... (its observation predictions are stored float64)</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>float64</th>
+<th>reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DustEmission</code>'s trapezoid dots and <code>labs0 = lboln - lbold</code></td>
+<td>catastrophic cancellation: the absorbed luminosity is a difference of two nearly equal numbers</td>
+</tr>
+<tr>
+<td>the AGN <code>L_bol</code> and energy balance (<code>csp.py</code>, <code>agn/blr.py</code>)</td>
+<td>frequency integrals and accumulators</td>
+</tr>
+<tr>
+<td><code>sigma</code>, <code>sigma**2</code>, chi² terms; the noise model, profiled and marginalised calibration</td>
+<td>dynamic range: at cgs scale <code>sigma**2</code> ~ 1e-60 underflows float32. The likelihood promotes the float32 prediction to the data's float64</td>
+</tr>
+<tr>
+<td>the line-marginal basis <code>A</code> and its normal equations</td>
+<td>the likelihood's linear algebra, conditioned up to <code>COND_MAX = 1e10</code></td>
+</tr>
+<tr>
+<td>likelihood sums, sampler scalars, cosmology and distances, wavelength grids</td>
+<td>accumulation over many terms; positions where 1e-7 relative is a measurable shift</td>
+</tr>
+<tr>
+<td>line fluxes (<code>predict_line_fluxes</code>) and <code>Lines</code> predictions</td>
+<td>small arrays (one number per line): free on any GPU; the AGN line sets add into them, and their span (~1e-51 to 1e2 L_sun) suits float64</td>
+</tr>
+<tr>
+<td>the returned <code>Spectrum</code> prediction</td>
+<td>the float64 multiply that undoes the projector's scaling (one per pixel), so the likelihood's cotangent never enters float32 unscaled</td>
+</tr>
+<tr>
+<td><code>DustEmission</code>'s output spectrum</td>
+<td>kept by decision: converting it removes no measurable float64 work (8.5 % of FLOPs with or without it in <code>neb_duste</code>) and moves two goldens</td>
+</tr>
+</tbody>
+</table>
+<p>With dust emission the model-grid spectrum is float64 (<code>DustEmission</code>, above).</p>
+<p>Data are stored float64 by every <code>Observation</code>, whatever dtype you pass, at construction or
+by assigning <code>obs.flux</code> / <code>obs.uncertainty</code> later (a float32 FITS spectrum is fine).</p>
 <h2 id="sfh-mass-normalisation">SFH mass normalisation<a class="headerlink" href="#sfh-mass-normalisation" title="Permanent link">&para;</a></h2>
 <p>The <code>logsfr_ratios_to_sfh</code> transform normalises the SFH so the trapezoidal
 integral of SFR over the lookback grid it is given (<code>sfh_times_yr=csp.sfh_times</code>, the

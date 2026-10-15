@@ -632,14 +632,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../resolved/" class="md-nav__link">
+      <a href="../agn/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Resolved mode (prototype)
+    AGN
   
 
     
@@ -860,8 +860,7 @@ with a prior to fit it (see <a href="../conventions/">Conventions</a>).</p>
 <a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="n">model</span> <span class="o">=</span> <span class="n">build_model</span><span class="p">([</span><span class="n">phot</span><span class="p">,</span> <span class="n">spec</span><span class="p">])</span>
 </code></pre></div>
 <p><strong>4. Fit with nested sampling.</strong> These settings are sized for a laptop CPU: the fit took
-<strong>21-29 min</strong> (67 800 likelihood calls) in two runs on an 11-core Apple M3 Pro shared with
-other jobs. It prints its progress and writes <code>./my_fit/ceridwen_result.h5</code>. For production, raise <code>num_live</code> (fitSED's default
+<strong>12 min</strong> (67 800 likelihood calls) on an 11-core Apple M3 Pro shared with other jobs. It prints its progress and writes <code>./my_fit/ceridwen_result.h5</code>. For production, raise <code>num_live</code> (fitSED's default
 is 500) and lower <code>logZ_tol</code>; for NUTS, see <a href="../samplers/">Samplers</a>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">fitSED</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>

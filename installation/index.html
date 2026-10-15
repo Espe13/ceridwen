@@ -676,14 +676,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../resolved/" class="md-nav__link">
+      <a href="../agn/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Resolved mode (prototype)
+    AGN
   
 
     
@@ -831,29 +831,70 @@
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pip<span class="w"> </span>install<span class="w"> </span>ceridwen
 </code></pre></div>
 <p>This installs JAX, the samplers, the filter curves and attenuation laws, posterior plotting
-and the test runner. On Linux it installs the CUDA 12 JAX wheels, with the CUDA libraries
-bundled: JAX uses an NVIDIA GPU when one is present and needs only a recent NVIDIA driver
-(see <a href="https://docs.jax.dev/en/latest/installation.html">JAX's install page</a> for the minimum).
-On macOS, and on Linux without a GPU, JAX runs on the CPU with the same results. On Windows,
-use WSL2. Every <code>fitSED</code> call prints the device it runs on:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>ceridwen.fitSED
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  Device      : GPU  (CudaDevice(id=0))
+and the test runner, and runs on the CPU on any platform (a laptop is fine; importing prints
+nothing).</p>
+<p><strong>NVIDIA GPU</strong> (Linux, or Windows through WSL2): install the CUDA build instead,</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;ceridwen[cuda12]&quot;</span><span class="w">      </span><span class="c1"># NVIDIA driver &gt;= 525</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;ceridwen[cuda13]&quot;</span><span class="w">      </span><span class="c1"># NVIDIA driver &gt;= 580</span>
 </code></pre></div>
+<p>The CUDA libraries come as pip wheels; the driver is the only system requirement (minimums
+from <a href="https://docs.jax.dev/en/latest/installation.html">JAX's install page</a>). RTX 50-series
+cards (Blackwell) need CUDA &gt;= 12.8: <code>cuda13</code> always provides it, and a fresh <code>cuda12</code> install
+resolves CUDA 12.9. Do not install a CUDA extra on a machine without an NVIDIA GPU: JAX's CUDA
+plugin then prints a traceback at every import (it still falls back to the CPU).</p>
+<p>Every <code>fitSED</code> call prints the device it runs on:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ceridwen.fitSED
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  Device      : GPU  (CudaDevice(id=0))
+</code></pre></div>
+<p><strong>GPU memory.</strong> The forward model's large arrays are float32 (see
+<a href="../conventions/">Conventions</a>, "Precision"), so a consumer card with slow float64 does its
+work in float32. A nested-sampling fit at the defaults (<code>num_live=500</code>, <code>num_delete=100</code>,
+the <code>lanes</code> slice kernel) peaked at these device memories (A100, JAX 0.11.2; photometry plus a
+600-pixel spectrum, measured with <code>peak_bytes_in_use</code>):</p>
+<table>
+<thead>
+<tr>
+<th>model</th>
+<th>parameters</th>
+<th>peak device memory</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>stellar only</td>
+<td>7</td>
+<td>2.75 GB</td>
+</tr>
+<tr>
+<td>+ nebular emission, IGM</td>
+<td>9</td>
+<td>2.87 GB</td>
+</tr>
+<tr>
+<td>+ dust emission</td>
+<td>12</td>
+<td>2.91 GB</td>
+</tr>
+</tbody>
+</table>
+<p>An 8 GB card runs these defaults. Memory grows linearly with the number of parameter vectors
+evaluated at once: the compiled log-likelihood and gradient of the nebular model take 0.81 GB
+for a batch of 100 and 4.3 GB for 500 (0.94 and 4.8 GB with dust emission).</p>
 <h2 id="2-fsps-and-sps_home">2. FSPS and <code>$SPS_HOME</code><a class="headerlink" href="#2-fsps-and-sps_home" title="Permanent link">&para;</a></h2>
 <p>CERIDWEN reads the nebular CLOUDY grids (<code>nebular/</code>), the dust-emission templates
 (<code>dust/dustem/</code>) and the FSPS emission-line list (<code>data/emlines_info.dat</code>) from the
 <a href="https://github.com/cconroy20/fsps">FSPS</a> data files at <code>$SPS_HOME</code>. FSPS itself is not run
 during a fit, so this step is a clone (3.4 GB), not a compile:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SPS_HOME</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/fsps&quot;</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>git<span class="w"> </span>clone<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/cconroy20/fsps.git<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SPS_HOME</span><span class="s2">&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SPS_HOME</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/fsps&quot;</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>clone<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/cconroy20/fsps.git<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SPS_HOME</span><span class="s2">&quot;</span>
 </code></pre></div>
 <p><code>$SPS_HOME</code> can be any path. Make it permanent in your shell startup file, with the same path:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export SPS_HOME=&quot;$HOME/fsps&quot;&#39;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.zshrc<span class="w">    </span><span class="c1"># zsh, the macOS default</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export SPS_HOME=&quot;$HOME/fsps&quot;&#39;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.bashrc<span class="w">   </span><span class="c1"># bash, most Linux</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export SPS_HOME=&quot;$HOME/fsps&quot;&#39;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.zshrc<span class="w">    </span><span class="c1"># zsh, the macOS default</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export SPS_HOME=&quot;$HOME/fsps&quot;&#39;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.bashrc<span class="w">   </span><span class="c1"># bash, most Linux</span>
 </code></pre></div>
 <p>Open a new terminal and check that <code>echo $SPS_HOME</code> prints the path.</p>
 <h2 id="3-check-the-installation">3. Check the installation<a class="headerlink" href="#3-check-the-installation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>python<span class="w"> </span>-m<span class="w"> </span>ceridwen.check
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>python<span class="w"> </span>-m<span class="w"> </span>ceridwen.check
 </code></pre></div>
 <p>It prints an <code>ok</code> / <code>warn</code> / <code>FAIL</code> line per component (dependencies, filters and attenuation
 laws, float64, nested sampling, python-fsps, <code>$SPS_HOME</code> and the data files in it), with the
@@ -864,11 +905,11 @@ and that is expected.</p>
 (<a href="https://doi.org/10.5281/zenodo.22937956">doi:10.5281/zenodo.22937956</a>) and registered by
 name. <code>fetch_grid</code> downloads a grid once into <code>~/.ceridwen/grids</code> (or <code>$CERIDWEN_GRID_DIR</code>),
 checks its SHA-256 on every call, and returns the path:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.ssps</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_grid</span><span class="p">,</span> <span class="n">available_grids</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">available_grids</span><span class="p">(</span><span class="n">published_only</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>        <span class="c1"># name -&gt; description</span>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">fetch_grid</span><span class="p">(</span><span class="s2">&quot;mist_miles_chab&quot;</span><span class="p">))</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.ssps</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_grid</span><span class="p">,</span> <span class="n">available_grids</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">available_grids</span><span class="p">(</span><span class="n">published_only</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>        <span class="c1"># name -&gt; description</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">fetch_grid</span><span class="p">(</span><span class="s2">&quot;mist_miles_chab&quot;</span><span class="p">))</span>
 </code></pre></div>
 <table>
 <thead>
@@ -903,16 +944,16 @@ for <code>mfrac</code>; the α grid does not yet, so fit it with <code>mfrac=Fal
 <p>To use a different IMF, isochrone set or spectral library, build a grid with FSPS. This is
 the one step that needs the compiled <a href="https://dfm.io/python-fsps"><code>python-fsps</code></a> wrapper,
 which compiles Fortran against <code>$SPS_HOME</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>brew<span class="w"> </span>install<span class="w"> </span>gcc<span class="w">                       </span><span class="c1"># macOS (Homebrew); or:</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>gfortran<span class="w">          </span><span class="c1"># Debian/Ubuntu; or:</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>conda<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>conda-forge<span class="w"> </span>gfortran<span class="w">  </span><span class="c1"># any OS, inside your conda env</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;fsps&gt;=0.4.4&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>brew<span class="w"> </span>install<span class="w"> </span>gcc<span class="w">                       </span><span class="c1"># macOS (Homebrew); or:</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>gfortran<span class="w">          </span><span class="c1"># Debian/Ubuntu; or:</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>conda<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>conda-forge<span class="w"> </span>gfortran<span class="w">  </span><span class="c1"># any OS, inside your conda env</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;fsps&gt;=0.4.4&quot;</span>
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">from_fsps</span><span class="p">(</span><span class="n">imf_type</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">save_to</span><span class="o">=</span><span class="s2">&quot;ssp_data.h5&quot;</span><span class="p">)</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># later: ssp = SSPData.load(&quot;ssp_data.h5&quot;)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">from_fsps</span><span class="p">(</span><span class="n">imf_type</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">save_to</span><span class="o">=</span><span class="s2">&quot;ssp_data.h5&quot;</span><span class="p">)</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># later: ssp = SSPData.load(&quot;ssp_data.h5&quot;)</span>
 </code></pre></div>
 <p><code>from_fsps</code> accepts only the keyword arguments that define the stellar library and IMF
 (<code>imf_type</code> and its parameters, isochrone-phase switches); dust, SFH, nebular emission, IGM,
@@ -920,8 +961,8 @@ redshift and a fixed metallicity are rejected, because the forward model applies
 file records its provenance (isochrones, spectral library, <code>imf_type</code>, FSPS version, build
 arguments), <code>CSPBasis</code> reads the isochrone library from it, and <code>ssp.display()</code> prints it.</p>
 <h2 id="building-this-documentation">Building this documentation<a class="headerlink" href="#building-this-documentation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;.[docs]&quot;</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>mkdocs<span class="w"> </span>build
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;.[docs]&quot;</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>mkdocs<span class="w"> </span>build
 </code></pre></div>
 
 
