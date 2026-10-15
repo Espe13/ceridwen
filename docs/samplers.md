@@ -44,12 +44,14 @@ The settings, passed in `sampler_kwargs`:
   level skip the likelihood, and idle batch slots evaluate look-ahead candidates (Dance et al.
   2025, arXiv:2503.17405; implemented by Liu Hao, @potatoist314). `"carry"` evaluates each stepping-out
   edge once instead of twice under `vmap`. Both use the same random numbers and the same
-  evaluations as `"stock"`: on CPU the dead points, ln Z and call counts are bitwise equal
-  (`tests/test_nss_slice_kernels.py`). One exception, by design: `"lanes"` gives a replacement
+  evaluations as `"stock"`. `"carry"` is bitwise equal to it on CPU; `"lanes"` is bitwise equal
+  on Apple-silicon CPUs and equal to the last bits on x86 CPUs (XLA orders its batched
+  arithmetic differently there), so long x86 runs of the two can separate and then agree
+  statistically. One exception, by design: `"lanes"` gives a replacement
   particle whose moves were all rejected the contour it replaced as its birth, which is
   blackjax 1.7's rule (1.6 kept the birth of the particle it started from, which biases ln Z
-  where the likelihood is flat). With blackjax >= 1.7 `"lanes"` and `"stock"` are bitwise equal
-  throughout; with 1.6 they differ in those births and in what depends on them (the weights
+  where the likelihood is flat). With blackjax >= 1.7 `"stock"` follows the same
+  rule; with 1.6 they differ in those births and in what depends on them (the weights
   and ln Z), only where a chain had no accepted move. On a GPU the batches differ in composition, so float
   rounding can separate the trajectories after many iterations; the results then agree
   statistically, not bitwise. GPU runs are not bit-reproducible between processes with any

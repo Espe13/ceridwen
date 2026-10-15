@@ -594,8 +594,8 @@ on your priors/bounds once before sampling instead.
   `num_inner_steps` and the parameter names/shapes must match, and the live points' saved
   `ln L` must equal this model's (rtol 1e-9); anything else raises before sampling. A resumed
   CPU run is byte-identical to the uninterrupted one. `logZ_tol` may differ (it is only the
-  stopping rule), and so may `slice_kernel` (the kernels make the same moves, bitwise equal on
-  CPU; with blackjax 1.6 `"lanes"` births a chain whose moves were all rejected at the
+  stopping rule), and so may `slice_kernel` (the kernels make the same moves; `"lanes"` agrees with
+  `"stock"` bitwise on Apple-silicon CPUs and to the last bits on x86; with blackjax 1.6 `"lanes"` births a chain whose moves were all rejected at the
   contour, as blackjax 1.7 does, so those births differ from `"stock"`). The checkpoint file is named after the PID, so the resumed run writes a new one.
 - **A result file stores transforms by name only** (`"sfh <- my_function"`), and not the CSP or
   the observation objects. `rebuild_model` therefore needs them from you, and checks what the

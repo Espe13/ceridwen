@@ -98,8 +98,9 @@ def lane_update(logprior_fn, loglikelihood_fn, num_inner_steps, num_delete,
     proposals of a slice step in advance: their key moves once per
     proposal, whatever its outcome) and every candidate is evaluated with
     the same arithmetic in a batch of ``num_delete``, so the new particles
-    and the per-step ``SliceInfo`` are bitwise equal to those of
-    ``blackjax.nss``.
+    and the per-step ``SliceInfo`` equal those of ``blackjax.nss``: bitwise on
+    Apple-silicon CPUs, to the last bits on x86 (where XLA orders the batched
+    arithmetic differently).
 
     Drop-in for ``blackjax.ns.from_mcmc.update_with_mcmc_take_last`` applied
     to ``blackjax.ns.nss.slice_constrained_step`` with the stepping-out
@@ -398,7 +399,8 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
         particle's chain of slice steps as one lane of a shared loop (:func:`lane_update`;
         Dance et al. 2025): lanes do not wait for the slowest one inside each slice step,
         candidates below the prior slice level skip the likelihood, and idle batch slots
-        evaluate look-ahead candidates.  Bitwise equal to ``"stock"`` on CPU, except that a
+        evaluate look-ahead candidates.  Equal to ``"stock"`` on CPU (bitwise on Apple silicon,
+        to the last bits on x86, so long runs can separate there), except that a
         particle whose moves were all rejected is born at the contour it replaced (blackjax
         1.7's rule, which ``"stock"`` follows from 1.7 on; with 1.6 the births, weights and
         ln Z of such chains differ); on GPU the
@@ -526,8 +528,8 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
     def _run_config(self, theta_init, num_inner_steps, num_delete):
         """What must match between a checkpoint and the run that resumes it.  ``slice_kernel``
         is not part of it: the kernels make the same moves with the same random numbers, so a
-        checkpoint may be continued with any of them (bitwise equal on CPU, up to the births of
-        fully rejected chains with blackjax 1.6: see ``slice_kernel``)."""
+        checkpoint may be continued with any of them (see ``slice_kernel`` for how far their
+        trajectories agree)."""
         return {"num_live": self.num_live, "num_delete": int(num_delete),
                 "num_inner_steps": int(num_inner_steps),
                 "params": [(k, tuple(int(d) for d in jnp.shape(v)))

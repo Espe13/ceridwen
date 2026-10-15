@@ -93,7 +93,8 @@
   `fitSED(sampler_kwargs=...)`), default `"lanes"` (every particle's slice chain as one lane of a
   shared loop, Dance et al. 2025); `"stock"` is the unchanged `blackjax.nss`, `"carry"` evaluates
   each stepping-out edge once. All use the same random numbers and evaluations as `blackjax.nss`:
-  bitwise equal on CPU, statistically equal on GPU, where `"lanes"` sampled 3.5-3.8x faster on an
+  bitwise equal on CPU (`"lanes"` on Apple silicon; to the last bits on x86), statistically
+  equal on GPU, where `"lanes"` sampled 3.5-3.8x faster on an
   A100 for a 19-dimensional JADES model (`docs/samplers.md`).
 - Nested sampling: `log_evidence_err` is drawn with a seed derived from `rng_key` (it varied
   from run to run at the same key); numpy's global RNG is restored afterwards.
