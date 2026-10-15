@@ -34,6 +34,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from .precision import float_dtype
 from .sampler.priors import sample_for_parameter
 
 __all__ = ["map_fit", "MAPResult", "build_lnprob", "laplace_sigma"]
@@ -55,6 +56,16 @@ def build_lnprob(model):
         refuse_outlier_with_elines(keys, likelihoods, model._eline_system.keys)
     multi = MultiObservationLikelihood(keys=keys, likelihoods=likelihoods)
     return make_lnprobfn(obs_dict, model, model, multi)
+
+
+def _loglike_offset(model) -> float:
+    """float32 mode (docs/mac_gpu.md): the constant ``build_lnprob(model)`` is offset by; 0.0
+    under float64."""
+    from .fit import _likelihood_for
+    from .likelihood.likelihood import float32_rescaling, loglike_offset
+    obs_dict = model.obs_dict
+    return loglike_offset(float32_rescaling(o, _likelihood_for(o, model.param_names, model=model))
+                          for o in obs_dict.values())
 
 
 @dataclass
@@ -86,8 +97,8 @@ class MAPResult:
 
     @property
     def free_param_init(self) -> dict:
-        """``theta`` as JAX float64 arrays, for ``SedModel(..., free_param_init=...)``."""
-        return {k: jnp.asarray(v, dtype=jnp.float64) for k, v in self.theta.items()}
+        """``theta`` as JAX arrays of the working float dtype, for ``SedModel(..., free_param_init=...)``."""
+        return {k: jnp.asarray(v, dtype=float_dtype()) for k, v in self.theta.items()}
 
     def __repr__(self) -> str:
         """Short: the best point, not every start (the per-start arrays stay attributes)."""
@@ -110,9 +121,9 @@ def _prior_starts(model, n_starts, rng_key, include_init):
             raise ValueError(f"map_fit: parameter {name!r} has no prior; every free parameter "
                              "needs one to draw starting points")
         rng_key, sub = jax.random.split(rng_key)
-        init = jnp.asarray(init, dtype=jnp.float64)
+        init = jnp.asarray(init, dtype=float_dtype())
         draws = jnp.asarray(sample_for_parameter(model.priors[name], sub, n_starts, init.shape),
-                            dtype=jnp.float64)
+                            dtype=float_dtype())
         starts[name] = jnp.concatenate([init[None], draws]) if include_init else draws
     return starts
 
@@ -155,9 +166,11 @@ def map_fit(model, n_starts: int = 16, rng_key=None, *, include_init: bool = Tru
     settings = {"n_starts": int(n_starts), "include_init": bool(include_init),
                 "max_steps": int(max_steps), "ftol": float(ftol),
                 "rng_key": np.asarray(_key).tolist(), "custom_lnprob": lnprob is not None}
+    lnp_offset = 0.0
     if lnprob is None:
         lnprob = build_lnprob(model)
-    template = {k: jnp.asarray(v, dtype=jnp.float64) for k, v in model.theta_init.items()}
+        lnp_offset = _loglike_offset(model)       # float32 mode only; 0.0 under float64
+    template = {k: jnp.asarray(v, dtype=float_dtype()) for k, v in model.theta_init.items()}
     if bounds is None:
         bounds = _detect_bounds(model)
     else:
@@ -223,7 +236,7 @@ def map_fit(model, n_starts: int = 16, rng_key=None, *, include_init: bool = Tru
     flat0 = jnp.concatenate([starts[k].reshape(n_total, -1) for k in template], axis=1)
     x0s = jax.vmap(lambda f: _to_unconstrained(f, lo, hi, isb))(flat0)
     out = [run_one(x0s[i]) for i in range(n_total)]
-    lnps = np.array([float(o[1]) for o in out])
+    lnps = np.array([float(o[1]) for o in out]) + lnp_offset
     good = np.isfinite(lnps)
     if not good.any():
         raise RuntimeError("map_fit: every start ended at a non-finite ln posterior")
@@ -241,7 +254,7 @@ def laplace_sigma(lnprob, theta, template=None):
     """Laplace 1-sigma widths ``sqrt(diag(H^-1))``, ``H`` = Hessian of ``-lnprob`` in the
     constrained, flattened parameters at ``theta``: ``(widths shaped like theta, covariance)``.
     A local approximation, wrong near a prior edge and for non-Gaussian posteriors."""
-    template = {k: jnp.asarray(v, dtype=jnp.float64) for k, v in (template or theta).items()}
+    template = {k: jnp.asarray(v, dtype=float_dtype()) for k, v in (template or theta).items()}
 
     def unflatten(flat):
         out, i = {}, 0
@@ -250,7 +263,7 @@ def laplace_sigma(lnprob, theta, template=None):
             i += v.size
         return out
 
-    t0 = jnp.concatenate([jnp.ravel(jnp.asarray(theta[k], dtype=jnp.float64))
+    t0 = jnp.concatenate([jnp.ravel(jnp.asarray(theta[k], dtype=float_dtype()))
                           for k in template])
     H = jax.hessian(lambda t: -lnprob(unflatten(t)))(t0)
     cov = jnp.linalg.inv(H)

@@ -657,6 +657,14 @@ class SedModel:
         from ..likelihood.eline_marginal import build_eline_system
         self._eline_system = build_eline_system(self)
         self._check_agn_eline_sigma_resolved()
+        if self._eline_system is not None:
+            from ..precision import is_x64
+            if not is_x64():
+                raise ValueError(
+                    "Spectrum(marginalize_elines=True) needs float64: the line-flux marginal "
+                    "forms A^T W A in flux units, which float32 cannot hold (docs/mac_gpu.md).  "
+                    "Run this model in float64 (JAX_PLATFORMS=cpu on a Mac), or fit the lines "
+                    "with the nebular grid instead")
 
 
     def _instrument_scale_keys(self) -> tuple:

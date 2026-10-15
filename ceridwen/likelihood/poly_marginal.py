@@ -30,7 +30,8 @@ import jax
 import jax.numpy as jnp
 from jax.scipy.linalg import cho_solve, solve_triangular
 
-from .likelihood import (LikelihoodBase, LikelihoodOutput, calibrated_mu,
+from .likelihood import (LikelihoodBase, LikelihoodOutput, calibrated_mu, float32_rescaling,
+                         rescaled_params,
                          single_observation_data)
 from .noise_model import DiagonalNoiseModel
 from .poly_calibration import chebyshev_design_matrix
@@ -188,11 +189,12 @@ class PolyMarginalGaussianLikelihood(LikelihoodBase):
         """Return a jitted log-posterior for one observation (``.flux``, ``.uncertainty``, ``.mask``)."""
         y, sigma_obs, mask, calib, _ = single_observation_data(observations, "PolyMarginalGaussianLikelihood")
         lhood = self
+        rescaling = float32_rescaling(observations, self)   # None under float64
 
         @jax.jit
         def lnprobfn(theta):
             lnl, _ = lhood(y, calibrated_mu(model.predict(theta), calib), sigma_obs, mask,
-                           theta)
+                           rescaled_params(theta, rescaling))
             return lnl + prior.log_prob(theta)
 
         return lnprobfn

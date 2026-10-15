@@ -24,7 +24,8 @@ import jax.numpy as jnp
 import numpy as np
 from jax.scipy.linalg import solve_triangular
 
-from .likelihood import (LikelihoodBase, LikelihoodOutput, calibrated_mu,
+from .likelihood import (LikelihoodBase, LikelihoodOutput, calibrated_mu, float32_rescaling,
+                         rescaled_params,
                          single_observation_data)
 from .noise_model import DiagonalNoiseModel, NoiseModelOutput
 
@@ -212,11 +213,12 @@ class GPGaussianLikelihood(LikelihoodBase):
         ``.mask``)."""
         y, sigma_obs, mask, calib, _ = single_observation_data(observations, "GPGaussianLikelihood")
         lhood = self
+        rescaling = float32_rescaling(observations, self)   # None under float64
 
         @jax.jit
         def lnprobfn_gp(theta: dict[str, Array]) -> Array:
             lnl, _ = lhood(y, calibrated_mu(model.predict(theta), calib), sigma_obs, mask,
-                           theta)
+                           rescaled_params(theta, rescaling))
             return lnl + prior.log_prob(theta)
 
         return lnprobfn_gp

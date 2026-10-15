@@ -532,10 +532,12 @@ class PostProcess:
         in the likelihood, on the model times any fixed ``calibration`` vector), plus
         ``__calib_<name>`` = the response.  A marginalised polynomial uses the conditional
         mean of its coefficients (``__calcoef_mean_<name>``, covariance ``__calcoef_cov_<name>``)."""
-        from .likelihood.likelihood import observation_data
+        from .likelihood.likelihood import observation_data, float32_rescaling, rescaled_params
         out = dict(pred)
         for name, lh in self._poly_likelihoods().items():
-            y, sig, mask, calib, _ul = observation_data(self.model.obs_dict[name])
+            obs = self.model.obs_dict[name]
+            y, sig, mask, calib, _ul = observation_data(obs)
+            th = rescaled_params(th, float32_rescaling(obs, lh))     # float32 mode only
             mu = pred[name] if calib is None else pred[name] * calib
             if getattr(lh, "poly_marginal", None) is not None:
                 # marginalised polynomial: the conditional-mean response of this draw

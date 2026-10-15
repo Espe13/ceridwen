@@ -145,8 +145,13 @@ def run_sampler(
     _obs_dict    = model.obs_dict
     _keys        = tuple(likelihood.keys)
     _likelihoods = tuple(likelihood.likelihoods)
-    from ..likelihood.likelihood import observation_data
+    from ..likelihood.likelihood import (observation_data, float32_rescaling, rescaled_params,
+                                         loglike_offset)
     _static_data = {key: observation_data(_obs_dict[key]) for key in _keys}
+    # float32 mode (docs/mac_gpu.md): the kernels run on rescaled data; ln L comes back offset
+    # by a constant of the observations, added to the reported ln L / ln Z below (None in float64)
+    _rescalings = {key: float32_rescaling(_obs_dict[key], lh) for key, lh in zip(_keys, _likelihoods)}
+    _offset = loglike_offset(_rescalings.values())
 
     if getattr(model, "_eline_system", None) is not None:
         from ..likelihood.eline_marginal import joint_loglike
@@ -167,13 +172,14 @@ def run_sampler(
         lnl = jnp.zeros(())
         for key, lhood in zip(_keys, _likelihoods):
             y_k, sig_k, mask_k, calib_k, ul_k = _static_data[key]
+            th = rescaled_params(theta, _rescalings[key])
             mu_k = predictions[key]
             if calib_k is not None:
                 mu_k = mu_k * calib_k
             if ul_k is not None:
-                lnl_k, _ = lhood(y_k, mu_k, sig_k, mask_k, params=theta, is_upper_limit=ul_k)
+                lnl_k, _ = lhood(y_k, mu_k, sig_k, mask_k, params=th, is_upper_limit=ul_k)
             else:
-                lnl_k, _ = lhood(y_k, mu_k, sig_k, mask_k, params=theta)
+                lnl_k, _ = lhood(y_k, mu_k, sig_k, mask_k, params=th)
             lnl = lnl + lnl_k
         return lnl
 
@@ -181,4 +187,22 @@ def run_sampler(
     def logprior_fn(theta: dict[str, Array]) -> Array:
         return model.ln_prior(theta)
 
-    return adapter.run(loglike_fn, logprior_fn, theta_init, rng_key)
+    result = adapter.run(loglike_fn, logprior_fn, theta_init, rng_key)
+    if _offset != 0.0:
+        result = _with_loglike_offset(result, _offset)
+    return result
+
+
+def _with_loglike_offset(result: SamplingResult, offset: float) -> SamplingResult:
+    """``result`` with ``offset`` added to ln Z and every ln L (float64, on the host): undoes
+    the float32 data rescaling of the kernels (``likelihood.float32_rescaling``)."""
+    import numpy as np
+    from dataclasses import replace
+    lnl = np.asarray(result.log_likelihoods, dtype=np.float64) + offset
+    llb = result.log_likelihoods_birth
+    if llb is not None:
+        llb = np.asarray(llb, dtype=np.float64) + offset
+    lnz = result.log_evidence
+    if lnz is not None and np.isfinite(lnz):
+        lnz = float(lnz) + offset
+    return replace(result, log_evidence=lnz, log_likelihoods=lnl, log_likelihoods_birth=llb)
