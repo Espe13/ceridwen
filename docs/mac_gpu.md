@@ -99,9 +99,9 @@ of the redshift interpolation is a scatter-add, which is atomic there; the forwa
 ln L are byte-identical run to run.
 
 So: a float32 fit gives the same posterior as a float64 fit to well within the sampling
-error, and the same ln Z to better than the nested-sampling error, but **its numbers are not
-comparable bit for bit** with a float64 fit, and two nested-sampling runs with the same
-`rng_key` are only identical on the CPU.
+error, and the same ln Z once the sampler is given twice the inner steps (see "Speed"
+below), but **its numbers are not comparable bit for bit** with a float64 fit, and two
+nested-sampling runs with the same `rng_key` are only identical on the CPU.
 
 ## Speed
 
@@ -116,7 +116,34 @@ JAX_PLATFORMS=cpu CERIDWEN_X64=0 python scripts/bench_mac_metal.py --mock-data r
 python scripts/bench_mac_metal.py --compare bench/*/summary.json
 ```
 
-BENCH_TABLE_PLACEHOLDER
+Measured on the M3 Pro (jax 0.11.2, jax-graft 0.0.5, 2026-10-15), nine free parameters,
+num_live 200, num_delete 40; `us/point` is the value-only ln L under `vmap` at the sampler's
+two batch widths (median of 200 calls, compile excluded):
+
+| run | inner steps | ln Z | calls | wall | us/point W=40 | us/point W=200 |
+|---|---|---|---|---|---|---|
+| CPU float64, seed 0 | 30 | 40933.16 +- 0.36 | 168 000 | 1731 s | 1550 | 1335 |
+| CPU float64, seed 1 | 30 | 40933.21 +- 0.32 | 169 200 | 1879 s | | |
+| CPU float32, seed 0 | 30 | 40930.96 +- 0.40 | 180 000 | 1017 s | 765 | 750 |
+| Metal float32, seed 0 | 30 | 40931.88 +- 0.39 | 176 400 | 421 s | 174 | 131 |
+| Metal float32, seed 1 | 30 | 40932.04 +- 0.46 | 174 000 | 418 s | | |
+| Metal float32, seed 0 | 60 | 40933.77 +- 0.38 | 328 800 | 908 s | | |
+
+The GPU evaluates the likelihood 9 to 10 times faster than the CPU in float64 and 4 to 6
+times faster than the CPU in float32, and the whole fit runs 4 times faster than the float64
+CPU fit (the sampler's own loop runs on the CPU side and is not sped up).
+
+**The evidence needs more inner steps in float32.** The two float64 seeds agree in ln Z to
+0.05. Every float32 fit with the default 30 inner slice steps comes out 1.1 to 2.2 nats
+lower, 3 to 6 times the quoted error, on the CPU as on the GPU; with 60 inner steps the GPU
+fit returns 40933.77 +- 0.38, within the error of float64. The slice sampler mixes less well
+per step in float32 (cause not identified; the peak ln L agrees to 0.3 in every run), and
+nested sampling with incomplete mixing underestimates Z. Posterior means and widths of all
+six runs scatter alike: between the two float64 seeds the means move by up to 1.8 standard
+deviations and the widths by factors 0.3 to 1.7 (200 live points), and the float32 runs sit
+inside that scatter. So: **in float32 mode, use `num_inner_steps` twice the default when
+the evidence matters, and compare evidences only between fits made with the same settings
+and precision.** Posterior constraints need no change.
 
 `scripts/mac_metal_probe.py` times the 34 JAX operations CERIDWEN uses one by one on the CPU
 and the GPU and checks their values agree (all 34 do; the table is in its output).
