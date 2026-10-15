@@ -198,6 +198,11 @@ prefer `predict`/`get_spectrum_components`.
   reported ln L / ln Z have the constant added back (`likelihood.float32_rescaling`).
   `marginalize_elines=True` is refused in float32. `JAX_PLATFORMS=cpu` gives a float64 fit on
   the CPU; `CERIDWEN_X64=1` on the GPU is refused at import. See `docs/mac_gpu.md`.
+- **Evidences are comparable only at equal precision and sampler settings.** A float32 fit's
+  ln Z is 1-2 nats below the float64 value of the same data at the same settings, and doubling
+  `num_inner_steps` moves it by as much (`docs/mac_gpu.md`, "Speed"). Compare ln Z, and form
+  Bayes factors, only between fits with the same precision, `num_live`, `num_delete` and
+  `num_inner_steps`; the result file records them (`config/precision`, the sampler attrs).
 - **`jax>=0.9.0`** (as `pyproject.toml` pins it).
 - **Two environment switches change the numerics of every fit** and warn at import:
   `CERIDWEN_X64=0` turns float64 off anywhere (the float32 mode of the bullet above, on a

@@ -141,9 +141,15 @@ per step in float32 (cause not identified; the peak ln L agrees to 0.3 in every 
 nested sampling with incomplete mixing underestimates Z. Posterior means and widths of all
 six runs scatter alike: between the two float64 seeds the means move by up to 1.8 standard
 deviations and the widths by factors 0.3 to 1.7 (200 live points), and the float32 runs sit
-inside that scatter. So: **in float32 mode, use `num_inner_steps` twice the default when
-the evidence matters, and compare evidences only between fits made with the same settings
-and precision.** Posterior constraints need no change.
+inside that scatter. Posterior constraints need no change.
+
+> **Do not compare evidences between runs of different precision or different
+> `num_inner_steps`.** A float32 ln Z sits 1 to 2 nats below a float64 ln Z of the same data
+> at the same settings, and twice the inner steps moves it by the same amount. Bayes factors
+> are only meaningful between fits made with the same precision, the same `num_live`,
+> `num_delete` and `num_inner_steps` (`fitSED` records all of them in the result file:
+> `config/precision`, `config/platform` and the sampler settings). Nothing is changed by
+> default: the inner-steps default stays 30 in both precisions.
 
 `scripts/mac_metal_probe.py` times the 34 JAX operations CERIDWEN uses one by one on the CPU
 and the GPU and checks their values agree (all 34 do; the table is in its output).
