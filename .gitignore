@@ -361,3 +361,4 @@ scripts_afe/
 
 # output of examples/apple_gpu_mock_fit.ipynb
 examples/apple_gpu_mock_fit/
+examples/mock_fit_*/

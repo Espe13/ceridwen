@@ -58,7 +58,8 @@ comparable bit for bit with a float64 fit; for a float64 fit on the CPU set
 mode guarantees, and what it refuses, is in
 [Apple GPU](https://www.amanda-stoffers.de/ceridwen/mac_gpu/) (`docs/mac_gpu.md`).
 `examples/apple_gpu_mock_fit.ipynb` builds a mock galaxy, fits it on the GPU and shows the
-recovered parameters.
+recovered parameters; `examples/mock_fit_*.ipynb` do the same for photometry alone, photometry
+with line fluxes, a spectrum alone, and a spectrum calibrated against photometry.
 
 CERIDWEN reads the nebular CLOUDY grids and the dust-emission templates from the FSPS data
 files. Clone FSPS into `$SPS_HOME` (3.4 GB) and make the variable permanent (replace

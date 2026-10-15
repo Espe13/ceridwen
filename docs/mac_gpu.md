@@ -9,7 +9,12 @@ what to install, what the mode changes, what it guarantees and what it refuses.
 
 `examples/apple_gpu_mock_fit.ipynb` is the whole story in one notebook: a mock galaxy
 (photometry and a spectrum), its figure, a nested-sampling fit on the GPU and the recovered
-parameters against the truth; about six minutes on an M3 Pro.
+parameters against the input, with the priors shown next to the posteriors; about five
+minutes on an M3 Pro. Four more notebooks go through the observation types one at a time:
+`mock_fit_1_photometry.ipynb`, `mock_fit_2_photometry_lines.ipynb` (adds line fluxes and the
+gas parameters), `mock_fit_3_spectrum.ipynb` (a spectrum alone: a per-pixel resolving power, a
+sampled velocity dispersion, emission lines) and `mock_fit_4_spectrum_photometry.ipynb` (a
+spectrum whose flux scale is a sampled nuisance, anchored by the photometry).
 
 
 `pip install ceridwen` installs jax-graft on an Apple Silicon Mac with macOS 26 and
