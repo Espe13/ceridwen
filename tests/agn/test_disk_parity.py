@@ -14,7 +14,7 @@ What is compared, at rel <= 1e-12 on every pixel whose reference is a normal flo
   ``_np_add_igm`` below is a line-by-line numpy transcription of ``fake_fsps.add_igm``
   (Madau 1995 as Prospector writes it, clipped at 1e-70), used only so that the z = 6
   references can be compared. Whether the CSP's prospector mode applies that IGM or
-  CERIDWEN's ``Madau1995`` to the AGN is the hook's decision (REPORT_feat-agn-disk.md).
+  CERIDWEN's ``Madau1995`` to the AGN is the hook's decision.
 
 Reference pixels below the float64 normal range (Prospector computes subnormals, XLA on
 CPU flushes them to zero) must come out < 2.3e-308 here.

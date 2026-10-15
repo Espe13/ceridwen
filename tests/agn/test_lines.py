@@ -3,7 +3,7 @@
 A4  line luminosities equal Prospector's ``AGNSpecModel`` exactly; the "prospector" painter,
     photometry and Lines terms equal Prospector's (``tests/reference/agn/A4_lines_prospector.npz``,
     session REF) and a literal NumPy transcription of ``predict_aline_spec`` (which, run against
-    the real Prospector in the AGN-LINES session, agreed to 5e-13; REPORT_LINES.md).
+    the real Prospector in the AGN-LINES session, agreed to 5e-13).
 B3  agn_elum = 0 adds exactly zero everywhere (so a spectrum is byte-identical to AGN off).
 B4  every AGN-line output is exactly linear in agn_elum.
 B8  jit, vmap at the production widths (64, 100), finite gradients in agn_elum and

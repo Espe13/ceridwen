@@ -1,5 +1,5 @@
 """tests/agn2: a theta key the CSP does not recognise is an ERROR in this suite (a silently
-ignored key once made a dust test a no-op here; see REPORT_VAL.md)."""
+ignored key once made a dust test a no-op here)."""
 import pytest
 
 

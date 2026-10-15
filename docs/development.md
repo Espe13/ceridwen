@@ -37,8 +37,7 @@ Run the byte-identity check on an idle machine, never alongside the test suites.
 `--compare` once reported a single differing array (a float64 `PostProcess` spectrum, about 3
 ulp) that did not recur on a quiet machine, where the same code was byte-identical across all
 23,232 arrays. A lone differing array from a loaded run is not evidence of a code change:
-re-run it quietly first. The cause is unknown and was not reproduced
-([`NOTE_T4_LOAD_2026-10-09.md`](https://github.com/Espe13/ceridwen/blob/main/NOTE_T4_LOAD_2026-10-09.md)).
+re-run it quietly first. The cause is unknown and was not reproduced.
 
 ## How this code was built
 

@@ -236,9 +236,8 @@ def _cigale_profile(wl, lam0, fwhm_kms):
 def test_V_BLR_7_cigale_fwhm_convention(fwhm):
     """PLAN_AGN2 1.3: a CIGALE line of FWHM F equals a CERIDWEN line of sigma = F / 2.35482:
     same area and same FWHM. The CERIDWEN painter is Gaussian in ln(lambda) (nebular
-    convention), CIGALE's in lambda, so the shapes differ at O(sigma/c); PLAN's 'rel 1e-10 of
-    peak' is not reachable by construction (measured difference recorded in REPORT_VAL.md),
-    the test bounds it by 2 sigma/c."""
+    convention), CIGALE's in lambda, so the shapes differ at O(sigma/c); a relative 1e-10 of
+    the peak is not reachable by construction, so the test bounds it by 2 sigma/c."""
     from ceridwen.broadening import make_line_painter_free_z
     lam0 = 6564.7229
     sig = fwhm / _ref.FWHM_PER_SIGMA

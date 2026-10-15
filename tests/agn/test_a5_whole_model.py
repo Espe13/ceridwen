@@ -22,7 +22,7 @@ product of its parts, each part as tightly as it can be:
    ``phot_torus + phot_disk`` once the two galaxy scalars (CERIDWEN / Prospector L_bol and
    5500 A luminosity, both measured) and the flux-normalisation ratio are applied, to 2e-3
    per band (the filter term of 3).
-5. Prospector counts the torus twice (REPORT_REF: python-fsps adds its own torus inside the
+5. Prospector counts the torus twice (python-fsps adds its own torus inside the
    galaxy spectrum, ``agnspec_torus`` adds T' on top). The prospector mode reproduces T' alone
    (Prospector's evident intent); this test records the size of the double count.
 """
@@ -125,7 +125,7 @@ def _phot(ref, wave):
 
 def test_A5_photometry_of_prospector_spectra(ref):
     """CERIDWEN's filters vs sedpy 1.0.0's on identical spectra: the galaxy and the AGN show the
-    same few-1e-4 offsets, so the term is the filter data (REPORT_LINES finding 2), not the AGN."""
+    same few-1e-4 offsets, so the term is the filter data, not the AGN."""
     wave = ref["model_wave"]
     ph = _phot(ref, wave)
     worst = {}

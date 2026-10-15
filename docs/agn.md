@@ -268,7 +268,7 @@ modes; equal to `fagn` in `"cigale"`), CIGALE's `agn.*` infos as `cigale_<name>`
 power, intrinsic L_nu at 2500 A at 30 deg, L_6um, L_12um, disc / torus / polar luminosities),
 `L_dust_gal`, `L_skirtor_disk`, `L_skirtor_dust` and `L_polar_ir`.
 
-### Parity with CIGALE and the literature (AGN2 run, `scripts/agn2_lit/`, `tests/agn2/`)
+### Parity with CIGALE and the literature (`tests/agn2/`)
 
 | test | what | result |
 |---|---|---|
@@ -396,5 +396,4 @@ projection all come in), and a golden configuration.
   (`AGNConfig(lines=False)`) to marginalise.
 * `fagn` without `agn=` is an unknown theta key (a warning, and no AGN): build the CSP with
   `agn=`.
-* GPU: the AGN paths are dense (no scatter-add), so CPU tolerances hold; nested-sampling
-  timing on GPU is in `REPORT_INT.md`.
+* GPU: the AGN paths are dense (no scatter-add), so CPU tolerances hold.

@@ -1,6 +1,6 @@
 """The version string agrees in pyproject.toml, ceridwen/_version.py (``__version__`` and
 ``__version_tuple__``) and CITATION.cff, so a partial bump fails CI rather than being caught
-by hand at release time (RELEASE_TODO.md, section 1). Reads the files; imports nothing from
+by hand at release time. Reads the files; imports nothing from
 the package."""
 from __future__ import annotations
 
