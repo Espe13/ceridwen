@@ -5,7 +5,7 @@ Ceridwen quick-start: fit mock UV-to-IR broadband photometry end-to-end.
 
 This is a self-contained, runnable demo:
 
-  Step 0  load an SSP grid (built from FSPS only if none is found)
+  Step 0  load an SSP grid (the published one is downloaded if none is found)
   Step 1  build the CSP forward model
   Step 2  generate MOCK photometry from known "true" parameters
   Step 3  fit it back with BlackJAX nested sampling
@@ -16,12 +16,11 @@ Requirements
 ------------
 This demo reads no FSPS data files (``add_neb=False``: no CLOUDY data is
 read). An SSP grid is resolved in this order: ``$SSP_FILE`` ->
-``examples/ssp_data.h5`` (build it with FSPS or download it from Zenodo, see
-docs/installation.md "SSP grids") -> the local
-developer grid ``ceridwen/data/test_data/ssp_data_bpass.h5`` (not shipped in
-the repository). Only if no grid is found
-does the script fall back to building one, which then does need FSPS +
-``$SPS_HOME``. Flipping ``add_neb=True`` (CLOUDY nebular emission) also needs
+``examples/ssp_data.h5`` -> the local developer grid
+``ceridwen/data/test_data/ssp_data_bpass.h5`` (not shipped in the repository).
+If none is found, the published MIST + MILES grid is downloaded once (67 MB,
+``ceridwen.ssps.fetch_grid``, SHA-256 checked) into ``~/.ceridwen/grids``; no
+FSPS is needed. Flipping ``add_neb=True`` (CLOUDY nebular emission) needs
 ``$SPS_HOME`` at runtime.
 
 The fit takes a few minutes on an unloaded laptop CPU (much faster on GPU;
@@ -72,7 +71,7 @@ def _default_ssp_file() -> str:
                 / "ssp_data_bpass.h5")
     if dev_grid.is_file():
         return str(dev_grid)
-    return str(local)   # absent: step0 falls through to the FSPS build
+    return str(local)   # absent: step0 downloads the published grid
 
 
 SSP_FILE = _default_ssp_file()
@@ -92,28 +91,15 @@ N_FILTERS = len(FILTERS)
 
 
 def step0_load_or_build_grid() -> SSPData:
-    """Load the cached SSP grid, building it from FSPS on first run."""
+    """Load the local SSP grid, or the published one (downloaded once, no FSPS needed)."""
     if pathlib.Path(SSP_FILE).is_file():
         print(f"[Step 0] loading cached SSP grid: {SSP_FILE}")
         return SSPData.load(SSP_FILE)
 
-    try:
-        import fsps  # noqa: F401
-    except ImportError as exc:
-        raise SystemExit(
-            "No SSP grid found and FSPS (python-fsps) is not importable.\n"
-            "Easiest fix (no FSPS needed): fetch the published grid and point "
-            "$SSP_FILE at it,\n"
-            "  SSP_FILE=$(python -c \"from ceridwen.ssps import fetch_grid; "
-            "print(fetch_grid('mist_miles_chab'))\") python examples/quickstart.py\n"
-            "or download it from Zenodo to examples/ssp_data.h5 — see "
-            "docs/installation.md ('Getting the SSP grid').\n"
-            "Alternatively install FSPS with `pip install 'fsps>=0.4.4'` and "
-            "set $SPS_HOME to build the grid locally. See the README."
-        ) from exc
-
-    print(f"[Step 0] building SSP grid from FSPS -> {SSP_FILE} (one-off, ~minutes)")
-    return SSPData.from_fsps(save_to=SSP_FILE, imf_type=1)
+    from ceridwen.ssps import fetch_grid
+    path = fetch_grid("mist_miles_chab")
+    print(f"[Step 0] loading the published MIST + MILES grid: {path}")
+    return SSPData.load(path)
 
 
 DEMO_NOTICE = """
@@ -221,7 +207,8 @@ def main() -> int:
     # set at termination); expect much longer on CPU.  The relaxed -2.0 below
     # is a demo-runtime compromise only.
     # The inner slice kernel is slice_kernel="lanes", the default and the fastest; it gives
-    # exactly the samples of blackjax.nss (slice_kernel="stock") on CPU.  docs/samplers.md.
+    # the samples of blackjax.nss (slice_kernel="stock"), bit for bit on Apple silicon and to
+    # the last bits on x86.  docs/samplers.md.
     adapter = BlackJAXNestedSamplerAdapter(
         priors=model.priors, num_live=150, num_inner_steps=max(8, n_dims * 2),
         logZ_tol=-2.0, verbose=True,
