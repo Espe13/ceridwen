@@ -354,6 +354,7 @@ class CSPBasis:
 
         self._ssp_isoc_type    = getattr(SSPData, "isoc_type", None)
         self._ssp_spec_library = getattr(SSPData, "spec_library", None)
+        self._ssp_imf_type     = getattr(SSPData, "imf_type", None)   # FSPS imf_type (display only)
 
         if fesc_geometry not in ("runaway_bc", "picket"):
             raise ValueError(

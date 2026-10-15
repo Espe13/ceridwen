@@ -192,7 +192,10 @@ projection → likelihood → sampler.
 - `model/` — `model.py`: `SedModel` (`predict`, `apply_transforms`, `ln_prior`,
   `log_prob`; free vs. derived params, `logmass` amplitude scaling).
   `transforms.py`: `logsfr_ratios_to_sfh` and inverse (mass-weighted trapezoidal
-  normalisation).
+  normalisation). `describe.py`: `SedModel.latex()` (parameter table) and
+  `SedModel.display()` (model diagram and prior predictive); a transform's inputs are traced
+  from its program, a constant transform is a fixed parameter, `PARAM_INFO` holds each key's
+  symbol, meaning and unit.
 - `likelihood/` — `likelihood.py`: `DiagonalGaussianLikelihood`,
   `MultiObservationLikelihood`, pure-JAX `lnlike_diag_gaussian`, masking,
   `make_lnprobfn()` (the jitted log-posterior factory). `noise_model.py`:

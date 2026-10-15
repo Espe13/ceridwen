@@ -89,6 +89,16 @@ spec = Spectrum(wavelength=SPEC_WAVE, instrument=LSF, name="spec", uncertainty=s
 model = build_model([phot, spec])
 ```
 
+Look at the model before fitting it. `model.display()` draws it: each free parameter with its
+prior, the transform or stage of the forward model it enters, the observations, and the range
+of photometry and spectra the priors allow against the data. `model.latex()` returns a LaTeX
+table of every free, derived and fixed parameter with its prior or value, ready for a paper.
+
+```python
+model.display()
+print(model.latex())
+```
+
 **4. Fit with nested sampling.** These settings are sized for a laptop CPU: the fit took
 **12 min** (67 800 likelihood calls) on an 11-core Apple M3 Pro shared with other jobs. It prints its progress and writes `./my_fit/ceridwen_result.h5`. For production, raise `num_live` (fitSED's default
 is 500) and lower `logZ_tol`; for NUTS, see [Samplers](samplers.md).
