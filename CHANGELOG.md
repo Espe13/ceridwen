@@ -26,6 +26,12 @@
   photometry), each a mock galaxy fitted and its parameters recovered.
 - `examples/quickstart.py` downloads the published grid when none is found.
 
+### Update notice
+- `fitSED` and `python -m ceridwen.check` say when PyPI has a newer CERIDWEN
+  (`ceridwen/update_check.py`: once a day at most, two-second timeout, silent offline;
+  `CERIDWEN_NO_UPDATE_CHECK=1` switches it off, and it never runs on CI). `docs/installation.md`,
+  "Updates".
+
 ### Describing a model
 - `SedModel.latex()` returns a LaTeX table (booktabs) of the free, derived and fixed parameters
   with their priors, and the model settings.

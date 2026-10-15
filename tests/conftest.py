@@ -9,6 +9,7 @@
 * Exposes ``polar_data``: the directory holding CIGALE's extinction curves for the AGN
   polar dust (``ceridwen.agn.agn_data_dir()``, not shipped; ``python -m ceridwen.agn.fetch``);
   skips with the reason when they are absent.
+* Switches the PyPI update check off (``CERIDWEN_NO_UPDATE_CHECK``).
 """
 from __future__ import annotations
 
@@ -17,6 +18,10 @@ import sys
 
 # tests/ on sys.path so `import _gridfixture` works from every subdirectory.
 sys.path.insert(0, os.path.dirname(__file__))
+
+# No PyPI update check inside the tests: a newer release would otherwise add a warning to
+# every fitSED call (and fail the tests that turn warnings into errors).
+os.environ.setdefault("CERIDWEN_NO_UPDATE_CHECK", "1")
 
 import pytest  # noqa: E402
 

@@ -38,6 +38,16 @@ def check_environment(verbose: bool = True) -> bool:
         )
         required_ok = False
 
+    from ._version import __version__
+    from .update_check import _disabled, newer_version
+    new = newer_version()
+    if new is not None:
+        record(_WARN, f"ceridwen {__version__}",
+               f"{new} is on PyPI: pip install --upgrade ceridwen")
+    else:
+        record(_OK, f"ceridwen {__version__}",
+               "update check off" if _disabled() else "")
+
     for mod in ("jax", "jaxlib", "numpy", "scipy", "matplotlib", "h5py",
                 "astropy", "tqdm", "optax", "anesthetic"):
         m, err = _try_import(mod)

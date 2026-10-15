@@ -252,6 +252,9 @@ projection → likelihood → sampler.
 - `resultfile.py` — `rebuild_model` / `check_model_against_result` / `priors_from_result`:
   rebuild a `SedModel` from a result file given the CSP, observations and transform callables
   (not stored), and name every difference between a model and the file.
+- `update_check.py` — `notify_if_outdated` (called by `fitSED` and `check.py`): warns once when
+  PyPI has a newer release; cached a day, 2 s timeout, silent offline, off with
+  `CERIDWEN_NO_UPDATE_CHECK=1` or `$CI`.
 - `optimize.py` — `map_fit` (L-BFGS on fitSED's log-posterior from `theta_init` + N prior
   draws; `.theta` is a `free_param_init`), `laplace_sigma`; `fitSED(optimize=True)` starts NUTS
   there and writes `/map`.

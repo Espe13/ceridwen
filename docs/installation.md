@@ -88,6 +88,15 @@ laws, float64, nested sampling, python-fsps, `$SPS_HOME` and the data files in i
 fix for anything missing. The `python-fsps` line is a warning until you compile it (below),
 and that is expected.
 
+## Updates
+
+`fitSED` and `python -m ceridwen.check` tell you when PyPI has a newer CERIDWEN than the one
+installed; upgrade with `pip install --upgrade ceridwen`. They ask PyPI at most once a day
+(the answer is cached in `~/.ceridwen/update_check.json`), wait at most two seconds and say
+nothing when there is no network. `CERIDWEN_NO_UPDATE_CHECK=1` switches the check off; it never
+runs on CI (`$CI` set). What changed is in the
+[changelog](https://github.com/Espe13/ceridwen/blob/main/CHANGELOG.md).
+
 ## SSP grids
 
 Fitting needs an SSP grid (an HDF5 file). The published grids are on Zenodo

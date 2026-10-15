@@ -122,6 +122,9 @@ def fitSED(
         "%(asctime)s  %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
     logger.addHandler(_file_handler)
 
+    from .update_check import notify_if_outdated
+    notify_if_outdated()                       # once a day at most; silent offline
+
     try:
         from .precision import is_x64, precision_name
         _devices = jax.devices()
