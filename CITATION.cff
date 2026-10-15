@@ -16,7 +16,7 @@ authors:
     affiliation: "Kavli Institute for Cosmology, University of Cambridge"
     orcid: "https://orcid.org/0009-0009-5464-3558"
 version: "1.0.13"
-date-released: "2026-10-14"
+date-released: "2026-10-15"
 license: MIT
 repository-code: "https://github.com/Espe13/ceridwen"
 url: "https://www.amanda-stoffers.de/ceridwen/"

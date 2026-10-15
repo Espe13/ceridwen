@@ -1,4 +1,38 @@
-## 1.0.13 (2026-10-14)
+## 1.0.13 (2026-10-15)
+
+### Apple GPU: float32 mode
+- `pip install ceridwen` on an Apple Silicon Mac with macOS 26 and Python >= 3.12 also installs
+  jax-graft (an environment marker in `pyproject.toml`), which makes the GPU (`mtl`) JAX's
+  default device. Apple GPUs have no float64, so `import ceridwen` then runs the process in
+  float32 and says so once; `fitSED` and `python -m ceridwen.check` report the device and the
+  precision. `JAX_PLATFORMS=cpu` keeps float64 on the CPU, `CERIDWEN_X64=0` forces float32
+  anywhere, and `CERIDWEN_X64=1` with the Apple GPU as default is refused at import. New page
+  `docs/mac_gpu.md`, with the benchmark and the advice that a float32 nested-sampling evidence
+  needs twice the default inner slice steps.
+- Nothing forces `jax_enable_x64` any more: examples, scripts and tests `import ceridwen`, which
+  sets the precision. `ceridwen.precision` (new) gives the working dtype (`is_x64`,
+  `float_dtype`, `FLOAT`, `as_float`, `safe_tiny`, `precision_name`); under float64 nothing
+  changes.
+- In float32 mode each observation's data are rescaled by a power of two before the kernels and
+  the constant is added back to ln Z, ln L and the MAP in float64
+  (`ceridwen.likelihood.likelihood`: `Float32Rescaling`, `observation_scale`, ...). A fixed
+  numeric jitter and `Spectrum(marginalize_elines=True)` are refused in float32 mode.
+- The result file records `config/precision` and `config/platform`; `read_result_h5` returns
+  them under `"config"`, and reads ln L and the weights as float64 in either mode.
+- `tests/test_float32_parity.py` compares the golden configurations and a mock galaxy between
+  float64, float32 on the CPU and float32 on the Apple GPU.
+- Notebooks: `examples/apple_gpu_mock_fit.ipynb` and `examples/mock_fit_1..4_*.ipynb`
+  (photometry; photometry with line fluxes; a spectrum; a spectrum calibrated against
+  photometry), each a mock galaxy fitted and its parameters recovered.
+- `examples/quickstart.py` downloads the published grid when none is found.
+
+### Describing a model
+- `SedModel.latex()` returns a LaTeX table (booktabs) of the free, derived and fixed parameters
+  with their priors, and the model settings.
+- `SedModel.display()` is new: the model as a diagram (free parameters, derived parameters with
+  the inputs traced from each transform, the forward-model stages in the order they are applied
+  with their fixed values, the observations with their nuisance parameters) and, below it, the
+  prior-predictive 68 and 95 % band against the data. `ceridwen/model/describe.py`.
 
 ### float32 forward model, cheap GPUs, blackjax 1.7
 - The large arrays of the forward model are float32: the SSP contraction, attenuation curves,
@@ -15,8 +49,9 @@
 - `Observation` stores flux and uncertainty as float64 whatever dtype is passed (a float32 FITS
   spectrum is fine), also when assigned later; the likelihood promotes the float32 prediction to
   the data's float64 before squaring (sigma² ~ 1e-60 underflowed float32).
-- Install: `pip install ceridwen` is CPU-only everywhere; CUDA is the extra `ceridwen[cuda12]`
-  or `ceridwen[cuda13]` (RTX 50-series needs CUDA >= 12.8: `cuda13`, or a fresh `cuda12`).
+- Install: `pip install ceridwen` runs on the CPU, and on an Apple Silicon Mac also on the GPU
+  (below); CUDA is the extra `ceridwen[cuda12]` or `ceridwen[cuda13]` (RTX 50-series needs
+  CUDA >= 12.8: `cuda13`, or a fresh `cuda12`).
 - blackjax 1.6 and 1.7 both work (floor 1.6, no cap). With 1.7 the lane kernel takes the
   Cholesky factor that `blackjax.nss` now passes (the same directions up to rounding), and on
   every version a replacement particle is born at the contour it replaced, including chains
