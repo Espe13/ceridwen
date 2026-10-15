@@ -66,8 +66,10 @@ a free redshift; a directly sampled `sfh` carries its own normalisation.
 
 ## Precision: float32 values, float64 where float32 would be wrong
 
-`jax_enable_x64` stays on (`import ceridwen` sets it): evidence estimates and gradients depend
-on it. Within that, every large array, one that holds a spectrum, a curve or a projection on
+`jax_enable_x64` is on wherever the device has float64 (`import ceridwen` sets it; do not set
+it yourself): evidence estimates and gradients depend on it. On an Apple GPU, which has no
+float64, `import ceridwen` runs the process in float32 instead ([Apple GPU](mac_gpu.md)).
+Within that, every large array, one that holds a spectrum, a curve or a projection on
 the model grid or the observed pixels, is **float32**, so that a GPU with slow float64 (most
 consumer cards) spends its time in float32. Float64 is kept where float32 would give a wrong
 answer, and for small arrays where it costs nothing. Each float64 site carries a comment naming

@@ -26,11 +26,18 @@ cards (Blackwell) need CUDA >= 12.8: `cuda13` always provides it, and a fresh `c
 resolves CUDA 12.9. Do not install a CUDA extra on a machine without an NVIDIA GPU: JAX's CUDA
 plugin then prints a traceback at every import (it still falls back to the CPU).
 
-Every `fitSED` call prints the device it runs on:
+**Apple Silicon GPU** (macOS 26, Python 3.12 or newer): the same `pip install ceridwen` also
+installs [jax-graft](https://github.com/dfm/jax-graft), and JAX uses the Apple GPU in float32
+(see [Apple GPU](mac_gpu.md): Apple GPUs have no float64, so `import ceridwen` switches the
+precision for the process and says so; `JAX_PLATFORMS=cpu` keeps float64 on the CPU). Older
+Macs and Python 3.11 get the CPU build.
+
+Every `fitSED` call prints the device and precision it runs with:
 
 ```
 ceridwen.fitSED
   Device      : GPU  (CudaDevice(id=0))
+  Precision   : float64
 ```
 
 **GPU memory.** The forward model's large arrays are float32 (see

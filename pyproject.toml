@@ -58,6 +58,12 @@ dependencies = [
     # "Device : ..." shows which backend a fit is using.
     "jax>=0.9.0",
     "jaxlib>=0.9.0",
+    # Apple Silicon GPU: jax-graft registers JAX's "mtl" platform and makes it the default
+    # backend; `import ceridwen` then runs in float32 (docs/mac_gpu.md).  Its compiled half,
+    # metal-pjrt-core, ships only a macOS 26 (Darwin 25) arm64 wheel for Python >= 3.12
+    # (PyPI, 2026-10-15), so the marker keeps older Macs and Python 3.11 on the CPU build
+    # instead of failing the whole install.  jax-graft itself requires jax >= 0.10.
+    "jax-graft>=0.0.5; sys_platform == 'darwin' and platform_machine == 'arm64' and python_version >= '3.12' and platform_release >= '25'",
     "numpy>=2.0",
     "scipy>=1.13",
     "matplotlib>=3.9",   # numpy-2 era; tested version not recorded, see note above

@@ -59,10 +59,12 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
 
 ## Hard requirements (the model will not run otherwise)
 
-- **float64 must be on.** `import ceridwen` calls
-  `jax.config.update("jax_enable_x64", ...)` with True unless the environment sets
-  `CERIDWEN_X64=0` (a debugging switch: never set it for a fit). Do not disable it; evidence
-  estimates and gradients depend on it.
+- **float64 is on wherever the device has it.** `import ceridwen` calls
+  `jax.config.update("jax_enable_x64", ...)` with True, except that an Apple GPU as JAX's
+  default backend (jax-graft) or `CERIDWEN_X64=0` gives float32 mode (`docs/mac_gpu.md`,
+  `ceridwen/precision.py`): the one supported way to run with float64 off. Code never
+  requests `jnp.float64` directly (use `precision.float_dtype()`), host-side NumPy stays
+  float64, and the float64 trace is byte-identical with the switch off (T4).
 - **The FSPS data files (`$SPS_HOME`) are required at runtime** for nebular and dust
   emission, not just to build the SSP cache (python-fsps itself only for building grids).
   The CLOUDY nebular grids and Draine & Li dust-emission templates are read from

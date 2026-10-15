@@ -189,13 +189,21 @@ prefer `predict`/`get_spectrum_components`.
   state; constructing a second `StellarPopulation` corrupts the first. CERIDWEN makes them
   only when it builds grids (`SSPData.from_fsps`, `SSPDataAfe`, `SSPBasis`, and the AGB-dust
   shell, which makes two); fitting reads grid *files*, and the nebular model reads files too.
-- **Apple Metal / GPU float32:** x64 is unsupported on Metal. The package enables
-  `jax_enable_x64=True`; on Metal force `JAX_PLATFORMS=cpu` for float64 parity.
+- **Apple GPU = float32, automatically.** With jax-graft installed (part of `pip install
+  ceridwen` on macOS 26 / Apple Silicon / Python >= 3.12) the Apple GPU is JAX's default
+  backend and `import ceridwen` turns `jax_enable_x64` OFF for the process, with one warning.
+  Everything then runs in float32: `ceridwen.precision.float_dtype()` is the dtype to use for
+  device arrays, never a literal `jnp.float64`. The observation layer rescales each
+  observation's data by a power of two so cgs fluxes (sigma ~ 1e-31) survive float32, and the
+  reported ln L / ln Z have the constant added back (`likelihood.float32_rescaling`).
+  `marginalize_elines=True` is refused in float32. `JAX_PLATFORMS=cpu` gives a float64 fit on
+  the CPU; `CERIDWEN_X64=1` on the GPU is refused at import. See `docs/mac_gpu.md`.
 - **`jax>=0.9.0`** (as `pyproject.toml` pins it).
 - **Two environment switches change the numerics of every fit** and warn at import:
-  `CERIDWEN_X64=0` turns float64 off (never for a real fit), and
-  `CERIDWEN_MATMUL_PRECISION=<value>` sets JAX's default matmul precision (e.g. `high`:
-  TF32 on GPU). Check your shell does not carry them over.
+  `CERIDWEN_X64=0` turns float64 off anywhere (the float32 mode of the bullet above, on a
+  CPU or CUDA device: a test of that mode, not a precision to fit in when float64 is
+  available), and `CERIDWEN_MATMUL_PRECISION=<value>` sets JAX's default matmul precision
+  (e.g. `high`: TF32 on GPU). Check your shell does not carry them over.
 
 ## 7. Broadening: where the widths come from
 

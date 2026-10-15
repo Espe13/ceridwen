@@ -55,6 +55,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Installation: installation.md
+  - Apple GPU: mac_gpu.md
   - Quick start: quickstart.md
   - 'Tutorial: joint fit': tutorial.md
   - Samplers: samplers.md

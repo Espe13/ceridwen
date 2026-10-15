@@ -46,6 +46,18 @@ the CUDA build instead: `pip install "ceridwen[cuda12]"` (NVIDIA driver >= 525) 
 `pip install "ceridwen[cuda13]"` (driver >= 580); the CUDA libraries come as pip wheels, see
 [JAX's install page](https://docs.jax.dev/en/latest/installation.html).
 
+### Apple Silicon GPU (float32)
+
+On an Apple Silicon Mac with macOS 26 and Python 3.12 or newer, the same `pip install ceridwen`
+also installs [jax-graft](https://github.com/dfm/jax-graft), which makes the Apple GPU JAX's
+default backend. Nothing to configure: `import ceridwen` sees the GPU, switches to float32
+(Apple GPUs have no float64) and says so once; `fitSED` prints `Device : MTL` and
+`Precision : float32`. Evidences, gradients and samples are then float32, so they are not
+comparable bit for bit with a float64 fit; for a float64 fit on the CPU set
+`JAX_PLATFORMS=cpu`. Older macOS versions and Python 3.11 get the CPU build. What float32
+mode guarantees, and what it refuses, is in
+[Apple GPU](https://www.amanda-stoffers.de/ceridwen/mac_gpu/) (`docs/mac_gpu.md`).
+
 CERIDWEN reads the nebular CLOUDY grids and the dust-emission templates from the FSPS data
 files. Clone FSPS into `$SPS_HOME` (3.4 GB) and make the variable permanent (replace
 `~/.zshrc` with `~/.bashrc` if your shell is bash):
