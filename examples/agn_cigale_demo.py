@@ -89,7 +89,7 @@ def build(ssp, agn, observations, free=()):
     t = np.array(csp.sfh_times)
     priors = {"logzsol": Uniform(low=-2.0, high=0.2), "logmass": Uniform(low=9.0, high=12.0),
               "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
-              "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=1.0)}
+              "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=0.3)}
     transforms = {"sfh": lambda th, _t=t: logsfr_ratios_to_sfh(th["logsfr_ratios"],
                                                               sfh_times_yr=_t),
                   "tau_pow": lambda th: th["diffuse_tau_kc"]}

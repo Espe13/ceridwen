@@ -179,7 +179,7 @@ def main() -> int:
         return logsfr_ratios_to_sfh(free_theta["logsfr_ratios"], sfh_times_yr=_t)
 
     priors = {
-        "logsfr_ratios": StudentT(mean=0.0, scale=1.0, df=2.0),
+        "logsfr_ratios": StudentT(mean=0.0, scale=0.3, df=2.0),
         "logzsol": Uniform(low=-2.0, high=0.2),   # inside every shipped grid's logzsol axis
         "logmass": Uniform(low=9.0, high=12.0),
         "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),

@@ -106,7 +106,7 @@ def main() -> None:
                 "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0,
                                                 low=0.0, high=4.0),
                 "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
-                "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=1.0),
+                "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=0.3),
                 # gas + slit-loss: the line-fitting-specific parameters
                 "gas_logz":       Uniform(low=-1.3, high=0.2),   # inside the CLOUDY axis
                 "gas_logu":       Uniform(low=-4.0, high=-1.0),

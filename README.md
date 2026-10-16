@@ -145,7 +145,7 @@ def build_model(observations):
             "logmass": Uniform(low=9.0, high=12.0),
             "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
             "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
-            "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=1.0),
+            "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=0.3),
         },
         transforms={"sfh": logsfr_to_sfh},
         free_param_init={"logsfr_ratios": jnp.zeros(5), "logmass": jnp.array([10.0])},

@@ -74,6 +74,10 @@
 - README quick start: the figures mark the SFH truth too; the SFH ratios are prior-limited.
 - The quick start leads with the Apple GPU, the default on an Apple Silicon Mac with macOS 26
   and Python 3.12: 3.5-4.5 min there, 6-12 min on a CPU (both measured on an M3 Pro).
+- The README, `docs/quickstart.md` and the example scripts give the SFH ratios
+  `StudentT(df=2, scale=0.3)`, as `docs/tutorial.md` already did (was `scale=1.0`). On the
+  Apple GPU demo_1 then recovers logmass 10.26 +/- 0.11 against the truth 10.50 (pull -2.3;
+  -3.6 with `scale=1.0`). The notebooks still use `scale=1.0`.
 - The dust-emission setup error names `add_dust=True, add_diffuse_dust=True`; `docs/agn.md`'s
   first block passes `add_dust=True` explicitly.
 - `docs/agn.md`: `tau_pow` among the keys to fix, the two dust screens dust emission needs,
