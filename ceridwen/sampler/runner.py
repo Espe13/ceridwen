@@ -147,6 +147,10 @@ def run_sampler(
     _likelihoods = tuple(likelihood.likelihoods)
     from ..likelihood.likelihood import (observation_data, float32_rescaling, rescaled_params,
                                          loglike_offset)
+    for key in _keys:
+        if getattr(_obs_dict[key], "flux", None) is None:
+            raise ValueError(f"run_sampler: observation {key!r} has no flux; give it flux= and "
+                             f"uncertainty= to fit it (without them it serves predictions only)")
     _static_data = {key: observation_data(_obs_dict[key]) for key in _keys}
     # float32 mode (docs/mac_gpu.md): the kernels run on rescaled data; ln L comes back offset
     # by a constant of the observations, added to the reported ln L / ln Z below (None in float64)

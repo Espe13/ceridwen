@@ -21,7 +21,7 @@ spectrum whose flux scale is a sampled nuisance, anchored by the photometry).
 Python 3.12 or newer (the only platform jax-graft ships wheels for; the marker in
 `pyproject.toml` keeps older Macs and Python 3.11 on the CPU build). Nothing else is needed:
 jax-graft makes the GPU JAX's default backend, and `import ceridwen` sees that and switches
-the process to float32, with one warning:
+the process to float32, with one warning of its own (JAX and tensorflow-probability add theirs, see "Known limits"):
 
 ```
 UserWarning: float32 mode: JAX's default backend is the Apple GPU (mtl), which has no float64.
@@ -33,10 +33,10 @@ set JAX_PLATFORMS=cpu
 
 ```
   [ok  ] jax float64  -- off: float32 mode, chosen because the Apple GPU is JAX's default backend ...
-  [ok  ] jax backend  -- mtl (MtlDevice(id=0)): Apple GPU via jax-graft, float32
+  [ok  ] jax backend  -- mtl (mtl:0): Apple GPU via jax-graft, float32
 ```
 
-and every `fitSED` header prints `Device : MTL (MtlDevice(id=0))` and
+and every `fitSED` header prints `Device : MTL (mtl:0)` and
 `Precision : float32`. The result file records both: `config/precision` (`"float32"`) and
 `config/platform` (`"mtl"`).
 
@@ -169,8 +169,17 @@ and the GPU and checks their values agree (all 34 do; the table is in its output
 - jax-graft is at version 0.0.5 ("expect some sharp edges", its README). An operation it
   cannot compile fails at compile time with `UNIMPLEMENTED: Metal: ...`; report it with the
   `fitSED` header and `python -m ceridwen.check`.
-- tensorflow-probability's `StudentT` sampler asks for float64 internally and is truncated to
-  float32 with a `UserWarning` the first time a prior is drawn. It is harmless.
+- tensorflow-probability's samplers ask for float64 internally and are truncated to float32,
+  with `UserWarning: Explicitly requested dtype float64 requested in ... is not available`
+  the first time a prior is drawn (several lines, from tfp's `random_generators.py`,
+  `numpy_array.py` and `ops.py`, and one from `jax/_src/numpy/array_methods.py`). JAX itself
+  prints `Platform 'mtl' is experimental ...`. All of these are harmless. A large model can
+  also make XLA print `E... slow_operation_alarm.cc:73] Constant folding an instruction is
+  taking > 1s`: a compile-time message, not an error.
+- The nested sampler's progress bar shows ln Z in the rescaled units the sampler works in
+  (above, "Data rescaling"), so it can differ from the final `log Z` by the constant
+  `ndof ln(scale)`, thousands of nats for a spectrum. The final value and the result file are
+  in true units.
 - The nested sampler's inner loop is dispatched step by step; at small batch widths the GPU is
   slower than the CPU (see the benchmark), so the GPU pays off for wide batches and
   gradient-based samplers.

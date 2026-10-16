@@ -133,12 +133,14 @@ class SedModel:
             raise ValueError(
                 f"priors given for {unknown}, which are not sampled parameters "
                 f"(a prior on a derived or misspelled name would be silently ignored); "
-                f"the sampled parameters are {self.param_names}")
+                f"the sampled parameters are {self.param_names}.  A new name that a "
+                f"transform reads (e.g. log_fagn for fagn) must also be in free_param_init")
         unpriored = [p for p in self.param_names if p not in self.priors]
         if unpriored:
             warnings.warn(
                 f"no prior for sampled parameter(s) {unpriored}: NUTS treats them as "
-                "improper flat, nested sampling refuses them", stacklevel=2)
+                "improper flat, nested sampling refuses them.  Give each a prior, or fix it "
+                "with a constant transform", stacklevel=2)
 
         self.kinematics.validate_theta(set(self.theta_init) | set(self.transforms), self.priors)
         self._check_instrument_scales()

@@ -30,7 +30,8 @@
 - `fitSED` and `python -m ceridwen.check` say when PyPI has a newer CERIDWEN
   (`ceridwen/update_check.py`: once a day at most, two-second timeout, silent offline;
   `CERIDWEN_NO_UPDATE_CHECK=1` switches it off, and it never runs on CI). `docs/installation.md`,
-  "Updates".
+  "Updates". The README and `docs/installation.md` say how to get an email for each release
+  (GitHub: Watch, Custom, Releases).
 
 ### Describing a model
 - `SedModel.latex()` returns a LaTeX table (booktabs) of the free, derived and fixed parameters
@@ -38,7 +39,27 @@
 - `SedModel.display()` is new: the model as a diagram (free parameters, derived parameters with
   the inputs traced from each transform, the forward-model stages in the order they are applied
   with their fixed values, the observations with their nuisance parameters) and, below it, the
-  prior-predictive 68 and 95 % band against the data. `ceridwen/model/describe.py`.
+  prior-predictive 68 and 95 % band against the data. `ceridwen/model/describe.py`. It uses
+  smplotlib's Hershey fonts when smplotlib is installed (without importing it) and a serif face
+  otherwise. In a script, `model.display(return_fig=True)` returns the figure; a bare
+  `display()` opens a window and waits (README, quick start).
+- The `latex()` columns wrap (ragged right), so the table fits a two-column page.
+
+### From a newcomer test (round 1)
+- `docs/agn.md`, "Sampling": the snippet adds `free_param_init` for `log_fagn` and
+  `log_fagn_bbb` (without it `SedModel` refuses their priors) and names the nebular and
+  dust-emission keys that need a prior or a constant transform.
+- `examples/agn_demo.py --fit` runs: it fixes those keys at their defaults and loads the
+  published grid with `fetch_grid` instead of building one with python-fsps.
+- Clearer errors: `SedModel` says a new name a transform reads must be in `free_param_init`;
+  the nested sampler's "no prior" error names `SedModel(priors=...)` and the constant
+  transform, not an internal class.
+- README: `python=3.12` in the conda command (the Apple GPU needs it), the bash line for
+  `$SPS_HOME`, `pip install -e ".[cuda12]"` for a source install, and the quick-start error
+  bars at 100 live points (too narrow; seeds and float32 differ by 0.1 dex in logmass).
+- `docs/mac_gpu.md`: the device prints as `mtl:0`; the float32 warnings from JAX and
+  tensorflow-probability are listed; the progress bar shows ln Z in the sampler's rescaled
+  units.
 
 ### float32 forward model, cheap GPUs, blackjax 1.7
 - The large arrays of the forward model are float32: the SSP contraction, attenuation curves,

@@ -92,12 +92,16 @@ model = build_model([phot, spec])
 Look at the model before fitting it. `model.display()` draws it: each free parameter with its
 prior, the transform or stage of the forward model it enters, the observations, and the range
 of photometry and spectra the priors allow against the data. `model.latex()` returns a LaTeX
-table of every free, derived and fixed parameter with its prior or value, ready for a paper.
+table of every free, derived and fixed parameter with its prior or value, ready for a paper
+(it needs `\usepackage{booktabs,amsmath}`).
 
 ```python
-model.display()
+fig, ax = model.display(return_fig=True)     # in a notebook, model.display() alone shows it
+fig.savefig("model.png", dpi=150)
 print(model.latex())
 ```
+
+In a script, a bare `model.display()` opens a window and waits until you close it.
 
 **4. Fit with nested sampling.** These settings are sized for a laptop CPU: the fit took
 **12 min** (67 800 likelihood calls) on an 11-core Apple M3 Pro shared with other jobs. It prints its progress and writes `./my_fit/ceridwen_result.h5`. For production, raise `num_live` (fitSED's default
@@ -138,7 +142,10 @@ pp.save("./my_fit/post.npz")
 The table compares the posterior median and 16-84% range with the truth. At these settings
 the recovered values can sit 2-3 sigma from the truth: with a five-ratio SFH, `logmass`
 trades against the SFH shape, and the MAP of this mock lies at logmass 10.44, not at 10.50
-(the data and the degeneracy, not the sampler). `figures` writes `summary.pdf` (SED with
+(the data and the degeneracy, not the sampler). With 100 live points the quoted ranges are too
+narrow: on the Apple GPU (float32) the same seed gave logmass 10.37 (-0.01/+0.02) and seed 0
+gave 10.48 (-0.02/+0.01), against 10.44 (-0.04/+0.02) on the CPU. Raise `num_live` before
+trusting an error bar. `figures` writes `summary.pdf` (SED with
 residuals, SFH, marginals), `corner.pdf` and `diagnostics.pdf` (the sampler's diagnostics).
 `post.npz` holds every draw's predictions and is about 100 MB; `load_postprocess` reads it back.
 Everything `PostProcess` returns is described in

@@ -49,7 +49,16 @@ priors = {"log_fagn": Uniform(low=-5.0, high=np.log10(3.0)),       # Prospector:
           "agn_eline_sigma": Uniform(low=50.0, high=500.0)}
 transforms = {"fagn": lambda th: 10.0 ** th["log_fagn"],
               "fagn_bbb": lambda th: 10.0 ** th["log_fagn_bbb"]}
+free_param_init = {"log_fagn": jnp.array([-1.0]), "log_fagn_bbb": jnp.array([-1.0])}
 ```
+
+`log_fagn` and `log_fagn_bbb` are new names, so they also go into `free_param_init`
+(`SedModel(..., priors=priors, transforms=transforms, free_param_init=free_param_init)`);
+without it `SedModel` refuses their priors. With `add_neb=True` and `add_dust_emission=True`
+the model also samples `gas_logz`, `gas_logu`, `duste_qpah`, `duste_umin`, `duste_gamma`
+and `alpha_pow` (and, with the AGN lines on, `agn_eline_sigma`): give each a prior or fix it
+with a constant transform, because nested sampling refuses a free parameter without a prior.
+`examples/agn_demo.py --fit` is a complete fit.
 
 ## Fitting the AGN line width
 

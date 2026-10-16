@@ -458,8 +458,9 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
                 raise ValueError(
                     f"Parameter '{name}' has no prior.  "
                     f"Nested sampling requires a proper prior for every "
-                    f"free parameter.  Add '{name}' to the priors dict "
-                    f"passed to BlackJAXNestedSamplerAdapter."
+                    f"free parameter.  Give it one in SedModel(priors=...), or "
+                    f"fix it with a constant transform "
+                    f"(transforms={{'{name}': lambda th: jnp.array([value])}})."
                 )
             prior          = self.priors[name]
             rng_key, sub   = jax.random.split(rng_key)

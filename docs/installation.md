@@ -5,7 +5,7 @@ CERIDWEN needs Python 3.11 or newer (`jax` >= 0.9 and `blackjax` >= 1.6 require 
 ## 1. The package
 
 ```bash
-conda create -n ceridwen python=3.11 -y && conda activate ceridwen
+conda create -n ceridwen python=3.12 -y && conda activate ceridwen
 pip install ceridwen
 ```
 
@@ -96,6 +96,10 @@ installed; upgrade with `pip install --upgrade ceridwen`. They ask PyPI at most 
 nothing when there is no network. `CERIDWEN_NO_UPDATE_CHECK=1` switches the check off; it never
 runs on CI (`$CI` set). What changed is in the
 [changelog](https://github.com/Espe13/ceridwen/blob/main/CHANGELOG.md).
+
+To get an email for each new release, open the
+[GitHub page](https://github.com/Espe13/ceridwen), click **Watch**, then **Custom**, and tick
+**Releases** (a free GitHub account is needed).
 
 ## SSP grids
 

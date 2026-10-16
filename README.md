@@ -37,7 +37,7 @@ in the browser, how each model ingredient changes a spectrum.
 CERIDWEN needs Python 3.11 or newer. Create an environment and install the package:
 
 ```bash
-conda create -n ceridwen python=3.11 -y && conda activate ceridwen
+conda create -n ceridwen python=3.12 -y && conda activate ceridwen
 pip install ceridwen
 ```
 
@@ -62,13 +62,13 @@ recovered parameters; `examples/mock_fit_*.ipynb` do the same for photometry alo
 with line fluxes, a spectrum alone, and a spectrum calibrated against photometry.
 
 CERIDWEN reads the nebular CLOUDY grids and the dust-emission templates from the FSPS data
-files. Clone FSPS into `$SPS_HOME` (3.4 GB) and make the variable permanent (replace
-`~/.zshrc` with `~/.bashrc` if your shell is bash):
+files. Clone FSPS into `$SPS_HOME` (3.4 GB) and make the variable permanent:
 
 ```bash
 export SPS_HOME="$HOME/fsps"
 git clone --depth 1 https://github.com/cconroy20/fsps.git "$SPS_HOME"
-echo 'export SPS_HOME="$HOME/fsps"' >> ~/.zshrc
+echo 'export SPS_HOME="$HOME/fsps"' >> ~/.zshrc    # zsh, the macOS default
+echo 'export SPS_HOME="$HOME/fsps"' >> ~/.bashrc   # bash, most Linux
 ```
 
 Compiling the `python-fsps` wrapper is needed only to build your own SSP grid; the published
@@ -83,6 +83,10 @@ python -m ceridwen.check
 
 It prints one line per component, with the fix for anything missing. The `python-fsps` line
 is a warning until you compile it, and that is expected.
+
+`fitSED` and `ceridwen.check` say when PyPI has a newer release (`CERIDWEN_NO_UPDATE_CHECK=1`
+switches this off). For an email at each release, click **Watch** at the top of this page,
+then **Custom**, and tick **Releases**.
 
 ## Quick start
 
@@ -181,12 +185,16 @@ model = build_model([phot, spec])
 Look at the model before fitting it. `model.display()` draws it: each free parameter with its
 prior, the transform or stage of the forward model it enters, the observations, and the range
 of photometry and spectra the priors allow against the data. `model.latex()` returns a LaTeX
-table of every free, derived and fixed parameter with its prior or value, ready for a paper.
+table of every free, derived and fixed parameter with its prior or value, ready for a paper
+(it needs `\usepackage{booktabs,amsmath}`).
 
 ```python
-model.display()
+fig, ax = model.display(return_fig=True)     # in a notebook, model.display() alone shows it
+fig.savefig("model.png", dpi=150)
 print(model.latex())
 ```
+
+In a script, a bare `model.display()` opens a window and waits until you close it.
 
 **4. Fit with nested sampling.** These settings are sized for a laptop CPU: the fit took
 **12 min** (67 800 likelihood calls) on an 11-core Apple M3 Pro shared with other jobs. It prints its progress and writes `./my_fit/ceridwen_result.h5`. For production, raise `num_live` (fitSED's default
@@ -227,7 +235,10 @@ pp.save("./my_fit/post.npz")
 The table compares the posterior median and 16-84% range with the truth. At these settings
 the recovered values can sit 2-3 sigma from the truth: with a five-ratio SFH, `logmass`
 trades against the SFH shape, and the MAP of this mock lies at logmass 10.44, not at 10.50
-(the data and the degeneracy, not the sampler). `figures` writes `summary.pdf` (SED with
+(the data and the degeneracy, not the sampler). With 100 live points the quoted ranges are too
+narrow: on the Apple GPU (float32) the same seed gave logmass 10.37 (-0.01/+0.02) and seed 0
+gave 10.48 (-0.02/+0.01), against 10.44 (-0.04/+0.02) on the CPU. Raise `num_live` before
+trusting an error bar. `figures` writes `summary.pdf` (SED with
 residuals, SFH, marginals), `corner.pdf` and `diagnostics.pdf` (the sampler's diagnostics).
 `post.npz` holds every draw's predictions and is about 100 MB; `load_postprocess` reads it back.
 Everything `PostProcess` returns is described in
@@ -268,7 +279,7 @@ Install from a clone (`--depth 1` skips the history: 41 MB instead of 244 MB):
 ```bash
 git clone --depth 1 https://github.com/Espe13/ceridwen.git
 cd ceridwen
-pip install -e .
+pip install -e .                 # or pip install -e ".[cuda12]" for an NVIDIA GPU
 ```
 
 The test suite needs the published BPASS grid. The first command below runs what CI runs; it

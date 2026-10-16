@@ -28,7 +28,7 @@ and LogUniform(1e-5, 100)).
 
     export SPS_HOME=/path/to/fsps   # Nenkova templates ($SPS_HOME/dust), CLOUDY grids, DL07
     python examples/agn_demo.py           # the mock and the per-band AGN fraction
-    python examples/agn_demo.py --fit     # plus a nested-sampling fit (minutes on a GPU)
+    python examples/agn_demo.py --fit     # plus a nested-sampling fit (about an hour on a laptop CPU)
 """
 from __future__ import annotations
 
@@ -100,6 +100,12 @@ def build(ssp, agn, observations):
         priors.pop("log_fagn_bbb"); transforms.pop("fagn_bbb")
     if "agn_elum" not in model_keys:                   # AGN lines off
         priors.pop("agn_elum")
+    # the nebular, dust-emission and AGN-line-width keys are fixed at their defaults: nested
+    # sampling needs a prior on every free parameter (docs/agn.md, "Sampling")
+    for k in ("gas_logz", "gas_logu", "duste_qpah", "duste_umin", "duste_gamma", "alpha_pow",
+              "agn_eline_sigma"):
+        if k in csp.theta_init and k not in priors:
+            transforms[k] = lambda th, _v=jnp.atleast_1d(csp.theta_init[k]): _v
     return SedModel(csp, observations=observations, priors=priors, transforms=transforms,
                     free_param_init={k: v for k, v in TRUTH.items() if k in priors},
                     zred=ZRED)
@@ -111,9 +117,12 @@ def main() -> None:
     args = ap.parse_args()
     if not os.environ.get("SPS_HOME"):
         sys.exit("the AGN torus templates, CLOUDY grids and DL07 are read from $SPS_HOME, "
-                 "which is unset. See README, 'Installing FSPS'.")
-    ssp = (SSPData.load(str(SSP_FILE)) if SSP_FILE.is_file()
-           else SSPData.from_fsps(imf_type=1, save_to=str(SSP_FILE)))
+                 "which is unset. See the README, 'Installation'.")
+    if SSP_FILE.is_file():
+        ssp = SSPData.load(str(SSP_FILE))
+    else:                                              # the published grid (Zenodo, cached)
+        from ceridwen.ssps import fetch_grid
+        ssp = SSPData.load(str(fetch_grid("mist_miles_chab")))
 
     # ── per-band AGN fraction in each mode ───────────────────────────────
     no_agn = {**TRUTH, "log_fagn": jnp.array([-30.0]), "log_fagn_bbb": jnp.array([-30.0]),
@@ -142,8 +151,13 @@ def main() -> None:
     for p in ("log_fagn", "agn_tau", "log_fagn_bbb", "logmass"):
         s = np.asarray(result.samples[p]).ravel()
         w = np.exp(np.asarray(result.log_weights) - np.max(result.log_weights))
-        mean = np.sum(w * s) / np.sum(w)
-        print(f"{p:>14}: true {float(TRUTH[p][0]):+7.3f}   posterior mean {mean:+7.3f}")
+        o = np.argsort(s)
+        cdf = np.cumsum(w[o]) / np.sum(w)
+        lo, med, hi = (s[o][np.searchsorted(cdf, q)] for q in (0.16, 0.5, 0.84))
+        print(f"{p:>14}: true {float(TRUTH[p][0]):+7.3f}   posterior median {med:+7.3f}"
+              f"  (16-84%: {lo:+7.3f} to {hi:+7.3f})")
+    # 12 JWST bands constrain fagn_bbb and agn_tau weakly: expect wide ranges that contain the
+    # truth, not a sharp recovery (fagn_bbb's range reaches the prior's lower edge)
 
 
 if __name__ == "__main__":

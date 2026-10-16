@@ -543,7 +543,7 @@ def _tex_escape(s: str) -> str:
          .replace("&", r"\&").replace("#", r"\#"))
     s = s.replace("^", r"\^{}").replace(r"10\^{}logmass", r"$10^{\log M}$")
     for u, t in (("<", r"$<$"), (">", r"$>$"), ("μm", r"$\mu$m"), ("Å", r"\AA"), ("σ", r"$\sigma$"), ("×", r"$\times$"),
-                 ("α", r"$\alpha$"), ("é", r"\'e"), ("D\_L", r"$D_L$")):
+                 ("α", r"$\alpha$"), ("é", r"\'e"), (r"D\_L", r"$D_L$")):
         s = s.replace(u, t)
     return s
 
@@ -604,7 +604,8 @@ def latex(model, *, caption: str | None = None, label: str = "tab:sedmodel",
         sym, desc, unit = param_info(model, p.name)
         n = int(np.prod(p.shape)) if p.shape else 1
         key = rf"\texttt{{{_tex_escape(p.name)}}}" + (f" ({n})" if n > 1 else "")
-        rows.append(rf"${sym}$ & {key} & {desc} & {value} & {unit} \\")
+        rows.append(rf"${sym}$ & {key} & \raggedright {desc} & \raggedright {value} & "
+                    rf"\raggedright {unit} \tabularnewline")      # \raggedright redefines \\
 
     if by_kind["free"]:
         head("Free parameters")
@@ -616,8 +617,8 @@ def latex(model, *, caption: str | None = None, label: str = "tab:sedmodel",
             if p.inputs is None:
                 src = rf"\texttt{{{_tex_escape(p.fn_name)}}}(\ldots)"
             else:
-                src = ", ".join(rf"\texttt{{{_tex_escape(k)}}}" for k in p.inputs)
-                src = rf"\texttt{{{_tex_escape(p.fn_name)}}}({src})"
+                src = r", \allowbreak ".join(rf"\texttt{{{_tex_escape(k)}}}" for k in p.inputs)
+                src = rf"\texttt{{{_tex_escape(p.fn_name)}}}(\allowbreak {src})"
             row(p, src)
     if by_kind["fixed"]:
         head("Fixed parameters")
@@ -628,17 +629,17 @@ def latex(model, *, caption: str | None = None, label: str = "tab:sedmodel",
         for st in s.stages:
             text = "; ".join(_tex_escape(d) for d in st.details)
             rows.append(rf"\multicolumn{{2}}{{l}}{{{_tex_escape(st.title)}}} & "
-                        rf"\multicolumn{{3}}{{p{{0.62\textwidth}}}}{{{text}}} \\")
+                        rf"\multicolumn{{3}}{{p{{0.55\textwidth}}}}{{{text}}} \\")
         for o, d in s.observations:
             text = "; ".join(_tex_escape(x) for x in d)
             rows.append(rf"\multicolumn{{2}}{{l}}{{\texttt{{{_tex_escape(o.name)}}} "
                         rf"({_tex_escape(getattr(o, 'kind', ''))})}} & "
-                        rf"\multicolumn{{3}}{{p{{0.62\textwidth}}}}{{{text}}} \\")
+                        rf"\multicolumn{{3}}{{p{{0.55\textwidth}}}}{{{text}}} \\")
         for lab, val in s.config:
             rows.append(rf"\multicolumn{{2}}{{l}}{{{_tex_escape(lab)}}} & "
-                        rf"\multicolumn{{3}}{{p{{0.62\textwidth}}}}{{{_tex_escape(val)}}} \\")
+                        rf"\multicolumn{{3}}{{p{{0.55\textwidth}}}}{{{_tex_escape(val)}}} \\")
     body = "\n".join(r for r in rows if r)
-    tab = "\n".join([r"\begin{tabular}{llp{0.3\textwidth}p{0.22\textwidth}l}", r"\toprule",
+    tab = "\n".join([r"\begin{tabular}{llp{0.24\textwidth}p{0.19\textwidth}p{0.1\textwidth}}", r"\toprule",
                      r"Symbol & Key & Description & Prior / value & Unit \\", r"\midrule",
                      body.removeprefix(r"\midrule" + "\n") if body.startswith(r"\midrule")
                      else body,
@@ -648,7 +649,7 @@ def latex(model, *, caption: str | None = None, label: str = "tab:sedmodel",
     cap = caption or ("Parameters of the SED model. Free parameters are sampled with the "
                       "priors given; derived parameters are computed from them; fixed "
                       "parameters are held at the values given.")
-    return "\n".join([r"\begin{table*}", r"\centering", rf"\caption{{{cap}}}",
+    return "\n".join([r"\begin{table*}", r"\centering", r"\small", rf"\caption{{{cap}}}",
                       rf"\label{{{label}}}", tab, r"\end{table*}"])
 
 
@@ -676,7 +677,7 @@ def _symbol(model, name: str) -> str:
 
 
 def _house_fonts():
-    """The house typography (scripts/paper_style_sm.py): smplotlib's Hershey faces when
+    """The house typography of the CERIDWEN papers: smplotlib's Hershey faces when
     smplotlib is installed (``pip install smplotlib``), a serif face otherwise.  smplotlib is
     not imported (its import restyles every later figure of the session): its fonts are
     registered and set on this figure's artists only.  Returns (text family, math fontset)."""
