@@ -959,7 +959,9 @@ class SedModel:
         (a transform's inputs are traced from its code).  Below, ``predictive`` adds the 68 and
         95 per cent range of ``n_draws`` prior draws pushed through the model, with the data
         (it compiles the model once).  With ``ax`` only the diagram is drawn, into it.
-        Returns ``(fig, ax)`` when ``return_fig``."""
+        The figure uses smplotlib's Hershey fonts when smplotlib is installed (``pip install
+        smplotlib``; it is not imported, so other figures keep their style) and a serif face
+        otherwise.  Returns ``(fig, ax)`` when ``return_fig``."""
         from .describe import display
         return display(self, ax=ax, figsize=figsize, return_fig=return_fig,
                        predictive=predictive, n_draws=n_draws, seed=seed, title=title)

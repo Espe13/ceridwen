@@ -19,7 +19,8 @@ import numpy as np
 # colour roles: the house palette (scripts/paper_style_sm.py), one colour per kind of physics;
 # crimson is reserved for data
 BLUE, CORAL, TEAL, PLUM = "#6170b9", "#ff7f50", "#3a9d7a", "#a94fb5"
-SLATE, GREY, CRIM, INK = "#5b6770", "#8a8f98", "#dc143c", "#1f2328"
+SLATE, GREY, CRIM, INK = "#5b6770", "#9098a1", "#dc143c", "#222222"
+GREY_LT = "#d9dce0"
 
 #: the attenuation laws of dust/attenuation_laws.py, by their papers
 LAW_NAMES = {"powerlaw": "power law", "calzetti": "Calzetti et al. (2000)",
@@ -674,7 +675,48 @@ def _symbol(model, name: str) -> str:
     return sym if _renders(sym) else name
 
 
-def _curve(ax, x0, y0, x1, y1, color, *, lw=1.1, alpha=0.75, ls="-", head=True, z=1):
+def _house_fonts():
+    """The house typography (scripts/paper_style_sm.py): smplotlib's Hershey faces when
+    smplotlib is installed (``pip install smplotlib``), a serif face otherwise.  smplotlib is
+    not imported (its import restyles every later figure of the session): its fonts are
+    registered and set on this figure's artists only.  Returns (text family, math fontset)."""
+    import importlib.util
+    import os
+    from matplotlib import font_manager
+    spec = importlib.util.find_spec("smplotlib")
+    for root in (spec.submodule_search_locations or []) if spec else []:
+        ttf = os.path.join(root, "ttf")
+        if os.path.isdir(ttf):
+            for f in font_manager.findSystemFonts(ttf):
+                font_manager.fontManager.addfont(f)
+            return "AVHershey Complex", "cm"
+    return "serif", "cm"
+
+
+def _apply_house_style(fig, family, mathset):
+    """Pin the house typography on every text of ``fig`` (so it survives outside any rc
+    context, e.g. a notebook rendering the figure after the cell)."""
+    from matplotlib.text import Text
+    for t in fig.findobj(Text):
+        t.set_fontfamily(family)
+        t.set_math_fontfamily(mathset)
+    for a in fig.axes:
+        a.tick_params(which="both", labelfontfamily=family)
+
+
+def _house_axes(ax):
+    """The house axis furniture: a black frame, inward major and minor ticks on all four sides."""
+    for sp in ax.spines.values():
+        sp.set_visible(True)
+        sp.set_linewidth(1.0)
+        sp.set_color("black")
+    ax.minorticks_on()
+    ax.tick_params(which="both", direction="in", top=True, right=True, colors="black")
+    ax.tick_params(which="major", length=6, width=0.7)
+    ax.tick_params(which="minor", length=3, width=0.6)
+
+
+def _curve(ax, x0, y0, x1, y1, color, *, lw=1.5, alpha=0.9, ls="-", head=True, z=1):
     """A horizontal S-shaped edge from (x0, y0) to (x1, y1)."""
     from matplotlib.patches import FancyArrowPatch
     from matplotlib.path import Path
@@ -682,22 +724,22 @@ def _curve(ax, x0, y0, x1, y1, color, *, lw=1.1, alpha=0.75, ls="-", head=True, 
     path = Path([(x0, y0), (x0 + dx, y0), (x1 - dx, y1), (x1, y1)],
                 [Path.MOVETO, Path.CURVE4, Path.CURVE4, Path.CURVE4])
     ax.add_patch(FancyArrowPatch(path=path, arrowstyle="-|>" if head else "-",
-                                 mutation_scale=8, color=color, lw=lw, alpha=alpha,
+                                 mutation_scale=10, color=color, lw=lw, alpha=alpha,
                                  linestyle=ls, zorder=z, shrinkA=0, shrinkB=1))
 
 
-def _card(ax, x, y, w, h, accent, *, face="white", edge="#d5d8dc", lw=0.9, z=3, bar=True):
-    """A rounded card with a coloured bar on its left edge; (x, y) is its top-left corner."""
-    from matplotlib.patches import FancyBboxPatch, Rectangle
-    ax.add_patch(FancyBboxPatch((x, y - h), w, h, boxstyle="round,pad=0,rounding_size=0.07",
-                                facecolor=face, edgecolor=edge, lw=lw, zorder=z))
-    if bar:
-        ax.add_patch(Rectangle((x, y - h), 0.07, h, facecolor=accent, edgecolor="none",
-                               zorder=z + 0.1))
+def _card(ax, x, y, w, h, *, edge=GREY_LT, face="white", lw=1.4, z=3, face_alpha=1.0):
+    """A rounded panel (the house diagram box); (x, y) is its top-left corner."""
+    from matplotlib.colors import to_rgba
+    from matplotlib.patches import FancyBboxPatch
+    ax.add_patch(FancyBboxPatch((x, y - h), w, h, boxstyle="round,pad=0,rounding_size=0.12",
+                                facecolor=to_rgba(face, face_alpha), edgecolor=edge, lw=lw,
+                                zorder=z))
 
 
 def _sparkline(ax, prior, shape, x, y, w, h, color, z=4):
-    """The prior's density inside the box (x, y-h)-(x+w, y), with its range below."""
+    """The prior's density inside the box (x, y-h)-(x+w, y), on a ticked baseline with its
+    range below."""
     c = prior_curve(prior, shape)
     if c is None:
         return
@@ -706,13 +748,22 @@ def _sparkline(ax, prior, shape, x, y, w, h, color, z=4):
     if not hi > lo:
         return
     X = x + (px - lo) / (hi - lo) * w
-    Y = (y - h) + 0.12 + py * (h - 0.2)
-    ax.fill_between(X, (y - h) + 0.12, Y, color=color, alpha=0.18, lw=0, zorder=z)
-    ax.plot(X, Y, color=color, lw=1.1, zorder=z + 0.1, solid_capstyle="round")
-    ax.plot([x, x + w], [(y - h) + 0.12] * 2, color="#c4c8cc", lw=0.6, zorder=z)
+    y0 = (y - h) + 0.13
+    Y = y0 + py * (h - 0.2)
+    ax.fill_between(X, y0, Y, color=color, alpha=0.25, lw=0, zorder=z)
+    ax.plot(X, Y, color=color, lw=1.3, zorder=z + 0.1, solid_capstyle="round")
+    ax.plot([x, x + w], [y0, y0], color="black", lw=0.7, zorder=z + 0.2)
+    for xx in (x, x + w / 2, x + w):
+        ax.plot([xx, xx], [y0, y0 + 0.045], color="black", lw=0.6, zorder=z + 0.2)
     for xx, v, ha in ((x, lo, "left"), (x + w, hi, "right")):
-        ax.text(xx, (y - h) + 0.035, f"{v:.3g}", ha=ha, va="bottom", fontsize=5.6,
-                color="#8a8f98", zorder=z)
+        ax.text(xx, (y - h) + 0.035, f"{v:.3g}", ha=ha, va="bottom", fontsize=6.8,
+                color=SLATE, zorder=z)
+
+
+def _disp_detail(d: str) -> str:
+    """A stage or observation detail line as mathtext where it names a symbol."""
+    return (d.replace("10^logmass", "$10^{\\log M}$").replace("D_L =", "$D_L$ =")
+             .replace("z = ", "$z$ = "))
 
 
 def _stage_color(s: Structure, key: str) -> str:
@@ -742,15 +793,15 @@ def _fixed_lines(model, ps, per_line=2):
 
 
 def _free_card(ax, model, p, x, y, w, h, col):
-    _card(ax, x, y, w, h, col)
+    _card(ax, x, y, w, h)
     n = int(np.prod(p.shape)) if p.shape else 1
-    ax.text(x + 0.2, y - 0.24, _symbol(model, p.name), fontsize=10.5, color=INK, va="center")
-    ax.text(x + 0.2, y - h + 0.16, p.name + (f"  ×{n}" if n > 1 else ""), fontsize=6.8,
-            family="monospace", color="#8a8f98", va="center")
+    ax.text(x + 0.18, y - 0.25, _symbol(model, p.name), fontsize=11.5, color=INK, va="center")
+    ax.text(x + 0.18, y - h + 0.15, p.name + (f"  ×{n}" if n > 1 else ""), fontsize=7.8,
+            color=GREY, va="center")
     sx = x + w - 1.75
-    ax.text(x + w - 0.1, y - 0.13, prior_text(p.prior), fontsize=6.2, color="#3d444b",
+    ax.text(x + w - 0.12, y - 0.13, prior_text(p.prior), fontsize=7.6, color=SLATE,
             ha="right", va="center")
-    _sparkline(ax, p.prior, p.shape, sx, y - 0.21, 1.65, h - 0.24, col)
+    _sparkline(ax, p.prior, p.shape, sx, y - 0.22, 1.63, h - 0.25, col)
 
 
 def display(model, ax=None, figsize=None, return_fig: bool = False, *, predictive: bool = True,
@@ -784,7 +835,7 @@ def display(model, ax=None, figsize=None, return_fig: bool = False, *, predictiv
     X3, W3 = 9.35, 3.85
     X4, W4 = 13.95, 3.85
     H_FREE, H_MINI, H_HEAD = 0.70, 0.62, 0.27
-    LINE = 0.19
+    LINE = 0.205
 
     col1 = []
     last = None
@@ -808,7 +859,7 @@ def display(model, ax=None, figsize=None, return_fig: bool = False, *, predictiv
     H = body + 1.25
 
     created = ax is None
-    H_pred = 3.4 if (created and predictive) else 0.0
+    H_pred = 3.6 if (created and predictive) else 0.0
     if created:
         fw, fh = figsize if figsize is not None else (W * 0.8, (H + H_pred) * 0.8)
         fig = plt.figure(figsize=(fw, fh), facecolor="white")
@@ -825,16 +876,16 @@ def display(model, ax=None, figsize=None, return_fig: bool = False, *, predictiv
 
     # ---- header -------------------------------------------------------------------------------
     n_obs = len(s.observations)
-    t = ax.text(0.25, H - 0.34, title or "SedModel", fontsize=15, fontweight="bold",
+    t = ax.text(0.25, H - 0.34, title or "SedModel", fontsize=16, fontweight="bold",
                 color=INK, va="center")
-    ax.annotate(f"{len(free)} free  ·  {len(derived)} derived  ·  {len(fixed)} fixed  ·  "
+    ax.annotate(f"{len(free)} free,  {len(derived)} derived,  {len(fixed)} fixed parameters;  "
                 f"{n_obs} observation{'s' if n_obs != 1 else ''}",
-                xy=(1, 0.5), xycoords=t, xytext=(12, 0), textcoords="offset points",
-                fontsize=10, color=SLATE, va="center")
-    for x, w, lab in ((X1, W1, "FREE PARAMETERS AND PRIORS"), (X2, W2, "DERIVED"),
-                      (X3, W3, "FORWARD MODEL"), (X4, W4, "OBSERVATIONS")):
-        ax.text(x, H - 0.76, lab, fontsize=7.5, color=GREY, fontweight="bold", va="center")
-        ax.plot([x, x + w], [H - 0.87] * 2, color="#e3e5e8", lw=0.8)
+                xy=(1, 0.5), xycoords=t, xytext=(14, 0), textcoords="offset points",
+                fontsize=11, color=SLATE, va="center")
+    for x, w, lab in ((X1, W1, "Free parameters and priors"), (X2, W2, "Derived"),
+                      (X3, W3, "Forward model"), (X4, W4, "Observations")):
+        ax.text(x + 0.02, H - 0.78, lab, fontsize=10.5, color=INK, fontweight="bold",
+                va="center")
 
     edges = []                       # (x0, y0, target key, colour, kwargs)
     anchor = {}                      # key -> (x_left, top, height)
@@ -843,24 +894,24 @@ def display(model, ax=None, figsize=None, return_fig: bool = False, *, predictiv
     ys3, _ = _stack([h_stage[k] for k in skeys], centred(h3), 0.32)
     for st, y in zip(stages, ys3):
         h = h_stage[st.key]
-        _card(ax, X3, y, W3, h, st.color, face="#fbfbfc", edge=st.color, lw=1.0)
-        ax.text(X3 + 0.2, y - 0.21, st.title, fontsize=9.5, fontweight="bold", color=st.color,
+        _card(ax, X3, y, W3, h, edge=st.color, face=st.color, face_alpha=0.12, lw=1.6)
+        ax.text(X3 + 0.2, y - 0.22, st.title, fontsize=10.5, fontweight="bold", color=INK,
                 va="center")
         for i, d in enumerate(st.details):
-            ax.text(X3 + 0.2, y - 0.44 - LINE * i, d.replace("10^logmass", "$10^{\\log M}$"),
-                    fontsize=7.2, color="#3d444b", va="center")
+            ax.text(X3 + 0.2, y - 0.45 - LINE * i, _disp_detail(d), fontsize=8.4, color=INK,
+                    va="center")
         for i, line in enumerate(fixed_lines[st.key]):
-            yy = y - 0.44 - LINE * (len(st.details) + i)
+            yy = y - 0.45 - LINE * (len(st.details) + i)
             if i == 0:
-                ax.text(X3 + 0.2, yy, "fixed", fontsize=6.5, color=GREY, fontweight="bold",
+                ax.text(X3 + 0.2, yy, "fixed", fontsize=8.0, color=SLATE, style="italic",
                         va="center")
-            ax.text(X3 + 0.62, yy, line, fontsize=7.4, color=INK, va="center")
+            ax.text(X3 + 0.68, yy, line, fontsize=8.4, color=INK, va="center")
         anchor[st.key] = (X3, y, h)
     for i in range(1, len(stages)):
         y0 = ys3[i - 1] - h_stage[skeys[i - 1]]
         ax.annotate("", xy=(X3 + W3 / 2, ys3[i] + 0.01), xytext=(X3 + W3 / 2, y0 - 0.01),
-                    arrowprops=dict(arrowstyle="-|>", color="#9aa0a6", lw=1.3,
-                                    mutation_scale=10), zorder=2)
+                    arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.3,
+                                    mutation_scale=11), zorder=2)
 
     # ---- column 4: observations and their own parameters -------------------------------------
     ys4, _ = _stack(col4_h, centred(h4), 0.45)
@@ -868,28 +919,28 @@ def display(model, ax=None, figsize=None, return_fig: bool = False, *, predictiv
     for (o, d), n, y in zip(s.observations, obs_names, ys4):
         h = h_obs[n]
         kind = getattr(o, "kind", "")
-        _card(ax, X4, y, W4, h, INK, face="white", edge="#b9bec4", lw=1.0)
-        tt = ax.text(X4 + 0.2, y - 0.21, kind.capitalize(), fontsize=9.5, fontweight="bold",
+        _card(ax, X4, y, W4, h, edge=INK, lw=1.4)
+        tt = ax.text(X4 + 0.2, y - 0.22, kind.capitalize(), fontsize=10.5, fontweight="bold",
                      color=INK, va="center")
-        ax.annotate(o.name, xy=(1, 0.5), xycoords=tt, xytext=(6, 0), textcoords="offset points",
-                    fontsize=8.5, family="monospace", color=SLATE, va="center")
+        ax.annotate(o.name, xy=(1, 0.5), xycoords=tt, xytext=(7, 0), textcoords="offset points",
+                    fontsize=8.5, color=GREY, va="center")
         for i, line in enumerate(d):
-            ax.text(X4 + 0.2, y - 0.44 - LINE * i, line, fontsize=7.2, color="#3d444b",
+            ax.text(X4 + 0.2, y - 0.45 - LINE * i, _disp_detail(line), fontsize=8.4, color=INK,
                     va="center")
         f = getattr(o, "flux", None)
         nd = int(np.size(f)) if f is not None else 0
         if nd:
-            ax.plot(X4 + W4 - 0.25, y - 0.21, "o", ms=6.5, color=CRIM, zorder=6)
-            ax.text(X4 + W4 - 0.4, y - 0.21, f"data ({nd})", fontsize=6.8, color=CRIM,
+            ax.plot(X4 + W4 - 0.25, y - 0.22, "o", ms=6, color=CRIM, mec=CRIM, zorder=6)
+            ax.text(X4 + W4 - 0.42, y - 0.22, f"data ({nd})", fontsize=7.6, color=CRIM,
                     ha="right", va="center")
         anchor[n] = (X4, y, h)
-        _curve(ax, X3 + W3, last_st[1] - last_st[2] / 2, X4, y - min(h / 2, 0.3), "#9aa0a6",
-               lw=1.4, alpha=0.9)
+        _curve(ax, X3 + W3, last_st[1] - last_st[2] / 2, X4, y - min(h / 2, 0.3), INK,
+               lw=1.4, alpha=0.85)
         ym = y - h - 0.08
         for p in obs_free[n]:
-            _free_card(ax, model, p, X4 + 0.3, ym, W4 - 0.3, H_MINI, INK)
+            _free_card(ax, model, p, X4 + 0.3, ym, W4 - 0.3, H_MINI, SLATE)
             ax.plot([X4 + 0.15, X4 + 0.15, X4 + 0.3], [y - h, ym - H_MINI / 2, ym - H_MINI / 2],
-                    color="#b9bec4", lw=1.0, zorder=2)
+                    color=GREY, lw=1.0, zorder=2)
             ym -= H_MINI + 0.08
 
     # ---- column 2: derived parameters, level with the stage they enter ----------------------
@@ -900,13 +951,13 @@ def display(model, ax=None, figsize=None, return_fig: bool = False, *, predictiv
             else INK
         tgt = anchor.get(p.stage)
         y = min(tgt[1] if tgt else next_free, next_free)
-        _card(ax, X2, y, W2, H_DER, col, face="white", edge=col, lw=0.9)
-        ax.text(X2 + 0.2, y - 0.18, _symbol(model, p.name), fontsize=10, color=INK, va="center")
-        ax.text(X2 + W2 - 0.1, y - 0.18, p.name, fontsize=6.8, family="monospace", color=GREY,
+        _card(ax, X2, y, W2, H_DER, edge=col, lw=1.4)
+        ax.text(X2 + 0.18, y - 0.18, _symbol(model, p.name), fontsize=11, color=INK, va="center")
+        ax.text(X2 + W2 - 0.12, y - 0.18, p.name, fontsize=7.8, color=GREY,
                 ha="right", va="center")
-        ax.text(X2 + 0.2, y - 0.38, f"= {p.fn_name}(" + (", ".join(p.inputs) if p.inputs
-                                                         else "...") + ")",
-                fontsize=6.6, color=SLATE, family="monospace", va="center")
+        ax.text(X2 + 0.18, y - 0.38, f"= {p.fn_name}(" + (", ".join(p.inputs) if p.inputs
+                                                          else "...") + ")",
+                fontsize=7.6, color=SLATE, va="center")
         anchor["derived:" + p.name] = (X2, y, H_DER)
         if tgt is not None:
             edges.append((X2 + W2, y - H_DER / 2, p.stage, col, dict(lw=1.5)))
@@ -919,8 +970,8 @@ def display(model, ax=None, figsize=None, return_fig: bool = False, *, predictiv
     ys1, _ = _stack([c[-1] for c in col1], centred(h1), 0.07)
     for (kind, payload, h), y in zip(col1, ys1):
         if kind == "head":
-            ax.text(X1 + 0.02, y - 0.15, heads.get(payload, payload).upper(), fontsize=6.8,
-                    fontweight="bold", color=_stage_color(s, payload), va="center")
+            ax.text(X1 + 0.04, y - 0.15, heads.get(payload, payload), fontsize=8.6,
+                    style="italic", color=_stage_color(s, payload), va="center")
             continue
         p = payload
         col = _stage_color(s, p.stage)
@@ -948,6 +999,7 @@ def display(model, ax=None, figsize=None, return_fig: bool = False, *, predictiv
 
     if created and predictive:
         _predictive_panel(fig, model, H_pred / (H + H_pred), n_draws, seed)
+    _apply_house_style(fig, *_house_fonts())
 
     if return_fig:
         return fig, ax
@@ -961,12 +1013,14 @@ def _predictive_panel(fig, model, frac, n_draws, seed):
     import jax.numpy as jnp
     from ..plotting import _nice_log_ticks, _prior_draws
     draws = _prior_draws(model, n_draws, seed=seed)
-    pax = fig.add_axes([0.06, 0.2 * frac, 0.92, 0.68 * frac])
+    pax = fig.add_axes([0.06, 0.2 * frac, 0.92, 0.66 * frac])
     if draws is None:
         pax.text(0.5, 0.5, "prior predictive: a free parameter has no prior", ha="center",
-                 va="center", transform=pax.transAxes, color="#8a8f98")
+                 va="center", transform=pax.transAxes, color=GREY)
         pax.axis("off")
         return
+    from matplotlib.colors import to_rgb
+    blue_lt = tuple(c + 0.7 * (1.0 - c) for c in to_rgb(BLUE))     # BLUE lightened 70 %
     pred = model.predict_vmap({k: jnp.asarray(v) for k, v in draws.items()})
     physical = model._zred_fixed is not None or model.zred_is_free
     to_ujy = {"photometry": 3631e6 if physical else 1.0, "spectrum": 1e29 if physical else 1.0}
@@ -982,13 +1036,13 @@ def _predictive_panel(fig, model, frac, n_draws, seed):
         m = np.asarray(getattr(o, "mask", np.ones(w.size, bool)), dtype=bool)
         m = m if m.shape == w.shape else np.ones(w.size, bool)
         if kind == "photometry":
-            pax.vlines(w, q[0], q[4], color=BLUE, alpha=0.35, lw=5, zorder=2)
-            pax.vlines(w, q[1], q[3], color=BLUE, alpha=0.8, lw=5, zorder=3)
+            pax.vlines(w, q[0], q[4], color=blue_lt, lw=5, zorder=2)
+            pax.vlines(w, q[1], q[3], color=BLUE, alpha=0.85, lw=5, zorder=3)
             pax.plot(w, q[2], "_", color="white", ms=7, mew=1.2, zorder=4)
             phot_q.append((w, q[3]))
         else:
-            pax.fill_between(w, q[0], q[4], color=BLUE, alpha=0.15, lw=0, zorder=1)
-            pax.fill_between(w, q[1], q[3], color=BLUE, alpha=0.35, lw=0, zorder=1)
+            pax.fill_between(w, q[0], q[4], color=blue_lt, alpha=0.8, lw=0, zorder=1)
+            pax.fill_between(w, q[1], q[3], color=BLUE, alpha=0.45, lw=0, zorder=1)
         lo_all.append(np.nanmin(q[1][q[1] > 0]) if np.any(q[1] > 0) else np.nan)
         hi_all.append(np.nanmax(q[3]))
         lo_all[-1] = max(lo_all[-1], hi_all[-1] * 1e-5)       # not decades below the band
@@ -997,10 +1051,10 @@ def _predictive_panel(fig, model, frac, n_draws, seed):
             f = np.asarray(f, dtype=float) * c
             e = np.asarray(getattr(o, "uncertainty", np.zeros_like(f)), dtype=float) * c
             if kind == "photometry":
-                pax.errorbar(w[m], f[m], yerr=e[m], fmt="o", ms=4, color=CRIM, mec="white",
-                             mew=0.6, elinewidth=1, zorder=6)
+                pax.errorbar(w[m], f[m], yerr=e[m], fmt="o", ms=4.5, color=CRIM, mec=CRIM,
+                             elinewidth=1, capsize=0, zorder=6)
             else:
-                pax.plot(w[m], f[m], color=CRIM, lw=0.6, alpha=0.9, zorder=5)
+                pax.plot(w[m], f[m], color=CRIM, lw=0.7, alpha=0.9, zorder=5)
             pos = f[m][f[m] > 0]
             if pos.size:
                 lo_all.append(np.nanpercentile(pos, 1))
@@ -1015,18 +1069,17 @@ def _predictive_panel(fig, model, frac, n_draws, seed):
             if below.any():
                 pax.plot(w[below], np.full(below.sum(), lo / 3.0 * 1.6), "v", color=BLUE,
                          ms=6, alpha=0.8, zorder=4)
+    _house_axes(pax)
     xl = pax.get_xlim()
     _nice_log_ticks(pax.xaxis, xl[0], xl[1])
-    pax.set_xlabel("observed wavelength [μm]", fontsize=9)
-    pax.set_ylabel("$F_\\nu$ [μJy]" if physical else "$L_\\nu$ [model units]", fontsize=9)
-    pax.tick_params(labelsize=8)
-    for sp in ("top", "right"):
-        pax.spines[sp].set_visible(False)
+    pax.set_xlabel(r"observed wavelength [$\mu$m]", fontsize=11)
+    pax.set_ylabel(r"$F_\nu$ [$\mu$Jy]" if physical else r"$L_\nu$ [model units]", fontsize=11)
+    pax.tick_params(labelsize=9.5)
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
-    pax.legend(handles=[Patch(color=BLUE, alpha=0.8, label="prior predictive, 68%"),
-                        Patch(color=BLUE, alpha=0.3, label="95%"),
+    pax.legend(handles=[Patch(color=BLUE, alpha=0.85, label="prior predictive (16$-$84%)"),
+                        Patch(color=blue_lt, label="(2.5$-$97.5%)"),
                         Line2D([], [], marker="o", color=CRIM, ls="", label="data")],
-               fontsize=7.5, frameon=False, loc="upper left")
+               fontsize=9, frameon=False, loc="upper left")
     pax.set_title(f"What the priors allow: {n_draws} prior draws through the model",
-                  fontsize=9.5, loc="left", color=INK)
+                  fontsize=11, loc="left", color=INK)
