@@ -618,7 +618,7 @@ def test_fitsed_logs_the_mixture(grid, tmp_path):
     from ceridwen import fitSED
     from ceridwen.sampler.priors import TopHat, Uniform, StudentT
     m = _model(grid, priors={"f_outlier_spec": TopHat(low=1e-5, high=0.5),
-                             "logsfr_ratios": StudentT(mean=0.0, scale=1.0, df=2.0),
+                             "logsfr_ratios": StudentT(mean=0.0, scale=0.3, df=2.0),
                              "logzsol": Uniform(low=-1.8, high=0.19),
                              "tau_pow": Uniform(low=0.0, high=2.0),
                              "alpha_pow": Uniform(low=-2.0, high=0.0),

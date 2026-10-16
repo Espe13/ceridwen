@@ -12,8 +12,8 @@ The recipe:
     2. a fixed random seed, so the test is reproducible,
     3. a recovered-vs-true table with pulls ((fit - true)/sigma) at the end.
 
-Uses examples/ssp_data.h5 if present, else the published grid (fetch_grid); about 12 min on a
-laptop CPU.
+Uses examples/ssp_data.h5 if present, else the published grid (fetch_grid); about 2.5 min on an
+Apple GPU.
 
     conda activate <your-env>
     python examples/demo_1_mock_test.py

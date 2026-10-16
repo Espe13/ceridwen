@@ -77,7 +77,7 @@ def _model(grid, sfh_interp="step"):
         return logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)
 
     return SedModel(csp, [phot], transforms={"sfh": to_sfh},
-                    priors={"logsfr_ratios": StudentT(mean=0.0, scale=1.0, df=2.0),
+                    priors={"logsfr_ratios": StudentT(mean=0.0, scale=0.3, df=2.0),
                             "logzsol": Uniform(low=-1.0, high=0.2),
                             "logmass": Uniform(low=10.0, high=11.0),
                             "diffuse_tau_kc": Uniform(low=0.0, high=2.0),

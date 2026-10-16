@@ -64,11 +64,12 @@ sampling refuses a free parameter without a prior. Dust emission needs both dust
 
 **What photometry recovers.** With dust emission and energy balance on, the DL07 re-emission
 of the stellar dust competes with the torus in the mid-infrared: `log_fagn` is anti-correlated
-with the diffuse optical depth, and `logmass` trades against the SFH shape. In newcomer tests
-with UV-to-24 µm photometry at S/N 20, `agn_tau` was recovered within 1 sigma; `log_fagn`
-and `logmass` were recovered in one mock but came out 0.25 and 0.3 dex low (outside the 95 %
-range) in another, on both the GPU and the CPU, while the maximum-likelihood sample sat at the
-truth. The disc (`log_fagn_bbb`) is weakly constrained by broad bands. Check the corner plot
+with the diffuse optical depth, and `logmass` trades against the SFH shape. In
+`agn_demo.py --fit` (UV-to-24 µm photometry at S/N 20, Apple GPU) `log_fagn` and `logmass`
+came out within their 16-84 % ranges of the truth, and `agn_tau`'s range (21 to 76) sits just
+above its truth of 20. With the earlier SFH prior `StudentT(scale=1.0)`, a newcomer mock gave
+`log_fagn` and `logmass` 0.25 and 0.3 dex low (outside the 95 % range), on both the GPU and
+the CPU, while the maximum-likelihood sample sat at the truth. The disc (`log_fagn_bbb`) is weakly constrained by broad bands. Check the corner plot
 before quoting an AGN fraction from photometry alone.
 
 ## Fitting the AGN line width

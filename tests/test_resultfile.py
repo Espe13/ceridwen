@@ -56,7 +56,7 @@ def setup():
               "logmass": Uniform(low=9.0, high=12.0),
               "diffuse_tau_kc": ClippedNormal(mean=0.3, sigma=1.0, low=0.0, high=4.0),
               "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
-              "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=1.0),
+              "logsfr_ratios": StudentT(df=2.0, mean=0.0, scale=0.3),
               "sigma_gal": Uniform(low=50.0, high=400.0)}
     kin = Kinematics(sigma_gal="sigma_gal")
 

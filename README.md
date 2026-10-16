@@ -198,8 +198,9 @@ In a script, a bare `model.display()` opens a window and waits until you close i
 
 **4. Fit with nested sampling.** These settings are sized for a laptop. On an Apple Silicon
 Mac (macOS 26, Python 3.12) the fit runs on the GPU in float32 by default and took
-**3.5-4.5 min** (sampler 3.3-4.3 min, 65 400 likelihood calls) on an 11-core M3 Pro shared with other jobs; on the
-CPU in float64 (`JAX_PLATFORMS=cpu`, or any other laptop) it took 6-12 min (68 000 calls). It
+**2 min** (sampler 1.5 min, 60 600-63 000 likelihood calls) on an 11-core M3 Pro; on the
+CPU in float64 (`JAX_PLATFORMS=cpu`, or any other laptop) it took 4.5 min (sampler 3.9 min,
+61 200 calls). It
 prints its progress and writes `./my_fit/ceridwen_result.h5`. For production, raise `num_live`
 (fitSED's default is 500) and lower `logZ_tol`; for NUTS, see [Samplers](https://www.amanda-stoffers.de/ceridwen/samplers/).
 
@@ -238,13 +239,15 @@ pp.save("./my_fit/post.npz")
 
 The table compares the posterior median and 16-84% range with the truth. At these settings
 the recovered values can sit 2-3 sigma from the truth: with a five-ratio SFH, `logmass`
-trades against the SFH shape, and the MAP of this mock lies at logmass 10.44, not at 10.50
-(the data and the degeneracy, not the sampler). With 100 live points the quoted ranges are too
-narrow. On the Apple GPU (float32) this seed gives logmass 10.37 (-0.01/+0.02) and seed 0
-gives 10.48 (-0.02/+0.01); on the CPU (float64) this seed gives 10.42 to 10.44 (about
--0.04/+0.03, jax 0.10 and 0.11). Raise `num_live` before trusting an error bar. The five SFH ratios are mostly set by their prior: one or two of them
-can lie outside their 95 % range even though ln L at the truth is higher than at the posterior
-median. `figures` writes `summary.pdf` (SED with
+trades against the SFH shape. The truth's oldest bins hold extra mass that barely shows in the
+light, and a flat SFH at logmass 10.44 fits the data as well (within 1 in ln L, even without
+noise). The SFH prior favours the flat history, so the MAP of this mock lies at 10.44, not at
+10.50: the prior and the degeneracy, not the sampler or the noise (on noise-free data with
+flat priors the MAP is 10.498). With 100 live points the quoted ranges are too
+narrow. On the Apple GPU (float32) this seed gives logmass 10.43 (-0.02/+0.02) and seed 0
+gives 10.44 (-0.03/+0.03); on the CPU (float64) this seed gives 10.42 (-0.03/+0.04). Raise
+`num_live` before trusting an error bar. The five SFH ratios are mostly set by their prior:
+one or two of them can lie outside their 95 % range. `figures` writes `summary.pdf` (SED with
 residuals, SFH, marginals), `corner.pdf` and `diagnostics.pdf` (the sampler's diagnostics).
 `post.npz` holds every draw's predictions and is about 100 MB; `load_postprocess` reads it back.
 Everything `PostProcess` returns is described in

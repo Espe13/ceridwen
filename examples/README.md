@@ -23,8 +23,8 @@ repository); with none of them it builds `examples/ssp_data.h5` with `python-fsp
 
 It uses demo settings (150 live points, `logZ_tol=-2`) and is not a converged fit. Broadband
 photometry alone constrains `logmass` well but `logzsol` and the dust only weakly: their
-posteriors are broad and can miss the truth by about 2 sigma (one run recovered
-`logzsol` -1.25 (-0.43/+0.48) against a truth of -0.20, with a bimodal posterior). It writes
+posteriors are broad (an Apple GPU run recovered `logzsol` -0.28 (-0.73/+0.35) against a
+truth of -0.20). It writes
 `quickstart_post.npz` (~145 MB) next to the figures.
 
 For a spectrum and photometry fitted jointly, see the [Quick start](../README.md#quick-start);
@@ -38,20 +38,23 @@ grid `mist_miles_chab` (`fetch_grid`, downloaded once to `~/.ceridwen/grids`, ab
 python-fsps is not needed. The scripts that use nebular emission, dust emission or an AGN
 need `$SPS_HOME`.
 
-Wall times measured on an 11-core Apple M3 Pro shared with other jobs (so upper bounds):
+Wall times on an 11-core Apple M3 Pro. The Apple GPU times are with the SFH prior the examples
+now use (`StudentT(df=2, scale=0.3)`); the CPU times were measured with the earlier
+`scale=1.0`, which needs more likelihood calls, on a machine shared with other jobs, so they
+are upper bounds:
 
 | example | CPU (float64) | Apple GPU (float32) |
 |---|---|---|
-| `quickstart.py` | 2 min | 2 min |
-| `demo_1_mock_test.py` | 11-14 min | |
-| `demo_2_photometry_lines.py` | 26-55 min | |
+| `quickstart.py` | 2 min | 1 min |
+| `demo_1_mock_test.py` | 11-14 min | 2.5 min |
+| `demo_2_photometry_lines.py` | 26-55 min | 3.5 min |
 | `demo_3_spectrum_advanced.py` (NUTS, prints no progress while it samples) | over 45 min | |
 | `demo_eline_marginalisation.py` (500 live points) | over 45 min | |
-| `agn_demo.py --fit` | 56 min | 6 min |
-| `mock_fit_1_photometry.ipynb` | 11-19 min | 5-6 min |
-| `mock_fit_2_photometry_lines.ipynb` | over 45 min | 14-17 min |
-| `mock_fit_3_spectrum.ipynb`, `mock_fit_4_spectrum_photometry.ipynb` | | 8 and 6 min |
-| `apple_gpu_mock_fit.ipynb` | | 7 min |
+| `agn_demo.py --fit` | 56 min | 3 min |
+| `mock_fit_1_photometry.ipynb` | 11-19 min | 2.5 min |
+| `mock_fit_2_photometry_lines.ipynb` | over 45 min | 8.5 min |
+| `mock_fit_3_spectrum.ipynb`, `mock_fit_4_spectrum_photometry.ipynb` | | 4.5 and 4 min |
+| `apple_gpu_mock_fit.ipynb` | | 3.5 min |
 
 ## Notebooks
 
@@ -62,8 +65,9 @@ and a spectrum calibrated against photometry. They need Jupyter in your environm
 `jupyter nbconvert --to notebook --execute --ExecutePreprocessor.timeout=3600 <notebook>`.
 With photometry alone (`mock_fit_1`) the metallicity and the dust are degenerate, and
 `logzsol` can pile up at the prior edge. At the notebook's 200 live points that ridge is
-under-sampled: the dust ranges come out too narrow and missed the input by more than 3 sigma in
-a CPU run; with `num_live=500` the inputs fell inside the 95 % ranges, with the same ln Z.
+under-sampled and the dust ranges come out too narrow: in an Apple GPU run the two dust
+parameters landed 1.6 and 1.9 sigma from the input (`mock_fit_1`) and 2.8 and 3.5 sigma
+(`mock_fit_2`). Raise `num_live` for a science fit.
 
 ## `demo_1_mock_test.py`, `demo_2_photometry_lines.py`, `demo_3_spectrum_advanced.py`
 
@@ -73,9 +77,9 @@ spectrum with an instrumental LSF, a fitted stellar velocity dispersion, line
 masking and a noise floor. Each writes its fit to
 `demo_N_output/`, post-processes it with `PostProcess`, and writes the three
 figures to `demo_N_output/figures/` with the injected truths marked. In `demo_1` and `demo_2`
-`logmass` trades against the SFH shape, as in the README quick start: it came out about
-0.3 dex low (2.5-2.9 sigma) in newcomer runs, with the truth's ln L inside the posterior's
-range, so the miss is the data's.
+`logmass` trades against the SFH shape, as in the README quick start: on the Apple GPU it
+came out 0.24 dex low in `demo_1` (10.26 +/- 0.11, 2.3 sigma) and 0.17 dex low in `demo_2`
+(10.33 +/- 0.10, 1.7 sigma).
 
 ## `agn_demo.py`
 

@@ -197,8 +197,8 @@ def main() -> int:
     )
 
     n_dims = sum(int(jnp.size(v)) for v in model.theta_init.values())
-    # Demo settings tuned for a reasonable CPU runtime (~10 min unloaded; longer
-    # on a busy machine) and a good-looking corner. Two dials:
+    # Demo settings tuned for a short runtime (about 1 min on an Apple GPU, 2 min on a
+    # CPU) and a good-looking corner. Two dials:
     #   * num_inner_steps -- dominates the one-time JIT *compile* time of the
     #     step kernel (it is the unrolled inner MCMC chain) AND per-step cost.
     #   * num_live -- runtime<->quality (more = smoother contours, more steps).
