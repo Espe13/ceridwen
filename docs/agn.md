@@ -55,10 +55,21 @@ free_param_init = {"log_fagn": jnp.array([-1.0]), "log_fagn_bbb": jnp.array([-1.
 `log_fagn` and `log_fagn_bbb` are new names, so they also go into `free_param_init`
 (`SedModel(..., priors=priors, transforms=transforms, free_param_init=free_param_init)`);
 without it `SedModel` refuses their priors. With `add_neb=True` and `add_dust_emission=True`
-the model also samples `gas_logz`, `gas_logu`, `duste_qpah`, `duste_umin`, `duste_gamma`
-and `alpha_pow` (and, with the AGN lines on, `agn_eline_sigma`): give each a prior or fix it
-with a constant transform, because nested sampling refuses a free parameter without a prior.
+the model also samples `gas_logz`, `gas_logu`, `duste_qpah`, `duste_umin`, `duste_gamma`,
+the birth-cloud dust `tau_pow` and `alpha_pow` (and, with the AGN lines on,
+`agn_eline_sigma`): give each a prior or fix it with a constant transform, because nested
+sampling refuses a free parameter without a prior. Dust emission needs both dust screens:
+`add_dust=True` (the birth clouds) and `add_diffuse_dust=True` (both are on by default).
 `examples/agn_demo.py --fit` is a complete fit.
+
+**What photometry recovers.** With dust emission and energy balance on, the DL07 re-emission
+of the stellar dust competes with the torus in the mid-infrared: `log_fagn` is anti-correlated
+with the diffuse optical depth, and `logmass` trades against the SFH shape. In newcomer tests
+with UV-to-24 µm photometry at S/N 20, `agn_tau` was recovered within 1 sigma; `log_fagn`
+and `logmass` were recovered in one mock but came out 0.25 and 0.3 dex low (outside the 95 %
+range) in another, on both the GPU and the CPU, while the maximum-likelihood sample sat at the
+truth. The disc (`log_fagn_bbb`) is weakly constrained by broad bands. Check the corner plot
+before quoting an AGN fraction from photometry alone.
 
 ## Fitting the AGN line width
 

@@ -28,7 +28,7 @@ and LogUniform(1e-5, 100)).
 
     export SPS_HOME=/path/to/fsps   # Nenkova templates ($SPS_HOME/dust), CLOUDY grids, DL07
     python examples/agn_demo.py           # the mock and the per-band AGN fraction
-    python examples/agn_demo.py --fit     # plus a nested-sampling fit (about an hour on a laptop CPU)
+    python examples/agn_demo.py --fit     # plus a nested-sampling fit (6 min on an Apple GPU, ~1 h on a CPU)
 """
 from __future__ import annotations
 

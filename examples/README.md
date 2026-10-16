@@ -43,13 +43,13 @@ Wall times measured on an 11-core Apple M3 Pro shared with other jobs (so upper 
 | example | CPU (float64) | Apple GPU (float32) |
 |---|---|---|
 | `quickstart.py` | 2 min | 2 min |
-| `demo_1_mock_test.py` | 14 min | |
-| `demo_2_photometry_lines.py` | 55 min | |
+| `demo_1_mock_test.py` | 11-14 min | |
+| `demo_2_photometry_lines.py` | 26-55 min | |
 | `demo_3_spectrum_advanced.py` (NUTS, prints no progress while it samples) | over 45 min | |
 | `demo_eline_marginalisation.py` (500 live points) | over 45 min | |
-| `agn_demo.py --fit` | 56 min | |
-| `mock_fit_1_photometry.ipynb` | 19 min | 6 min |
-| `mock_fit_2_photometry_lines.ipynb` | over 45 min | 17 min |
+| `agn_demo.py --fit` | 56 min | 6 min |
+| `mock_fit_1_photometry.ipynb` | 11-19 min | 5-6 min |
+| `mock_fit_2_photometry_lines.ipynb` | over 45 min | 14-17 min |
 | `mock_fit_3_spectrum.ipynb`, `mock_fit_4_spectrum_photometry.ipynb` | | 8 and 6 min |
 | `apple_gpu_mock_fit.ipynb` | | 7 min |
 
@@ -60,9 +60,10 @@ the posterior with the truth: photometry alone, photometry with line fluxes, a s
 and a spectrum calibrated against photometry. They need Jupyter in your environment
 (`pip install jupyterlab`); to run one headless,
 `jupyter nbconvert --to notebook --execute --ExecutePreprocessor.timeout=3600 <notebook>`.
-With photometry alone (`mock_fit_1`) the metallicity and the dust are degenerate: their
-posteriors are broad and can miss the truth by 2-3 sigma, and `logzsol` can pile up at the
-prior edge. That is the data, not the sampler.
+With photometry alone (`mock_fit_1`) the metallicity and the dust are degenerate, and
+`logzsol` can pile up at the prior edge. At the notebook's 200 live points that ridge is
+under-sampled: the dust ranges come out too narrow and missed the input by more than 3 sigma in
+a CPU run; with `num_live=500` the inputs fell inside the 95 % ranges, with the same ln Z.
 
 ## `demo_1_mock_test.py`, `demo_2_photometry_lines.py`, `demo_3_spectrum_advanced.py`
 
@@ -71,20 +72,24 @@ emission-line fluxes (`add_neb=True`, needs `$SPS_HOME`); photometry plus a
 spectrum with an instrumental LSF, a fitted stellar velocity dispersion, line
 masking and a noise floor. Each writes its fit to
 `demo_N_output/`, post-processes it with `PostProcess`, and writes the three
-figures to `demo_N_output/figures/` with the injected truths marked.
+figures to `demo_N_output/figures/` with the injected truths marked. In `demo_1` and `demo_2`
+`logmass` trades against the SFH shape, as in the README quick start: it came out about
+0.3 dex low (2.5-2.9 sigma) in newcomer runs, with the truth's ln L inside the posterior's
+range, so the miss is the data's.
 
 ## `agn_demo.py`
 
 An obscured AGN at z = 2 in NIRCam and MIRI bands: prints the AGN share of each band in the
 three AGN modes and, with `--fit`, fits the torus fraction, the torus optical depth and the
-disc with nested sampling ([AGN](../docs/agn.md); needs `$SPS_HOME`). Twelve bands constrain
-the torus fraction and the stellar mass well, the disc and `agn_tau` only weakly.
+disc with nested sampling ([AGN](../docs/agn.md); needs `$SPS_HOME`). In this mock the torus
+fraction and the stellar mass are recovered and the disc and `agn_tau` only weakly; that does
+not hold for every mock (`docs/agn.md`, "What photometry recovers").
 
 ## `demo_postprocess.py`
 
 Post-processes the saved `demo_1_output/ceridwen_result.h5` (the default; pass another
 result file as the argument) from a rebuilt model (no refit), adds a user-defined derived quantity, and writes `post.npz`
-and the figures next to the result file.
+and the figures to `postprocess/` next to the result file (demo_1's own figures are kept).
 
 ## `demo_afe_quiescent.py`
 

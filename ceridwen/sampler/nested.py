@@ -658,6 +658,15 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
 
         import tqdm
 
+        # a NaN ln L (an overflow in the forward model) would make logZ_live NaN, and the
+        # termination test then passes at iteration 0 with no likelihood call: treat it as -inf,
+        # a point outside the support (finite values pass through unchanged)
+        _loglike_raw = loglike_fn
+
+        def loglike_fn(theta):
+            lnl = _loglike_raw(theta)
+            return jnp.where(jnp.isnan(lnl), -jnp.inf, lnl)
+
         n_dims          = self._n_dims(theta_init)
         num_inner_steps = (self._num_inner_steps
                            if self._num_inner_steps is not None
@@ -776,10 +785,17 @@ class BlackJAXNestedSamplerAdapter(SamplerAdapter):
 
         wall_time = _elapsed0 + time.perf_counter() - t_start
         if self.verbose:
+            from ..precision import float_dtype
+            _units = ", in the sampler's rescaled units" if float_dtype() == jnp.float32 else ""
             print(
-                f"  Converged  (live-point logZ estimate {_get_logZ(live):.3f}; the final ln Z follows)  "
-                f"({wall_time:.1f} s,  {n_like_calls:,} likelihood calls)"
+                f"  Converged  (live-point logZ estimate {_get_logZ(live):.3f}{_units}; the final "
+                f"ln Z follows)  ({wall_time:.1f} s,  {n_like_calls:,} likelihood calls)"
             )
+        if n_like_calls == 0 and _resume is None:
+            import warnings
+            warnings.warn("nested sampling stopped before its first iteration (0 likelihood "
+                          "calls): the live points' ln L is not finite; check the model at the "
+                          "prior draws", stacklevel=2)
 
         _dead_positions, _dead_logl, _dead_logl_birth = self._finalise_dead(
             live, dead_list, ns_utils)

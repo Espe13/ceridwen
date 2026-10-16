@@ -5,7 +5,7 @@ demo_postprocess.py -- posterior post-processing of a finished fit.
 
 Rebuilds the SedModel exactly as examples/demo_1_mock_test.py built it (same
 grid, observations, transforms, redshift), runs ceridwen.PostProcess on the
-saved samples and writes <output>/post.npz.  Everything printed comes from the
+saved samples and writes post.npz and the figures to <output>/postprocess/.  Everything printed comes from the
 same forward model that was fitted.
 """
 import sys
@@ -64,8 +64,9 @@ def main(result_path):
                      derived={"A_V": A_V,
                               "L_opt": lambda s: s.luminosity(s.full, 4000.0, 7000.0)})
     out = pp.run()
-    saved = pp.save(pathlib.Path(result_path).with_name("post.npz"))
-    figs = pp.figures(pathlib.Path(result_path).with_name("figures"), title="demo 1 (post-processed)")
+    outdir = pathlib.Path(result_path).with_name("postprocess")     # demo_1's own figures stay
+    saved = pp.save(outdir / "post.npz")
+    figs = pp.figures(outdir / "figures", title="demo 1 (post-processed)")
 
     q = lambda a: np.percentile(a, [16, 50, 84])
     print(f"logmass     : {q(out['theta']['logmass'])}")

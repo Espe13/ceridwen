@@ -145,7 +145,7 @@ the recovered values can sit 2-3 sigma from the truth: with a five-ratio SFH, `l
 trades against the SFH shape, and the MAP of this mock lies at logmass 10.44, not at 10.50
 (the data and the degeneracy, not the sampler). With 100 live points the quoted ranges are too
 narrow: on the Apple GPU (float32) the same seed gave logmass 10.37 (-0.01/+0.02) and seed 0
-gave 10.48 (-0.02/+0.01), against 10.44 (-0.04/+0.02) on the CPU. Raise `num_live` before
+gave 10.48 (-0.02/+0.01), against 10.42 to 10.44 (about -0.04/+0.03) on the CPU (jax 0.10 and 0.11). Raise `num_live` before
 trusting an error bar. The five SFH ratios are mostly set by their prior: one or two of them
 can lie outside their 95 % range even though ln L at the truth is higher than at the posterior
 median. `figures` writes `summary.pdf` (SED with

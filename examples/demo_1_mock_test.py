@@ -12,7 +12,8 @@ The recipe:
     2. a fixed random seed, so the test is reproducible,
     3. a recovered-vs-true table with pulls ((fit - true)/sigma) at the end.
 
-Needs an SSP grid (built via FSPS on first run) and ~10 min on a laptop CPU.
+Uses examples/ssp_data.h5 if present, else the published grid (fetch_grid); about 12 min on a
+laptop CPU.
 
     conda activate <your-env>
     python examples/demo_1_mock_test.py

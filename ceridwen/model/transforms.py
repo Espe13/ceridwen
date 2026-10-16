@@ -21,6 +21,11 @@ def logsfr_ratios_to_sfh(
     ratios  = jnp.asarray(logsfr_ratios, dtype=float)
     log_sfr = jnp.concatenate([jnp.zeros(1),
                                 -jnp.cumsum(ratios)])
+    if log_sfr.dtype == jnp.float32:
+        # float32 mode (docs/mac_gpu.md): 10**x overflows above x ~ 38.5, which the StudentT(df=2)
+        # prior reaches in ~0.2% of draws, and inf/inf = NaN.  The normalisation below divides
+        # out any constant, so shift the peak to 0; float64 keeps the unshifted (bit-identical) path
+        log_sfr = log_sfr - jnp.max(log_sfr)
     sfr     = 10.0 ** log_sfr
 
     if sfh_times_yr is not None:

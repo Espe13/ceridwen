@@ -74,8 +74,25 @@
 - README quick start: the figures mark the SFH truth too; the SFH ratios are prior-limited.
 - The dust-emission setup error names `add_dust=True, add_diffuse_dust=True`; `docs/agn.md`'s
   first block passes `add_dust=True` explicitly.
+- `docs/agn.md`: `tau_pow` among the keys to fix, the two dust screens dust emission needs,
+  and "What photometry recovers" (torus vs DL07 re-emission under energy balance).
+  `mock_fit_1_photometry.ipynb` and `examples/README.md`: at 200 live points the
+  metallicity-dust ridge is under-sampled (500 recovers the inputs), not "the data";
+  `demo_1`/`demo_2` note the logmass-SFH degeneracy; `demo_postprocess.py` writes to
+  `postprocess/` and keeps demo_1's figures.
 - Posterior figures print enough decimals for a small error (`agn_elum` read
   0.00^{+0.00}_{-0.00}).
+- **Apple GPU (float32): a fit could stop at once with a meaningless ln Z.** About 0.2 % of
+  `StudentT(df=2)` draws of five `logsfr_ratios` push log10 SFR above 38.5, where `10**x`
+  overflows float32; `logsfr_ratios_to_sfh` returned NaN, the live points' ln L was NaN,
+  `logZ_live` was NaN and nested sampling "converged" after 0 likelihood calls (exit code 0).
+  At 300 live points one initial draw is that extreme in 43 % of runs (`demo_1_mock_test.py`
+  hit it). Another 0.16 % of draws (log10 SFR between 28.5 and 38.5) overflowed the mass
+  integral instead and gave a silent all-zero SFH. The float32 path now shifts the peak log SFR to 0 before exponentiating (the unit-mass
+  normalisation divides it out; float64 keeps its bit-identical path); the nested sampler
+  treats a NaN ln L as -inf (outside the support), labels its float32 live-point ln Z as
+  rescaled, and warns when a run ends with 0 likelihood calls.
+  `tests/test_sfh_float32_overflow.py`.
 - Posterior figures label every parameter with the symbol `latex()` and `display()` use
   (`describe.symbol_of`): dust, AGN, dust-emission and `log_<name>` keys, and the SFH ratios as
   log(SFR_i/SFR_{i+1}); they were the raw names ("diffuse tau kc", "log fagn bbb").
