@@ -103,9 +103,12 @@ print(model.latex())
 
 In a script, a bare `model.display()` opens a window and waits until you close it.
 
-**4. Fit with nested sampling.** These settings are sized for a laptop CPU: the fit took
-**12 min** (67 800 likelihood calls) on an 11-core Apple M3 Pro shared with other jobs. It prints its progress and writes `./my_fit/ceridwen_result.h5`. For production, raise `num_live` (fitSED's default
-is 500) and lower `logZ_tol`; for NUTS, see [Samplers](samplers.md).
+**4. Fit with nested sampling.** These settings are sized for a laptop. On an Apple Silicon
+Mac (macOS 26, Python 3.12) the fit runs on the GPU in float32 by default and took
+**3.5-4.5 min** (sampler 3.3-4.3 min, 65 400 likelihood calls) on an 11-core M3 Pro shared with other jobs; on the
+CPU in float64 (`JAX_PLATFORMS=cpu`, or any other laptop) it took 6-12 min (68 000 calls). It
+prints its progress and writes `./my_fit/ceridwen_result.h5`. For production, raise `num_live`
+(fitSED's default is 500) and lower `logZ_tol`; for NUTS, see [Samplers](samplers.md).
 
 ```python
 from ceridwen import fitSED
@@ -144,9 +147,9 @@ The table compares the posterior median and 16-84% range with the truth. At thes
 the recovered values can sit 2-3 sigma from the truth: with a five-ratio SFH, `logmass`
 trades against the SFH shape, and the MAP of this mock lies at logmass 10.44, not at 10.50
 (the data and the degeneracy, not the sampler). With 100 live points the quoted ranges are too
-narrow: on the Apple GPU (float32) the same seed gave logmass 10.37 (-0.01/+0.02) and seed 0
-gave 10.48 (-0.02/+0.01), against 10.42 to 10.44 (about -0.04/+0.03) on the CPU (jax 0.10 and 0.11). Raise `num_live` before
-trusting an error bar. The five SFH ratios are mostly set by their prior: one or two of them
+narrow. On the Apple GPU (float32) this seed gives logmass 10.37 (-0.01/+0.02) and seed 0
+gives 10.48 (-0.02/+0.01); on the CPU (float64) this seed gives 10.42 to 10.44 (about
+-0.04/+0.03, jax 0.10 and 0.11). Raise `num_live` before trusting an error bar. The five SFH ratios are mostly set by their prior: one or two of them
 can lie outside their 95 % range even though ln L at the truth is higher than at the posterior
 median. `figures` writes `summary.pdf` (SED with
 residuals, SFH, marginals), `corner.pdf` and `diagnostics.pdf` (the sampler's diagnostics).

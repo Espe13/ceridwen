@@ -72,6 +72,8 @@
   notebooks (and that they need Jupyter), `agn_demo.py`. `mock_fit_1_photometry.ipynb` explains
   the metallicity-dust degeneracy behind its 2-3 sigma misses.
 - README quick start: the figures mark the SFH truth too; the SFH ratios are prior-limited.
+- The quick start leads with the Apple GPU, the default on an Apple Silicon Mac with macOS 26
+  and Python 3.12: 3.5-4.5 min there, 6-12 min on a CPU (both measured on an M3 Pro).
 - The dust-emission setup error names `add_dust=True, add_diffuse_dust=True`; `docs/agn.md`'s
   first block passes `add_dust=True` explicitly.
 - `docs/agn.md`: `tau_pow` among the keys to fix, the two dust screens dust emission needs,
