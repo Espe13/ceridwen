@@ -917,7 +917,8 @@ class CSPBasis:
         if add_dust_emission:
             if not add_dust or not add_diffuse_dust:
                 raise ValueError(
-                    "Dust emission requires both dust attenuation and diffuse dust."
+                    "Dust emission requires both dust attenuation and diffuse dust: "
+                    "CSPBasis(..., add_dust=True, add_diffuse_dust=True, add_dust_emission=True)."
                 )
             part3 = 'dustemi'
         else:

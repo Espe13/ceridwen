@@ -1,7 +1,7 @@
 """
 demo_postprocess.py -- posterior post-processing of a finished fit.
 
-    python examples/demo_postprocess.py demo_1_output/ceridwen_result.h5
+    python examples/demo_postprocess.py [demo_1_output/ceridwen_result.h5]
 
 Rebuilds the SedModel exactly as examples/demo_1_mock_test.py built it (same
 grid, observations, transforms, redshift), runs ceridwen.PostProcess on the
@@ -25,8 +25,13 @@ from demo_1_mock_test import SSP_FILE, N_TIME, ZRED, FILTERS   # noqa: E402  the
 
 def build_model(result_path=None):
     """The SedModel of demo_1_mock_test.py: same grid, grid nodes, physics
-    switches, transform and redshift.  Priors are not needed here."""
-    ssp = SSPData.load(str(SSP_FILE))
+    switches, transform and redshift.  Priors are not needed here (SedModel then warns
+    that the parameters have no prior; that is harmless for post-processing)."""
+    if SSP_FILE.is_file():
+        ssp = SSPData.load(str(SSP_FILE))
+    else:                                            # the published grid demo_1 used
+        from ceridwen.ssps import fetch_grid
+        ssp = SSPData.load(str(fetch_grid("mist_miles_chab")))
     csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, N_TIME),
                    zh_const=True, sfh_interp="step",
                    add_dust=False, add_diffuse_dust=True, add_neb=False,
@@ -77,6 +82,6 @@ def main(result_path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) > 2:
         sys.exit(__doc__)
-    main(sys.argv[1])
+    main(sys.argv[1] if len(sys.argv) == 2 else "demo_1_output/ceridwen_result.h5")

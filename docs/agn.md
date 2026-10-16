@@ -12,8 +12,8 @@ reproduces CIGALE. Without `agn=` nothing changes: every existing prediction is 
 from ceridwen import CSPBasis, Cosmology
 from ceridwen.agn import AGNConfig
 
-csp = CSPBasis(ssp, lookback_time=lb, zh_const=True, add_neb=True, add_dust_emission=True,
-               cosmo=Cosmology.planck18(),
+csp = CSPBasis(ssp, lookback_time=lb, zh_const=True, add_dust=True, add_neb=True,
+               add_dust_emission=True, cosmo=Cosmology.planck18(),
                agn=AGNConfig())                       # corrected mode, torus + disc + lines
 csp = CSPBasis(ssp, ..., agn=AGNConfig(agn_mode="fsps"))         # FSPS add_agn_dust
 csp = CSPBasis(ssp, ..., agn=AGNConfig(agn_mode="prospector", dust4_type=1))

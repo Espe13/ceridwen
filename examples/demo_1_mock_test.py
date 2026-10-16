@@ -59,13 +59,14 @@ TRUTH = {
 def main() -> None:
     rng = np.random.default_rng(SEED)
 
-    # ── SSP grid: load the cache, or build it once with FSPS ─────────────
+    # ── SSP grid: examples/ssp_data.h5 if you built one, else the published grid ──
     if SSP_FILE.is_file():
         print(f"[grid] loading cached SSP grid: {SSP_FILE}")
         ssp = SSPData.load(str(SSP_FILE))
     else:
-        print("[grid] no cache found, building with FSPS (a few minutes) ...")
-        ssp = SSPData.from_fsps(imf_type=1, save_to=str(SSP_FILE))
+        from ceridwen.ssps import fetch_grid             # the published grid (Zenodo, cached)
+        print("[grid] no examples/ssp_data.h5: using the published grid mist_miles_chab")
+        ssp = SSPData.load(str(fetch_grid("mist_miles_chab")))
 
     csp = CSPBasis(
         ssp,

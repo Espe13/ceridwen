@@ -186,3 +186,10 @@ def test_summary_sfh_prior_band_linear_axis_and_full_width_sed(tmp_path):
     np.testing.assert_allclose(hi, np.quantile(want, 0.84, axis=0), rtol=1e-10)
     np.testing.assert_allclose(edges, np.linspace(0.0, 12.0, n_time))
     plt.close("all")
+
+
+def test_fmt_q_keeps_small_errors_visible():
+    from ceridwen.plotting import _fmt_q
+    assert _fmt_q(10.33, 10.58, 10.74) == r"$10.58^{+0.16}_{-0.25}$"           # unchanged
+    s = _fmt_q(0.0009, 0.0038, 0.0078)                                        # agn_elum-like
+    assert "0.00^" not in s and s == r"$0.0038^{+0.0040}_{-0.0029}$"

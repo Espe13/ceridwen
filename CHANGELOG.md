@@ -61,6 +61,22 @@
   tensorflow-probability are listed; the progress bar shows ln Z in the sampler's rescaled
   units.
 
+### From a newcomer test (round 2)
+- The demo scripts (`demo_1..3`, `demo_eline_marginalisation`, `demo_postprocess`) fall back to
+  the published grid `mist_miles_chab` instead of building one with python-fsps;
+  `demo_postprocess.py` defaults to `demo_1_output/ceridwen_result.h5`.
+- `demo_2_photometry_lines.py`: the FUV upper limit lay 17 sigma below the mock's own true
+  flux, which biased the fit; it now lies 2 sigma above it. The docstring says 0-based line
+  indices, as the code uses.
+- `examples/README.md`: the grid fallback, measured CPU and Apple GPU run times, the
+  notebooks (and that they need Jupyter), `agn_demo.py`. `mock_fit_1_photometry.ipynb` explains
+  the metallicity-dust degeneracy behind its 2-3 sigma misses.
+- README quick start: the figures mark the SFH truth too; the SFH ratios are prior-limited.
+- The dust-emission setup error names `add_dust=True, add_diffuse_dust=True`; `docs/agn.md`'s
+  first block passes `add_dust=True` explicitly.
+- Posterior figures print enough decimals for a small error (`agn_elum` read
+  0.00^{+0.00}_{-0.00}).
+
 ### float32 forward model, cheap GPUs, blackjax 1.7
 - The large arrays of the forward model are float32: the SSP contraction, attenuation curves,
   the nebular profile contraction, the projector (resampling, FFT smoothing, instrument

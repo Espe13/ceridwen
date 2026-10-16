@@ -81,8 +81,9 @@ def main() -> None:
     if SSP_FILE.is_file():
         ssp = SSPData.load(str(SSP_FILE))
     else:
-        print("[grid] building SSP grid with FSPS (a few minutes) ...")
-        ssp = SSPData.from_fsps(imf_type=1, save_to=str(SSP_FILE))
+        from ceridwen.ssps import fetch_grid             # the published grid (Zenodo, cached)
+        print("[grid] no examples/ssp_data.h5: using the published grid mist_miles_chab")
+        ssp = SSPData.load(str(fetch_grid("mist_miles_chab")))
 
     csp = CSPBasis(
         ssp,

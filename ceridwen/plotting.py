@@ -124,6 +124,11 @@ def _weighted_quantiles(x, w, q=(0.16, 0.5, 0.84)):
 
 
 def _fmt_q(lo, med, hi, nd=2):
+    """``med^{+(hi-med)}_{-(med-lo)}`` with at least ``nd`` decimals, and more when the smaller
+    error would otherwise print as 0.00 (e.g. agn_elum ~ 1e-3)."""
+    err = min(hi - med, med - lo)
+    if np.isfinite(err) and 0 < err < 10.0 ** -nd:
+        nd = min(6, int(-np.floor(np.log10(err))) + 1)
     return rf"${med:.{nd}f}^{{+{hi - med:.{nd}f}}}_{{-{med - lo:.{nd}f}}}$"
 
 

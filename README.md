@@ -228,7 +228,8 @@ for p, t in truth.items():
     print(f"{p:>20}: true {t:+7.3f}   fit {med:+7.3f}  (-{med - lo:.3f}/+{hi - med:.3f})")
 
 print(np.percentile(out["extras"]["sfh"]["sfr100"], [16, 50, 84]))   # SFR over 100 Myr [Msun/yr]
-pp.figures("./my_fit/figures", title="mock galaxy", truths=truth)
+pp.figures("./my_fit/figures", title="mock galaxy",
+           truths={**truth, "logsfr_ratios": np.asarray(TRUTH["logsfr_ratios"])})
 pp.save("./my_fit/post.npz")
 ```
 
@@ -238,7 +239,9 @@ trades against the SFH shape, and the MAP of this mock lies at logmass 10.44, no
 (the data and the degeneracy, not the sampler). With 100 live points the quoted ranges are too
 narrow: on the Apple GPU (float32) the same seed gave logmass 10.37 (-0.01/+0.02) and seed 0
 gave 10.48 (-0.02/+0.01), against 10.44 (-0.04/+0.02) on the CPU. Raise `num_live` before
-trusting an error bar. `figures` writes `summary.pdf` (SED with
+trusting an error bar. The five SFH ratios are mostly set by their prior: one or two of them
+can lie outside their 95 % range even though ln L at the truth is higher than at the posterior
+median. `figures` writes `summary.pdf` (SED with
 residuals, SFH, marginals), `corner.pdf` and `diagnostics.pdf` (the sampler's diagnostics).
 `post.npz` holds every draw's predictions and is about 100 MB; `load_postprocess` reads it back.
 Everything `PostProcess` returns is described in
