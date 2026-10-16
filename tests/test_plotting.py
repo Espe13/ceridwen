@@ -193,3 +193,13 @@ def test_fmt_q_keeps_small_errors_visible():
     assert _fmt_q(10.33, 10.58, 10.74) == r"$10.58^{+0.16}_{-0.25}$"           # unchanged
     s = _fmt_q(0.0009, 0.0038, 0.0078)                                        # agn_elum-like
     assert "0.00^" not in s and s == r"$0.0038^{+0.0040}_{-0.0029}$"
+
+
+def test_labels_use_the_model_symbols():
+    from ceridwen.plotting import _label
+    assert _label("diffuse_tau_kc") == r"$\tau_\mathrm{KC}^\mathrm{diff}$"
+    assert _label("agn_tau") == r"$\tau_\mathrm{AGN}$"
+    assert _label("log_fagn") == r"$\log f_\mathrm{AGN}$"                 # log_ of a known name
+    assert _label("logsfr_ratios[0]") == r"$\log(\mathrm{SFR}_{0}/\mathrm{SFR}_{1})$"
+    assert _label("logzsol", feh=True) == r"$[\mathrm{Fe}/\mathrm{H}]$"     # MIST grid axis
+    assert _label("my_param") == "my param"                                  # unknown: the name

@@ -76,6 +76,9 @@
   first block passes `add_dust=True` explicitly.
 - Posterior figures print enough decimals for a small error (`agn_elum` read
   0.00^{+0.00}_{-0.00}).
+- Posterior figures label every parameter with the symbol `latex()` and `display()` use
+  (`describe.symbol_of`): dust, AGN, dust-emission and `log_<name>` keys, and the SFH ratios as
+  log(SFR_i/SFR_{i+1}); they were the raw names ("diffuse tau kc", "log fagn bbb").
 
 ### float32 forward model, cheap GPUs, blackjax 1.7
 - The large arrays of the forward model are float32: the SSP contraction, attenuation curves,

@@ -70,9 +70,26 @@ def _label(name: str, feh: bool = False) -> str:
     if name in labels:
         return labels[name]
     base, _, idx = name.partition("[")
+    if base == "logsfr_ratios" and idx[:-1].isdigit():
+        j = int(idx[:-1])
+        return rf"$\log(\mathrm{{SFR}}_{{{j}}}/\mathrm{{SFR}}_{{{j + 1}}})$"
     if base in labels and idx:
         return labels[base][:-1] + rf"_{{{idx[:-1]}}}$"
+    sym = _symbol(base)
+    if sym is not None:
+        return sym if not idx else sym[:-1] + rf"_{{{idx[:-1]}}}$"
     return name.replace("_", " ")
+
+
+def _symbol(name: str):
+    """``$symbol$`` from the model description (``describe.symbol_of``) when matplotlib's
+    mathtext can draw it, else None."""
+    from .model.describe import _renders, symbol_of
+    sym = symbol_of(name)
+    if sym is None:
+        return None
+    sym = "$" + sym + "$"
+    return sym if _renders(sym) else None
 
 
 def _feh_axis(out) -> bool:

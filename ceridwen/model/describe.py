@@ -548,6 +548,23 @@ def _tex_escape(s: str) -> str:
     return s
 
 
+def symbol_of(name: str) -> str | None:
+    """The LaTeX symbol of a parameter name without a model (the posterior figures use it):
+    the PARAM_INFO names, the attenuation-law keys with or without ``diffuse_``, and
+    ``log_<name>`` of either.  None for any other name."""
+    if name in PARAM_INFO:
+        return PARAM_INFO[name][0]
+    base = name[len("diffuse_"):] if name.startswith("diffuse_") else name
+    stripped = base.rstrip("0123456789")
+    if stripped in _DUST_KEYS:
+        return _DUST_KEYS[stripped][0] + (r"^\mathrm{diff}" if base != name else "")
+    if name.startswith("log_") and name != "log_":
+        inner = symbol_of(name[len("log_"):])
+        if inner is not None:
+            return r"\log " + inner
+    return None
+
+
 def param_info(model, name: str):
     """``(symbol, description, unit)`` of a parameter, in LaTeX; unknown names get their own
     name as the symbol and an empty description."""
