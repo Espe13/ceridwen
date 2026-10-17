@@ -140,7 +140,7 @@ def main() -> None:
                       uncertainty=unc, name="phot")
     model = build(ssp, agn_config("corrected"), [phot], free)
     result = fitSED(model, sampler="ns",
-                    sampler_kwargs={"num_live": 200, "slice_kernel": "lanes"},
+                    sampler_kwargs={"num_live": 200, "num_inner_steps": 30, "slice_kernel": "lanes"},
                     rng_key=jax.random.PRNGKey(SEED), output_dir="./agn_cigale_demo_output")
     w = np.exp(np.asarray(result.log_weights) - np.max(result.log_weights))
     for p in free + ("logmass",):

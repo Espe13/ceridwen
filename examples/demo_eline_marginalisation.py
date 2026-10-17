@@ -99,7 +99,8 @@ def main() -> None:
                   phot_true + phot_unc * rng.standard_normal(phot_true.size), phot_unc)
     print(model.summary())
 
-    result = fitSED(model, output_dir=OUT, rng_key=jax.random.PRNGKey(SEED))
+    result = fitSED(model, output_dir=OUT, sampler_kwargs={"num_inner_steps": 30},
+                    rng_key=jax.random.PRNGKey(SEED))
     el = read_result_h5(OUT / "ceridwen_result.h5")["elines"]
     w = np.exp(np.asarray(result.log_weights) - np.max(result.log_weights))
     w /= w.sum()

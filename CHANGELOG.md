@@ -73,11 +73,16 @@
   the metallicity-dust degeneracy behind its 2-3 sigma misses.
 - README quick start: the figures mark the SFH truth too; the SFH ratios are prior-limited.
 - The quick start leads with the Apple GPU, the default on an Apple Silicon Mac with macOS 26
-  and Python 3.12: 2 min there, 4.5 min on a CPU (both measured on an M3 Pro).
+  and Python 3.12: 3.7 min there, 8.4 min on a CPU (both measured on an M3 Pro).
 - The README, `docs/quickstart.md`, the example scripts, the notebooks and the tests give the
   SFH ratios `StudentT(df=2, scale=0.3)`, as `docs/tutorial.md` already did (was `scale=1.0`).
   On the Apple GPU demo_1 then recovers logmass 10.26 +/- 0.11 against the truth 10.50 (pull
   -2.3; -3.6 with `scale=1.0`). The quick start's quoted times and results are re-measured.
+- The README quick start samples with `num_inner_steps=60`: in an Apple GPU (float32) settings
+  study its logmass posterior came out about 30 % narrower with 15 or 30 inner steps than with
+  60 or 120. The example scripts pass `num_inner_steps=30` explicitly (the `fitSED` default;
+  `quickstart.py` used `max(8, 2 x n_dims)`); for demo_1, demo_2 and agn_demo the posteriors
+  changed little between 30 and 120 steps.
 - The dust-emission setup error names `add_dust=True, add_diffuse_dust=True`; `docs/agn.md`'s
   first block passes `add_dust=True` explicitly.
 - `docs/agn.md`: `tau_pow` among the keys to fix, the two dust screens dust emission needs,

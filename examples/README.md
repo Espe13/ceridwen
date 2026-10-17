@@ -23,8 +23,8 @@ repository); with none of them it builds `examples/ssp_data.h5` with `python-fsp
 
 It uses demo settings (150 live points, `logZ_tol=-2`) and is not a converged fit. Broadband
 photometry alone constrains `logmass` well but `logzsol` and the dust only weakly: their
-posteriors are broad (an Apple GPU run recovered `logzsol` -0.28 (-0.73/+0.35) against a
-truth of -0.20). It writes
+posteriors are broad (an Apple GPU run recovered `logzsol` -0.23 (-0.75/+0.29) against a
+truth of -0.20, a CPU run -1.16 (-0.55/+0.44)). It writes
 `quickstart_post.npz` (~145 MB) next to the figures.
 
 For a spectrum and photometry fitted jointly, see the [Quick start](../README.md#quick-start);

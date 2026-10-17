@@ -204,7 +204,7 @@ def main() -> None:
     result = fitSED(
         model,
         sampler="ns",
-        sampler_kwargs={"num_live": 400},  # num_delete/logZ_tol: library defaults
+        sampler_kwargs={"num_live": 400, "num_inner_steps": 30},  # num_delete/logZ_tol: library defaults
         rng_key=jax.random.PRNGKey(SEED),
         output_dir="./demo_afe_quiescent_output",
     )

@@ -146,7 +146,7 @@ def main() -> None:
     phot = Photometry(filters=FILTERS, flux=flux + unc * rng.standard_normal(flux.shape),
                       uncertainty=unc, name="phot")
     model = build(ssp, AGNConfig(), [phot])
-    result = fitSED(model, sampler="ns", sampler_kwargs={"num_live": 200},
+    result = fitSED(model, sampler="ns", sampler_kwargs={"num_live": 200, "num_inner_steps": 30},
                     rng_key=jax.random.PRNGKey(SEED), output_dir="./agn_demo_output")
     for p in ("log_fagn", "agn_tau", "log_fagn_bbb", "logmass"):
         s = np.asarray(result.samples[p]).ravel()

@@ -210,7 +210,7 @@ def main() -> int:
     # the samples of blackjax.nss (slice_kernel="stock"), bit for bit on Apple silicon and to
     # the last bits on x86.  docs/samplers.md.
     adapter = BlackJAXNestedSamplerAdapter(
-        priors=model.priors, num_live=150, num_inner_steps=max(8, n_dims * 2),
+        priors=model.priors, num_live=150, num_inner_steps=30,
         logZ_tol=-2.0, verbose=True,
     )
     likelihood = MultiObservationLikelihood(
