@@ -320,6 +320,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../mac_gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Apple GPU
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../quickstart/" class="md-nav__link">
         
   
@@ -1037,8 +1064,10 @@ stretched SFH forms the same mass. It is unit mass, and <code>logmass</code> the
 <code>logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)</code> arranges (below), with a fixed or
 a free redshift; a directly sampled <code>sfh</code> carries its own normalisation.</p>
 <h2 id="precision-float32-values-float64-where-float32-would-be-wrong">Precision: float32 values, float64 where float32 would be wrong<a class="headerlink" href="#precision-float32-values-float64-where-float32-would-be-wrong" title="Permanent link">&para;</a></h2>
-<p><code>jax_enable_x64</code> stays on (<code>import ceridwen</code> sets it): evidence estimates and gradients depend
-on it. Within that, every large array, one that holds a spectrum, a curve or a projection on
+<p><code>jax_enable_x64</code> is on wherever the device has float64 (<code>import ceridwen</code> sets it; do not set
+it yourself): evidence estimates and gradients depend on it. On an Apple GPU, which has no
+float64, <code>import ceridwen</code> runs the process in float32 instead (<a href="../mac_gpu/">Apple GPU</a>).
+Within that, every large array, one that holds a spectrum, a curve or a projection on
 the model grid or the observed pixels, is <strong>float32</strong>, so that a GPU with slow float64 (most
 consumer cards) spends its time in float32. Float64 is kept where float32 would give a wrong
 answer, and for small arrays where it costs nothing. Each float64 site carries a comment naming

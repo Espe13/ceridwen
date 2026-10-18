@@ -16,7 +16,7 @@
         <link rel="prev" href="..">
       
       
-        <link rel="next" href="../quickstart/">
+        <link rel="next" href="../mac_gpu/">
       
       
         
@@ -386,6 +386,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Updates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ssp-grids" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -422,6 +433,33 @@
   
 </nav>
       
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mac_gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Apple GPU
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -827,7 +865,7 @@
 <h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
 <p>CERIDWEN needs Python 3.11 or newer (<code>jax</code> &gt;= 0.9 and <code>blackjax</code> &gt;= 1.6 require it).</p>
 <h2 id="1-the-package">1. The package<a class="headerlink" href="#1-the-package" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>ceridwen<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.11<span class="w"> </span>-y<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>conda<span class="w"> </span>activate<span class="w"> </span>ceridwen
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>ceridwen<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.12<span class="w"> </span>-y<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>conda<span class="w"> </span>activate<span class="w"> </span>ceridwen
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pip<span class="w"> </span>install<span class="w"> </span>ceridwen
 </code></pre></div>
 <p>This installs JAX, the samplers, the filter curves and attenuation laws, posterior plotting
@@ -842,9 +880,15 @@ from <a href="https://docs.jax.dev/en/latest/installation.html">JAX's install pa
 cards (Blackwell) need CUDA &gt;= 12.8: <code>cuda13</code> always provides it, and a fresh <code>cuda12</code> install
 resolves CUDA 12.9. Do not install a CUDA extra on a machine without an NVIDIA GPU: JAX's CUDA
 plugin then prints a traceback at every import (it still falls back to the CPU).</p>
-<p>Every <code>fitSED</code> call prints the device it runs on:</p>
+<p><strong>Apple Silicon GPU</strong> (macOS 26, Python 3.12 or newer): the same <code>pip install ceridwen</code> also
+installs <a href="https://github.com/dfm/jax-graft">jax-graft</a>, and JAX uses the Apple GPU in float32
+(see <a href="../mac_gpu/">Apple GPU</a>: Apple GPUs have no float64, so <code>import ceridwen</code> switches the
+precision for the process and says so; <code>JAX_PLATFORMS=cpu</code> keeps float64 on the CPU). Older
+Macs and Python 3.11 get the CPU build.</p>
+<p>Every <code>fitSED</code> call prints the device and precision it runs with:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ceridwen.fitSED
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  Device      : GPU  (CudaDevice(id=0))
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>  Precision   : float64
 </code></pre></div>
 <p><strong>GPU memory.</strong> The forward model's large arrays are float32 (see
 <a href="../conventions/">Conventions</a>, "Precision"), so a consumer card with slow float64 does its
@@ -900,6 +944,16 @@ during a fit, so this step is a clone (3.4 GB), not a compile:</p>
 laws, float64, nested sampling, python-fsps, <code>$SPS_HOME</code> and the data files in it), with the
 fix for anything missing. The <code>python-fsps</code> line is a warning until you compile it (below),
 and that is expected.</p>
+<h2 id="updates">Updates<a class="headerlink" href="#updates" title="Permanent link">&para;</a></h2>
+<p><code>fitSED</code> and <code>python -m ceridwen.check</code> tell you when PyPI has a newer CERIDWEN than the one
+installed; upgrade with <code>pip install --upgrade ceridwen</code>. They ask PyPI at most once a day
+(the answer is cached in <code>~/.ceridwen/update_check.json</code>), wait at most two seconds and say
+nothing when there is no network. <code>CERIDWEN_NO_UPDATE_CHECK=1</code> switches the check off; it never
+runs on CI (<code>$CI</code> set). What changed is in the
+<a href="https://github.com/Espe13/ceridwen/blob/main/CHANGELOG.md">changelog</a>.</p>
+<p>To get an email for each new release, open the
+<a href="https://github.com/Espe13/ceridwen">GitHub page</a>, click <strong>Watch</strong>, then <strong>Custom</strong>, and tick
+<strong>Releases</strong> (a free GitHub account is needed).</p>
 <h2 id="ssp-grids">SSP grids<a class="headerlink" href="#ssp-grids" title="Permanent link">&para;</a></h2>
 <p>Fitting needs an SSP grid (an HDF5 file). The published grids are on Zenodo
 (<a href="https://doi.org/10.5281/zenodo.22937956">doi:10.5281/zenodo.22937956</a>) and registered by

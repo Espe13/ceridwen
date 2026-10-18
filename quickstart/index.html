@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/quickstart/">
       
       
-        <link rel="prev" href="../installation/">
+        <link rel="prev" href="../mac_gpu/">
       
       
         <link rel="next" href="../tutorial/">
@@ -301,6 +301,33 @@
     
   
     Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mac_gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Apple GPU
   
 
     
@@ -827,7 +854,7 @@ by a transform. <code>logzsol</code> is log10(Z/Z_sun) of the grid.</p>
 <a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>            <span class="s2">&quot;logmass&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">9.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">12.0</span><span class="p">),</span>
 <a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a>            <span class="s2">&quot;diffuse_tau_kc&quot;</span><span class="p">:</span> <span class="n">ClippedNormal</span><span class="p">(</span><span class="n">mean</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">low</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">4.0</span><span class="p">),</span>
 <a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a>            <span class="s2">&quot;diffuse_dust_index&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.4</span><span class="p">),</span>
-<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a>            <span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">:</span> <span class="n">StudentT</span><span class="p">(</span><span class="n">df</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">1.0</span><span class="p">),</span>
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a>            <span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">:</span> <span class="n">StudentT</span><span class="p">(</span><span class="n">df</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">mean</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mf">0.3</span><span class="p">),</span>
 <a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>        <span class="p">},</span>
 <a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a>        <span class="n">transforms</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;sfh&quot;</span><span class="p">:</span> <span class="n">logsfr_to_sfh</span><span class="p">},</span>
 <a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a>        <span class="n">free_param_init</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">5</span><span class="p">),</span> <span class="s2">&quot;logmass&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">10.0</span><span class="p">])},</span>
@@ -859,40 +886,64 @@ with a prior to fit it (see <a href="../conventions/">Conventions</a>).</p>
 <a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>                <span class="n">flux</span><span class="o">=</span><span class="n">sfx</span> <span class="o">+</span> <span class="n">sfx_unc</span> <span class="o">*</span> <span class="n">rng</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="n">sfx</span><span class="o">.</span><span class="n">shape</span><span class="p">))</span>
 <a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="n">model</span> <span class="o">=</span> <span class="n">build_model</span><span class="p">([</span><span class="n">phot</span><span class="p">,</span> <span class="n">spec</span><span class="p">])</span>
 </code></pre></div>
-<p><strong>4. Fit with nested sampling.</strong> These settings are sized for a laptop CPU: the fit took
-<strong>12 min</strong> (67 800 likelihood calls) on an 11-core Apple M3 Pro shared with other jobs. It prints its progress and writes <code>./my_fit/ceridwen_result.h5</code>. For production, raise <code>num_live</code> (fitSED's default
-is 500) and lower <code>logZ_tol</code>; for NUTS, see <a href="../samplers/">Samplers</a>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">fitSED</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">model</span><span class="p">,</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nested&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_live&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s2">&quot;num_delete&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span> <span class="s2">&quot;logZ_tol&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mf">2.0</span><span class="p">},</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;./my_fit&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="p">)</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;log Z = </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> +/- </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence_err</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<p>Look at the model before fitting it. <code>model.display()</code> draws it: each free parameter with its
+prior, the transform or stage of the forward model it enters, the observations, and the range
+of photometry and spectra the priors allow against the data. <code>model.latex()</code> returns a LaTeX
+table of every free, derived and fixed parameter with its prior or value, ready for a paper
+(it needs <code>\usepackage{booktabs,amsmath}</code>).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">display</span><span class="p">(</span><span class="n">return_fig</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>     <span class="c1"># in a notebook, model.display() alone shows it</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">fig</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">&quot;model.png&quot;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">150</span><span class="p">)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">latex</span><span class="p">())</span>
+</code></pre></div>
+<p>In a script, a bare <code>model.display()</code> opens a window and waits until you close it.</p>
+<p><strong>4. Fit with nested sampling.</strong> These settings are sized for a laptop. On an Apple Silicon
+Mac (macOS 26, Python 3.12) the fit runs on the GPU in float32 by default and took
+<strong>3.7 min</strong> (sampler 3.2 min, 117 600 likelihood calls) on an 11-core M3 Pro; on the
+CPU in float64 (<code>JAX_PLATFORMS=cpu</code>, or any other laptop) it took 8.4 min (sampler 7.6 min,
+122 400 calls). It uses 60 inner slice steps: with 30 (the <code>fitSED</code> default) the GPU's float32
+fit returns a logmass posterior about 30 % too narrow. It
+prints its progress and writes <code>./my_fit/ceridwen_result.h5</code>. For production, raise <code>num_live</code>
+(fitSED's default is 500) and lower <code>logZ_tol</code>; for NUTS, see <a href="../samplers/">Samplers</a>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">fitSED</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">model</span><span class="p">,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nested&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_live&quot;</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span> <span class="s2">&quot;num_delete&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span> <span class="s2">&quot;num_inner_steps&quot;</span><span class="p">:</span> <span class="mi">60</span><span class="p">,</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>                    <span class="s2">&quot;logZ_tol&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mf">2.0</span><span class="p">},</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;./my_fit&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="p">)</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;log Z = </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> +/- </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence_err</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>5. Inspect and post-process.</strong> <code>PostProcess</code> resamples the draws to equal weight, pushes
 them through the fitted model, and computes derived quantities and predictions.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">PostProcess</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">pp</span>  <span class="o">=</span> <span class="n">PostProcess</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">n_samples</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">out</span> <span class="o">=</span> <span class="n">pp</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="n">truth</span> <span class="o">=</span> <span class="p">{</span><span class="n">p</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">TRUTH</span><span class="p">[</span><span class="n">p</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;logzsol&quot;</span><span class="p">,</span> <span class="s2">&quot;logmass&quot;</span><span class="p">,</span> <span class="s2">&quot;diffuse_tau_kc&quot;</span><span class="p">,</span> <span class="s2">&quot;diffuse_dust_index&quot;</span><span class="p">)}</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">truth</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">lo</span><span class="p">,</span> <span class="n">med</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;theta&quot;</span><span class="p">][</span><span class="n">p</span><span class="p">],</span> <span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="mi">84</span><span class="p">])</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">p</span><span class="si">:</span><span class="s2">&gt;20</span><span class="si">}</span><span class="s2">: true </span><span class="si">{</span><span class="n">t</span><span class="si">:</span><span class="s2">+7.3f</span><span class="si">}</span><span class="s2">   fit </span><span class="si">{</span><span class="n">med</span><span class="si">:</span><span class="s2">+7.3f</span><span class="si">}</span><span class="s2">  (-</span><span class="si">{</span><span class="n">med</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">lo</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">/+</span><span class="si">{</span><span class="n">hi</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">med</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="nb">print</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;extras&quot;</span><span class="p">][</span><span class="s2">&quot;sfh&quot;</span><span class="p">][</span><span class="s2">&quot;sfr100&quot;</span><span class="p">],</span> <span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="mi">84</span><span class="p">]))</span>   <span class="c1"># SFR over 100 Myr [Msun/yr]</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="n">pp</span><span class="o">.</span><span class="n">figures</span><span class="p">(</span><span class="s2">&quot;./my_fit/figures&quot;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">&quot;mock galaxy&quot;</span><span class="p">,</span> <span class="n">truths</span><span class="o">=</span><span class="n">truth</span><span class="p">)</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="n">pp</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;./my_fit/post.npz&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">PostProcess</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">pp</span>  <span class="o">=</span> <span class="n">PostProcess</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">n_samples</span><span class="o">=</span><span class="mi">1000</span><span class="p">)</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">out</span> <span class="o">=</span> <span class="n">pp</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="n">truth</span> <span class="o">=</span> <span class="p">{</span><span class="n">p</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">TRUTH</span><span class="p">[</span><span class="n">p</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;logzsol&quot;</span><span class="p">,</span> <span class="s2">&quot;logmass&quot;</span><span class="p">,</span> <span class="s2">&quot;diffuse_tau_kc&quot;</span><span class="p">,</span> <span class="s2">&quot;diffuse_dust_index&quot;</span><span class="p">)}</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="k">for</span> <span class="n">p</span><span class="p">,</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">truth</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="n">lo</span><span class="p">,</span> <span class="n">med</span><span class="p">,</span> <span class="n">hi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;theta&quot;</span><span class="p">][</span><span class="n">p</span><span class="p">],</span> <span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="mi">84</span><span class="p">])</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">p</span><span class="si">:</span><span class="s2">&gt;20</span><span class="si">}</span><span class="s2">: true </span><span class="si">{</span><span class="n">t</span><span class="si">:</span><span class="s2">+7.3f</span><span class="si">}</span><span class="s2">   fit </span><span class="si">{</span><span class="n">med</span><span class="si">:</span><span class="s2">+7.3f</span><span class="si">}</span><span class="s2">  (-</span><span class="si">{</span><span class="n">med</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">lo</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">/+</span><span class="si">{</span><span class="n">hi</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">med</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="nb">print</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">&quot;extras&quot;</span><span class="p">][</span><span class="s2">&quot;sfh&quot;</span><span class="p">][</span><span class="s2">&quot;sfr100&quot;</span><span class="p">],</span> <span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="mi">84</span><span class="p">]))</span>   <span class="c1"># SFR over 100 Myr [Msun/yr]</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="n">pp</span><span class="o">.</span><span class="n">figures</span><span class="p">(</span><span class="s2">&quot;./my_fit/figures&quot;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">&quot;mock galaxy&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>           <span class="n">truths</span><span class="o">=</span><span class="p">{</span><span class="o">**</span><span class="n">truth</span><span class="p">,</span> <span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">TRUTH</span><span class="p">[</span><span class="s2">&quot;logsfr_ratios&quot;</span><span class="p">])})</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="n">pp</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;./my_fit/post.npz&quot;</span><span class="p">)</span>
 </code></pre></div>
 <p>The table compares the posterior median and 16-84% range with the truth. At these settings
 the recovered values can sit 2-3 sigma from the truth: with a five-ratio SFH, <code>logmass</code>
-trades against the SFH shape, and the MAP of this mock lies at logmass 10.44, not at 10.50
-(the data and the degeneracy, not the sampler). <code>figures</code> writes <code>summary.pdf</code> (SED with
+trades against the SFH shape. The truth's oldest bins hold extra mass that barely shows in the
+light, and a flat SFH at logmass 10.44 fits the data as well (within 1 in ln L, even without
+noise). The SFH prior favours the flat history, so the MAP of this mock lies at 10.44, not at
+10.50: the prior and the degeneracy, not the sampler or the noise (on noise-free data with
+flat priors the MAP is 10.498). With 100 live points the quoted ranges are too
+narrow. On the Apple GPU (float32) this seed gives logmass 10.43 (-0.03/+0.04) and seed 0
+gives 10.44 (-0.03/+0.03); on the CPU (float64) this seed gives 10.44 (-0.03/+0.04). Raise
+<code>num_live</code> before trusting an error bar. The five SFH ratios are mostly set by their prior:
+one or two of them can lie outside their 95 % range. <code>figures</code> writes <code>summary.pdf</code> (SED with
 residuals, SFH, marginals), <code>corner.pdf</code> and <code>diagnostics.pdf</code> (the sampler's diagnostics).
 <code>post.npz</code> holds every draw's predictions and is about 100 MB; <code>load_postprocess</code> reads it back.
 Everything <code>PostProcess</code> returns is described in

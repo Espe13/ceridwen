@@ -1,0 +1,1188 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="JAX-native, GPU-capable spectral energy distribution (SED) fitting">
+      
+      
+      
+        <link rel="canonical" href="https://www.amanda-stoffers.de/ceridwen/mac_gpu/">
+      
+      
+        <link rel="prev" href="../installation/">
+      
+      
+        <link rel="next" href="../quickstart/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Apple GPU - CERIDWEN</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#apple-gpu-float32-mode" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="CERIDWEN" class="md-header__button md-logo" aria-label="CERIDWEN" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CERIDWEN
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Apple GPU
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/Espe13/ceridwen" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Espe13/ceridwen
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="CERIDWEN" class="md-nav__button md-logo" aria-label="CERIDWEN" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CERIDWEN
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/Espe13/ceridwen" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    Espe13/ceridwen
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Apple GPU
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Apple GPU
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#install-and-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install and run
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-float32-mode-changes-inside-the-package" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What float32 mode changes inside the package
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-mode-guarantees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the mode guarantees
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#speed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Speed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: joint fit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../samplers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Samplers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postprocessing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-processing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../noise_calibration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Noise and calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gp_likelihood/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GP likelihood (correlated residuals)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../outlier_model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outlier mixture likelihood
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eline_marginalisation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Emission-line marginalisation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../afe/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    [α/Fe]
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agn/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AGN
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conventions & gotchas
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development and verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="apple-gpu-float32-mode">Apple GPU (float32 mode)<a class="headerlink" href="#apple-gpu-float32-mode" title="Permanent link">&para;</a></h1>
+<p>CERIDWEN runs on the GPU of an Apple Silicon Mac through
+<a href="https://github.com/dfm/jax-graft">jax-graft</a>, which registers JAX's <code>mtl</code> platform. Apple
+GPUs have no float64, so on that backend CERIDWEN runs in <strong>float32 mode</strong>. This page says
+what to install, what the mode changes, what it guarantees and what it refuses.</p>
+<h2 id="install-and-run">Install and run<a class="headerlink" href="#install-and-run" title="Permanent link">&para;</a></h2>
+<p><code>examples/apple_gpu_mock_fit.ipynb</code> is the whole story in one notebook: a mock galaxy
+(photometry and a spectrum), its figure, a nested-sampling fit on the GPU and the recovered
+parameters against the input, with the priors shown next to the posteriors; about three and
+a half minutes on an M3 Pro. Four more notebooks go through the observation types one at a time:
+<code>mock_fit_1_photometry.ipynb</code>, <code>mock_fit_2_photometry_lines.ipynb</code> (adds line fluxes and the
+gas parameters), <code>mock_fit_3_spectrum.ipynb</code> (a spectrum alone: a per-pixel resolving power, a
+sampled velocity dispersion, emission lines) and <code>mock_fit_4_spectrum_photometry.ipynb</code> (a
+spectrum whose flux scale is a sampled nuisance, anchored by the photometry).</p>
+<p><code>pip install ceridwen</code> installs jax-graft on an Apple Silicon Mac with macOS 26 and
+Python 3.12 or newer (the only platform jax-graft ships wheels for; the marker in
+<code>pyproject.toml</code> keeps older Macs and Python 3.11 on the CPU build). Nothing else is needed:
+jax-graft makes the GPU JAX's default backend, and <code>import ceridwen</code> sees that and switches
+the process to float32, with one warning of its own (JAX and tensorflow-probability add theirs, see "Known limits"):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>UserWarning: float32 mode: JAX&#39;s default backend is the Apple GPU (mtl), which has no float64.
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>Evidences, gradients and the sampler state are float32 (docs/mac_gpu.md); for a float64 fit
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>set JAX_PLATFORMS=cpu
+</code></pre></div>
+<p><code>python -m ceridwen.check</code> reports the two lines</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>  [ok  ] jax float64  -- off: float32 mode, chosen because the Apple GPU is JAX&#39;s default backend ...
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  [ok  ] jax backend  -- mtl (mtl:0): Apple GPU via jax-graft, float32
+</code></pre></div>
+<p>and every <code>fitSED</code> header prints <code>Device : MTL (mtl:0)</code> and
+<code>Precision : float32</code>. The result file records both: <code>config/precision</code> (<code>"float32"</code>) and
+<code>config/platform</code> (<code>"mtl"</code>).</p>
+<p>The environment switches:</p>
+<table>
+<thead>
+<tr>
+<th>Environment</th>
+<th>Precision</th>
+<th>Device</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>nothing set (jax-graft installed)</td>
+<td>float32</td>
+<td>Apple GPU</td>
+</tr>
+<tr>
+<td><code>JAX_PLATFORMS=cpu</code></td>
+<td>float64</td>
+<td>CPU, the same numbers as any other CPU</td>
+</tr>
+<tr>
+<td><code>CERIDWEN_X64=0</code> (any machine)</td>
+<td>float32</td>
+<td>whatever JAX's default device is</td>
+</tr>
+<tr>
+<td><code>CERIDWEN_X64=1</code> with the GPU as default</td>
+<td>refused at import</td>
+<td>set <code>JAX_PLATFORMS=cpu</code> instead</td>
+</tr>
+</tbody>
+</table>
+<p><code>CERIDWEN_X64=0</code> on a CPU or CUDA machine is the same float32 mode without the GPU: useful
+to reproduce a Mac result elsewhere, not a precision to choose when float64 is available.</p>
+<h2 id="what-float32-mode-changes-inside-the-package">What float32 mode changes inside the package<a class="headerlink" href="#what-float32-mode-changes-inside-the-package" title="Permanent link">&para;</a></h2>
+<p>The forward model, the likelihood and the samplers run unchanged in float32. Three things
+are done differently so that they survive it; all three are no-ops under float64, and the
+float64 compiled programs are byte-identical to 1.0.13 (T4: 21 445 arrays compared, none
+differ; the physical standard, <code>scripts/physical_check.py</code>: 1680 arrays, every output
+identical).</p>
+<p><strong>Data rescaling at the observation layer.</strong> A spectrum in cgs F_nu has sigma ~ 1e-31, whose
+square underflows float32 (smallest normal number 1.2e-38), so every kernel that forms
+sigma^2, 1/sigma^2 or A^T W A would be wrong. <code>ceridwen.likelihood.observation_data</code> multiplies
+each observation's data, uncertainties and calibration vector by one power of two that brings
+its median uncertainty to order unity (exact: a power of two changes no mantissa bit), the
+noise model's jitter parameter (data units) is shifted by ln(scale), and the kernels run in
+those units. Their ln L is the true ln L minus <code>ndof ln(scale)</code>, a constant of the
+observation; the sampler works in those units (adding ~1e6 inside a float32 kernel would
+quantise ln L to 0.1), and <code>run_sampler</code> / <code>map_fit</code> add the constant back, in float64 on the
+host, to the reported ln Z, ln L and MAP ln posterior. <code>likelihood.float32_rescaling</code> and
+<code>likelihood.loglike_offset</code> expose the numbers.</p>
+<p><strong>No literal float64 on the device.</strong> <code>ceridwen.precision.float_dtype()</code> is the working dtype;
+every device array whose dtype the package chooses goes through it. Host-side NumPy stays
+float64 everywhere: the SSP grid axes, Z_sun resolution, provenance and the result file.</p>
+<p><strong>Constants outside the float32 range.</strong> The ionising-photon table (<code>L_sun / h</code> = 5.8e59)
+is computed on the host in float64 and stored in the working dtype, and the 1e-70 floors
+of the metallicity and dust-emission kernels become the smallest normal float32.</p>
+<p>Refused in float32 mode, with the error saying so: <code>Spectrum(marginalize_elines=True)</code> (the
+line marginal forms A^T W A in flux units) and a noise model with a <em>fixed numeric</em> jitter
+(it cannot be rescaled with the data; sample it instead).</p>
+<h2 id="what-the-mode-guarantees">What the mode guarantees<a class="headerlink" href="#what-the-mode-guarantees" title="Permanent link">&para;</a></h2>
+<p><code>tests/test_float32_parity.py</code> runs the six golden configurations and a mock galaxy in
+physical units (SDSS photometry, a 600-pixel cgs spectrum with sigma ~ 1e-31, three line
+fluxes; nine free parameters) in float64, in float32 on the CPU and in float32 on the GPU, in
+separate processes. Measured on an M3 Pro (jax 0.11.2, jax-graft 0.0.5, 2026-10-15):</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>float32 vs float64</th>
+<th>Metal vs float32 CPU</th>
+<th>Metal run to run</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SSP weights <code>W</code></td>
+<td>3e-6 (step) / 5e-6 (linear) of the largest weight</td>
+<td>2e-7</td>
+<td>identical</td>
+</tr>
+<tr>
+<td>spectrum, continuum pixels</td>
+<td>5e-6 relative</td>
+<td>2e-7</td>
+<td>identical</td>
+</tr>
+<tr>
+<td>spectrum, pixels under a nebular line</td>
+<td>up to 4e-4 relative (4e-5 of the peak)</td>
+<td>2e-7</td>
+<td>identical</td>
+</tr>
+<tr>
+<td>photometry (maggies)</td>
+<td>2e-5 relative</td>
+<td>9e-7 (mock), 3e-5 (golden 15000-pixel integrals)</td>
+<td>identical</td>
+</tr>
+<tr>
+<td>line fluxes</td>
+<td>4e-6 relative</td>
+<td>2e-7</td>
+<td>identical</td>
+</tr>
+<tr>
+<td>ln posterior (true units)</td>
+<td>4e-4 and 0.015 on values of 4e4 and 2e4</td>
+<td>0.01</td>
+<td>identical</td>
+</tr>
+<tr>
+<td>gradient</td>
+<td>5e-5 of the largest component</td>
+<td></td>
+<td>up to 6e-4 relative (three runs: 1e-5, 8e-5, 6e-4)</td>
+</tr>
+</tbody>
+</table>
+<p>The line-pixel error comes from evaluating the profile argument <code>(lambda - lambda_0) /
+sigma</code> in float32: at 1e4 Angstrom a float32 resolves 1e-3 Angstrom, so the profile wings move
+by that fraction of a pixel. It is a property of the mode, not of the GPU (the CPU float32
+run shows the same numbers). The gradient varies run to run on the GPU because the transpose
+of the redshift interpolation is a scatter-add, which is atomic there; the forward model and
+ln L are byte-identical run to run.</p>
+<p>So: a float32 fit gives the same posterior as a float64 fit to well within the sampling
+error, and the same ln Z once the sampler is given twice the inner steps (see "Speed"
+below), but <strong>its numbers are not comparable bit for bit</strong> with a float64 fit, and two
+nested-sampling runs with the same <code>rng_key</code> are only identical on the CPU.</p>
+<h2 id="speed">Speed<a class="headerlink" href="#speed" title="Permanent link">&para;</a></h2>
+<p><code>scripts/bench_mac_metal.py</code> fits the parity mock with nested sampling in each mode and times
+the sampler's value-only ln L at its batch widths:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>python<span class="w"> </span>tests/baselines/_capture_f32.py<span class="w"> </span>--no-goldens<span class="w"> </span>ref.npz
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">JAX_PLATFORMS</span><span class="o">=</span>cpu<span class="w">                </span>python<span class="w"> </span>scripts/bench_mac_metal.py<span class="w"> </span>--mock-data<span class="w"> </span>ref.npz<span class="w"> </span>--out<span class="w"> </span>bench/f64_cpu
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nv">JAX_PLATFORMS</span><span class="o">=</span>cpu<span class="w"> </span><span class="nv">CERIDWEN_X64</span><span class="o">=</span><span class="m">0</span><span class="w"> </span>python<span class="w"> </span>scripts/bench_mac_metal.py<span class="w"> </span>--mock-data<span class="w"> </span>ref.npz<span class="w"> </span>--out<span class="w"> </span>bench/f32_cpu
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">                                 </span>python<span class="w"> </span>scripts/bench_mac_metal.py<span class="w"> </span>--mock-data<span class="w"> </span>ref.npz<span class="w"> </span>--out<span class="w"> </span>bench/f32_mtl
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>python<span class="w"> </span>scripts/bench_mac_metal.py<span class="w"> </span>--compare<span class="w"> </span>bench/*/summary.json
+</code></pre></div>
+<p>Measured on the M3 Pro (jax 0.11.2, jax-graft 0.0.5, 2026-10-15), nine free parameters,
+num_live 200, num_delete 40; <code>us/point</code> is the value-only ln L under <code>vmap</code> at the sampler's
+two batch widths (median of 200 calls, compile excluded):</p>
+<table>
+<thead>
+<tr>
+<th>run</th>
+<th>inner steps</th>
+<th>ln Z</th>
+<th>calls</th>
+<th>wall</th>
+<th>us/point W=40</th>
+<th>us/point W=200</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU float64, seed 0</td>
+<td>30</td>
+<td>40933.16 +- 0.36</td>
+<td>168 000</td>
+<td>1731 s</td>
+<td>1550</td>
+<td>1335</td>
+</tr>
+<tr>
+<td>CPU float64, seed 1</td>
+<td>30</td>
+<td>40933.21 +- 0.32</td>
+<td>169 200</td>
+<td>1879 s</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>CPU float32, seed 0</td>
+<td>30</td>
+<td>40930.96 +- 0.40</td>
+<td>180 000</td>
+<td>1017 s</td>
+<td>765</td>
+<td>750</td>
+</tr>
+<tr>
+<td>Metal float32, seed 0</td>
+<td>30</td>
+<td>40931.88 +- 0.39</td>
+<td>176 400</td>
+<td>421 s</td>
+<td>174</td>
+<td>131</td>
+</tr>
+<tr>
+<td>Metal float32, seed 1</td>
+<td>30</td>
+<td>40932.04 +- 0.46</td>
+<td>174 000</td>
+<td>418 s</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Metal float32, seed 0</td>
+<td>60</td>
+<td>40933.77 +- 0.38</td>
+<td>328 800</td>
+<td>908 s</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>The GPU evaluates the likelihood 9 to 10 times faster than the CPU in float64 and 4 to 6
+times faster than the CPU in float32, and the whole fit runs 4 times faster than the float64
+CPU fit (the sampler's own loop runs on the CPU side and is not sped up).</p>
+<p><strong>The evidence needs more inner steps in float32.</strong> The two float64 seeds agree in ln Z to
+0.05. Every float32 fit with the default 30 inner slice steps comes out 1.1 to 2.2 nats
+lower, 3 to 6 times the quoted error, on the CPU as on the GPU; with 60 inner steps the GPU
+fit returns 40933.77 +- 0.38, within the error of float64. The slice sampler mixes less well
+per step in float32 (cause not identified; the peak ln L agrees to 0.3 in every run), and
+nested sampling with incomplete mixing underestimates Z. Posterior means and widths of all
+six runs scatter alike: between the two float64 seeds the means move by up to 1.8 standard
+deviations and the widths by factors 0.3 to 1.7 (200 live points), and the float32 runs sit
+inside that scatter. Posterior constraints need no change.</p>
+<blockquote>
+<p><strong>Do not compare evidences between runs of different precision or different
+<code>num_inner_steps</code>.</strong> A float32 ln Z sits 1 to 2 nats below a float64 ln Z of the same data
+at the same settings, and twice the inner steps moves it by the same amount. Bayes factors
+are only meaningful between fits made with the same precision, the same <code>num_live</code>,
+<code>num_delete</code> and <code>num_inner_steps</code> (<code>fitSED</code> records all of them in the result file:
+<code>config/precision</code>, <code>config/platform</code> and the sampler settings). Nothing is changed by
+default: the inner-steps default stays 30 in both precisions.</p>
+</blockquote>
+<p><code>scripts/mac_metal_probe.py</code> times the 34 JAX operations CERIDWEN uses one by one on the CPU
+and the GPU and checks their values agree (all 34 do; the table is in its output).</p>
+<h2 id="known-limits">Known limits<a class="headerlink" href="#known-limits" title="Permanent link">&para;</a></h2>
+<ul>
+<li>jax-graft is at version 0.0.5 ("expect some sharp edges", its README). An operation it
+  cannot compile fails at compile time with <code>UNIMPLEMENTED: Metal: ...</code>; report it with the
+  <code>fitSED</code> header and <code>python -m ceridwen.check</code>.</li>
+<li>tensorflow-probability's samplers ask for float64 internally and are truncated to float32,
+  with <code>UserWarning: Explicitly requested dtype float64 requested in ... is not available</code>
+  the first time a prior is drawn (several lines, from tfp's <code>random_generators.py</code>,
+  <code>numpy_array.py</code> and <code>ops.py</code>, and one from <code>jax/_src/numpy/array_methods.py</code>). JAX itself
+  prints <code>Platform 'mtl' is experimental ...</code>. All of these are harmless. A large model can
+  also make XLA print <code>E... slow_operation_alarm.cc:73] Constant folding an instruction is
+  taking &gt; 1s</code>: a compile-time message, not an error.</li>
+<li>The nested sampler's progress bar shows ln Z in the rescaled units the sampler works in
+  (above, "Data rescaling"), so it can differ from the final <code>log Z</code> by the constant
+  <code>ndof ln(scale)</code>, thousands of nats for a spectrum. The final value and the result file are
+  in true units.</li>
+<li>The nested sampler's inner loop is dispatched step by step; at small batch widths the GPU is
+  slower than the CPU (see the benchmark), so the GPU pays off for wide batches and
+  gradient-based samplers.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

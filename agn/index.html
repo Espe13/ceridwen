@@ -320,6 +320,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../mac_gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Apple GPU
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../quickstart/" class="md-nav__link">
         
   
@@ -946,8 +973,8 @@ reproduces CIGALE. Without <code>agn=</code> nothing changes: every existing pre
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">CSPBasis</span><span class="p">,</span> <span class="n">Cosmology</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.agn</span><span class="w"> </span><span class="kn">import</span> <span class="n">AGNConfig</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="n">lookback_time</span><span class="o">=</span><span class="n">lb</span><span class="p">,</span> <span class="n">zh_const</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_neb</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_dust_emission</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>               <span class="n">cosmo</span><span class="o">=</span><span class="n">Cosmology</span><span class="o">.</span><span class="n">planck18</span><span class="p">(),</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="n">lookback_time</span><span class="o">=</span><span class="n">lb</span><span class="p">,</span> <span class="n">zh_const</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_neb</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>               <span class="n">add_dust_emission</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">cosmo</span><span class="o">=</span><span class="n">Cosmology</span><span class="o">.</span><span class="n">planck18</span><span class="p">(),</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>               <span class="n">agn</span><span class="o">=</span><span class="n">AGNConfig</span><span class="p">())</span>                       <span class="c1"># corrected mode, torus + disc + lines</span>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">agn</span><span class="o">=</span><span class="n">AGNConfig</span><span class="p">(</span><span class="n">agn_mode</span><span class="o">=</span><span class="s2">&quot;fsps&quot;</span><span class="p">))</span>         <span class="c1"># FSPS add_agn_dust</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">agn</span><span class="o">=</span><span class="n">AGNConfig</span><span class="p">(</span><span class="n">agn_mode</span><span class="o">=</span><span class="s2">&quot;prospector&quot;</span><span class="p">,</span> <span class="n">dust4_type</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
@@ -1006,7 +1033,26 @@ only), <code>agn_energy_balance</code> (corrected mode; <code>None</code> = on w
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>          <span class="s2">&quot;agn_eline_sigma&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">50.0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">500.0</span><span class="p">)}</span>
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">transforms</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;fagn&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="mf">10.0</span> <span class="o">**</span> <span class="n">th</span><span class="p">[</span><span class="s2">&quot;log_fagn&quot;</span><span class="p">],</span>
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>              <span class="s2">&quot;fagn_bbb&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="mf">10.0</span> <span class="o">**</span> <span class="n">th</span><span class="p">[</span><span class="s2">&quot;log_fagn_bbb&quot;</span><span class="p">]}</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="n">free_param_init</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;log_fagn&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">1.0</span><span class="p">]),</span> <span class="s2">&quot;log_fagn_bbb&quot;</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">1.0</span><span class="p">])}</span>
 </code></pre></div>
+<p><code>log_fagn</code> and <code>log_fagn_bbb</code> are new names, so they also go into <code>free_param_init</code>
+(<code>SedModel(..., priors=priors, transforms=transforms, free_param_init=free_param_init)</code>);
+without it <code>SedModel</code> refuses their priors. With <code>add_neb=True</code> and <code>add_dust_emission=True</code>
+the model also samples <code>gas_logz</code>, <code>gas_logu</code>, <code>duste_qpah</code>, <code>duste_umin</code>, <code>duste_gamma</code>,
+the birth-cloud dust <code>tau_pow</code> and <code>alpha_pow</code> (and, with the AGN lines on,
+<code>agn_eline_sigma</code>): give each a prior or fix it with a constant transform, because nested
+sampling refuses a free parameter without a prior. Dust emission needs both dust screens:
+<code>add_dust=True</code> (the birth clouds) and <code>add_diffuse_dust=True</code> (both are on by default).
+<code>examples/agn_demo.py --fit</code> is a complete fit.</p>
+<p><strong>What photometry recovers.</strong> With dust emission and energy balance on, the DL07 re-emission
+of the stellar dust competes with the torus in the mid-infrared: <code>log_fagn</code> is anti-correlated
+with the diffuse optical depth, and <code>logmass</code> trades against the SFH shape. In
+<code>agn_demo.py --fit</code> (UV-to-24 µm photometry at S/N 20, Apple GPU) <code>log_fagn</code> and <code>logmass</code>
+came out within their 16-84 % ranges of the truth, and <code>agn_tau</code>'s range (21 to 76) sits just
+above its truth of 20. With the earlier SFH prior <code>StudentT(scale=1.0)</code>, a newcomer mock gave
+<code>log_fagn</code> and <code>logmass</code> 0.25 and 0.3 dex low (outside the 95 % range), on both the GPU and
+the CPU, while the maximum-likelihood sample sat at the truth. The disc (<code>log_fagn_bbb</code>) is weakly constrained by broad bands. Check the corner plot
+before quoting an AGN fraction from photometry alone.</p>
 <h2 id="fitting-the-agn-line-width">Fitting the AGN line width<a class="headerlink" href="#fitting-the-agn-line-width" title="Permanent link">&para;</a></h2>
 <p><code>agn_eline_sigma</code> is the Gaussian dispersion [km/s] of the 23 AGN narrow lines. In the
 corrected mode they are painted with width sqrt(agn_eline_sigma^2 + sigma_inst^2), the
