@@ -54,7 +54,12 @@ default backend. Nothing to configure: `import ceridwen` sees the GPU, switches 
 (Apple GPUs have no float64) and says so once; `fitSED` prints `Device : MTL` and
 `Precision : float32`. Evidences, gradients and samples are then float32, so they are not
 comparable bit for bit with a float64 fit; for a float64 fit on the CPU set
-`JAX_PLATFORMS=cpu`. Older macOS versions and Python 3.11 get the CPU build. What float32
+`JAX_PLATFORMS=cpu`. Older macOS versions and Python 3.11 get the CPU build. The Python must
+be native: `python -c "import platform; print(platform.machine())"` prints `arm64`. An Intel
+(x86_64) conda, such as an old Anaconda install, gives an x86 Python, for which there is no
+jax >= 0.9, and pip stops with "No matching distribution found for jaxlib>=0.9.0"; install
+[Miniforge](https://github.com/conda-forge/miniforge) for arm64 instead. Intel Macs are not
+supported for the same reason. What float32
 mode guarantees, and what it refuses, is in
 [Apple GPU](https://www.amanda-stoffers.de/ceridwen/mac_gpu/) (`docs/mac_gpu.md`).
 `examples/apple_gpu_mock_fit.ipynb` builds a mock galaxy, fits it on the GPU and shows the

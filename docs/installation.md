@@ -30,7 +30,8 @@ plugin then prints a traceback at every import (it still falls back to the CPU).
 installs [jax-graft](https://github.com/dfm/jax-graft), and JAX uses the Apple GPU in float32
 (see [Apple GPU](mac_gpu.md): Apple GPUs have no float64, so `import ceridwen` switches the
 precision for the process and says so; `JAX_PLATFORMS=cpu` keeps float64 on the CPU). Older
-Macs and Python 3.11 get the CPU build.
+Macs and Python 3.11 get the CPU build. The Python must be native arm64, not an Intel conda
+running under Rosetta ([Troubleshooting](troubleshooting.md)).
 
 Every `fitSED` call prints the device and precision it runs with:
 

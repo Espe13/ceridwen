@@ -8,6 +8,18 @@ problem with its fix:
 python -m ceridwen.check
 ```
 
+**pip says "No matching distribution found for jaxlib>=0.9.0" on a Mac.** The Python is an
+Intel (x86_64) build: jax publishes no Intel-Mac wheels after 0.4.38, and CERIDWEN needs
+jax >= 0.9. On Apple Silicon this happens when conda itself is an Intel install, such as an
+old Anaconda, running under Rosetta. Check with
+
+```bash
+python -c "import platform; print(platform.machine())"     # must print arm64
+```
+
+If it prints `x86_64`, install [Miniforge](https://github.com/conda-forge/miniforge) for
+arm64 and create the environment with its `conda`. Intel Macs cannot run CERIDWEN.
+
 **`$SPS_HOME` is unset or incomplete.** `CSPBasis(add_neb=True)` or
 `add_dust_emission=True` raises a `ValueError` when neither `sps_home=` nor `$SPS_HOME` is
 given. Clone FSPS and set the variable in your shell startup file
