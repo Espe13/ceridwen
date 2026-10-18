@@ -1,4 +1,4 @@
-## 1.0.13 (2026-10-15)
+## 1.0.13 (2026-10-18)
 
 ### Apple GPU: float32 mode
 - `pip install ceridwen` on an Apple Silicon Mac with macOS 26 and Python >= 3.12 also installs
