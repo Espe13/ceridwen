@@ -754,6 +754,14 @@ bundled filter curves and attenuation laws, float64, nested sampling and <code>$
 problem with its fix:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>python<span class="w"> </span>-m<span class="w"> </span>ceridwen.check
 </code></pre></div>
+<p><strong>pip says "No matching distribution found for jaxlib&gt;=0.9.0" on a Mac.</strong> The Python is an
+Intel (x86_64) build: jax publishes no Intel-Mac wheels after 0.4.38, and CERIDWEN needs
+jax &gt;= 0.9. On Apple Silicon this happens when conda itself is an Intel install, such as an
+old Anaconda, running under Rosetta. Check with</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import platform; print(platform.machine())&quot;</span><span class="w">     </span><span class="c1"># must print arm64</span>
+</code></pre></div>
+<p>If it prints <code>x86_64</code>, install <a href="https://github.com/conda-forge/miniforge">Miniforge</a> for
+arm64 and create the environment with its <code>conda</code>. Intel Macs cannot run CERIDWEN.</p>
 <p><strong><code>$SPS_HOME</code> is unset or incomplete.</strong> <code>CSPBasis(add_neb=True)</code> or
 <code>add_dust_emission=True</code> raises a <code>ValueError</code> when neither <code>sps_home=</code> nor <code>$SPS_HOME</code> is
 given. Clone FSPS and set the variable in your shell startup file
@@ -774,7 +782,7 @@ there is no progress output, and Ctrl-C does not stop them; use <code>kill</code
 hours for a typical fit; use nested sampling there, or a GPU (<a href="../samplers/">Samplers</a>).</p>
 <p><strong>A test skips.</strong> A grid-dependent test skips when it finds no SSP grid; a skip is not a pass.
 Point the tests at the published BPASS grid:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">CERIDWEN_TEST_SSP</span><span class="o">=</span><span class="k">$(</span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;from ceridwen.ssps import fetch_grid; print(fetch_grid(&#39;mist_bpass_v2&#39;))&quot;</span><span class="k">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">CERIDWEN_TEST_SSP</span><span class="o">=</span><span class="k">$(</span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;from ceridwen.ssps import fetch_grid; print(fetch_grid(&#39;mist_bpass_v2&#39;))&quot;</span><span class="k">)</span>
 </code></pre></div>
 <p><strong>A number looks plausible but wrong.</strong> The common causes are a metallicity in the wrong
 units (<code>logzsol</code> is log10(Z/Z_sun) of the grid), a lookback-time grid in the wrong order
