@@ -108,8 +108,9 @@ def _check(f, names, lo, hi):
     for k, x in enumerate(pts):
         v, g = vg(jnp.asarray(x))
         # batched float32 einsums (and the float32 dust curve) reduce in a different order:
-        # equal to float32 precision, not bytes (default powerlaw/kriek_conroy: up to 6.8e-8)
-        np.testing.assert_allclose(np.asarray(vb[k]), float(v), rtol=1e-6)
+        # equal to float32 precision, not bytes (default powerlaw/kriek_conroy: up to 6.8e-8;
+        # noll + gordon03_smcbar on jax 0.11.2 (arm64): 1.2e-6, i.e. 0.002 in ln p)
+        np.testing.assert_allclose(np.asarray(vb[k]), float(v), rtol=1e-5)
         np.testing.assert_allclose(np.asarray(gb[k]), np.asarray(g), rtol=1e-5,
                                    atol=1e-7 * float(np.max(np.abs(np.asarray(g)))))
     print(f"largest |AD - FD| / |grad| over {names}: {worst:.2e}")

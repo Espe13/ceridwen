@@ -401,7 +401,8 @@ def test_free_z_projector_matches_fixed_z(wm, wo):
         assert np.max(np.abs(a - b)) < 1e-4, z
         la = np.asarray(free.lines(F, jnp.asarray(80.0), 1.0 + z))
         lb = np.asarray(fixed.lines(F, jnp.asarray(80.0)))
-        assert np.max(np.abs(la - lb)) < 1e-8 * lb.max(), z
+        # summation order differs between jax versions: 4.9e-8 of the peak on jax 0.11.2 (arm64)
+        assert np.max(np.abs(la - lb)) < 1e-6 * lb.max(), z
     # the free-z window keeps every line that enters the observed range for some z
     assert set(free.line_idx.tolist()) >= set(
         SpectralProjector.build(kin, inst, wm, wo, 0.35, line_wave_rest=LINES_REST).line_idx.tolist())
