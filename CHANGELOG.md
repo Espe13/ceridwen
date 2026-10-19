@@ -1,3 +1,12 @@
+## Unreleased
+
+- README quick start and `examples/quickstart.py`: `logZ_tol=-5`, the library default, instead
+  of the early stop at -2 (chosen when the quick start ran on a CPU). Same posterior and ln Z
+  (README mock: logmass 10.43, ln Z within 0.002), 16 % more likelihood calls; the README
+  gives the run time as around 5 min.
+- Install docs: an Apple Silicon Mac needs a native arm64 Python; an Intel conda gives an x86
+  Python with no jax >= 0.9 (README, installation, troubleshooting).
+
 ## 1.0.13 (2026-10-18)
 
 ### Apple GPU: float32 mode

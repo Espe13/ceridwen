@@ -105,12 +105,11 @@ def step0_load_or_build_grid() -> SSPData:
 DEMO_NOTICE = """
 ======================================================================
  DEMO SETTINGS -- THIS IS NOT A CONVERGED FIT.
- The sampler runs with deliberately small settings (num_live=150,
- logZ_tol=-2) so the demo finishes in minutes on a laptop CPU.  It checks
- that the installation works; the posteriors are wider and noisier than a
- real fit's.  For science use num_live >= 500, num_inner_steps >= 5 x the
- number of parameters and the default logZ_tol (-5): much longer on a CPU,
- fast on a GPU.
+ The sampler runs with deliberately few live points (num_live=150) so
+ the demo finishes in minutes.  It checks that the installation works;
+ the posteriors are wider and noisier than a real fit's.  For science use
+ num_live >= 500 and num_inner_steps >= 5 x the number of parameters:
+ much longer on a CPU, fast on a GPU.
 ======================================================================
 """
 
@@ -202,16 +201,15 @@ def main() -> int:
     #   * num_inner_steps -- dominates the one-time JIT *compile* time of the
     #     step kernel (it is the unrolled inner MCMC chain) AND per-step cost.
     #   * num_live -- runtime<->quality (more = smoother contours, more steps).
-    # For publication use num_live >= 500, num_inner_steps >= n_dims*5, and the
-    # library-default logZ_tol (-5.0, ~0.7% of the evidence left in the live
-    # set at termination); expect much longer on CPU.  The relaxed -2.0 below
-    # is a demo-runtime compromise only.
+    # For publication use num_live >= 500 and num_inner_steps >= n_dims*5; expect much
+    # longer on CPU.  logZ_tol is the library default (-5.0, ~0.7% of the evidence left
+    # in the live set at termination).
     # The inner slice kernel is slice_kernel="lanes", the default and the fastest; it gives
     # the samples of blackjax.nss (slice_kernel="stock"), bit for bit on Apple silicon and to
     # the last bits on x86.  docs/samplers.md.
     adapter = BlackJAXNestedSamplerAdapter(
         priors=model.priors, num_live=150, num_inner_steps=30,
-        logZ_tol=-2.0, verbose=True,
+        logZ_tol=-5.0, verbose=True,
     )
     likelihood = MultiObservationLikelihood(
         keys=("phot",), likelihoods=(DiagonalGaussianLikelihood(),)
