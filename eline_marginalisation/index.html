@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -923,9 +923,9 @@ away.</p>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                <span class="n">marginalize_elines</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>               <span class="c1"># flat prior on every covered line</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">model</span> <span class="o">=</span> <span class="n">SedModel</span><span class="p">(</span><span class="n">csp</span><span class="p">,</span> <span class="p">[</span><span class="n">spec</span><span class="p">,</span> <span class="n">phot</span><span class="p">],</span> <span class="n">priors</span><span class="o">=</span><span class="n">priors</span><span class="p">,</span> <span class="n">zred</span><span class="o">=</span><span class="mf">3.2</span><span class="p">,</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                 <span class="n">transforms</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;sfh&quot;</span><span class="p">:</span> <span class="n">sfh_transform</span><span class="p">,</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                             <span class="s2">&quot;gas_logu&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">2.5</span><span class="p">]),</span>   <span class="c1"># nebular model fixed</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                             <span class="s2">&quot;gas_logz&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">0.3</span><span class="p">])},</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                 <span class="n">transforms</span><span class="o">=</span><span class="p">{</span><span class="s2">"sfh"</span><span class="p">:</span> <span class="n">sfh_transform</span><span class="p">,</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                             <span class="s2">"gas_logu"</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">2.5</span><span class="p">]),</span>   <span class="c1"># nebular model fixed</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                             <span class="s2">"gas_logz"</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">0.3</span><span class="p">])},</span>
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>                 <span class="n">kinematics</span><span class="o">=</span><span class="n">Kinematics</span><span class="p">(</span><span class="n">sigma_gal</span><span class="o">=</span><span class="mf">150.0</span><span class="p">,</span> <span class="n">sigma_gas</span><span class="o">=</span><span class="mf">80.0</span><span class="p">))</span>
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="nb">print</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>                                 <span class="c1"># lists the marginalised lines</span>
 </code></pre></div>
@@ -1167,7 +1167,7 @@ posterior, where masking would simply lose the absorption.</p>
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>

@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -904,12 +904,12 @@ Bayesian evidence (log Z) for model comparison. Every free parameter needs a pro
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">model</span><span class="p">,</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nested&quot;</span><span class="p">,</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_live&quot;</span><span class="p">:</span> <span class="mi">400</span><span class="p">,</span> <span class="s2">&quot;num_delete&quot;</span><span class="p">:</span> <span class="mi">80</span><span class="p">,</span> <span class="s2">&quot;logZ_tol&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mf">5.0</span><span class="p">},</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">"nested"</span><span class="p">,</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"num_live"</span><span class="p">:</span> <span class="mi">400</span><span class="p">,</span> <span class="s2">"num_delete"</span><span class="p">:</span> <span class="mi">80</span><span class="p">,</span> <span class="s2">"logZ_tol"</span><span class="p">:</span> <span class="o">-</span><span class="mf">5.0</span><span class="p">},</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;./my_fit&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">"./my_fit"</span><span class="p">,</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">)</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;log Z = </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> +/- </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence_err</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"log Z = </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> +/- </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence_err</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </code></pre></div>
 <p>The settings, passed in <code>sampler_kwargs</code>:</p>
 <ul>
@@ -954,10 +954,10 @@ the saved live and dead points and reproduces the uninterrupted run. It refuses 
 whose settings, parameter shapes or live-point log-likelihoods (to a relative 1e-6) do not
 match the model. <code>slice_kernel</code> may differ between the killed run and the resumed one: the
 kernels make the same moves with the same random numbers.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nested&quot;</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;./my_fit&quot;</span><span class="p">,</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sampler</span><span class="o">=</span><span class="s2">"nested"</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="s2">"./my_fit"</span><span class="p">,</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>                <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>                <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;checkpoint_dir&quot;</span><span class="p">:</span> <span class="s2">&quot;./ckpt&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>                                <span class="s2">&quot;resume_from&quot;</span><span class="p">:</span> <span class="s2">&quot;./ckpt/ns_checkpoint_12345.pkl&quot;</span><span class="p">})</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>                <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"checkpoint_dir"</span><span class="p">:</span> <span class="s2">"./ckpt"</span><span class="p">,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>                                <span class="s2">"resume_from"</span><span class="p">:</span> <span class="s2">"./ckpt/ns_checkpoint_12345.pkl"</span><span class="p">})</span>
 </code></pre></div>
 <h2 id="nuts">NUTS<a class="headerlink" href="#nuts" title="Permanent link">&para;</a></h2>
 <p>The No-U-Turn sampler uses the gradient of the log-posterior, which the JAX forward model
@@ -966,10 +966,10 @@ warmup steps with a dense mass matrix, target acceptance 0.95; bounded priors ar
 an unconstrained space automatically.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">model</span><span class="p">,</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nuts&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_chains&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span> <span class="s2">&quot;num_samples&quot;</span><span class="p">:</span> <span class="mi">2000</span><span class="p">},</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">"nuts"</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"num_chains"</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span> <span class="s2">"num_samples"</span><span class="p">:</span> <span class="mi">2000</span><span class="p">},</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;./my_fit&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">"./my_fit"</span><span class="p">,</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="p">)</span>
 </code></pre></div>
 <p>Warmup and sampling are each one compiled loop, so NUTS prints nothing while it runs, and
@@ -981,19 +981,19 @@ inverse autoregressive flow (NeuTra). With VI the warmup defaults to 200 steps w
 diagonal mass matrix.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">model</span><span class="p">,</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nuts&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">vi</span><span class="o">=</span><span class="s2">&quot;tril&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;num_chains&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span> <span class="s2">&quot;num_samples&quot;</span><span class="p">:</span> <span class="mi">2000</span><span class="p">},</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">"nuts"</span><span class="p">,</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">vi</span><span class="o">=</span><span class="s2">"tril"</span><span class="p">,</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"num_chains"</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span> <span class="s2">"num_samples"</span><span class="p">:</span> <span class="mi">2000</span><span class="p">},</span>
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;./my_fit&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">"./my_fit"</span><span class="p">,</span>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="p">)</span>
 <a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
 <a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="c1"># VI convergence: -ELBO should drop and then plateau. It can be negative (the likelihood is</span>
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="c1"># normalised), so the axis is linear.</span>
 <a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">();</span> <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">raw</span><span class="p">[</span><span class="s2">&quot;vi_losses&quot;</span><span class="p">])</span>
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;VI iteration&quot;</span><span class="p">);</span> <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;$-\mathrm</span><span class="si">{ELBO}</span><span class="s2">$&quot;</span><span class="p">)</span>
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">&quot;vi_losses.png&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">();</span> <span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">raw</span><span class="p">[</span><span class="s2">"vi_losses"</span><span class="p">])</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">"VI iteration"</span><span class="p">);</span> <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">"$-\mathrm</span><span class="si">{ELBO}</span><span class="s2">$"</span><span class="p">)</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">"vi_losses.png"</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="starting-at-the-map">Starting at the MAP<a class="headerlink" href="#starting-at-the-map" title="Permanent link">&para;</a></h2>
 <p><code>fitSED(..., optimize=True)</code> first maximises the same log-posterior with L-BFGS
@@ -1004,8 +1004,8 @@ its own returns a <code>MAPResult</code> whose <code>.theta</code> can be passed
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.optimize</span><span class="w"> </span><span class="kn">import</span> <span class="n">map_fit</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">best</span> <span class="o">=</span> <span class="n">map_fit</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">n_starts</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sampler</span><span class="o">=</span><span class="s2">&quot;nuts&quot;</span><span class="p">,</span> <span class="n">optimize</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>                <span class="n">optimize_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;n_starts&quot;</span><span class="p">:</span> <span class="mi">16</span><span class="p">},</span> <span class="n">output_dir</span><span class="o">=</span><span class="s2">&quot;./my_fit&quot;</span><span class="p">)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sampler</span><span class="o">=</span><span class="s2">"nuts"</span><span class="p">,</span> <span class="n">optimize</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>                <span class="n">optimize_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"n_starts"</span><span class="p">:</span> <span class="mi">16</span><span class="p">},</span> <span class="n">output_dir</span><span class="o">=</span><span class="s2">"./my_fit"</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="nuts-on-a-cpu-measured-times">NUTS on a CPU: measured times<a class="headerlink" href="#nuts-on-a-cpu-measured-times" title="Permanent link">&para;</a></h2>
 <p>Measured on shared 11-core laptop CPUs with the Quick start model (a
@@ -1092,7 +1092,7 @@ other jobs, so these times are upper limits, but they show the order of magnitud
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>

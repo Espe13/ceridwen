@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -872,8 +872,8 @@
 and the test runner, and runs on the CPU on any platform (a laptop is fine; importing prints
 nothing).</p>
 <p><strong>NVIDIA GPU</strong> (Linux, or Windows through WSL2): install the CUDA build instead,</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;ceridwen[cuda12]&quot;</span><span class="w">      </span><span class="c1"># NVIDIA driver &gt;= 525</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;ceridwen[cuda13]&quot;</span><span class="w">      </span><span class="c1"># NVIDIA driver &gt;= 580</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"ceridwen[cuda12]"</span><span class="w">      </span><span class="c1"># NVIDIA driver &gt;= 525</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"ceridwen[cuda13]"</span><span class="w">      </span><span class="c1"># NVIDIA driver &gt;= 580</span>
 </code></pre></div>
 <p>The CUDA libraries come as pip wheels; the driver is the only system requirement (minimums
 from <a href="https://docs.jax.dev/en/latest/installation.html">JAX's install page</a>). RTX 50-series
@@ -930,12 +930,12 @@ for a batch of 100 and 4.3 GB for 500 (0.94 and 4.8 GB with dust emission).</p>
 (<code>dust/dustem/</code>) and the FSPS emission-line list (<code>data/emlines_info.dat</code>) from the
 <a href="https://github.com/cconroy20/fsps">FSPS</a> data files at <code>$SPS_HOME</code>. FSPS itself is not run
 during a fit, so this step is a clone (3.4 GB), not a compile:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SPS_HOME</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$HOME</span><span class="s2">/fsps&quot;</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>clone<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/cconroy20/fsps.git<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SPS_HOME</span><span class="s2">&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SPS_HOME</span><span class="o">=</span><span class="s2">"</span><span class="nv">$HOME</span><span class="s2">/fsps"</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>clone<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/cconroy20/fsps.git<span class="w"> </span><span class="s2">"</span><span class="nv">$SPS_HOME</span><span class="s2">"</span>
 </code></pre></div>
 <p><code>$SPS_HOME</code> can be any path. Make it permanent in your shell startup file, with the same path:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export SPS_HOME=&quot;$HOME/fsps&quot;&#39;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.zshrc<span class="w">    </span><span class="c1"># zsh, the macOS default</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;export SPS_HOME=&quot;$HOME/fsps&quot;&#39;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.bashrc<span class="w">   </span><span class="c1"># bash, most Linux</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">'export SPS_HOME="$HOME/fsps"'</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.zshrc<span class="w">    </span><span class="c1"># zsh, the macOS default</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">'export SPS_HOME="$HOME/fsps"'</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.bashrc<span class="w">   </span><span class="c1"># bash, most Linux</span>
 </code></pre></div>
 <p>Open a new terminal and check that <code>echo $SPS_HOME</code> prints the path.</p>
 <h2 id="3-check-the-installation">3. Check the installation<a class="headerlink" href="#3-check-the-installation" title="Permanent link">&para;</a></h2>
@@ -964,7 +964,7 @@ checks its SHA-256 on every call, and returns the path:</p>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.ssps</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_grid</span><span class="p">,</span> <span class="n">available_grids</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">available_grids</span><span class="p">(</span><span class="n">published_only</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>        <span class="c1"># name -&gt; description</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">fetch_grid</span><span class="p">(</span><span class="s2">&quot;mist_miles_chab&quot;</span><span class="p">))</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">fetch_grid</span><span class="p">(</span><span class="s2">"mist_miles_chab"</span><span class="p">))</span>
 </code></pre></div>
 <table>
 <thead>
@@ -1003,12 +1003,12 @@ which compiles Fortran against <code>$SPS_HOME</code>:</p>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>gfortran<span class="w">          </span><span class="c1"># Debian/Ubuntu; or:</span>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>conda<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>conda-forge<span class="w"> </span>gfortran<span class="w">  </span><span class="c1"># any OS, inside your conda env</span>
 <a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;fsps&gt;=0.4.4&quot;</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"fsps&gt;=0.4.4"</span>
 </code></pre></div>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">from_fsps</span><span class="p">(</span><span class="n">imf_type</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">save_to</span><span class="o">=</span><span class="s2">&quot;ssp_data.h5&quot;</span><span class="p">)</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># later: ssp = SSPData.load(&quot;ssp_data.h5&quot;)</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">from_fsps</span><span class="p">(</span><span class="n">imf_type</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">save_to</span><span class="o">=</span><span class="s2">"ssp_data.h5"</span><span class="p">)</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># later: ssp = SSPData.load("ssp_data.h5")</span>
 </code></pre></div>
 <p><code>from_fsps</code> accepts only the keyword arguments that define the stellar library and IMF
 (<code>imf_type</code> and its parameters, isochrone-phase switches); dust, SFH, nebular emission, IGM,
@@ -1016,7 +1016,7 @@ redshift and a fixed metallicity are rejected, because the forward model applies
 file records its provenance (isochrones, spectral library, <code>imf_type</code>, FSPS version, build
 arguments), <code>CSPBasis</code> reads the isochrone library from it, and <code>ssp.display()</code> prints it.</p>
 <h2 id="building-this-documentation">Building this documentation<a class="headerlink" href="#building-this-documentation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;.[docs]&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">".[docs]"</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>mkdocs<span class="w"> </span>build
 </code></pre></div>
 
@@ -1077,7 +1077,7 @@ arguments), <code>CSPBasis</code> reads the isochrone library from it, and <code
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>

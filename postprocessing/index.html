@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -853,7 +853,7 @@ construction.</p>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">pp</span>  <span class="o">=</span> <span class="n">PostProcess</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>      <span class="c1"># the SedModel of the fit; SamplingResult or the .h5 path</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">out</span> <span class="o">=</span> <span class="n">pp</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>                        <span class="c1"># nested dict of numpy arrays</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">pp</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;post.npz&quot;</span><span class="p">)</span>                   <span class="c1"># flat .npz; load_postprocess(&quot;post.npz&quot;) rebuilds the dict</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">pp</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">"post.npz"</span><span class="p">)</span>                   <span class="c1"># flat .npz; load_postprocess("post.npz") rebuilds the dict</span>
 </code></pre></div>
 <p>The model must be the one the fit used (same CSP, observations, transforms,
 <code>zred</code>): the parameter names and shapes of the result are checked against
@@ -1060,8 +1060,8 @@ second for thousands of samples) and writes it as <code>/derived/mfrac</code>, a
 <code>/samples</code>, with the attributes <code>stellar_mass_source</code>, <code>grid_chash</code> and <code>sfh_interp</code> that
 say which table and SFH scheme produced it. So a stellar mass needs no post-processing:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">read_result_h5</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">r</span> <span class="o">=</span> <span class="n">read_result_h5</span><span class="p">(</span><span class="s2">&quot;out/ceridwen_result.h5&quot;</span><span class="p">)</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">mass_surviving</span> <span class="o">=</span> <span class="n">r</span><span class="p">[</span><span class="s2">&quot;derived&quot;</span><span class="p">][</span><span class="s2">&quot;mfrac&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="mi">10</span> <span class="o">**</span> <span class="n">r</span><span class="p">[</span><span class="s2">&quot;samples&quot;</span><span class="p">][</span><span class="s2">&quot;logmass&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">ravel</span><span class="p">()</span>   <span class="c1"># per sample, M_sun</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">r</span> <span class="o">=</span> <span class="n">read_result_h5</span><span class="p">(</span><span class="s2">"out/ceridwen_result.h5"</span><span class="p">)</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">mass_surviving</span> <span class="o">=</span> <span class="n">r</span><span class="p">[</span><span class="s2">"derived"</span><span class="p">][</span><span class="s2">"mfrac"</span><span class="p">]</span> <span class="o">*</span> <span class="mi">10</span> <span class="o">**</span> <span class="n">r</span><span class="p">[</span><span class="s2">"samples"</span><span class="p">][</span><span class="s2">"logmass"</span><span class="p">]</span><span class="o">.</span><span class="n">ravel</span><span class="p">()</span>   <span class="c1"># per sample, M_sun</span>
 </code></pre></div>
 <p>(weight the samples with <code>r["samples"]["log_weights"]</code>, or use <code>PostProcess</code>, which does the
 resampling). <code>PostProcess(model, "out/ceridwen_result.h5")</code> reads the stored array instead
@@ -1100,17 +1100,17 @@ for the best fit:</p>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>    <span class="n">flam</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">full</span><span class="p">[</span><span class="n">m</span><span class="p">]</span> <span class="o">/</span> <span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span><span class="p">[</span><span class="n">m</span><span class="p">]</span> <span class="o">**</span> <span class="mi">2</span>
 <a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">polyfit</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">wave_rest</span><span class="p">[</span><span class="n">m</span><span class="p">]),</span> <span class="n">np</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">flam</span><span class="p">),</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
 <a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="n">pp</span> <span class="o">=</span> <span class="n">PostProcess</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">derived</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;A_V&quot;</span><span class="p">:</span> <span class="n">A_V</span><span class="p">,</span> <span class="s2">&quot;L_opt&quot;</span><span class="p">:</span> <span class="n">L_optical</span><span class="p">,</span> <span class="s2">&quot;beta&quot;</span><span class="p">:</span> <span class="n">beta_UV</span><span class="p">})</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="n">pp</span> <span class="o">=</span> <span class="n">PostProcess</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">derived</span><span class="o">=</span><span class="p">{</span><span class="s2">"A_V"</span><span class="p">:</span> <span class="n">A_V</span><span class="p">,</span> <span class="s2">"L_opt"</span><span class="p">:</span> <span class="n">L_optical</span><span class="p">,</span> <span class="s2">"beta"</span><span class="p">:</span> <span class="n">beta_UV</span><span class="p">})</span>
 <a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="n">out</span> <span class="o">=</span> <span class="n">pp</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="n">out</span><span class="p">[</span><span class="s2">&quot;derived&quot;</span><span class="p">][</span><span class="s2">&quot;A_V&quot;</span><span class="p">]</span>                         <span class="c1"># (N,)</span>
-<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="n">out</span><span class="p">[</span><span class="s2">&quot;bestfit&quot;</span><span class="p">][</span><span class="s2">&quot;derived&quot;</span><span class="p">][</span><span class="s2">&quot;A_V&quot;</span><span class="p">]</span>              <span class="c1"># float</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="n">out</span><span class="p">[</span><span class="s2">"derived"</span><span class="p">][</span><span class="s2">"A_V"</span><span class="p">]</span>                         <span class="c1"># (N,)</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="n">out</span><span class="p">[</span><span class="s2">"bestfit"</span><span class="p">][</span><span class="s2">"derived"</span><span class="p">][</span><span class="s2">"A_V"</span><span class="p">]</span>              <span class="c1"># float</span>
 </code></pre></div>
 <p><code>SpectrumSample</code> carries <code>wave_rest</code>, <code>full</code>, <code>intrinsic</code>, <code>dustfree</code> (all
 L⊙/Hz × 10^logmass), <code>theta</code> (this draw after the transforms, numpy), <code>zred</code>,
 <code>logmass</code>, <code>sfr</code>, <code>lookback_gyr</code>, <code>cosmo</code>, and the helpers <code>index_of(λ)</code>,
 <code>mean_lnu(spec, lo, hi)</code> and <code>luminosity(spec, lo, hi)</code>.</p>
 <h2 id="figures">Figures<a class="headerlink" href="#figures" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">pp</span><span class="o">.</span><span class="n">figures</span><span class="p">(</span><span class="s2">&quot;post_figs/&quot;</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">&quot;ID 1009077&quot;</span><span class="p">)</span>      <span class="c1"># summary.pdf, corner.pdf, diagnostics.pdf</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">pp</span><span class="o">.</span><span class="n">figures</span><span class="p">(</span><span class="s2">"post_figs/"</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">"ID 1009077"</span><span class="p">)</span>      <span class="c1"># summary.pdf, corner.pdf, diagnostics.pdf</span>
 </code></pre></div>
 <p><code>ceridwen.plotting</code> makes three per-galaxy figures from the output (plain
 matplotlib; <code>plotting.COLORS</code> holds the blue default palette and is the only
@@ -1193,7 +1193,7 @@ again.</p>
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>

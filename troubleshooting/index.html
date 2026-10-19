@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
@@ -31,7 +31,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -758,7 +758,7 @@ problem with its fix:</p>
 Intel (x86_64) build: jax publishes no Intel-Mac wheels after 0.4.38, and CERIDWEN needs
 jax &gt;= 0.9. On Apple Silicon this happens when conda itself is an Intel install, such as an
 old Anaconda, running under Rosetta. Check with</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import platform; print(platform.machine())&quot;</span><span class="w">     </span><span class="c1"># must print arm64</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import platform; print(platform.machine())"</span><span class="w">     </span><span class="c1"># must print arm64</span>
 </code></pre></div>
 <p>If it prints <code>x86_64</code>, install <a href="https://github.com/conda-forge/miniforge">Miniforge</a> for
 arm64 and create the environment with its <code>conda</code>. Intel Macs cannot run CERIDWEN.</p>
@@ -782,7 +782,7 @@ there is no progress output, and Ctrl-C does not stop them; use <code>kill</code
 hours for a typical fit; use nested sampling there, or a GPU (<a href="../samplers/">Samplers</a>).</p>
 <p><strong>A test skips.</strong> A grid-dependent test skips when it finds no SSP grid; a skip is not a pass.
 Point the tests at the published BPASS grid:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">CERIDWEN_TEST_SSP</span><span class="o">=</span><span class="k">$(</span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;from ceridwen.ssps import fetch_grid; print(fetch_grid(&#39;mist_bpass_v2&#39;))&quot;</span><span class="k">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">CERIDWEN_TEST_SSP</span><span class="o">=</span><span class="k">$(</span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_bpass_v2'))"</span><span class="k">)</span>
 </code></pre></div>
 <p><strong>A number looks plausible but wrong.</strong> The common causes are a metallicity in the wrong
 units (<code>logzsol</code> is log10(Z/Z_sun) of the grid), a lookback-time grid in the wrong order
@@ -848,7 +848,7 @@ helps you use CERIDWEN, point it at
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>
