@@ -1,45 +1,46 @@
-# Conventions & gotchas
+# Conventions and common errors
 
-A few conventions cause silent mistakes if you get them wrong. Read them before
-fitting real data. The repository also ships a fuller misuse guide in
-`GOTCHAS.md`.
+This page describes the units, parameter definitions and model settings
+needed to interpret a fit. `GOTCHAS.md` in the repository covers additional
+usage errors.
 
-## Metallicity is solar-relative: `logzsol = log10(Z/Z_sun)`
+## Metallicity
 
-The stellar metallicity is `theta["logzsol"]` (constant) or `theta["logzsol_hist"]`
-(one value per lookback node), in `log10(Z / Z_sun)` with the **Z_sun of the grid you
-loaded**: `0.0` is solar everywhere. The keys `Z` / `zh` (`log10` of the *absolute* metallicity)
-are not accepted: they raise, printing the converted value.
+Use `theta["logzsol"]` for constant metallicity or `theta["logzsol_hist"]`
+for one value per lookback-time node. Values are log10(Z/Z_sun), using
+the loaded grid's Z_sun; 0.0 is solar. Absolute-metallicity keys `Z` and
+`zh` are rejected with an error that shows the converted value.
 
-Typical ranges: BPASS `[-2.30, +0.30]` (Z_sun = 0.020); MIST and aMIST `[-2.50, +0.50]`
-(Z_sun = 0.0185, or 0.0142 for grids built with python-fsps <= 0.4.7). Print the axis of
-your own grid with `print(csp.zmet.min(), csp.zmet.max(), csp.zsun_nominal)`.
+Typical ranges are [−2.30, +0.30] for BPASS (Z_sun = 0.020) and
+[−2.50, +0.50] for MIST/aMIST (Z_sun = 0.0185, or 0.0142 for grids built
+with python-fsps <= 0.4.7). Inspect your grid with
+`print(csp.zmet.min(), csp.zmet.max(), csp.zsun_nominal)`.
 
-Z_sun comes from the grid, never from `isoc_type` (FSPS versions give MIST different values
-under the same name): an explicit `zsun=`, the file's `log10_zsun` provenance, or the
-content-hash table in `ceridwen.ssps.grid_metadata`. A grid whose Z_sun cannot be
-established raises at load.
+Z_sun is resolved from an explicit `zsun=`, the file's `log10_zsun`
+provenance or the content-hash table in `ceridwen.ssps.grid_metadata`.
+It cannot be inferred reliably from `isoc_type`, since FSPS versions use
+different solar values under the same isochrone name. Loading fails if
+Z_sun cannot be determined.
 
-On MIST and aMIST grids `logzsol` **is `[Fe/H]`**; the total metallicity `[Z/H]` is the
-derived `logzsol_total` (see `grid_metadata.logzsol_total`). The gas-phase `gas_logz` is
-solar-relative on the CLOUDY grid's own reference, and `CSPBasis(gas_tied=True)` sets
-`gas_logz := logzsol` — the same number on two axes whose solar references are not identical
-(the SSP grid's Z_sun vs the CLOUDY grid's), which is what FSPS and Prospector mean by tying
-the gas to the stars.
+For MIST and aMIST, `logzsol` represents [Fe/H]. Total metallicity [Z/H]
+is derived as `logzsol_total`; see `grid_metadata.logzsol_total`.
+`gas_logz` uses the CLOUDY grid's solar reference. `CSPBasis(gas_tied=True)`
+sets `gas_logz := logzsol`, matching the FSPS and Prospector convention
+even though the stellar and gas solar references differ.
 
-!!! danger "Common mistake"
-    Passing an absolute `log10 Z` such as `-1.85` as `logzsol`: on BPASS that is inside the
-    grid (0.014 Z_sun), so it cannot be an error — it warns instead. A *bounded* prior wider
-    than the grid raises; `Uniform(low=-2.0, high=0.2)` is a safe default on every shipped
-    grid. `csp.check_param_ranges(theta)` reports in logzsol and names the grid's Z_sun.
+An absolute log10 Z, such as −1.85, can be mistaken for `logzsol`.
+On BPASS this is within the allowed axis but means 0.014 Z_sun, so the
+package warns rather than rejecting it. Bounded priors extending beyond
+the grid raise an error. `Uniform(low=-2.0, high=0.2)` fits within all
+published grids. `csp.check_param_ranges(theta)` reports ranges in
+`logzsol` and identifies the grid's Z_sun.
 
-## Lookback time increases with index (index 0 = today)
+## Lookback-time ordering
 
-`lookback_time` element 0 is the present; the last element is the oldest bin,
-near the age of the universe. The `sfh` array is indexed the same way. A
-decreasing convention (`lookback = T_univ - t_grid`) is rejected at construction
-with a `ValueError`, so do not use it, and do not reverse arrays "to be
-safe".
+`lookback_time` increases from the present at index 0 to the oldest node.
+The `sfh` array uses the same ordering. Decreasing grids, including
+`lookback = T_univ - t_grid` applied to an increasing `t_grid`, raise
+`ValueError` at construction.
 
 ## Units
 
@@ -55,80 +56,85 @@ safe".
 | Marginalised line fluxes (`marginalize_elines=True`: `/elines` in the result, `extras["elines"]`) | erg s⁻¹ cm⁻², observed frame, IGM-transmitted at the line, **not** divided by the spectrum calibration; lines named as in `$SPS_HOME/data/emlines_info.dat`, vacuum rest-frame Å |
 | Stellar mass | `logmass` = log10(M⋆/M☉) |
 
-The spectrum of `theta['sfh']` is scaled by `10**logmass`. The SSP weights sum to the
-integral of `theta['sfh']` over the construction lookback grid (`csp.sfh_times`, or a
-predict-time `theta['lookback_time']`), at every redshift: with `track_zred_age=True` the
-grid is stretched to `age(zred)` and the SFR scaled by `T_grid / age(zred)`, so the
-stretched SFH forms the same mass. It is unit mass, and `logmass` the formed mass, whenever
-`theta['sfh']` integrates to 1 M☉ on the construction grid, as
-`logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)` arranges (below), with a fixed or
-a free redshift; a directly sampled `sfh` carries its own normalisation.
+The spectrum from `theta['sfh']` is multiplied by `10**logmass`. SSP weights
+sum to the SFH integral on the construction grid (`csp.sfh_times`, or a
+prediction-time `theta['lookback_time']`). With `track_zred_age=True`, the
+grid stretches to `age(zred)` and SFR is scaled by `T_grid / age(zred)`
+to preserve the integral. When that integral is 1 M☉, `logmass` is the
+formed mass. `logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)` provides
+this normalisation for fixed or sampled redshift. A directly sampled
+`sfh` has its own normalisation.
 
-## Precision: float32 values, float64 where float32 would be wrong
+## Precision
 
-`jax_enable_x64` is on wherever the device has float64 (`import ceridwen` sets it; do not set
-it yourself): evidence estimates and gradients depend on it. On an Apple GPU, which has no
-float64, `import ceridwen` runs the process in float32 instead ([Apple GPU](mac_gpu.md)).
-Within that, every large array, one that holds a spectrum, a curve or a projection on
-the model grid or the observed pixels, is **float32**, so that a GPU with slow float64 (most
-consumer cards) spends its time in float32. Float64 is kept where float32 would give a wrong
-answer, and for small arrays where it costs nothing. Each float64 site carries a comment naming
-its reason.
+Importing CERIDWEN enables `jax_enable_x64` on devices that support float64.
+Let the package set this option. Apple GPUs instead use float32 throughout;
+see [Apple GPU](mac_gpu.md).
+
+On float64-capable devices, large spectral, curve and projection arrays use
+float32 to reduce memory and computation costs. Float64 is retained for
+calculations requiring greater range or precision, and for small arrays.
+Comments in the code explain each float64 calculation.
 
 | float32 | |
 |---|---|
 | SSP cube and its contraction | `csp.flux`, the `W`-weighted einsums |
 | attenuation curves | evaluated on `csp._wave32` with float32 parameters |
-| nebular line/continuum arrays, once interpolated | the grid interpolation and `10**x` in float64 (log values near 50), then float32: the line-profile contraction (`NebularGridModel`) and the kernel's |
+| nebular line/continuum arrays, once interpolated | grid interpolation and `10**x` use float64 for log values near 50; interpolated arrays and line-profile contractions use float32 |
 | the projector's work | resampling, FFT smoothing, the instrument response and the painted line profiles of a `Spectrum` prediction |
 | photometry matrices and maggies | `Photometry._T`, `Photometry` predictions |
-| scaled, exactly | the projector's float32 work runs on `x / s`, `s` a power of two near max&#124;x&#124;, and is multiplied back by `s` in float64: exact in binary floating point, so the values are those of the unscaled float32 work, and the likelihood's cotangent reaches float32 already multiplied by `s` (unscaled, `\|r\| / sigma^2` ~ 1e35 .. 1e41 at cgs scale exceeds float32's maximum 3.4e38 and the gradient is NaN) |
+| projector scaling | divide by a power of two before float32 projection, then restore the scale in float64 |
 | line apertures and painted line profiles | `Lines` aperture matrices; the `(n_pix, n_lines)` profiles the projector paints |
 | `PostProcess` model-grid spectra | `prediction/spectra_model`, `spectra_observed`, ... (its observation predictions are stored float64) |
 
 | float64 | reason |
 |---|---|
-| `DustEmission`'s trapezoid dots and `labs0 = lboln - lbold` | catastrophic cancellation: the absorbed luminosity is a difference of two nearly equal numbers |
+| `DustEmission`'s trapezoid dots and `labs0 = lboln - lbold` | absorbed luminosity is a difference of nearly equal numbers, requiring greater precision |
 | the AGN `L_bol` and energy balance (`csp.py`, `agn/blr.py`) | frequency integrals and accumulators |
 | `sigma`, `sigma**2`, chi² terms; the noise model, profiled and marginalised calibration | dynamic range: at cgs scale `sigma**2` ~ 1e-60 underflows float32. The likelihood promotes the float32 prediction to the data's float64 |
 | the line-marginal basis `A` and its normal equations | the likelihood's linear algebra, conditioned up to `COND_MAX = 1e10` |
 | likelihood sums, sampler scalars, cosmology and distances, wavelength grids | accumulation over many terms; positions where 1e-7 relative is a measurable shift |
-| line fluxes (`predict_line_fluxes`) and `Lines` predictions | small arrays (one number per line): free on any GPU; the AGN line sets add into them, and their span (~1e-51 to 1e2 L_sun) suits float64 |
-| the returned `Spectrum` prediction | the float64 multiply that undoes the projector's scaling (one per pixel), so the likelihood's cotangent never enters float32 unscaled |
-| `DustEmission`'s output spectrum | kept by decision: converting it removes no measurable float64 work (8.5 % of FLOPs with or without it in `neb_duste`) and moves two goldens |
+| line fluxes (`predict_line_fluxes`) and `Lines` predictions | small arrays covering roughly 1e-51 to 1e2 L_sun, including summed AGN line contributions |
+| returned `Spectrum` prediction | float64 multiplication restores the projector's scale before the likelihood gradient is propagated into float32 |
+| `DustEmission` output spectrum | converting it to float32 did not reduce measured float64 work (8.5% of FLOPs in `neb_duste`) and changed two golden baselines |
 
-With dust emission the model-grid spectrum is float64 (`DustEmission`, above).
+Before float32 projection, the spectrum is divided by a power of two
+near its largest absolute value. The scale is restored in float64.
+This preserves binary mantissas and scales the likelihood gradient
+before it enters float32. At cgs flux scales, an unscaled gradient
+`|r| / sigma^2` can reach 1e35–1e41, exceeding the float32 maximum
+of 3.4e38 and producing NaN.
 
-Data are stored float64 by every `Observation`, whatever dtype you pass, at construction or
-by assigning `obs.flux` / `obs.uncertainty` later (a float32 FITS spectrum is fine).
+With dust emission enabled, the model-grid spectrum is float64.
+Observations store data in float64, both at construction and when assigning
+`obs.flux` or `obs.uncertainty`. Input arrays may use float32.
 
 ## SFH mass normalisation
 
-The `logsfr_ratios_to_sfh` transform normalises the SFH so the trapezoidal
-integral of SFR over the lookback grid it is given (`sfh_times_yr=csp.sfh_times`, the
-construction grid, also for a free redshift) equals 1 M☉, and `logmass` sets the
-amplitude. Use the provided transform rather than hand-rolling it. Getting this
-wrong biases `logmass` by many dex.
+`logsfr_ratios_to_sfh` normalises the trapezoidal SFR integral to 1 M☉
+on the supplied `sfh_times_yr=csp.sfh_times` construction grid, including
+when redshift is free. `logmass` then sets the mass. Use this transform
+to avoid normalisation errors that can shift `logmass` by several dex.
 
-## `theta` is a dict, so typos are silently ignored
+## Unrecognised `theta` keys
 
-A mistyped key (`logmas` for `logmass`, `dust2` for `diffuse_tau_kc`, and so on)
-is simply not read, so the parameter takes its default. `predict()` and
-`get_spectrum_components()` emit a warning listing unrecognised keys at trace
-time, at no cost to the hot path. Model-level free parameters like
-`logsfr_ratios` are registered automatically and do not warn.
+The model ignores keys it does not read. A typo such as `logmas` or `dust2`
+therefore leaves `logmass` or `diffuse_tau_kc` at its default. `predict()`
+and `get_spectrum_components()` warn about unrecognised keys during tracing,
+without adding work to the sampling loop. Model-level parameters such as
+`logsfr_ratios` are registered automatically.
 
-## Broadening: one kernel, three widths
+## Spectral broadening
 
-Every width a spectral feature acquires is a Gaussian in `ln λ`, so the
-projection of the model onto a spectrum applies a single kernel per pixel:
+Broadening is modelled with Gaussian widths in ln λ. Projection combines
+the relevant widths at each pixel:
 
 ```
 continuum:  σ_cont² = σ_gal² + σ_inst²(λ) − σ_lib²(λ)
 lines:      σ_line² = σ_gas² + σ_inst²(λ)
 ```
 
-The three widths live in three different places, and each is set exactly once:
+Set the widths through the following objects:
 
 | Width | What it is | Where it is set |
 |---|---|---|
@@ -136,18 +142,18 @@ The three widths live in three different places, and each is set exactly once:
 | `σ_inst(λ)` | the instrument's line-spread function at each observed pixel | `Instrument.<unit>(...)`, passed to each `Spectrum(instrument=...)` |
 | `σ_lib(λ)` | the resolution already in the SSP library | stored in every schema-2 grid (`SSPData.ssp_resolution`); read automatically |
 
-The IGM acts between the galaxy and the instrument, in the order the light meets them:
-galaxy kinematics (rest frame), redshift, IGM, instrument. A `Spectrum` smooths the model by
-`σ_gal`, multiplies by the IGM transmission, then applies the instrument (and library) part of
-the kernel; broadened photometry multiplies by the transmission after the `σ_gal` broadening.
-So the Ly-α break is as sharp as the IGM model and the instrument make it. (With `σ_gal` fixed
-at 0 the IGM is applied on the model grid, as without broadening.)
+The projection applies galaxy kinematics in the rest frame, then redshift,
+IGM transmission and the instrumental response. A `Spectrum` is smoothed by
+σ_gal before IGM attenuation, then by the instrument/library contribution.
+Broadened photometry also applies IGM transmission after galaxy broadening.
+The Ly-α break therefore retains the sharpness set by the IGM model and
+instrument. When σ_gal is fixed at zero, IGM transmission is applied on
+the model grid.
 
-There is no other place where a width enters. In particular the model spectrum
-(`csp.get_spectrum`) is **not** broadened by the galaxy any more, and emission
-lines are painted onto a spectrum's pixels from their luminosities with
-`σ_line`, never resampled from the model grid. `Lines` observations (integrated
-fluxes) are read straight from the nebular grid and never see any width.
+`csp.get_spectrum` returns a model-grid spectrum without galaxy broadening.
+Emission lines are projected directly from their luminosities onto spectral
+pixels with width σ_line. `Lines` observations use integrated nebular fluxes
+and do not depend on these widths.
 
 ### The galaxy: `Kinematics`
 
@@ -161,28 +167,24 @@ DEFAULT_KINEMATICS                                    # == Kinematics(sigma_gal=
 Kinematics.none()                                     # no kinematic broadening at all
 ```
 
-A **float is fixed** (folded into the compiled graph), a **string is the name
-of a free parameter** in `theta` and must carry a prior. `sigma_gas` defaults
-to `TIED`, i.e. the same value or key as `sigma_gal`. `Kinematics(...)` itself
-has no default for `sigma_gal`; the 300 km/s lives in one named constant so
-that it is never hidden, and the model summary prints whichever values are in
-force. `sigma_max` (default 2000 km/s) is the largest dispersion the compiled
-kernels support: a prior whose upper bound exceeds it is rejected at setup,
-and a sampled value is clipped to it.
+A numeric width is fixed; a string refers to a `theta` parameter that needs
+a prior. `sigma_gas` defaults to `TIED`, sharing the value or key of
+`sigma_gal`. `Kinematics(...)` requires `sigma_gal` explicitly. Omitting
+kinematics from `SedModel` uses the named default of 300 km/s, shown in
+the model summary.
 
-!!! danger "Two sources of truth"
-    Fixing `sigma_gal=250.0` *and* putting `"sigma_gal"` into `theta` raises a
-    `ValueError` at setup. Naming a key that is not in `theta` raises a
-    `KeyError`; a key without a prior gets the usual unpriored-parameter
-    warning. There is no silent fallback.
+`sigma_max`, default 2000 km/s, bounds the compiled kernels. Priors extending
+above it are rejected at setup; sampled values are clipped to it.
+Providing a fixed `sigma_gal` and also placing that key in `theta` raises
+`ValueError`. A named key missing from `theta` raises `KeyError`, and a
+sampled key without a prior produces a warning.
 
 ### The instrument: `Instrument`
 
-Published resolutions come in several units and in two resolving-power
-conventions that differ by `2√(2 ln 2) ≈ 2.35`: instrument datasheets quote
-`R = λ/FWHM`, the sedpy/Prospector tradition uses `R = λ/σ`. CERIDWEN will not
-guess: the unit **and** the convention are the name of the constructor, so
-there is nothing to declare and nothing to forget.
+Instrument resolutions are published in several units. Resolving power also
+has two conventions: R = λ/FWHM, commonly used in datasheets, and R = λ/σ,
+used by sedpy/Prospector. They differ by 2√(2 ln 2) ≈ 2.35. Choose the
+`Instrument` constructor that specifies both the unit and convention:
 
 ```python
 from ceridwen import Instrument
@@ -196,17 +198,17 @@ Instrument.fwhm_kms(111.0)                 # FWHM in km/s
 Instrument.R_fwhm(R_array, wave=obs_wave)  # any of the above per pixel, on observed wavelengths
 ```
 
-Widths must be finite and positive; an array needs `wave=` on the same grid
-and must cover the spectrum's pixels. The LSF is taken as *measured on the
-detector* (from arc lines), so it already contains the pixel width and the
-model profiles are sampled at pixel centres, not integrated over the pixel a
-second time.
+Widths must be finite and positive. Width arrays require a matching `wave=`
+grid covering all spectral pixels. The LSF is interpreted as measured on
+the detector, including pixel width. Model profiles are therefore evaluated
+at pixel centres without a second integration over the pixel.
 
 #### A free LSF scale: `Instrument(..., scale=...)`
 
-When the quoted LSF is uncertain, every constructor takes `scale=`: the width in
-force is `s · σ_inst(λ)`, in the continuum kernel *and* in the line widths
-(`σ_cont² = σ_gal² + s² σ_inst² − σ_lib²`, `σ_line² = σ_gas² + s² σ_inst²`).
+Every constructor accepts `scale=` to model uncertainty in the LSF. The
+effective width is s · σ_inst(λ), applied to both continuum and lines:
+`σ_cont² = σ_gal² + s² σ_inst² − σ_lib²` and
+`σ_line² = σ_gas² + s² σ_inst²`.
 
 ```python
 from ceridwen import Instrument
@@ -219,79 +221,74 @@ priors = {"lsf_scale": Uniform(low=0.8, high=1.3)}
 Instrument.R_fwhm(2700, scale="lsf_scale", scale_range=(0.8, 1.3))  # range given explicitly
 ```
 
-A fixed scale is folded into the static response at setup (no runtime cost). A
-sampled scale recomputes the response weights per call on a band sized for the top
-of its range: exact for any wavelength dependence of `σ_inst`, and differentiable.
-The range comes from the prior's finite bounds (or `scale_range=`, required when the
-key is a transform); it must satisfy `0 < lo < hi`, a prior reaching beyond an
-explicit `scale_range` is refused, and a sampled value outside it is clipped. The
-instrument-below-library warning is evaluated at the lower end of the range, and a
-second warning names the pixels whose continuum kernel crosses half a log-grid pixel
-inside the range, where the response switches from linear interpolation to a
-Gaussian and the prediction takes a small step in `s`. Photometry and `Lines` never
-see the instrument, so neither depends on the scale.
+A fixed scale is incorporated into the response at setup. A sampled scale
+requires response weights to be recomputed at each call over a band sized
+for the maximum scale. This supports wavelength-dependent σ_inst and
+derivatives with respect to scale.
 
-Prospector's `resolution_jitter_parameter` (`prospect/models/sedmodel.py:289-295`)
-multiplies the resolution too, but only the continuum's (the line widths are cached
-from the unscaled resolution just before, `sedmodel.py:283`), by overwriting
-`obs.padded_resolution` on every call, and without validation.
+The scale range comes from finite prior bounds, or from `scale_range=`
+when the key is supplied by a transform. It must satisfy `0 < lo < hi`.
+A prior exceeding an explicit range raises an error; sampled values outside
+the range are clipped. The library-resolution warning uses the minimum
+scale. Another warning identifies pixels where the continuum width crosses
+half a log-grid pixel: switching from linear interpolation to Gaussian
+response introduces a small step in the prediction. Photometry and `Lines`
+do not use the instrument scale.
 
-### The library: subtracted automatically
+Prospector's `resolution_jitter_parameter`
+(`prospect/models/sedmodel.py:289–295`) scales only the continuum resolution.
+Line widths are cached from the unscaled resolution at line 283. It also
+overwrites `obs.padded_resolution` at each call without validation.
 
-The SSP library's own resolution curve is subtracted in quadrature from the
-instrumental width, pixel by pixel, at the rest-frame wavelength of each
-observed pixel (velocity widths are frame-invariant). Where the instrument is
-*finer* than the library the subtraction floors at zero and the continuum is
-delivered at library resolution, which is the correct model for a grid coarser
-than the instrument (`C3K_lr`, `BaSeL`), and you get a warning with the pixel
-count and range so that a wrong unit on the `Instrument` cannot pass unseen.
-`Spectrum(..., subtract_library=False)` turns the
-subtraction off for a grid whose stored curve you do not trust; with
-`instrument=None` there is nothing to subtract from and the continuum is
-delivered as the library has it.
+### Library resolution
 
-### Photometry is broadened too
+The SSP library's resolution is subtracted in quadrature from the instrumental
+width at each pixel's rest-frame wavelength. Velocity widths are independent
+of frame. Where the instrument is finer than the library, the subtraction
+is limited to zero and the continuum stays at library resolution. A warning
+reports the affected pixels and wavelength range; this can also indicate
+incorrect instrument units.
 
-Filters integrate the spectrum *as observed*, so by default the photometry is
-computed from the `σ_gal`-broadened spectrum (`SedModel(broaden_photometry=True)`,
-the Prospector behaviour). For broad bands this changes nothing measurable
-(below `5e-4` mag at 300 km/s, `5e-3` at 1000 km/s, even with 1000 Å lines and
-hard breaks); for a medium or narrow band with a line on its edge it reaches
-the per-cent level, which is why the switch exists rather than the effect
-being silently dropped. Turn it off only for broad-band-only fits where you
-want to save the one FFT per likelihood call. With `broaden_photometry=False`
-nothing in the photometry is broadened: the continuum is integrated at
-model-grid resolution and any emission lines enter at the grid's pixel-floor
-width, independent of `σ_gas`. Generate mocks and fit them with the same
-setting.
+Use `Spectrum(..., subtract_library=False)` if the grid's stored resolution
+curve is unreliable. With `instrument=None`, no subtraction is made and
+the continuum retains library resolution.
 
-How the lines reach the filters depends on whether `σ_gas` is fixed or
-sampled. With a **fixed** `σ_gas` (and a fixed redshift: a sampled `zred` on
-free-z photometry always takes the painted path) the emission lines are not painted onto the
-model grid at all: each `Photometry` holds a static line-to-band basis
-`G = T · Γ(σ_gas)` (the line profiles at `σ_gas` in quadrature with the
-two-pixel grid floor, times the IGM transmission), and the band fluxes are
-`T · continuum_broadened + G · F_line` — exact for the same profile, and cheap.
-With a **sampled** `σ_gas` the width is a runtime quantity, so the lines are
-painted onto the grid and broadened with the continuum-independent gas width
-(`σ_gas` untied) or together with the continuum (`σ_gas` tied to `σ_gal`);
-this is the slower path, chosen automatically. `csp._force_paint_lines = True`
-forces the painted path for A/B checks.
+### Photometric broadening
 
-## Cosmology: one object, chosen on the CSP, never silent
+By default, photometry integrates the galaxy-broadened spectrum
+(`SedModel(broaden_photometry=True)`), following Prospector. The effect on
+broad bands is below 5e-4 mag at 300 km/s and 5e-3 mag at 1000 km/s, even
+with 1000 Å emission lines and sharp breaks. For medium or narrow bands,
+a line near a filter edge can change the flux by about a percent.
 
-The cosmology enters the forward model in two places, both evaluated by the
-CSP: the flux factor `(1+z) (10 pc / D_L)^2` that turns the rest-frame
-luminosity density into observed-frame F_ν in cgs (`CSPBasis._flux_factor`, applied
-to spectra, photometry and line fluxes), and the age of the universe that
-rescales the SFH grid when `zred` is sampled with `track_zred_age=True`
-(`CSPBasis._lookback_from_zred`). A sampled `zred` reaches every observation:
-`Photometry` is projected through the filters per sample, `Lines` fluxes carry
-the per-sample flux factor, Jacobian and IGM, and a `Spectrum` is projected by
-a redshift-aware projector built for the prior's support (`Spectrum(zred_range=)`
-when that support is not given by a bounded prior). So the cosmology is a required argument of
-`CSPBasis` / `CSPBasis_afe`, there is no default and no global to patch:
+For broad-band-only fits, `broaden_photometry=False` saves one FFT per
+likelihood call. It integrates the continuum at model-grid resolution and
+uses grid pixel-floor widths for emission lines, independent of σ_gas.
+Use the same setting to generate and fit mocks.
 
+With fixed σ_gas and redshift, each `Photometry` stores a line-to-band
+matrix `G = T · Γ(σ_gas)`. It includes the gas width in quadrature with the
+two-pixel grid floor and IGM transmission. Band predictions are then
+`T · continuum_broadened + G · F_line`.
+
+With sampled σ_gas, lines are placed on the model grid at each call.
+If σ_gas is untied, they are broadened separately from the continuum;
+if tied to σ_gal, they are broadened together. Sampled redshift also
+requires this calculation. It is slower than the static matrix method.
+Set `csp._force_paint_lines = True` to compare the two calculations.
+
+## Cosmology
+
+Pass a cosmology explicitly to `CSPBasis` or `CSPBasis_afe`. The CSP uses
+it for the flux factor `(1+z) (10 pc / D_L)^2`
+(`CSPBasis._flux_factor`) and for the universe age that sets the SFH grid
+when `track_zred_age=True` (`CSPBasis._lookback_from_zred`).
+
+All observation types follow sampled `zred`. Photometry is projected
+through filters at each sample; `Lines` uses the corresponding flux
+factor, Jacobian and IGM transmission. Spectra use a redshift-aware
+projector covering the prior's support. Provide `Spectrum(zred_range=)`
+if that range is not specified by bounded prior support.
 ```python
 from ceridwen import Cosmology
 
@@ -305,83 +302,87 @@ cosmo = Cosmology.from_astropy(astropy_cosmo)   # any flat astropy cosmology
 csp = CSPBasis(ssp, lookback_time=..., cosmo=cosmo, ...)
 ```
 
-Everything downstream reads it from the CSP: `model.cosmo` is a read-only
-view, `SedModel(cosmo=...)` is accepted only when it equals `csp.cosmo`
-and refused otherwise, `repr(csp)`, `model.summary()` and the `fitSED`
-log print it, and `fitSED` writes it into the HDF5 result (`/model` attrs
-`cosmo_H0`, `cosmo_Om0`, `cosmo_Tcmb0`, `cosmo_Neff`, `cosmo_m_nu_ev_sum`,
-`cosmo_name`), from which `ceridwen.result_cosmology(path)` or
-`Cosmology.from_dict(attrs)` rebuilds the same object.
+`model.cosmo` is a read-only view of the CSP cosmology. `SedModel(cosmo=...)`
+is accepted only if it equals `csp.cosmo`, and `csp.cosmo` cannot be
+reassigned after construction. The cosmology appears in `repr(csp)`,
+`model.summary()` and the `fitSED` log.
 
-Ages and distances come from the same object: `cosmo.age(z)` and
-`csp.age_at(z)` give the age of the universe in Gyr (`cosmo.age` always returns a JAX
-array, 0-d for a scalar; `csp.age_at` returns a float for a scalar), `cosmo.luminosity_distance(z)` the
-luminosity distance in Mpc. There is no `tuniv` argument any more; size the
-SFH grid from the cosmology, `jnp.linspace(0.0, cosmo.age(z), n)`, and
-`SedModel` refuses (with both numbers in the message) a grid whose oldest
-node lies more than 0.5 % beyond `csp.age_at(zred)` at a fixed redshift.
-The check is skipped when the CSP rescales the grid itself
-(`track_zred_age=True`, which also acts on a fixed non-zero `zred`
-because `SedModel` injects it) or a `lookback_time` transform replaces it.
+Result files store it as `/model` attributes `cosmo_H0`, `cosmo_Om0`,
+`cosmo_Tcmb0`, `cosmo_Neff`, `cosmo_m_nu_ev_sum` and `cosmo_name`.
+Reconstruct it with `ceridwen.result_cosmology(path)` or
+`Cosmology.from_dict(attrs)`.
 
-`zred = 0` applies **no** flux factor: the CSP scales only when `theta`
-carries `zred`, and `SedModel` does not inject a zero. Predictions are then
-`L_sun/Hz x 10^logmass`, not maggies. For a nearby object give the distance
-explicitly, `SedModel(csp, obs, priors, zred=0.0, lumdist_mpc=3.5)`: the
-flux factor is then evaluated with that distance in place of `D_L(zred)`
-(and `(1+zred)` still from `zred`), which is prospector's `lumdist`.
-`model.summary()` says which of the three cases is in force, and
-`SedModel` warns at construction when `zred = 0` is combined with
-observations (no flux factor) and when `lumdist_mpc` overrides a non-zero
-`zred`'s D_L. `csp.cosmo` cannot be reassigned after construction, and the
-CSP constructors refuse unknown keyword arguments instead of swallowing
-them.
+`cosmo.age(z)` and `csp.age_at(z)` return universe age in Gyr. The former
+always returns a JAX array; the latter returns a Python float for scalar
+input. `cosmo.luminosity_distance(z)` returns Mpc. Build an SFH grid from
+the cosmology, for example `jnp.linspace(0.0, cosmo.age(z), n)`; there is
+no `tuniv` argument. At fixed redshift, `SedModel` rejects an oldest node
+more than 0.5% older than `csp.age_at(zred)`. This check is skipped if
+`track_zred_age=True` rescales the grid or a `lookback_time` transform
+replaces it. Age tracking also applies to fixed non-zero redshift,
+which `SedModel` supplies to the CSP.
 
-`SedModel` builds every observation's projection at construction. Replacing
-`model.observations` later requires `model.setup_observations()` (called for
-you by `fitSED(model, observations)`); a `Spectrum` therefore needs its
-`wavelength=` at construction even if the flux is attached later.
+At `zred=0` without `lumdist_mpc`, there is no flux factor. The CSP scales
+only when `theta` contains `zred`, and `SedModel` does not insert zero.
+Predictions are then `L_sun/Hz × 10^logmass`. For a nearby object, supply
+the distance, for example
+`SedModel(csp, obs, priors, zred=0.0, lumdist_mpc=3.5)`. This uses the
+given distance in place of D_L(zred), retaining the redshift's (1+z)
+factor, as in Prospector's `lumdist`.
 
-## Nebular grid: CLOUDY without dust in the H II region
+`model.summary()` reports the distance convention. `SedModel` warns when
+observations have `zred=0` without flux scaling, or when `lumdist_mpc`
+overrides the distance at a non-zero redshift. CSP constructors also
+reject unknown keyword arguments.
 
-`CSPBasis` reads the Byler et al. (2017) CLOUDY grids from `$SPS_HOME/nebular`. By default it
-uses the grids **without dust inside the H II region** (`ZAU_ND_<isochrones>`), the default of
-FSPS, python-fsps and Prospector, so the nebular lines match theirs.
-`init_neb_params={"cloudy_dust": True}` selects the grids with dust (`ZAU_WD_<isochrones>`),
-whose lines are fainter in hydrogen and Ly-alpha. The factor depends on the grid: for a constant
-SFR over 0-1 Gyr at solar metallicity and logU = -2.5, WD/ND is 0.78 (H-alpha), 0.79 (H-beta),
-0.17 (Ly-alpha) and 1.13 ([O III] 5007) on MIST, and 0.95, 0.95, 0.40 and 0.99 on BPASS. The
-result file records the choice (`csp_config['cloudy_dust']`); a file that does not record it
-was made with `cloudy_dust=True`, and `rebuild_model` asks for that CSP.
+`SedModel` builds observation projections at construction. After replacing
+`model.observations`, call `model.setup_observations()`; passing observations
+to `fitSED(model, observations)` does this automatically. A `Spectrum`
+requires `wavelength=` at construction, even if flux is supplied later.
+
+## Nebular grids
+
+`CSPBasis` reads the Byler et al. (2017) CLOUDY grids from
+`$SPS_HOME/nebular`. The default `ZAU_ND_<isochrones>` grids omit dust
+inside H II regions, matching FSPS, python-fsps and Prospector.
+Choose `init_neb_params={"cloudy_dust": True}` for `ZAU_WD_<isochrones>`.
+
+The effect depends on the grid. For constant SFR over 0–1 Gyr, solar
+metallicity and logU = −2.5, WD/ND flux ratios on MIST are 0.78 for Hα,
+0.79 for Hβ, 0.17 for Ly-α and 1.13 for [O III] 5007. BPASS ratios are
+0.95, 0.95, 0.40 and 0.99 respectively. The result file stores the choice
+in `csp_config['cloudy_dust']`. Older files without this setting used
+`cloudy_dust=True`; `rebuild_model` requires a matching CSP.
 
 ## Dust geometry and the escape fraction `frac_obrun`
 
-The CSP attenuates each SSP age row by its age bin's dust (`init_dust_params['bin_edges']`,
-log10 age/Gyr; by default one "birth-cloud" bin, ages below 10^-1.97 Gyr = 10.7 Myr) and then
-everything by the diffuse dust. `theta['frac_obrun']` opens an escape channel, and
-`fesc_geometry` (on `CSPBasis`) chooses what escapes:
+Each SSP age row receives attenuation from its age bin, then diffuse dust
+attenuation. Set bin edges with `init_dust_params['bin_edges']` in log10
+age/Gyr. The default birth-cloud bin covers ages below 10^-1.97 Gyr,
+or 10.7 Myr. `theta['frac_obrun']` specifies the fraction escaping some
+of this attenuation, with geometry set by `fesc_geometry` on `CSPBasis`:
 
-- **`'runaway_bc'`** (default). A fraction `frac_obrun` of the light of **every age row** skips
-  that row's age-bin attenuation; it is still attenuated by the diffuse dust. The nebular ages
-  also emit a fraction `frac_obrun` of their ionising photons (free of the age-bin dust) and
-  power `1 - frac_obrun` of the nebular emission. With the default single bin only the ages
-  below 10.7 Myr are attenuated by a bin, so only they are affected. With several attenuated
-  age bins, old stars escape their own bin's dust too: an old-only population (two power-law
-  bins, `tau_pow1 = 1`, `tau_pow2 = 0.5`, SFR zero below 2.6 Gyr) is 1.19x brighter at 5500 A
-  for `frac_obrun = 0.3` and 1.65x for `frac_obrun = 1`.
-- **`'picket'`**. A fraction `frac_obrun` of the **young** light (the ages of the nebular CLOUDY
-  grid, log age <= 7.3, 20 Myr, on the shipped grids), ionising photons included, is not
-  attenuated by any dust or gas: no age-bin dust, no diffuse dust, no nebular reprocessing
-  (the nebular emission scales with `1 - frac_obrun` and the escape fraction of ionising
-  photons is `frac_obrun`), and it is not counted as absorbed in the dust-emission energy
-  balance. Requires `add_neb=True`. The picket's "young" (to 20 Myr) is wider than the default
-  birth-cloud bin (to 10.7 Myr): the 11-20 Myr ages get no birth-cloud dust, but a fraction
-  `frac_obrun` of their light still skips the diffuse dust.
+- **`'runaway_bc'` (default):** a fraction `frac_obrun` from every age row
+  bypasses its age-bin dust but still receives diffuse attenuation.
+  Nebular-age populations release that fraction of their ionising photons
+  without age-bin attenuation, leaving `1 - frac_obrun` to power nebular
+  emission. With the default bin, only ages below 10.7 Myr are affected.
+  With several attenuated bins, older stars can also bypass their bin's
+  dust. For an old-only population with two power-law bins, `tau_pow1=1`,
+  `tau_pow2=0.5` and no SFR below 2.6 Gyr, the 5500 Å flux increases by
+  factors of 1.19 at `frac_obrun=0.3` and 1.65 at `frac_obrun=1`.
+- **`'picket'`:** a fraction `frac_obrun` of young light, including ionising
+  photons, bypasses all dust and gas. It produces no nebular emission and
+  adds no absorbed energy to dust emission. The remaining fraction powers
+  nebular emission. This requires `add_neb=True`. Young ages are those in
+  the CLOUDY grid, up to log age = 7.3 (20 Myr) in the published grids.
+  Thus light at 11–20 Myr has no default birth-cloud attenuation, but its
+  escaping fraction still bypasses diffuse dust.
 
-`frac_obrun = 0` is the model without the key in both geometries.
+In either geometry, `frac_obrun=0` reproduces the model without that key.
 
 ## FSPS at runtime
 
-With `add_neb=True` or `add_dust_emission=True`, the forward model reads CLOUDY
-nebular grids and Draine & Li templates from `$SPS_HOME`. FSPS must be installed
-and `$SPS_HOME` set. See [Installation](installation.md).
+Nebular and dust-emission models read data from `$SPS_HOME` at runtime.
+Install the FSPS data and set this path before using `add_neb=True` or
+`add_dust_emission=True`; see [Installation](installation.md).

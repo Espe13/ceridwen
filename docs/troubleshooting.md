@@ -1,17 +1,18 @@
 # Troubleshooting
 
-Start with the environment check. It reports the Python version, every dependency, the
-bundled filter curves and attenuation laws, float64, nested sampling and `$SPS_HOME`, each
-problem with its fix:
+Run the environment check first. It checks Python, dependencies, filter curves,
+attenuation laws, float64, nested sampling and `$SPS_HOME`, and suggests fixes
+for any problems:
 
 ```bash
 python -m ceridwen.check
 ```
 
-**pip says "No matching distribution found for jaxlib>=0.9.0" on a Mac.** The Python is an
-Intel (x86_64) build: jax publishes no Intel-Mac wheels after 0.4.38, and CERIDWEN needs
-jax >= 0.9. On Apple Silicon this happens when conda itself is an Intel install, such as an
-old Anaconda, running under Rosetta. Check with
+**pip reports "No matching distribution found for jaxlib>=0.9.0" on a Mac.**
+This usually means Python is an Intel (`x86_64`) build. JAX has no Intel-Mac
+wheels after 0.4.38, while CERIDWEN requires JAX >= 0.9. On Apple Silicon,
+an older Intel Anaconda installation running under Rosetta can cause this.
+Check Python's architecture with:
 
 ```bash
 python -c "import platform; print(platform.machine())"     # must print arm64
@@ -20,39 +21,40 @@ python -c "import platform; print(platform.machine())"     # must print arm64
 If it prints `x86_64`, install [Miniforge](https://github.com/conda-forge/miniforge) for
 arm64 and create the environment with its `conda`. Intel Macs cannot run CERIDWEN.
 
-**`$SPS_HOME` is unset or incomplete.** `CSPBasis(add_neb=True)` or
-`add_dust_emission=True` raises a `ValueError` when neither `sps_home=` nor `$SPS_HOME` is
-given. Clone FSPS and set the variable in your shell startup file
-([Installation](installation.md)). Open a new terminal and check that `echo $SPS_HOME` prints
-the path; if it is blank, the line went into the wrong file (`echo $SHELL` tells you which
-shell you use).
+**`$SPS_HOME` is unset or incomplete.** `CSPBasis(add_neb=True)` and
+`add_dust_emission=True` require either `sps_home=` or `$SPS_HOME`. Clone FSPS
+and add the path to your shell startup file; see [Installation](installation.md).
+Open a new terminal and run `echo $SPS_HOME`. If it is blank, check that you
+edited the startup file for your shell (`echo $SHELL`).
 
-**`python-fsps` does not import.** You need it only to build your own SSP grid
-(`SSPData.from_fsps`). It compiles Fortran against `$SPS_HOME`, so set `$SPS_HOME` first and
-install a Fortran compiler ([Installation](installation.md#building-your-own-ssp-grid)).
+**`python-fsps` fails to import.** The wrapper is needed only for
+`SSPData.from_fsps`, which builds SSP grids. Set `$SPS_HOME` and install a
+Fortran compiler before installing it. See
+[Building a grid](installation.md#building-your-own-ssp-grid).
 
-**`fetch_grid` says the cached grid fails its checksum.** The file in `~/.ceridwen/grids` (or
-`$CERIDWEN_GRID_DIR`) is incomplete or an earlier release. `fetch_grid(name, force=True)`
-downloads it again.
+**A cached grid fails its checksum.** The file in `~/.ceridwen/grids` or
+`$CERIDWEN_GRID_DIR` may be incomplete or from an earlier release. Download
+a replacement with `fetch_grid(name, force=True)`.
 
-**An import picks up the wrong `ceridwen`.** Started from the folder that contains a clone,
-Python finds the clone folder `ceridwen` before the installed package. Run scripts from
-inside the clone or from any other folder.
+**Python imports the wrong `ceridwen`.** Running from the directory containing
+a clone can cause Python to find that folder before the installed package.
+Run the script from inside the clone or another directory.
 
-**NUTS prints nothing for a long time.** Warmup and sampling are each one compiled loop, so
-there is no progress output, and Ctrl-C does not stop them; use `kill`. On a CPU, NUTS takes
-hours for a typical fit; use nested sampling there, or a GPU ([Samplers](samplers.md)).
+**NUTS produces no output for a long time.** Warmup and sampling each run as a
+compiled loop without progress output. Ctrl-C does not interrupt these loops;
+use `kill` to stop the process. Typical CPU fits take hours. Use nested
+sampling on the CPU or run NUTS on a GPU; see [Samplers](samplers.md).
 
-**A test skips.** A grid-dependent test skips when it finds no SSP grid; a skip is not a pass.
-Point the tests at the published BPASS grid:
+**Grid-dependent tests are skipped.** These tests cannot run without an SSP
+grid. Point them at the published BPASS grid:
 
 ```bash
 export CERIDWEN_TEST_SSP=$(python -c "from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_bpass_v2'))")
 ```
 
-**A number looks plausible but wrong.** The common causes are a metallicity in the wrong
-units (`logzsol` is log10(Z/Z_sun) of the grid), a lookback-time grid in the wrong order
-(index 0 is today), and a misspelt `theta` key. See [Conventions](conventions.md) and
-[`GOTCHAS.md`](https://github.com/Espe13/ceridwen/blob/main/GOTCHAS.md). If an AI assistant
-helps you use CERIDWEN, point it at
-[`AGENTS.md`](https://github.com/Espe13/ceridwen/blob/main/AGENTS.md).
+**Results have unexpected values.** Check metallicity units (`logzsol` is
+log10(Z/Z_sun) for the loaded grid), lookback-time ordering (index 0 is today)
+and spelling of `theta` keys. See [Conventions](conventions.md) and
+[`GOTCHAS.md`](https://github.com/Espe13/ceridwen/blob/main/GOTCHAS.md).
+If you use an AI assistant, give it the repository's
+[`AGENTS.md`](https://github.com/Espe13/ceridwen/blob/main/AGENTS.md) instructions.

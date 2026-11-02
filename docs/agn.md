@@ -1,12 +1,14 @@
-# AGN
+# AGN models
 
-`CSPBasis(..., agn=AGNConfig(...))` adds an active nucleus to the forward model: everything
-Prospector has for AGN, built so that it can **reproduce** FSPS and Prospector exactly
-(`agn_mode="fsps"`, `"prospector"`), and then **correctly** (`agn_mode="corrected"`, the
-default). The CIGALE-standard components (SKIRTOR torus, polar dust, Feltre+16 narrow-line
-region, broad-line region; section "AGN2") come with a fourth mode, `agn_mode="cigale"`, that
-reproduces CIGALE. Without `agn=` nothing changes: every existing prediction is byte-identical
-(`scripts/bit_identity_check.py`), and so does `AGNConfig()` with the AGN2 switches off.
+`CSPBasis(..., agn=AGNConfig(...))` adds AGN emission. The default
+`agn_mode="corrected"` normalises and attenuates the components as described
+below. Modes `"fsps"` and `"prospector"` reproduce the corresponding
+implementations, subject to the differences listed in the comparison sections.
+Mode `"cigale"` follows CIGALE's SKIRTOR and polar-dust conventions.
+
+Omitting `agn=` preserves existing predictions byte for byte, as checked by
+`scripts/bit_identity_check.py`. The additional AGN2 components are disabled
+by default and do not change `AGNConfig()` predictions until enabled.
 
 ```python
 from ceridwen import CSPBasis, Cosmology
@@ -19,8 +21,9 @@ csp = CSPBasis(ssp, ..., agn=AGNConfig(agn_mode="fsps"))         # FSPS add_agn_
 csp = CSPBasis(ssp, ..., agn=AGNConfig(agn_mode="prospector", dust4_type=1))
 ```
 
-`agn=True` is short for `AGNConfig()` and `agn="fsps"` (etc.) for `AGNConfig(agn_mode="fsps")`.
-`CSPBasis_afe` takes the same argument. A worked example is `examples/agn_demo.py`.
+`agn=True` means `AGNConfig()`. A string such as `agn="fsps"` sets
+`AGNConfig(agn_mode="fsps")`. `CSPBasis_afe` accepts the same argument.
+See `examples/agn_demo.py` for an example.
 
 ## Components and parameters
 
@@ -31,14 +34,24 @@ csp = CSPBasis(ssp, ..., agn=AGNConfig(agn_mode="prospector", dust4_type=1))
 | AGN dust screen | `dust4` (0), `dust4_index` (-1.0) | extra screen on the AGN: `exp(-dust4 (lam/5500)^dust4_index)` times the galaxy's diffuse curve; `AGNConfig(dust4_type=1)` | Prospector `fake_fsps.attenuate` |
 | AGN narrow lines | `agn_elum` (0), `agn_eline_sigma` (100) | L_Hbeta [L_sun] per formed M_sun; Gaussian width [km/s]; 23 lines with Richardson+14 'a42' ratios by FSPS name | Prospector `AGNSpecModel` |
 
-L_bol,\* is the dust-free stellar spectrum integrated over frequency on the model grid (the
-DL07 trapezoid weights), per formed mass, so every AGN component scales with the SFH's formed
-mass like the stars do. Static options of `AGNConfig`: `agn_mode`, `torus`/`disk`/`lines`
-(`None` = the mode's default: torus only in `fsps`, all three otherwise), `dust4_type` (0 or
-1; 2 is refused as in Prospector), `tau_interp` (`"linear"`, FSPS; `"log"` in corrected mode
-only), `agn_energy_balance` (corrected mode; `None` = on with dust emission), `torus_file`.
+L_bol,* is the dust-free stellar luminosity integrated over frequency on
+the model grid using DL07 trapezoidal weights, per formed mass. AGN
+components scale with formed mass in the same way as stellar emission.
 
-**Sampling.** `fagn` and `fagn_bbb` span decades: sample their logarithms with transforms,
+`AGNConfig` has the following fixed options:
+
+- `agn_mode` selects the implementation.
+- `torus`, `disk` and `lines` enable components. `None` uses the mode's
+  default: torus only for `fsps`, all three for the other modes.
+- `dust4_type` accepts 0 or 1; 2 is unsupported, as in Prospector.
+- `tau_interp` is `"linear"` for FSPS interpolation. Corrected mode also
+  accepts `"log"`.
+- `agn_energy_balance` is available in corrected mode. `None` enables it
+  when dust emission is active.
+- `torus_file` specifies a template file.
+
+**Sampling amplitudes.** `fagn` and `fagn_bbb` span several orders of
+magnitude. Sample their logarithms and transform them:
 
 ```python
 priors = {"log_fagn": Uniform(low=-5.0, high=np.log10(3.0)),       # Prospector: LogUniform(1e-5, 3)
@@ -52,44 +65,48 @@ transforms = {"fagn": lambda th: 10.0 ** th["log_fagn"],
 free_param_init = {"log_fagn": jnp.array([-1.0]), "log_fagn_bbb": jnp.array([-1.0])}
 ```
 
-`log_fagn` and `log_fagn_bbb` are new names, so they also go into `free_param_init`
-(`SedModel(..., priors=priors, transforms=transforms, free_param_init=free_param_init)`);
-without it `SedModel` refuses their priors. With `add_neb=True` and `add_dust_emission=True`
-the model also samples `gas_logz`, `gas_logu`, `duste_qpah`, `duste_umin`, `duste_gamma`,
-the birth-cloud dust `tau_pow` and `alpha_pow` (and, with the AGN lines on,
-`agn_eline_sigma`): give each a prior or fix it with a constant transform, because nested
-sampling refuses a free parameter without a prior. Dust emission needs both dust screens:
-`add_dust=True` (the birth clouds) and `add_diffuse_dust=True` (both are on by default).
-`examples/agn_demo.py --fit` is a complete fit.
+Add `log_fagn` and `log_fagn_bbb` to `free_param_init` as well as `priors`
+and `transforms`. `SedModel` rejects priors for names missing from the
+initial parameters. With `add_neb=True` and `add_dust_emission=True`, provide
+priors or constant transforms for `gas_logz`, `gas_logu`, `duste_qpah`,
+`duste_umin`, `duste_gamma`, `tau_pow` and `alpha_pow`. AGN lines also add
+`agn_eline_sigma`. Nested sampling requires a prior for every free parameter.
+Dust emission requires both `add_dust=True` and `add_diffuse_dust=True`,
+which are enabled by default. Run `examples/agn_demo.py --fit` for a full fit.
 
-**What photometry recovers.** With dust emission and energy balance on, the DL07 re-emission
-of the stellar dust competes with the torus in the mid-infrared: `log_fagn` is anti-correlated
-with the diffuse optical depth, and `logmass` trades against the SFH shape. In
-`agn_demo.py --fit` (UV-to-24 µm photometry at S/N 20, Apple GPU) `log_fagn` and `logmass`
-came out within their 16-84 % ranges of the truth, and `agn_tau`'s range (21 to 76) sits just
-above its truth of 20. With the earlier SFH prior `StudentT(scale=1.0)`, a newcomer mock gave
-`log_fagn` and `logmass` 0.25 and 0.3 dex low (outside the 95 % range), on both the GPU and
-the CPU, while the maximum-likelihood sample sat at the truth. The disc (`log_fagn_bbb`) is weakly constrained by broad bands. Check the corner plot
-before quoting an AGN fraction from photometry alone.
+**Photometric constraints.** Stellar dust emission and the torus both
+contribute in the mid-infrared. With energy balance enabled, `log_fagn`
+is anti-correlated with diffuse optical depth. Mass is also degenerate
+with SFH shape.
+
+In `agn_demo.py --fit`, using UV-to-24 µm photometry at S/N 20 on an Apple
+GPU, the 16–84% intervals for `log_fagn` and `logmass` contained the input
+values. The `agn_tau` interval, 21–76, was just above its input of 20.
+With an earlier `StudentT(scale=1.0)` SFH prior, a mock fit underestimated
+`log_fagn` by 0.25 dex and `logmass` by 0.3 dex on CPU and GPU. Both inputs
+fell outside the 95% intervals even though the maximum-likelihood sample
+was near the input. Broadband data weakly constrain `log_fagn_bbb`.
+Inspect the corner plot when interpreting photometric AGN fractions.
 
 ## Fitting the AGN line width
 
-`agn_eline_sigma` is the Gaussian dispersion [km/s] of the 23 AGN narrow lines. In the
-corrected mode they are painted with width sqrt(agn_eline_sigma^2 + sigma_inst^2), the
-instrument at each line (`SpectralProjector.setup_agn_lines`), on every pixel: no window
-truncates them, and the gradient in `agn_eline_sigma` is finite down to 1e-3 km/s
-(`tests/agn/test_eline_sigma.py`).
+`agn_eline_sigma` is the Gaussian dispersion in km/s for the 23 AGN narrow
+lines. Corrected mode combines it with the instrumental width at each line
+as sqrt(agn_eline_sigma² + sigma_inst²). Profiles are evaluated on all
+pixels by `SpectralProjector.setup_agn_lines`. Gradients remain finite
+down to 1e-3 km/s (`tests/agn/test_eline_sigma.py`).
 
-**Allowed values.** A prior, a constant transform or a fixed value must lie in (0, 2000] km/s
-(2000 = the `Kinematics.sigma_max` default); `SedModel` refuses anything else at setup. These
-are narrow-line-region lines with Richardson+14 narrow-line ratios: broad-line-region widths
-(thousands of km/s) are the BLR component's (`AGNConfig(blr=True)`, `blr_sigma`, below).
+Fixed values, transforms and prior support must lie in (0, 2000] km/s,
+using the default `Kinematics.sigma_max`. Invalid values raise an error
+at setup. These lines use Richardson+14 narrow-line ratios. For broad-line
+emission, use `AGNConfig(blr=True)` and `blr_sigma`, described below.
 
-**When to sample it, when to fix it.** Only a Spectrum that resolves the AGN lines constrains
-the width: Lines fluxes do not depend on it, and Photometry only through line light near a
-filter edge. `SedModel` warns at setup when it has a prior but no Spectrum, no unmasked
-pixel at an AGN line, or an instrumental sigma above 3x the prior's upper edge at every AGN
-line. Then fix it:
+Only a spectrum resolving AGN lines provides a useful width constraint.
+Integrated `Lines` fluxes are independent of width; photometry depends
+on it mainly near filter edges. `SedModel` warns if a width prior is
+supplied without a spectrum, without unmasked AGN-line pixels, or when
+instrumental sigma exceeds three times the prior's upper bound at every
+AGN line. Fix the width in these cases:
 
 ```python
 transforms = {"agn_eline_sigma": lambda th: jnp.array([100.0])}   # and no prior on it
@@ -105,15 +122,18 @@ The instrumental sigma is sigma_inst = c / (2.3548 R_FWHM):
 | 1000 | 127 | 42 km/s |
 | 2700 | 47 | 16 km/s |
 
-The warning is a floor, not a guarantee: a prism at R ~ 100 with `Uniform(50, 500)` passes it
-(1273 < 3 x 500) and the width is still prior-dominated (below). Sample the width with
-a grating, fix it with a prism.
+Passing this check does not establish that the width is measured.
+A prism at R ≈ 100 with `Uniform(50, 500)` passes because
+1273 < 3 × 500, yet the posterior remains prior-dominated. In the tests
+below, the grating constrained the width and the prism did not.
 
-**Recovery on CPU** (`scripts/agn_injection_recovery.py --spec grating|prism`; z = 3, the
-JADES-like photometry plus a noiseless spectrum of rest 3600-6900 A at continuum S/N 20 per
-pixel; corrected mode with nebular emission; truths agn_elum = 3e-3, agn_eline_sigma = 250,
-sigma_gas = 60; all free with every stellar and continuum-AGN parameter; nested sampling,
-`slice_kernel="lanes"`):
+The CPU recovery test used
+`scripts/agn_injection_recovery.py --spec grating|prism` at z = 3 with
+JADES-like photometry and a noiseless rest-frame 3600–6900 Å spectrum,
+assigned continuum S/N 20 per pixel. Corrected mode included nebular
+emission. Input values were `agn_elum=3e-3`, `agn_eline_sigma=250` and
+`sigma_gas=60`. These, stellar parameters and continuum AGN parameters
+were fitted jointly with nested sampling and `slice_kernel="lanes"`:
 
 | parameter | truth | grating, R 1000 (num_live 400): median, 16-84 % | in 2.5-97.5 % | prism, R 100 (num_live 100): median, 16-84 % | in 2.5-97.5 % |
 |---|---|---|---|---|---|
@@ -127,32 +147,34 @@ sigma_gas = 60; all free with every stellar and continuum-AGN parameter; nested 
 | `logzsol` | -0.5 | -0.543 (-0.585 to -0.493) | yes | -0.558 (-0.659 to -0.478) | yes |
 | `diffuse_tau_kc` | 0.4 | 0.4 (0.387 to 0.417) | yes | 0.439 (0.377 to 0.502) | yes |
 
-`agn_eline_sigma` posterior / prior standard deviation: 0.029 with the
-grating, 0.85 with the prism (prior-dominated). With the grating the line
-parameters are recovered to a few per cent; `logmass` sits just outside its 95 % interval
-(97.5 % at 9.999; 9.991 with num_live 100) although the truth has chi^2 = 0 (the best
-sample of the num_live 100 run has chi^2 = 0.9): the SFH directions projected onto the mass
-in the marginal, not a missed likelihood peak. `agn_elum` is per formed solar mass, so it trades with `logmass` (correlation -0.92).
-Posteriors: `sigma_<spec>[_nl400].npz` written by the script.
+The ratio of posterior to prior standard deviation for `agn_eline_sigma`
+was 0.029 with the grating and 0.85 with the prism. Grating line parameters
+were recovered to a few percent. `logmass` was just outside its 95% interval:
+the 97.5% quantile was 9.999 with 400 live points and 9.991 with 100.
+The input has χ² = 0, and the best 100-live-point sample had χ² = 0.9.
+The mass offset reflects marginalisation over SFH directions rather than
+a missed likelihood peak. Since `agn_elum` is per formed mass, it is
+strongly anti-correlated with `logmass` (−0.92). The script writes
+posteriors to `sigma_<spec>[_nl400].npz`.
 
-**Degeneracy with sigma_gas.** The AGN lines sit on the same wavelengths as the star-forming
-lines (H beta, [O III], H alpha, [N II], [S II], ...), so a line is the sum of two Gaussians,
-sqrt(sigma_gas^2 + sigma_inst^2) and sqrt(agn_eline_sigma^2 + sigma_inst^2) wide. The data
-fix the blended profile; how it splits into the two widths depends on how much of each line
-is AGN. With the prism the two widths are both unconstrained (sigma_gas 139 +85/-76 km/s
-against a truth of 60, agn_eline_sigma posterior / prior width 0.85); with the grating
-the two widths are measured separately (agn_eline_sigma 252 +3/-4, sigma_gas 60.4 +2.4/-2.3
-km/s) with a posterior correlation of only -0.17: the AGN and the nebular lines carry
-different ratios, so different lines constrain different mixtures of the two widths.
+**Gas-width degeneracy.** AGN and star-forming emission share wavelengths
+such as Hβ, [O III], Hα, [N II] and [S II]. Each observed profile combines
+Gaussians of widths sqrt(sigma_gas² + sigma_inst²) and
+sqrt(agn_eline_sigma² + sigma_inst²). Separating them depends on their
+relative fluxes and line ratios.
 
-**What separates AGN from star formation is the line RATIOS, not the widths.** The AGN lines
-carry fixed Richardson+14 'a42' ratios (strong [O III]/H beta, [N II]/H alpha, [S II], [O I]),
-the nebular lines the CLOUDY ratios of the gas parameters, so `agn_elum` is set by the
-ratios: in the prism fit above the width is prior-dominated while `agn_elum` is recovered
-(3.68e-3, 16/84 % 3.06e-3 to 4.35e-3, truth 3e-3). Do not read an AGN detection off a
-width.
+For the prism, both widths were weakly constrained: `sigma_gas` was
+139 (+85/−76) km/s for an input of 60, and the AGN posterior/prior width
+ratio was 0.85. The grating recovered `agn_eline_sigma=252` (+3/−4) and
+`sigma_gas=60.4` (+2.4/−2.3) km/s, with correlation −0.17. Different
+line ratios helped distinguish the two contributions.
 
-## The three modes
+The fixed Richardson+14 'a42' ratios and gas-dependent CLOUDY ratios
+also constrain `agn_elum` when widths are unresolved. The prism fit gave
+3.68e-3 [3.06e-3, 4.35e-3] for an input of 3e-3. Interpret AGN emission
+using the line ratios as well as the profiles.
+
+## FSPS, Prospector and corrected modes
 
 | | `"fsps"` | `"prospector"` | `"corrected"` (default) |
 |---|---|---|---|
@@ -165,16 +187,18 @@ width.
 | AGN lines | painted with Prospector's painter (no instrument, no dust, no IGM); photometry as delta functions | same as fsps | nebular painter with `agn_eline_sigma` (instrument included), the galaxy's diffuse dust and the IGM at each line; photometry through the model grid like the nebular lines |
 | energy balance | no | no | absorbed AGN light (continuum and lines) re-emitted by DL07 when `add_dust_emission=True` |
 
-Without dust emission the corrected mode loses the absorbed AGN light exactly as absorbed
-starlight is lost. FSPS and Prospector have no AGN energy balance, so `agn_energy_balance=True`
-is refused in the reproduction modes. AGN lines need `add_neb=True` in the reproduction
-modes (Prospector paints them only near nebular lines); the corrected mode paints them
-without the nebular model.
+Without dust emission, absorbed AGN light is removed from the output,
+as is absorbed stellar light. FSPS and Prospector modes do not support
+AGN energy balance and reject `agn_energy_balance=True`. In those modes,
+AGN lines require `add_neb=True` because the Prospector profiles are placed
+only near nebular lines. Corrected mode does not require a nebular model
+to add AGN lines.
 
-## Parity with FSPS and Prospector (AGN_PLAN §4 A)
+## Comparison with FSPS and Prospector
 
-References: python-fsps 0.5.0 (libfsps `05b5e55`) and prospect `91f8e13`, written by
-`scripts/agn_reference/make_refs.py` into `tests/reference/agn/*.npz`; tests in `tests/agn/`.
+Reference files use python-fsps 0.5.0 (libfsps `05b5e55`) and prospect
+`91f8e13`. `scripts/agn_reference/make_refs.py` writes them to
+`tests/reference/agn/*.npz`; comparisons are in `tests/agn/`.
 
 | test | what | result |
 |---|---|---|
@@ -184,21 +208,20 @@ References: python-fsps 0.5.0 (libfsps `05b5e55`) and prospect `91f8e13`, writte
 | A4 | AGN lines vs `AGNSpecModel` (agn_eline_sigma 50, 300) | luminosities exact; spectrum 1.2e-13 of peak; Lines 8.9e-18; photometry 1.7e-16 with sedpy's curves (6e-5 with CERIDWEN's vendored NIRCam curves, a filter-data difference) |
 | A5 | whole model vs python-fsps + `AGNPolySpecModel` (z = 3, 15 NIRCam + MIRI bands) | torus spectrum 1.7e-14 (Prospector's L_bol fed in); disc spectrum 1.7e-14 in shape; full-CSP AGN-only photometry = Prospector's x the galaxy scalars to 1.1e-3 (the filter-curve term, the same on the galaxy) |
 
-A5 cannot be one number: the AGN-only difference depends on the galaxy through two scalars
-that two SPS codes compute differently by design — L_bol (the torus) and the galaxy at
-5500 A (the disc normalisation) — and on the filter curves. On the A5 SFH with the BPASS test
-grid: CERIDWEN / Prospector L_bol = 0.8515, disc normalisation 0.8300, flux normalisation
-0.99447 (cosmology implementation). With those applied the whole CSP reproduces Prospector to
-the filter term.
+The whole-model A5 comparison depends on differences in stellar L_bol,
+the 5500 Å disc normalisation and filter curves. For its BPASS SFH,
+CERIDWEN/Prospector ratios were 0.8515 for L_bol, 0.8300 for disc
+normalisation and 0.99447 for flux normalisation from cosmology.
+Accounting for these factors leaves the filter-curve difference.
 
-**Prospector counts the torus twice.** `AGNSSPBasis` passes `fagn` / `agn_tau` to python-fsps,
-whose libfsps always adds its own torus (`add_agn_dust = 1` is a Fortran default python-fsps
-cannot switch off), and then adds `fake_fsps.agn_torus` on top: the AGN-only torus photometry
-of real Prospector is 1.39-1.90x the torus term alone. The prospector mode reproduces the
-torus term alone (Prospector's evident intent); `tests/agn/test_a5_whole_model.py` records the
-size of the double count.
+In the referenced Prospector version, `AGNSSPBasis` passes `fagn` and
+`agn_tau` to python-fsps, whose Fortran default `add_agn_dust=1` adds a
+torus. Python-fsps cannot disable that default. `AGNSSPBasis` then adds
+`fake_fsps.agn_torus`, producing 1.39–1.90 times the torus-only photometry.
+CERIDWEN's Prospector mode reproduces the single torus term. The test
+`tests/agn/test_a5_whole_model.py` records this difference.
 
-## Corrected-mode physics (AGN_PLAN §4 B)
+## Corrected-mode checks
 
 | test | result |
 |---|---|
@@ -212,13 +235,14 @@ size of the double count.
 | B8 jit, vmap (W = 64, 100), grad | finite gradients in every AGN key; vmap = loop to float32 reordering |
 | B9 `marginalize_elines` with AGN lines | refused at setup |
 
-The Nenkova+08 SEDs integrate to 0.989-0.996 of the file's own trapezoid on any dense grid
-(the log-log SED is not the trapezoid of its nodes); the corrected mode renormalises to
-exactly `fagn * L_bol`, the fsps mode keeps FSPS's normalisation (a 0.4-1.1 % difference).
+On a dense grid, integrating the log-log interpolated Nenkova+08 SEDs
+gives 0.989–0.996 times the trapezoidal integral of the original nodes.
+Corrected mode renormalises to `fagn * L_bol`; FSPS mode retains the
+FSPS normalisation. The resulting difference is 0.4–1.1%.
 
-## AGN2: the CIGALE standard (SKIRTOR, polar dust, Feltre+16 NLR, BLR)
+## AGN2 components: SKIRTOR, polar dust, NLR and BLR
 
-Four static switches of `AGNConfig`, all off by default (`AGNConfig()` is unchanged, byte for byte):
+These four `AGNConfig` switches are disabled by default:
 
 ```python
 from ceridwen.agn import AGNConfig
@@ -236,39 +260,48 @@ agn = AGNConfig(agn_mode="corrected",            # or "cigale"
 | Feltre+16 NLR | `agn_elum` (0), `agn_eline_sigma` (100), `nlr_logu` (-2.5), `nlr_logz` (0), `nlr_alpha` (-1.7), `nlr_xid` (0.3), `nlr_lognh` (3) | L_Hbeta,NLR [L_sun] per formed M_sun; sigma [km/s]; log U_S [-5, -1]; log Z/Z_sun [-2.18, +0.66] (Z_sun = 0.01524); alpha [-2, -1.2]; xi_d [0.1, 0.5]; log n_H [2, 4] | public NEOGAL grid (`AGN_NLR_nebular_feltre16.tar.gz`), 17 of its 20 lines (N V 1240, [Si III] 1883, Si III] 1888 are not in the FSPS line list); [O II] 3726+3729 sits on `[O II] 3726` as in the a42 table |
 | BLR | `blr_lum` (0), `blr_sigma` (1500) | L_Halpha,BLR [L_sun] per formed M_sun, before attenuation; Gaussian **sigma** [km/s] (FWHM = 2.35482 sigma; support [400, 5000]) | 8 H I lines (H alpha-delta, Pa alpha-delta), Case B (Storey & Hummer 1995 via PyNeb), T = 1e4 K, n_e = 1e4: H alpha / H beta = 2.847 (`ceridwen/agn/data/blr_caseB_T1e4_ne1e4.csv`) |
 
-Interpolation is multilinear in the tabulated variables (log line ratios for the NLR), clamped at
-the grid edges; a fixed value outside a grid warns at setup and a **prior** reaching outside it
-raises (`SedModel`, as for `gas_logz`). The SKIRTOR (227 MB) and NLR tables are not shipped: the
-converters `scripts/agn2/build_skirtor_h5.py` and `build_nlr_h5.py` of the source repository write
-`$CERIDWEN_AGN_DATA/skirtor2016.h5` and `nlr_feltre16.h5` (default `~/.ceridwen/agn/`); a missing
-file is a teaching error at construction. The tests that need them skip with "MISSING ...: did NOT
-run". Data licences (SKIRTOR, Feltre+16) have not been checked for redistribution.
+Interpolation is multilinear in the tabulated variables, using log line
+ratios for the NLR. Values are clamped to grid edges. Fixed values outside
+a grid produce a setup warning; priors extending outside it raise an error.
+
+SKIRTOR (227 MB) and NLR tables are supplied separately. The repository
+scripts `scripts/agn2/build_skirtor_h5.py` and `build_nlr_h5.py` write
+`skirtor2016.h5` and `nlr_feltre16.h5` to `$CERIDWEN_AGN_DATA`, which
+defaults to `~/.ceridwen/agn/`. Missing files raise an error at construction
+with setup instructions. Dependent tests skip with "MISSING ...: did NOT run".
+The SKIRTOR and Feltre+16 redistribution licences have not been checked.
 
 ### CIGALE extinction curves
 
-The polar dust reads CIGALE's three dust-model curves below 100 nm (`extFun_SMC.dat`,
-`extFun_MRN.dat`, `extFun_Gaskel04.dat`, from `pcigale/sed_modules/curves/` at cigale 29cb909f).
-They are CIGALE's files under CeCILL-2.0, so ceridwen does not ship them. Put them into
-`$CERIDWEN_AGN_DATA` (default `~/.ceridwen/agn/`) once:
+Below 100 nm, polar dust uses CIGALE's `extFun_SMC.dat`, `extFun_MRN.dat`
+and `extFun_Gaskel04.dat` from `pcigale/sed_modules/curves/` at commit
+29cb909f. These CeCILL-2.0 files are not bundled with CERIDWEN.
+Install them in `$CERIDWEN_AGN_DATA` (default `~/.ceridwen/agn/`):
 
 ```bash
 python -m ceridwen.agn.fetch --from /path/to/cigale   # a CIGALE checkout or installed pcigale; no network
 python -m ceridwen.agn.fetch --download               # from gitlab.lam.fr, through the system curl
 ```
 
-or from Python, `ceridwen.agn.fetch_grids(from_cigale=...)` / `fetch_grids(download=True)`. Every
-file is checked against the sha256 of the table the parity tests were built against, and a file
-that differs is never written. Copying them by hand works too: either CIGALE's name or the former
-`cigale_extFun_*.txt` is read. Without them `polar_dust=True` raises at construction with these
-commands; with a changed table it raises naming the file. The tests that need them skip.
+From Python, use `ceridwen.agn.fetch_grids(from_cigale=...)` or
+`fetch_grids(download=True)`. Each SHA-256 must match the reference table
+used by the comparison tests; differing files are not written. Manual
+copies may use the CIGALE names or the older `cigale_extFun_*.txt` names.
+Missing or changed curves raise a construction error when `polar_dust=True`.
+Tests requiring missing curves are skipped.
 
-**What is refused.** The AGN2 switches in `"fsps"` / `"prospector"` modes; the Temple disc with
-SKIRTOR (SKIRTOR carries its own disc); `dust4_type=1` with SKIRTOR (its nuclear screen is the
-polar dust); `polar_dust=True` without SKIRTOR; in `"cigale"` mode the Nenkova torus, the Temple
-disc, the dust4 screen and the a42 lines (CIGALE has none of them), a CSP without any galaxy dust
-screen with SKIRTOR (CIGALE's `fagn` is relative to the galaxy's dust luminosity) or with
-`fesc_geometry="picket"` (that luminosity is computed with the screen geometry), and a `fagn`
-prior reaching 1. `marginalize_elines=True` with AGN lines (narrow or broad) is refused as before.
+The following combinations are unsupported:
+
+- AGN2 switches in `"fsps"` or `"prospector"` mode.
+- SKIRTOR with the Temple disc or `dust4_type=1`, since SKIRTOR includes
+  its own disc and uses polar dust for its nuclear screen.
+- `polar_dust=True` without SKIRTOR.
+- In `"cigale"` mode, the Nenkova torus, Temple disc, dust4 screen or
+  a42 lines. With SKIRTOR, galaxy dust is required because `fagn` is defined
+  relative to its luminosity. This mode also rejects `fesc_geometry="picket"`,
+  since that luminosity is calculated using screen geometry. A `fagn`
+  prior must remain below 1.
+- `marginalize_elines=True` with narrow or broad AGN lines.
 
 ### `agn_mode="cigale"` and `"corrected"`
 
@@ -284,12 +317,14 @@ prior reaching 1. `marginalize_elines=True` with AGN lines (narrow or broad) is 
 | line profile | Gaussian in ln lambda (CERIDWEN's painter); CIGALE's AGN lines are Gaussian in lambda: they differ at order sigma/c (4.7e-4 of the peak at FWHM 800 km/s, 4.1e-3 at 7000), same area | same |
 | IGM | after the AGN (CIGALE's redshifting module acts on every contribution) | the same |
 
-`PostProcess` reports, with SKIRTOR, `extras["agn"]["frac_agn_cigale"]` (CIGALE's fracAGN, both
-modes; equal to `fagn` in `"cigale"`), CIGALE's `agn.*` infos as `cigale_<name>` (accretion
-power, intrinsic L_nu at 2500 A at 30 deg, L_6um, L_12um, disc / torus / polar luminosities),
-`L_dust_gal`, `L_skirtor_disk`, `L_skirtor_dust` and `L_polar_ir`.
+With SKIRTOR, `PostProcess` returns `extras["agn"]["frac_agn_cigale"]`
+in both modes; it equals `fagn` in `"cigale"` mode. CIGALE's `agn.*`
+information is stored as `cigale_<name>`, including accretion power,
+intrinsic L_nu at 2500 Å viewed at 30°, L_6um, L_12um and disc, torus
+and polar luminosities. It also returns `L_dust_gal`, `L_skirtor_disk`,
+`L_skirtor_dust` and `L_polar_ir`.
 
-### Parity with CIGALE and the literature (`tests/agn2/`)
+### Comparison with CIGALE and reference tables (`tests/agn2/`)
 
 | test | what | result |
 |---|---|---|
@@ -300,121 +335,119 @@ power, intrinsic L_nu at 2500 A at 30 deg, L_6um, L_12um, disc / torus / polar l
 | L5 | BLR: line ratios vs the Case-B table; the profile vs CIGALE's AGN-line Gaussian | ratios exact; profile as in the table above |
 | corrected SKIRTOR energy | torus + polar IR luminosity vs `fagn` x L_bol,\* on the 15000-point test grid | 0.9e-6 to 5.5e-6 (the model grid's quadrature) |
 
-**Recommended priors** (PLAN_AGN2; BEAGLE-AGN, Vidal-Garcia+24, for the NLR): `fagn` Uniform(0,
-0.99) in `"cigale"`, `log_fagn` Uniform(-5, log10 3) in `"corrected"`; fix `skirtor_t` 7,
-`skirtor_pl` 1, `skirtor_q` 1, `skirtor_oa` 40 without mid-IR coverage, `skirtor_i` Uniform(0, 90);
-`polar_ebv` Uniform(0, 1); `nlr_logu` Uniform(-4, -1.5), `nlr_logz` Uniform(-2.18, 0.24), with
-`nlr_xid` 0.3, `nlr_alpha` -1.7 and `nlr_lognh` 3 fixed (they are degenerate with log U and the
-amplitude); `blr_sigma` LogUniform(400, 3000) km/s (JWST broad H alpha FWHM 890-6279 km/s).
-Only a resolved spectrum constrains `blr_sigma`; line fluxes alone do not.
+### Priors
 
-## Fixed by design — four things the AGN model does not do
+The following choices are used in the AGN2 configuration, with NLR priors
+following BEAGLE-AGN (Vidal-Garcia+24):
 
-These are deliberate, not omissions in progress. Each says what the code does, and what an
-option would have to add.
+- In `"cigale"` mode, use `fagn ~ Uniform(0, 0.99)`. In corrected mode,
+  use `log_fagn ~ Uniform(-5, log10 3)`.
+- Without mid-IR coverage, fix `skirtor_t=7`, `skirtor_pl=1`,
+  `skirtor_q=1` and `skirtor_oa=40`. Use `skirtor_i ~ Uniform(0, 90)`.
+- Use `polar_ebv ~ Uniform(0, 1)`.
+- For the NLR, use `nlr_logu ~ Uniform(-4, -1.5)` and
+  `nlr_logz ~ Uniform(-2.18, 0.24)`. Fix `nlr_xid=0.3`, `nlr_alpha=-1.7`
+  and `nlr_lognh=3`, which are degenerate with log U and amplitude.
+- Use `blr_sigma ~ LogUniform(400, 3000)` km/s. This corresponds to
+  the cited JWST broad-Hα FWHM range of 890–6279 km/s. Only a resolved
+  spectrum constrains this width; integrated line fluxes do not.
 
-### The line luminosities are absolute, and `fagn` does not scale them
+## Model assumptions and limitations
 
-`agn_elum` (narrow lines, both the Richardson+14 `a42` set and the Feltre+16 NLR) and `blr_lum`
-(broad lines) are **luminosities per formed solar mass**, not fractions:
-`FeltreNLR.line_luminosity` returns `agn_elum * R_line(theta)` (`ceridwen/agn/nlr.py:283`),
-`AGNLines` returns `agn_elum * ratio` (`lines.py:154`) and `BroadLines` returns
-`blr_lum * ratio_halpha` (`blr.py:160`). None of the three reads `fagn`, `fagn_bbb` or any
-continuum quantity; the CSP multiplies them by the SFH's formed mass `sum(W)` and then by
-`10**logmass`, exactly like the stellar light.
+### Line amplitudes are independent of the AGN continuum
 
-Consequences:
+`agn_elum` for Richardson+14 or Feltre+16 narrow lines and `blr_lum` for
+broad lines are luminosities per formed solar mass. They do not depend
+on `fagn`, `fagn_bbb` or the continuum. `FeltreNLR.line_luminosity` returns
+`agn_elum * R_line(theta)`, `AGNLines` returns `agn_elum * ratio` and
+`BroadLines` returns `blr_lum * ratio_halpha`. The CSP multiplies these
+by the SFH's formed mass `sum(W)` and `10**logmass`.
 
-* **Broad or narrow AGN lines without an AGN continuum are a legal model** (`fagn = 0`,
-  `fagn_bbb = 0`, `blr_lum > 0`). Nothing couples the two, so a fit can put a BLR on a galaxy
-  whose continuum shows no AGN at all. That is a modelling choice you make with the priors, not
-  something the model forbids.
-* Without the energy balance, `agn_elum` and `blr_lum` are constrained only by the lines, so
-  photometry with no resolved line fixes them barely at all. **With `agn_energy_balance=True`
-  they also reach the broadband IR**: the line light the galaxy's dust absorbs joins the DL07
-  reservoir and is re-emitted (`hook.py:293-304` for the narrow lines, `hook.py:337-349`
-  `blr_absorbed` for the broad ones), so IR photometry constrains them too.
-* Typical scale to judge a prior against: the galaxy's own nebular H beta is of order
-  `1e-3` to `1` L_sun per M_sun formed, so `agn_elum = 1` is an NLR H beta comparable with the
-  whole galaxy's. (That range is the one quoted in the AGN2 brief; it is not recomputed here.)
+This allows broad or narrow AGN lines with `fagn=fagn_bbb=0`. Use priors
+to restrict this if required by your model. Without energy balance,
+amplitudes are constrained by line emission and only weakly by photometry
+that does not resolve it. With `agn_energy_balance=True`, line light
+absorbed by galaxy dust is re-emitted by DL07, adding an IR constraint.
 
-An option (`agn_elum` tied to the AGN continuum, as CIGALE ties its AGN lines to the ionising
-photon rate) would need: an ionising-photon integral of the nuclear SED on the model grid, a
-Case-B (or Cloudy-table) conversion to H beta, a covering factor as a new theta key, a config
-switch that removes `agn_elum` from `param_names`, and a new golden configuration — the lines
-would then stop being linear in a single amplitude, which several AGN2 tests assert.
+For scale, the AGN2 notes quote galaxy nebular Hβ luminosities of roughly
+1e-3–1 L_sun per formed M_sun. This range has not been recomputed here.
+An `agn_elum` of 1 can therefore be comparable to the galaxy's entire
+nebular Hβ luminosity.
 
-### The NLR is a fixed Feltre+16 grid, not the model's own disc
+Tying line amplitudes to the AGN continuum would require an ionising-photon
+integral, a Case-B or CLOUDY conversion and a covering factor. It would
+also change parameter registration, the linear-amplitude tests and the
+golden configuration.
 
-The narrow-line ratios come from the tabulated Feltre, Charlot & Gutkin (2016) grid at its own
-five axes (`nlr_logu`, `nlr_logz`, `nlr_xid`, `nlr_lognh`, `nlr_alpha`; `nlr.py:54-60`).
-`nlr_alpha` is the **grid's** accretion-disc UV slope, a free theta key of the NLR — it is not
-read from the disc component: the SKIRTOR torus has no slope parameter at all
-(`AGN2_THETA_KEYS["skirtor16"]`, `ceridwen/agn/__init__.py:155`) and the Temple+21 disc's only
-parameter is its amplitude `fagn_bbb` (`disk.py:80`). The NLR therefore never sees the
-luminosity or the shape of the continuum the same fit puts in.
+### NLR ratios use a separate Feltre+16 grid
 
-An option would need an ionising continuum predicted on the Feltre grid's own axes — i.e. a
-disc model parameterised by `alpha` — plus the photon-rate normalisation of the point above;
-with the tabulated grid the most one can do cheaply is tie `nlr_alpha` to a disc slope through
-a `transforms` entry once a disc with a slope exists.
+The NLR uses the five Feltre, Charlot & Gutkin (2016) axes: `nlr_logu`,
+`nlr_logz`, `nlr_xid`, `nlr_lognh` and `nlr_alpha` (`nlr.py:54–60`).
+`nlr_alpha` is the UV slope used to generate that grid. It is independent
+of the fitted disc: SKIRTOR has no slope parameter and Temple+21 has
+only amplitude `fagn_bbb`. NLR ratios therefore do not respond to the
+fitted continuum's luminosity or shape.
+
+A continuum-coupled NLR would require a disc model with a slope matching
+the grid axes and the photon-rate normalisation described above. A
+transform could then tie `nlr_alpha` to that slope.
 
 ### The BLR does not depend on inclination
 
-`BroadLines` has exactly two parameters, `blr_lum` and `blr_sigma` (`blr.py:112`), and the
-transmission the hook gives it is the nuclear screen (polar dust, or the `dust4` power law) times
-the galaxy's diffuse curve in `"corrected"` (`hook.py:315-327`). `PolarDust.transmission` depends
-only on `polar_ebv` (`polar.py:195-199`): `skirtor_i` does not enter. This matches CIGALE, whose
-line module has no inclination term either.
+`BroadLines` has parameters `blr_lum` and `blr_sigma` (`blr.py:112`).
+Its attenuation includes the nuclear screen, either polar dust or
+the dust4 power law, and in corrected mode the galaxy's diffuse curve.
+`PolarDust.transmission` depends on `polar_ebv`, without an inclination
+term, as in CIGALE.
 
-Note the asymmetry it creates, which is also CIGALE's: the SKIRTOR **disc** receives the polar
-screen only for a type-1 view (`skirtor_i <= 90 - skirtor_oa`, `skirtor.py:405-406` and
-`SkirtorTorus.nuclear_parts`), while the **broad lines** receive it at every inclination. A
-type-2 geometry in which the broad lines should be hidden altogether is not represented: put
-that in the prior on `blr_lum`, not in `skirtor_i`.
+The SKIRTOR disc receives polar attenuation only at type-1 inclinations,
+`skirtor_i <= 90 - skirtor_oa`, while broad lines receive it at every
+inclination. The model does not hide the BLR automatically for a type-2
+view. If broad lines should be absent, constrain `blr_lum` accordingly.
 
-An option would need a BLR covering/obscuration factor as a function of `skirtor_i` (CIGALE has
-none to copy, so it would be a new model, e.g. the lines x a step or smooth function of
-`skirtor_i - (90 - skirtor_oa)`), a decision about whether the hidden light is re-emitted, and
-a golden configuration; `blr_lum` would stop being the observed broad H alpha.
+Inclination-dependent BLR obscuration would require a covering or
+attenuation function, a decision about re-emitting hidden light and
+a new golden configuration. It would also change the interpretation
+of `blr_lum` as observed broad-Hα luminosity.
 
 ### There is no X-ray or corona component
 
-No component is tied to an X-ray luminosity: there is nothing like CIGALE's `xray` module and
-nothing normalised through `alpha_ox`, so an AGN fit neither predicts an X-ray flux nor can be
-constrained by one.
+The model has no X-ray component or `alpha_ox` normalisation. It cannot
+predict an X-ray flux or use X-ray measurements to constrain the AGN.
 
-What the components cover blueward of the Lyman limit differs, and is not "nothing":
+The disc templates do extend below the Lyman limit:
 
-* the **Temple+21 disc** template ends at 91 A, and `"corrected"` sets the disc to exactly zero
-  blueward of it rather than extrapolating a flat `F_nu` (`disk.py:98-100`);
-* the **SKIRTOR parametric disc** is defined from **8 A** (`skirtor_disk` /
-  `schartmann2005_disk`, `skirtor.py:113-116`: the broken power law's first limit is 8 A), so it
-  does carry flux in the EUV on the templates' own grid.
+- The Temple+21 template ends at 91 Å. Corrected mode sets shorter-wavelength
+  flux to zero rather than extrapolating a constant F_nu (`disk.py:98–100`).
+- The SKIRTOR parametric disc starts at 8 Å (`skirtor_disk` /
+  `schartmann2005_disk`, `skirtor.py:113–116`) and includes EUV emission
+  on its template grid.
 
-What survives into a prediction is then set by the model grid's blue end (the SSP grid's first
-wavelength) and by the IGM, not by the AGN model.
+The SSP model grid's shortest wavelength and IGM transmission determine
+which of this emission reaches a prediction.
 
-An option (a Corona/X-ray power law, as CIGALE's `xray` module has) would need the component
-itself, its own amplitude convention (CIGALE uses `alpha_ox`, which couples it to the 2500 A
-disc flux — so it would also need the disc's monochromatic luminosity), an extension of the
-model grid blueward of the SSP grid's first wavelength (so the grid, the IGM and the filter
-projection all come in), and a golden configuration.
+An X-ray extension would need a component and normalisation convention,
+such as CIGALE's `alpha_ox` relation to 2500 Å disc luminosity. It would
+also require extending the model grid, IGM and filter projection below
+the SSP wavelength limit, with a new golden configuration.
 
-## What the AGN changes elsewhere
+## Outputs and compatibility
 
-* **PostProcess**: `spectra_model` and `spectra_observed` include the AGN continuum;
-  `spectra_intrinsic` and `spectra_dustfree` do not (so `A_V = 2.5 log10(dustfree/full)`
-  contains the AGN). New: `spectra_agn` (the AGN continuum alone), `extras["agn"]` with
-  `L_bol_star`, `L_absorbed` and, with the energy balance, `mdust` (the dust mass the AGN
-  heats; the stellar dust mass is not reported). `LUV`/`MUV` include the AGN. The AGN narrow
-  lines reach only the per-observation predictions.
-* **Result files** record the AGN in `/model@csp_config["agn"]` (mode, components, energy
-  balance, template and table hashes); a model with a different AGN set-up differs in
-  `check_model_against_result`.
-* **Line marginalisation** (`marginalize_elines=True`) with AGN lines is refused: the
-  marginalised fluxes would absorb the AGN lines. Switch the lines off
-  (`AGNConfig(lines=False)`) to marginalise.
-* `fagn` without `agn=` is an unknown theta key (a warning, and no AGN): build the CSP with
-  `agn=`.
-* GPU: the AGN paths are dense (no scatter-add), so CPU tolerances hold.
+- In `PostProcess`, `spectra_model` and `spectra_observed` include AGN continuum;
+  `spectra_intrinsic` and `spectra_dustfree` exclude it. Consequently,
+  `A_V = 2.5 log10(dustfree/full)` includes the AGN contribution.
+  `spectra_agn` contains AGN continuum alone. `extras["agn"]` returns
+  `L_bol_star`, `L_absorbed` and, with energy balance, `mdust` for dust
+  heated by the AGN. Stellar dust mass is not reported. `LUV` and `MUV`
+  include AGN emission. AGN narrow lines appear only in per-observation
+  predictions.
+- Result files record mode, components, energy balance and template/table
+  hashes in `/model@csp_config["agn"]`. `check_model_against_result`
+  reports differences in AGN configuration.
+- Line marginalisation rejects models with AGN lines because the free
+  fluxes would absorb those lines. Disable them with `AGNConfig(lines=False)`
+  to marginalise, also leaving the BLR disabled when applicable.
+- Supplying `fagn` without `agn=` produces an unknown-key warning and
+  adds no AGN. Enable the component when constructing the CSP.
+- AGN calculations use dense operations without scatter-adds, and the
+  CPU comparison tolerances also apply on GPU.

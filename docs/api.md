@@ -1,7 +1,7 @@
 # API reference
 
-Auto-generated from the source docstrings. The public API is the symbols below;
-treat everything else as internal.
+This reference is generated from source docstrings. The symbols listed here form
+the public API; other symbols are internal.
 
 ## Stellar populations
 
@@ -79,9 +79,8 @@ treat everything else as internal.
 
 ::: ceridwen.likelihood.MultiObservationLikelihood
 
-The outlier mixture of `DiagonalNoiseModel` is off by default (`f_outlier=None`, i.e. 0);
-all outlier fractions default to 0, switch the mixture on explicitly
-([outlier model](outlier_model.md)).
+The outlier mixture is disabled by default (`f_outlier=None`, equivalent to 0).
+See [Outlier model](outlier_model.md) to enable it.
 
 ::: ceridwen.likelihood.DiagonalNoiseModel
 
@@ -93,9 +92,9 @@ all outlier fractions default to 0, switch the mixture on explicitly
 
 ::: ceridwen.likelihood.poly_calibration.PolynomialCalibration
 
-The GP likelihood of a spectrum is off by default; `fitSED` builds it from
-`log_gp_amp_spec` / `log_gp_length_spec` or `Spectrum(noise=GaussianProcess(...))`
-([GP likelihood](gp_likelihood.md)).
+The spectral GP likelihood is disabled by default. `fitSED` enables it when you
+provide `log_gp_amp_spec` and `log_gp_length_spec`, or
+`Spectrum(noise=GaussianProcess(...))`. See [GP likelihood](gp_likelihood.md).
 
 ::: ceridwen.likelihood.GPGaussianLikelihood
 

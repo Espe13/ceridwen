@@ -1,11 +1,11 @@
 # Noise and calibration
 
-The default likelihood is Gaussian with the uncertainties you pass to each observation. This
-page lists the terms that change it: error floors and inflated errors, upper limits, and the
-calibration of a spectrum. The outlier mixture and the Gaussian-process likelihood have their
-own pages ([Outlier model](outlier_model.md), [GP likelihood](gp_likelihood.md)).
-[`GOTCHAS.md`](https://github.com/Espe13/ceridwen/blob/main/GOTCHAS.md) (section 5) lists
-the combinations that are refused.
+By default, the likelihood is Gaussian and uses the uncertainties supplied
+with each observation. You can add error floors, rescale uncertainties, mark
+upper limits or fit a spectral calibration. The [outlier mixture](outlier_model.md)
+and [GP likelihood](gp_likelihood.md) are described separately. Section 5 of
+[`GOTCHAS.md`](https://github.com/Espe13/ceridwen/blob/main/GOTCHAS.md)
+lists unsupported combinations.
 
 ## Fixed terms, set on the observation
 
@@ -15,8 +15,8 @@ the combinations that are refused.
 
 ## Sampled noise terms
 
-Four terms inflate an observation's variance. Each is switched on by giving its parameter a
-prior (and a `free_param_init`) in `SedModel`:
+To sample any of the following variance terms, add a prior and a
+`free_param_init` entry in `SedModel`:
 
 | parameter | variance becomes |
 |---|---|
@@ -25,31 +25,37 @@ prior (and a `free_param_init`) in `SedModel`:
 | `log_f_calib_<kind>` | + (exp(log_f_calib) \|model\|)² |
 | `log_f_data_<kind>` | + (exp(log_f_data) \|data\|)² |
 
-`<kind>` is `phot`, `spec` or `lines`. With several observations of one kind, each has its
-own term, `<root>_<kind>_<obs.name>` (for example `log_jitter_spec_nirspec`); the plain name
-then raises. A constant transform fixes a term at a value. These names are read by `fitSED`;
-with `run_sampler` you build the `DiagonalNoiseModel` yourself. `log_jitter` is the natural
-log of a flux in the observation's units (maggies, cgs F_nu or erg s⁻¹ cm⁻²), so set its prior
-from the size of your uncertainties.
+Replace `<kind>` with `phot`, `spec` or `lines`. For several observations of
+the same type, use `<root>_<kind>_<obs.name>`, such as
+`log_jitter_spec_nirspec`; the unsuffixed name is then ambiguous and raises
+an error. Use a constant transform to fix a term.
+
+`fitSED` reads these names automatically. With `run_sampler`, construct the
+`DiagonalNoiseModel` yourself. `log_jitter` is the natural log of a flux in
+the observation's units: maggies, cgs F_nu or erg s⁻¹ cm⁻². Choose its prior
+relative to the supplied uncertainties.
 
 ## Calibrating a spectrum
 
-A spectrum's flux calibration rarely matches the photometry. Keep the photometry in the fit:
-it anchors the absolute level, and without it the continuum shape is degenerate with dust and
-age. Three ways to model the calibration, one per spectrum:
+A spectrum and photometry may have different flux calibrations. Including
+photometry constrains the absolute flux scale and helps separate continuum
+calibration errors from dust and age. Choose one calibration method per spectrum:
 
-- **Sampled level and shape.** `spectrum_scaling` multiplies the whole `Spectrum` prediction.
-  `spectrum_calib`, shape `(order,)`, multiplies it by `1 + sum_k c_k P_k(x)`, Legendre
-  polynomials of the observed wavelength mapped onto [-1, 1] over all pixels (no P_0 term:
-  the level is `spectrum_scaling`). With several spectra, use `spectrum_scaling_<obs.name>`
-  and `spectrum_calib_<obs.name>`.
-- **Profiled polynomial.** `Spectrum(polynomial_order=M)` solves for the Chebyshev coefficients
-  c_0..c_M inside the likelihood at every step, as Prospector's `PolyOptCal` does. The
-  posterior is conditional on the best-fit polynomial: its uncertainty is not propagated.
-- **Marginalised polynomial.** `Spectrum(polynomial_order=M, polynomial_mode="marginalize",
-  polynomial_prior_sigma=s)` integrates the coefficients out analytically under a Gaussian
-  prior of width `s` (in units of the fractional response). The calibration uncertainty then
-  reaches the posterior and the evidence, with no extra sampled dimension.
+- **Sampled calibration.** `spectrum_scaling` multiplies the entire `Spectrum`
+  prediction. `spectrum_calib`, a vector of shape `(order,)`, adds a factor
+  `1 + sum_k c_k P_k(x)`. The `P_k` are Legendre polynomials, with observed
+  wavelengths mapped to [-1, 1] over all pixels. There is no P_0 term because
+  `spectrum_scaling` sets the level. For several spectra, use
+  `spectrum_scaling_<obs.name>` and `spectrum_calib_<obs.name>`.
+- **Profiled polynomial.** `Spectrum(polynomial_order=M)` solves for Chebyshev
+  coefficients c_0..c_M at each likelihood call, as in Prospector's `PolyOptCal`.
+  The posterior is conditional on the best-fitting polynomial and does not
+  include its uncertainty.
+- **Marginalised polynomial.** `Spectrum(polynomial_order=M,
+  polynomial_mode="marginalize", polynomial_prior_sigma=s)` integrates out the
+  coefficients under a Gaussian prior. The width `s` is in fractional-response
+  units. This propagates calibration uncertainty into the posterior and
+  evidence without adding sampled parameters.
 
-`eline_scaling` is a different parameter: it scales the model emission lines of a `Lines`
-observation only, not the spectrum.
+`eline_scaling` applies only to emission-line fluxes in a `Lines` observation.
+It does not scale a `Spectrum` prediction.

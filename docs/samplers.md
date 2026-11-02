@@ -1,9 +1,9 @@
 # Samplers
 
-`fitSED(model, sampler=...)` runs one of two samplers on the same log-posterior and returns
-the same `SamplingResult`, so everything after the fit (`PostProcess`, the figures, the result
-file) is identical. The examples below continue the [Quick start](quickstart.md): `model` is
-the model built there.
+`fitSED(model, sampler=...)` supports nested sampling and NUTS, with optional
+VI preconditioning for NUTS. Each uses the same log-posterior and returns a
+`SamplingResult` compatible with `PostProcess`, plotting and result files.
+The examples use `model` from the [Quick start](quickstart.md).
 
 | sampler | `sampler=` | gradients | evidence | on a laptop CPU |
 |---|---|---|---|---|
@@ -13,8 +13,9 @@ the model built there.
 
 ## Nested sampling
 
-The default. It draws its live points from the prior, needs no gradients and returns the
-Bayesian evidence (log Z) for model comparison. Every free parameter needs a proper prior.
+Nested sampling is the default. It draws live points from the prior, uses no
+gradients and estimates the Bayesian evidence (log Z). Every free parameter
+requires a proper prior.
 
 ```python
 import jax
@@ -30,51 +31,65 @@ result = fitSED(
 print(f"log Z = {result.log_evidence:.2f} +/- {result.log_evidence_err:.2f}")
 ```
 
-The settings, passed in `sampler_kwargs`:
+Pass these settings in `sampler_kwargs`:
 
-- `num_live`: live points (fitSED's default 500). More live points give a smoother posterior and
-  a more precise log Z, and cost proportionally more.
-- `num_delete`: live points replaced per iteration (default `num_live // 5`).
-- `num_inner_steps`: inner MCMC steps per replacement (fitSED's default 30).
-- `logZ_tol`: the run stops when the evidence left in the live points, ln(Z_live / Z), falls
-  below this (default -5).
-- `slice_kernel`: the inner slice kernel, `"lanes"` (default), `"stock"` (`blackjax.nss`
-  unchanged) or `"carry"`. `"lanes"` runs every replacement's chain of slice steps as one lane
-  of a shared loop, so lanes do not wait for the slowest one, candidates below the prior slice
-  level skip the likelihood, and idle batch slots evaluate look-ahead candidates (Dance et al.
-  2025, arXiv:2503.17405; implemented by Liu Hao, @potatoist314). `"carry"` evaluates each stepping-out
-  edge once instead of twice under `vmap`. Both use the same random numbers and the same
-  evaluations as `"stock"`. `"carry"` is bitwise equal to it on CPU; `"lanes"` is bitwise equal
-  on Apple-silicon CPUs and equal to the last bits on x86 CPUs (XLA orders its batched
-  arithmetic differently there), so long x86 runs of the two can separate and then agree
-  statistically. One exception, by design: `"lanes"` gives a replacement
-  particle whose moves were all rejected the contour it replaced as its birth, which is
-  blackjax 1.7's rule (1.6 kept the birth of the particle it started from, which biases ln Z
-  where the likelihood is flat). With blackjax >= 1.7 `"stock"` follows the same
-  rule; with 1.6 they differ in those births and in what depends on them (the weights
-  and ln Z), only where a chain had no accepted move. On a GPU the batches differ in composition, so float
-  rounding can separate the trajectories after many iterations; the results then agree
-  statistically, not bitwise. GPU runs are not bit-reproducible between processes with any
-  kernel: two `"stock"` runs with the same key on two A100s differ in the last bits. For a
-  JADES photometry + emission-line model (19 dimensions, `num_live=300`, `num_delete=64`),
-  `"lanes"` sampled 3.5-3.8x faster than `"stock"` on an A100, with the same posteriors and ln Z
-  to 2e-5 or better. On a loaded 11-core laptop CPU it was about 7x faster per iteration (one
-  measurement). Pass `slice_kernel="stock"` to run `blackjax.nss` exactly as released.
+- `num_live`: number of live points, default 500. Increasing this generally
+  improves posterior resolution and evidence precision at a proportional cost.
+- `num_delete`: points replaced per iteration, default `num_live // 5`.
+- `num_inner_steps`: MCMC steps per replacement, default 30.
+- `logZ_tol`: stopping threshold for the remaining evidence,
+  ln(Z_live / Z), default −5.
+- `slice_kernel`: `"lanes"` (default), `"stock"` or `"carry"`.
 
-The sampler shows a progress bar of dead points. Its cost scales with `num_live`: on a shared
-11-core laptop CPU, the Quick start model at `num_live=100, num_delete=20, logZ_tol=-2.0`
-took 12 min with `"lanes"` and 21-29 min with `"stock"`, 67 800 likelihood calls either way; at
-`num_live=400` with `"stock"` it advanced about 1.3 dead points per second, i.e. hours.
+`"stock"` uses `blackjax.nss` unchanged. `"carry"` evaluates each stepping-out
+edge once rather than twice under `vmap`. `"lanes"` runs replacement chains in
+a shared loop, skips likelihood evaluation for candidates below the prior
+slice level and uses idle batch slots to evaluate candidates in advance. It
+implements Dance et al. (2025, arXiv:2503.17405), with code by Liu Hao
+(@potatoist314).
+
+`"carry"` and `"lanes"` use the same random numbers and evaluations as
+`"stock"`. On CPUs, `"carry"` is bitwise identical to `"stock"`. `"lanes"`
+is bitwise identical on Apple Silicon; on x86, XLA's arithmetic ordering
+introduces differences in the last bits. Long x86 runs can consequently
+follow different trajectories while agreeing statistically.
+
+There is one intentional difference with blackjax 1.6. When all moves in a
+replacement chain are rejected, `"lanes"` assigns the replacement particle
+the birth contour of the particle it replaces. Blackjax 1.7 uses the same
+rule. Version 1.6 retained the starting particle's birth contour, which can
+bias ln Z on a flat likelihood. This affects weights and evidence only for
+chains without an accepted move.
+
+GPU arithmetic can produce different trajectories as batch composition
+changes. Runs need not be bitwise reproducible across processes, including
+two `"stock"` runs with the same key on A100s. Compare their results
+statistically.
+
+For a 19-parameter JADES photometry and emission-line model with
+`num_live=300` and `num_delete=64`, `"lanes"` was 3.5–3.8 times faster than
+`"stock"` on an A100. Posteriors agreed, and ln Z differed by at most 2e-5.
+A single measurement on a busy 11-core laptop CPU gave a sevenfold speedup
+per iteration.
+
+The progress bar counts dead points. Runtime grows with `num_live`. On a
+shared 11-core laptop CPU, the Quick start model with `num_live=100`,
+`num_delete=20` and `logZ_tol=-2.0` took 12 minutes with `"lanes"` and
+21–29 minutes with `"stock"`. Both used 67,800 likelihood calls. With 400
+live points, `"stock"` processed about 1.3 dead points per second and took hours.
 
 ### Checkpoints and resuming
 
-With `checkpoint_dir=` (or `$CERIDWEN_CHECKPOINT_DIR`), the run writes
-`ns_checkpoint_<pid>.pkl` every `checkpoint_interval_s` seconds (default 1200). After a kill,
-pass that file as `resume_from=` with the same `rng_key` and settings: the run continues from
-the saved live and dead points and reproduces the uninterrupted run. It refuses a checkpoint
-whose settings, parameter shapes or live-point log-likelihoods (to a relative 1e-6) do not
-match the model. `slice_kernel` may differ between the killed run and the resumed one: the
-kernels make the same moves with the same random numbers.
+Set `checkpoint_dir=` or `$CERIDWEN_CHECKPOINT_DIR` to save
+`ns_checkpoint_<pid>.pkl` periodically. `checkpoint_interval_s` defaults to
+1200 seconds. To resume an interrupted run, pass the checkpoint as
+`resume_from=` with the same `rng_key` and settings. It restores the live
+and dead points and can reproduce an uninterrupted run.
+
+Loading checks the settings, parameter shapes and live-point log-likelihoods
+(relative tolerance 1e-6) against the model. You may change `slice_kernel`
+when resuming because the kernels use the same moves and random numbers,
+subject to the numerical and version differences described above.
 
 ```python
 result = fitSED(model, sampler="nested", output_dir="./my_fit",
@@ -85,10 +100,10 @@ result = fitSED(model, sampler="nested", output_dir="./my_fit",
 
 ## NUTS
 
-The No-U-Turn sampler uses the gradient of the log-posterior, which the JAX forward model
-provides. It suits a GPU and many parameters. Defaults: 4 chains, 2000 samples each, 1500
-warmup steps with a dense mass matrix, target acceptance 0.95; bounded priors are sampled in
-an unconstrained space automatically.
+The No-U-Turn sampler uses gradients from the JAX forward model. It is suited
+to GPU fits with many parameters. Defaults are 4 chains, 2000 samples per
+chain, 1500 warmup steps, a dense mass matrix and target acceptance 0.95.
+Bounded parameters are automatically mapped to an unconstrained space.
 
 ```python
 result = fitSED(
@@ -100,15 +115,16 @@ result = fitSED(
 )
 ```
 
-Warmup and sampling are each one compiled loop, so NUTS prints nothing while it runs, and
-Ctrl-C does not stop it inside a loop; stop it with `kill`. A killed NUTS run writes no result.
+Warmup and sampling each run as a compiled loop without progress output.
+Ctrl-C does not interrupt a loop; stop the process with `kill`. An interrupted
+NUTS run does not save a result.
 
 ## VI-preconditioned NUTS
 
-Variational inference first fits a transport map to the posterior; NUTS then samples in the
-whitened space (Hoffman et al. 2019). `vi="tril"` is a full-rank Gaussian, `vi="iaf"` an
-inverse autoregressive flow (NeuTra). With VI the warmup defaults to 200 steps with a
-diagonal mass matrix.
+Variational inference fits a transport map before NUTS samples in the
+transformed space (Hoffman et al. 2019). Use `vi="tril"` for a full-rank
+Gaussian or `vi="iaf"` for an inverse autoregressive flow (NeuTra).
+With VI, warmup defaults to 200 steps and a diagonal mass matrix.
 
 ```python
 result = fitSED(
@@ -130,11 +146,12 @@ plt.savefig("vi_losses.png")
 
 ## Starting at the MAP
 
-`fitSED(..., optimize=True)` first maximises the same log-posterior with L-BFGS
-(`ceridwen.optimize.map_fit`, from `model.theta_init` plus `n_starts` prior draws), starts NUTS
-(and its VI map) there, and stores the MAP under `/map` in the result file. Nested sampling
-draws its live points from the prior, so there the MAP is only recorded. `map_fit(model)` on
-its own returns a `MAPResult` whose `.theta` can be passed as `free_param_init`.
+`fitSED(..., optimize=True)` first finds a MAP estimate using L-BFGS
+(`ceridwen.optimize.map_fit`). It starts from `model.theta_init` and
+`n_starts` prior draws. NUTS and its VI map start from the MAP; nested sampling
+still draws live points from the prior. Both save the MAP under `/map` in
+the result file. You can also call `map_fit(model)` separately and pass
+the returned `MAPResult.theta` as `free_param_init`.
 
 ```python
 from ceridwen.optimize import map_fit
@@ -146,9 +163,9 @@ result = fitSED(model, sampler="nuts", optimize=True,
 
 ## NUTS on a CPU: measured times
 
-Measured on shared 11-core laptop CPUs with the Quick start model (a
-12-band photometry + 600-pixel spectrum fit, 9 free parameters). The machines were running
-other jobs, so these times are upper limits, but they show the order of magnitude:
+These measurements used the Quick start model: twelve photometric bands,
+a 600-pixel spectrum and nine free parameters. They ran on shared 11-core
+laptop CPUs with other jobs active, so use them as approximate timings.
 
 | run | measured |
 |---|---|
@@ -156,4 +173,4 @@ other jobs, so these times are upper limits, but they show the order of magnitud
 | VI-preconditioned NUTS (`vi="tril"`), 4 x 2000 | VI 72 s; warmup 596 s (200 steps, step size 0.0017); sampling not finished after 1 h 54 min |
 | NUTS after the MAP (`optimize=True`), 4 x 2000 | not finished after 80 min |
 
-On a CPU, use nested sampling. Run NUTS on a GPU.
+Nested sampling is generally the practical choice on a CPU; NUTS benefits from a GPU.
