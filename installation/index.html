@@ -863,39 +863,41 @@
 
 
 <h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
-<p>CERIDWEN needs Python 3.11 or newer (<code>jax</code> &gt;= 0.9 and <code>blackjax</code> &gt;= 1.6 require it).</p>
+<p>CERIDWEN requires Python 3.11 or newer, as do <code>jax &gt;= 0.9</code> and <code>blackjax &gt;= 1.6</code>.</p>
 <h2 id="1-the-package">1. The package<a class="headerlink" href="#1-the-package" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>ceridwen<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.12<span class="w"> </span>-y<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>conda<span class="w"> </span>activate<span class="w"> </span>ceridwen
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pip<span class="w"> </span>install<span class="w"> </span>ceridwen
 </code></pre></div>
-<p>This installs JAX, the samplers, the filter curves and attenuation laws, posterior plotting
-and the test runner, and runs on the CPU on any platform (a laptop is fine; importing prints
-nothing).</p>
-<p><strong>NVIDIA GPU</strong> (Linux, or Windows through WSL2): install the CUDA build instead,</p>
+<p>This installs the CPU version of JAX, the samplers, filter curves, attenuation
+laws, plotting dependencies and test runner.</p>
+<p><strong>NVIDIA GPU</strong> (Linux, or Windows through WSL2): install the CUDA build:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"ceridwen[cuda12]"</span><span class="w">      </span><span class="c1"># NVIDIA driver &gt;= 525</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"ceridwen[cuda13]"</span><span class="w">      </span><span class="c1"># NVIDIA driver &gt;= 580</span>
 </code></pre></div>
-<p>The CUDA libraries come as pip wheels; the driver is the only system requirement (minimums
-from <a href="https://docs.jax.dev/en/latest/installation.html">JAX's install page</a>). RTX 50-series
-cards (Blackwell) need CUDA &gt;= 12.8: <code>cuda13</code> always provides it, and a fresh <code>cuda12</code> install
-resolves CUDA 12.9. Do not install a CUDA extra on a machine without an NVIDIA GPU: JAX's CUDA
-plugin then prints a traceback at every import (it still falls back to the CPU).</p>
-<p><strong>Apple Silicon GPU</strong> (macOS 26, Python 3.12 or newer): the same <code>pip install ceridwen</code> also
-installs <a href="https://github.com/dfm/jax-graft">jax-graft</a>, and JAX uses the Apple GPU in float32
-(see <a href="../mac_gpu/">Apple GPU</a>: Apple GPUs have no float64, so <code>import ceridwen</code> switches the
-precision for the process and says so; <code>JAX_PLATFORMS=cpu</code> keeps float64 on the CPU). Older
-Macs and Python 3.11 get the CPU build. The Python must be native arm64, not an Intel conda
-running under Rosetta (<a href="../troubleshooting/">Troubleshooting</a>).</p>
+<p>The CUDA libraries are installed as pip wheels. You also need an NVIDIA driver;
+see <a href="https://docs.jax.dev/en/latest/installation.html">JAX's installation guide</a>
+for the minimum version. RTX 50-series (Blackwell) cards require CUDA &gt;= 12.8.
+<code>cuda13</code> meets that requirement, and a fresh <code>cuda12</code> installation resolves to
+CUDA 12.9. Install a CUDA extra only on a machine with an NVIDIA GPU. Otherwise,
+the CUDA plugin prints a traceback on import before JAX falls back to the CPU.</p>
+<p><strong>Apple Silicon GPU</strong> (macOS 26, Python 3.12 or newer): <code>pip install ceridwen</code>
+also installs <a href="https://github.com/dfm/jax-graft">jax-graft</a>, which makes the Apple
+GPU the default device. Apple GPUs lack float64, so importing CERIDWEN switches
+the process to float32 and prints a warning. Set <code>JAX_PLATFORMS=cpu</code> to use
+float64 on the CPU. Older Macs and Python 3.11 use the CPU build. Python must
+be a native arm64 build; an Intel conda installation under Rosetta will not
+work. See <a href="../mac_gpu/">Apple GPU</a> and <a href="../troubleshooting/">Troubleshooting</a>.</p>
 <p>Every <code>fitSED</code> call prints the device and precision it runs with:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ceridwen.fitSED
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  Device      : GPU  (CudaDevice(id=0))
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>  Precision   : float64
 </code></pre></div>
-<p><strong>GPU memory.</strong> The forward model's large arrays are float32 (see
-<a href="../conventions/">Conventions</a>, "Precision"), so a consumer card with slow float64 does its
-work in float32. A nested-sampling fit at the defaults (<code>num_live=500</code>, <code>num_delete=100</code>,
-the <code>lanes</code> slice kernel) peaked at these device memories (A100, JAX 0.11.2; photometry plus a
-600-pixel spectrum, measured with <code>peak_bytes_in_use</code>):</p>
+<p><strong>GPU memory.</strong> Large forward-model arrays use float32, including on consumer
+GPUs with slow float64 performance. See <a href="../conventions/#precision">Precision</a>.
+The following peak device-memory measurements used an A100 with JAX 0.11.2,
+photometry and a 600-pixel spectrum. Nested-sampling settings were
+<code>num_live=500</code>, <code>num_delete=100</code> and the <code>lanes</code> slice kernel. Memory was
+measured with <code>peak_bytes_in_use</code>.</p>
 <table>
 <thead>
 <tr>
@@ -922,18 +924,20 @@ the <code>lanes</code> slice kernel) peaked at these device memories (A100, JAX 
 </tr>
 </tbody>
 </table>
-<p>An 8 GB card runs these defaults. Memory grows linearly with the number of parameter vectors
-evaluated at once: the compiled log-likelihood and gradient of the nebular model take 0.81 GB
-for a batch of 100 and 4.3 GB for 500 (0.94 and 4.8 GB with dust emission).</p>
+<p>These configurations fit on an 8 GB card. Memory use grows approximately
+linearly with batch size. The compiled nebular log-likelihood and gradient use
+0.81 GB for 100 parameter vectors and 4.3 GB for 500; adding dust emission
+increases those figures to 0.94 and 4.8 GB.</p>
 <h2 id="2-fsps-and-sps_home">2. FSPS and <code>$SPS_HOME</code><a class="headerlink" href="#2-fsps-and-sps_home" title="Permanent link">&para;</a></h2>
-<p>CERIDWEN reads the nebular CLOUDY grids (<code>nebular/</code>), the dust-emission templates
-(<code>dust/dustem/</code>) and the FSPS emission-line list (<code>data/emlines_info.dat</code>) from the
-<a href="https://github.com/cconroy20/fsps">FSPS</a> data files at <code>$SPS_HOME</code>. FSPS itself is not run
-during a fit, so this step is a clone (3.4 GB), not a compile:</p>
+<p>CERIDWEN reads the CLOUDY grids (<code>nebular/</code>), dust-emission templates
+(<code>dust/dustem/</code>) and emission-line list (<code>data/emlines_info.dat</code>) from the
+<a href="https://github.com/cconroy20/fsps">FSPS</a> data tree at <code>$SPS_HOME</code>. A fit needs
+these files but does not run FSPS, so cloning the 3.4 GB repository is sufficient;
+you do not need to compile it.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SPS_HOME</span><span class="o">=</span><span class="s2">"</span><span class="nv">$HOME</span><span class="s2">/fsps"</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>clone<span class="w"> </span>--depth<span class="w"> </span><span class="m">1</span><span class="w"> </span>https://github.com/cconroy20/fsps.git<span class="w"> </span><span class="s2">"</span><span class="nv">$SPS_HOME</span><span class="s2">"</span>
 </code></pre></div>
-<p><code>$SPS_HOME</code> can be any path. Make it permanent in your shell startup file, with the same path:</p>
+<p>Choose any location for <code>$SPS_HOME</code>. Add that path to your shell startup file:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">'export SPS_HOME="$HOME/fsps"'</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.zshrc<span class="w">    </span><span class="c1"># zsh, the macOS default</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">'export SPS_HOME="$HOME/fsps"'</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.bashrc<span class="w">   </span><span class="c1"># bash, most Linux</span>
 </code></pre></div>
@@ -941,25 +945,26 @@ during a fit, so this step is a clone (3.4 GB), not a compile:</p>
 <h2 id="3-check-the-installation">3. Check the installation<a class="headerlink" href="#3-check-the-installation" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>python<span class="w"> </span>-m<span class="w"> </span>ceridwen.check
 </code></pre></div>
-<p>It prints an <code>ok</code> / <code>warn</code> / <code>FAIL</code> line per component (dependencies, filters and attenuation
-laws, float64, nested sampling, python-fsps, <code>$SPS_HOME</code> and the data files in it), with the
-fix for anything missing. The <code>python-fsps</code> line is a warning until you compile it (below),
-and that is expected.</p>
+<p>The check reports <code>ok</code>, <code>warn</code> or <code>FAIL</code> for each component and suggests fixes
+for missing dependencies or data. It checks filters, attenuation laws, float64,
+nested sampling, python-fsps and <code>$SPS_HOME</code>. The python-fsps warning is expected
+unless you have compiled the wrapper, which is needed only to build a grid.</p>
 <h2 id="updates">Updates<a class="headerlink" href="#updates" title="Permanent link">&para;</a></h2>
-<p><code>fitSED</code> and <code>python -m ceridwen.check</code> tell you when PyPI has a newer CERIDWEN than the one
-installed; upgrade with <code>pip install --upgrade ceridwen</code>. They ask PyPI at most once a day
-(the answer is cached in <code>~/.ceridwen/update_check.json</code>), wait at most two seconds and say
-nothing when there is no network. <code>CERIDWEN_NO_UPDATE_CHECK=1</code> switches the check off; it never
-runs on CI (<code>$CI</code> set). What changed is in the
-<a href="https://github.com/Espe13/ceridwen/blob/main/CHANGELOG.md">changelog</a>.</p>
+<p><code>fitSED</code> and <code>python -m ceridwen.check</code> check PyPI for newer releases at most
+once a day. Results are cached in <code>~/.ceridwen/update_check.json</code>. The check
+times out after two seconds and produces no message when the network is
+unavailable. Set <code>CERIDWEN_NO_UPDATE_CHECK=1</code> to disable it; it is also disabled
+when <code>$CI</code> is set. Upgrade with <code>pip install --upgrade ceridwen</code> and see the
+<a href="https://github.com/Espe13/ceridwen/blob/main/CHANGELOG.md">changelog</a> for changes.</p>
 <p>To get an email for each new release, open the
 <a href="https://github.com/Espe13/ceridwen">GitHub page</a>, click <strong>Watch</strong>, then <strong>Custom</strong>, and tick
 <strong>Releases</strong> (a free GitHub account is needed).</p>
 <h2 id="ssp-grids">SSP grids<a class="headerlink" href="#ssp-grids" title="Permanent link">&para;</a></h2>
-<p>Fitting needs an SSP grid (an HDF5 file). The published grids are on Zenodo
-(<a href="https://doi.org/10.5281/zenodo.22937956">doi:10.5281/zenodo.22937956</a>) and registered by
-name. <code>fetch_grid</code> downloads a grid once into <code>~/.ceridwen/grids</code> (or <code>$CERIDWEN_GRID_DIR</code>),
-checks its SHA-256 on every call, and returns the path:</p>
+<p>A fit requires an SSP grid in HDF5 format. Published grids are registered by
+name and hosted on Zenodo at
+<a href="https://doi.org/10.5281/zenodo.22937956">doi:10.5281/zenodo.22937956</a>.
+<code>fetch_grid</code> downloads a grid to <code>~/.ceridwen/grids</code> (or <code>$CERIDWEN_GRID_DIR</code>),
+verifies its SHA-256 on each call and returns its path:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SSPData</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.ssps</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_grid</span><span class="p">,</span> <span class="n">available_grids</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
@@ -992,13 +997,14 @@ checks its SHA-256 on every call, and returns the path:</p>
 </tr>
 </tbody>
 </table>
-<p>The two solar-scaled grids carry the surviving-mass table that <code>fitSED</code> and <code>PostProcess</code> use
-for <code>mfrac</code>; the α grid does not yet, so fit it with <code>mfrac=False</code>. A copy fetched before the
-2026-09 re-deposit fails the checksum: <code>fetch_grid(name, force=True)</code> replaces it.</p>
+<p>The two solar-scaled grids include the surviving-mass table used by <code>fitSED</code>
+and <code>PostProcess</code> for <code>mfrac</code>. The α-enhanced grid has no such table; use
+<code>mfrac=False</code>. Grids downloaded before the September 2026 re-deposit fail
+the checksum. Replace them with <code>fetch_grid(name, force=True)</code>.</p>
 <h2 id="building-your-own-ssp-grid">Building your own SSP grid<a class="headerlink" href="#building-your-own-ssp-grid" title="Permanent link">&para;</a></h2>
-<p>To use a different IMF, isochrone set or spectral library, build a grid with FSPS. This is
-the one step that needs the compiled <a href="https://dfm.io/python-fsps"><code>python-fsps</code></a> wrapper,
-which compiles Fortran against <code>$SPS_HOME</code>:</p>
+<p>To use another IMF, isochrone set or spectral library, build a grid with FSPS.
+This requires the compiled <a href="https://dfm.io/python-fsps"><code>python-fsps</code></a> wrapper
+and a Fortran compiler. Set <code>$SPS_HOME</code> before installing the wrapper:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>brew<span class="w"> </span>install<span class="w"> </span>gcc<span class="w">                       </span><span class="c1"># macOS (Homebrew); or:</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>sudo<span class="w"> </span>apt-get<span class="w"> </span>install<span class="w"> </span>gfortran<span class="w">          </span><span class="c1"># Debian/Ubuntu; or:</span>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>conda<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>conda-forge<span class="w"> </span>gfortran<span class="w">  </span><span class="c1"># any OS, inside your conda env</span>
@@ -1010,11 +1016,12 @@ which compiles Fortran against <code>$SPS_HOME</code>:</p>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">ssp</span> <span class="o">=</span> <span class="n">SSPData</span><span class="o">.</span><span class="n">from_fsps</span><span class="p">(</span><span class="n">imf_type</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">save_to</span><span class="o">=</span><span class="s2">"ssp_data.h5"</span><span class="p">)</span>
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># later: ssp = SSPData.load("ssp_data.h5")</span>
 </code></pre></div>
-<p><code>from_fsps</code> accepts only the keyword arguments that define the stellar library and IMF
-(<code>imf_type</code> and its parameters, isochrone-phase switches); dust, SFH, nebular emission, IGM,
-redshift and a fixed metallicity are rejected, because the forward model applies them. The
-file records its provenance (isochrones, spectral library, <code>imf_type</code>, FSPS version, build
-arguments), <code>CSPBasis</code> reads the isochrone library from it, and <code>ssp.display()</code> prints it.</p>
+<p><code>from_fsps</code> accepts arguments defining the stellar library and IMF, including
+<code>imf_type</code>, its parameters and isochrone-phase switches. It rejects dust, SFH,
+nebular, IGM, redshift and fixed-metallicity arguments because the forward
+model applies those separately. The file records its isochrones, spectral
+library, IMF, FSPS version and build arguments. <code>CSPBasis</code> reads the isochrone
+library from this metadata; <code>ssp.display()</code> shows it.</p>
 <h2 id="building-this-documentation">Building this documentation<a class="headerlink" href="#building-this-documentation" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">".[docs]"</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>mkdocs<span class="w"> </span>build

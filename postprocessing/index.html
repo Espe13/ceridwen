@@ -488,10 +488,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#what-you-get" class="md-nav__link">
+  <a href="#output-fields" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What you get
+        Output fields
       
     </span>
   </a>
@@ -499,10 +499,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#conventions-you-should-know" class="md-nav__link">
+  <a href="#conventions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Conventions you should know
+        Conventions
       
     </span>
   </a>
@@ -510,10 +510,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#your-own-quantities" class="md-nav__link">
+  <a href="#custom-quantities" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Your own quantities
+        Custom quantities
       
     </span>
   </a>
@@ -841,30 +841,25 @@
 
 
 <h1 id="post-processing-a-fit">Post-processing a fit<a class="headerlink" href="#post-processing-a-fit" title="Permanent link">&para;</a></h1>
-<p><code>ceridwen.PostProcess</code> turns a sampling result into posterior distributions
-of everything you report: the sampled parameters, the star-formation history
-and its time averages, UV and ionising-photon properties, the
-posterior-predictive photometry, spectra and line fluxes, three model-grid
-spectra (full, stellar-intrinsic, dust-free), the best-fit point, and any
-quantity you define yourself from those spectra. Every number comes from the
-same forward model that was fitted, so it is consistent with the fit by
-construction.</p>
+<p><code>ceridwen.PostProcess</code> evaluates posterior draws using the fitted forward
+model. It returns sampled parameters, star formation histories, time-averaged
+SFRs, UV and ionising-photon quantities, and predictions for each observation.
+It also provides full, stellar-intrinsic and dust-free model-grid spectra,
+the highest-likelihood sample and any quantities defined by your own functions.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">PostProcess</span><span class="p">,</span> <span class="n">load_postprocess</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">pp</span>  <span class="o">=</span> <span class="n">PostProcess</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>      <span class="c1"># the SedModel of the fit; SamplingResult or the .h5 path</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="n">out</span> <span class="o">=</span> <span class="n">pp</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>                        <span class="c1"># nested dict of numpy arrays</span>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">pp</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">"post.npz"</span><span class="p">)</span>                   <span class="c1"># flat .npz; load_postprocess("post.npz") rebuilds the dict</span>
 </code></pre></div>
-<p>The model must be the one the fit used (same CSP, observations, transforms,
-<code>zred</code>): the parameter names and shapes of the result are checked against
-it and a mismatch is refused with the two lists printed. When <code>result</code> is
-the <code>.h5</code> path, the fixed redshift, luminosity distance, cosmology and
-kinematics (<code>Kinematics</code> widths, <code>broaden_photometry</code>) recorded in the file
-are also checked against the model. <code>run()</code> pushes every draw through
-<code>model.predict_vmap</code>, so the model's observations must be set up (they are,
-unless you reassigned <code>model.observations</code> without calling
-<code>model.setup_observations()</code>).</p>
-<h2 id="what-you-get">What you get<a class="headerlink" href="#what-you-get" title="Permanent link">&para;</a></h2>
+<p>Use the same CSP, observations, transforms and <code>zred</code> as in the fit.
+<code>PostProcess</code> checks parameter names and shapes against the result and
+reports both lists if they differ. When loading an <code>.h5</code> file, it also
+checks the saved fixed redshift, luminosity distance, cosmology and
+kinematics, including <code>broaden_photometry</code>.</p>
+<p><code>run()</code> evaluates draws with <code>model.predict_vmap</code>. If you have reassigned
+<code>model.observations</code>, call <code>model.setup_observations()</code> first.</p>
+<h2 id="output-fields">Output fields<a class="headerlink" href="#output-fields" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
@@ -1011,81 +1006,86 @@ unless you reassigned <code>model.observations</code> without calling
 </tr>
 </tbody>
 </table>
-<p>Blocks can be switched off: <code>PostProcess(..., sfr=False, ssfr=False,
+<p>Disable unneeded outputs with <code>PostProcess(..., sfr=False, ssfr=False,
 uv=False, ionizing=False, predictions=False, mfrac=False)</code>.</p>
-<h2 id="conventions-you-should-know">Conventions you should know<a class="headerlink" href="#conventions-you-should-know" title="Permanent link">&para;</a></h2>
-<p><strong>Draws.</strong> A nested-sampling result carries importance weights. They are
-recomputed from the dead points' log-likelihoods and birth contours
-(<code>ceridwen.sampler.ns_weights.nested_log_weights</code>, exact n_live counting,
-in the order of the samples) rather than read from the file (a result
-without birth contours uses its stored <code>log_weights</code>; a warning tells you
-when the stored weights differ from the recomputed ones, which are then used). The draws are then resampled to
-equal weight (<code>n_samples</code>, default 2000, <code>seed</code> fixed), so a histogram or
-a median of any array is the posterior. A NUTS result has uniform weights
-and is used as it is (<code>n_samples</code> subsamples it). <code>bestfit</code> is the raw
-sample with the highest log-likelihood, not a draw.</p>
-<p><strong>Star formation.</strong> After the transforms <code>theta['sfh']</code> is the SFH shape in
-the CSP's convention. The physical SFR is that shape × 10^logmass when
-<code>logmass</code> is a parameter: the CSP scales the spectrum, not the SFH, so
-<code>logmass</code> is the formed mass when the shape integrates to one solar mass on the
-construction grid, as under <code>logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)</code> (a
-directly sampled <code>sfh</code> carries its own normalisation). With <code>track_zred_age=True</code> the
-lookback grid of each draw ends at <code>age(zred)</code> and the SFR is the shape × 10^logmass ×
-<code>T_grid / age(zred)</code>, the SFR the forward model forms, so <code>mass_formed</code> is still
-10^logmass. <code>sfrW</code> is the mean SFR over the last W Myr of
-the same piecewise function the weight kernel integrates: constant per bin
-for <code>sfh_interp="step"</code>, linear between nodes for <code>"linear"</code>; beyond the
-oldest node the SFR is zero. <code>ssfrW</code> divides by the formed mass, with no
-stellar return fraction, and keeps that meaning.</p>
-<p><strong>Surviving mass.</strong> <code>mfrac</code> is the fraction of the formed mass still in
-stars and remnants: the SSP grid's surviving-mass table (<code>ssp_stellar_mass</code>, FSPS's
-<code>stellar_mass</code> per SSP, SSP schema 3; on MIST below ~2.5 Myr with FSPS's lowest IMF bin
-counted by mass instead of by number, GOTCHAS section 14) weighted by the draw's SSP weights, the same
-weights that make its spectrum. <code>mass_surviving = mfrac * mass_formed</code> and
-<code>ssfrW_surviving = sfrW / mass_surviving</code> are the Prospector-style stellar mass and
-sSFR. The published <code>mist_miles_chab</code> and <code>mist_bpass_v2</code> grids carry the table (the α grid
-<code>amist_c3k_hr_krou_afe</code> does not: use <code>mfrac=False</code> there) and <code>SSPData.from_fsps</code> records it
-in every grid it builds. For a grid without the table, <code>PostProcess</code> warns once that <code>mfrac</code> is
-unavailable and reports <code>mass_formed</code> only (<code>mfrac=True</code> makes the missing table an error
-that says how to get a grid with the table: <code>fetch_grid(&lt;name&gt;, force=True)</code> for a published grid,
-a rebuild with <code>from_fsps</code> for your own; <code>mfrac=False</code> skips the block silently). A table
-with values above 1 M_sun per M_sun formed is refused when the grid is loaded (one warning;
-the grid works without it). The composite <code>mfrac</code> follows CERIDWEN's
-SFH integration, not FSPS's <code>csp_gen</code>: against python-fsps for constant and rising
-SFHs of 0.1-10 Gyr it agrees to 4.2e-4 (step) and 6.3e-3 (linear, young populations on
-MIST, whose youngest node is 10^5 yr); GOTCHAS section 14.</p>
-<p><strong><code>mfrac</code> in the result file.</strong> When the grid has the table, <code>fitSED</code> evaluates
-<code>mfrac</code> for every stored sample (SFH weights times the table, no spectrum; well under a
-second for thousands of samples) and writes it as <code>/derived/mfrac</code>, aligned with
-<code>/samples</code>, with the attributes <code>stellar_mass_source</code>, <code>grid_chash</code> and <code>sfh_interp</code> that
-say which table and SFH scheme produced it. So a stellar mass needs no post-processing:</p>
+<h2 id="conventions">Conventions<a class="headerlink" href="#conventions" title="Permanent link">&para;</a></h2>
+<p><strong>Posterior draws.</strong> Nested-sampling weights are recomputed from dead-point
+log-likelihoods and birth contours, using exact live-point counts in sample
+order (<code>ceridwen.sampler.ns_weights.nested_log_weights</code>). If birth contours
+are unavailable, stored <code>log_weights</code> are used. A warning reports any
+difference between stored and recomputed weights; the recomputed values
+take precedence.</p>
+<p>Draws are resampled to equal weight, so ordinary histograms and quantiles
+describe the posterior. <code>n_samples</code> defaults to 2000, with a fixed <code>seed</code>.
+NUTS draws already have equal weights; <code>n_samples</code> selects a subset.
+<code>bestfit</code> is the raw sample with the highest log-likelihood.</p>
+<p><strong>Star formation.</strong> After transforms, <code>theta['sfh']</code> contains the SFH shape
+in the CSP's convention. With <code>logmass</code>, physical SFR is that shape ×
+10^logmass. The CSP applies mass scaling to the spectrum. Thus <code>logmass</code>
+represents formed mass when the SFH integrates to one solar mass on the
+construction grid, as ensured by
+<code>logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)</code>. A directly sampled
+<code>sfh</code> has its own normalisation.</p>
+<p>With <code>track_zred_age=True</code>, each draw's grid ends at <code>age(zred)</code> and its SFR
+is scaled by <code>T_grid / age(zred)</code> to preserve formed mass. <code>sfrW</code> averages
+the same SFH used by the weight kernel over the last W Myr: constant per bin
+for <code>sfh_interp="step"</code> and linear between nodes for <code>"linear"</code>. SFR is zero
+beyond the oldest node. <code>ssfrW</code> divides this average by formed mass, without
+a stellar return correction.</p>
+<p><strong>Surviving mass.</strong> <code>mfrac</code> is the fraction of formed mass remaining in stars
+and remnants. It weights the SSP grid's <code>ssp_stellar_mass</code> table by the same
+SSP weights used for the spectrum. The table stores FSPS's <code>stellar_mass</code>
+per SSP under schema 3. For MIST ages below about 2.5 Myr, FSPS's lowest IMF
+bin is counted by mass rather than number; see GOTCHAS section 14.
+<code>mass_surviving = mfrac * mass_formed</code> and
+<code>ssfrW_surviving = sfrW / mass_surviving</code> give the Prospector-style mass and sSFR.</p>
+<p>The published <code>mist_miles_chab</code> and <code>mist_bpass_v2</code> grids include this table,
+and <code>SSPData.from_fsps</code> saves it in new grids. The α-enhanced
+<code>amist_c3k_hr_krou_afe</code> grid does not include it; use <code>mfrac=False</code>.
+By default, a missing table produces one warning and only formed mass is
+reported. <code>mfrac=True</code> instead raises an error; update a published grid with
+<code>fetch_grid(&lt;name&gt;, force=True)</code> or rebuild a custom grid with <code>from_fsps</code>.
+<code>mfrac=False</code> skips the calculation without a warning.</p>
+<p>A table with surviving masses above 1 M_sun per M_sun formed is rejected
+with a warning when loaded; the grid remains usable without it. Composite
+<code>mfrac</code> uses CERIDWEN's SFH integration rather than FSPS's <code>csp_gen</code>.
+For constant and rising SFHs over 0.1–10 Gyr, agreement with python-fsps is
+4.2e-4 for step interpolation and 6.3e-3 for linear interpolation. The
+larger difference occurs for young MIST populations, whose youngest node
+is 10^5 yr. See GOTCHAS section 14.</p>
+<p><strong>Stored <code>mfrac</code>.</strong> When a table is available, <code>fitSED</code> computes <code>mfrac</code> for
+every stored sample without evaluating spectra. This takes well under a
+second for thousands of samples. Values are saved in <code>/derived/mfrac</code>,
+aligned with <code>/samples</code>. Attributes <code>stellar_mass_source</code>, <code>grid_chash</code>
+and <code>sfh_interp</code> identify the table and integration scheme. You can read
+stellar masses directly:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">read_result_h5</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">r</span> <span class="o">=</span> <span class="n">read_result_h5</span><span class="p">(</span><span class="s2">"out/ceridwen_result.h5"</span><span class="p">)</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">mass_surviving</span> <span class="o">=</span> <span class="n">r</span><span class="p">[</span><span class="s2">"derived"</span><span class="p">][</span><span class="s2">"mfrac"</span><span class="p">]</span> <span class="o">*</span> <span class="mi">10</span> <span class="o">**</span> <span class="n">r</span><span class="p">[</span><span class="s2">"samples"</span><span class="p">][</span><span class="s2">"logmass"</span><span class="p">]</span><span class="o">.</span><span class="n">ravel</span><span class="p">()</span>   <span class="c1"># per sample, M_sun</span>
 </code></pre></div>
-<p>(weight the samples with <code>r["samples"]["log_weights"]</code>, or use <code>PostProcess</code>, which does the
-resampling). <code>PostProcess(model, "out/ceridwen_result.h5")</code> reads the stored array instead
-of recomputing it, so it does not need the table, and raises when the recorded
-<code>grid_chash</code> or <code>sfh_interp</code> differ from the model's. Without a file (a <code>SamplingResult</code>),
-or for a file without <code>/derived</code>, it computes <code>mfrac</code> from the table.
-<code>fitSED(mfrac=False)</code> skips the group; <code>mfrac=True</code> refuses a grid without a table before
-sampling; the default writes it when it can and otherwise logs one line.</p>
-<p>The rule for <code>/derived</code>: it holds only quantities that are a pure function of theta and the
-model, cheap for every sample, and exactly reproducible from the file plus the model.
-<code>mfrac</code> qualifies. Spectra, SFR windows and UV / ionising quantities do not, and stay in
-<code>PostProcess</code>.</p>
-<p><strong>Model-grid spectra</strong> are rest-frame luminosity densities: no distance, no
-(1+z), no IGM. To compare with an observation use the per-observation
-predictions, which are what the likelihood saw.</p>
-<p><strong>UV and ionising photons.</strong> <code>LUV</code> is the trapezoid mean of L_ν over
-1450–1550 Å rest; <code>MUV = −2.5 log10(LUV / (4π (10 pc)²) / 3631 Jy)</code>. <code>nion</code>
-is <code>(L⊙/h) ∫_{λ&lt;912 Å} L_ν/λ dλ</code> of the intrinsic spectrum with the constants
-of <code>NebularGridModel.compute_log_qq</code>, so it is the Q the fit itself used;
-<code>xion = nion / LUV_intrinsic</code>. <code>fesc</code> is <code>frac_obrun</code> as sampled (or fixed).</p>
-<h2 id="your-own-quantities">Your own quantities<a class="headerlink" href="#your-own-quantities" title="Permanent link">&para;</a></h2>
-<p>A <code>derived</code> function receives one <code>SpectrumSample</code> and returns a float or a
-1-D array; it is evaluated per draw (a Python loop, so keep it cheap) and
-for the best fit:</p>
+<p>Apply the weights in <code>r["samples"]["log_weights"]</code>, or use <code>PostProcess</code>
+to resample. <code>PostProcess(model, "out/ceridwen_result.h5")</code> uses stored
+<code>mfrac</code> without requiring the mass table, but checks that <code>grid_chash</code>
+and <code>sfh_interp</code> match the model. Given a <code>SamplingResult</code>, or a file without
+<code>/derived</code>, it computes <code>mfrac</code> from the grid table.</p>
+<p><code>fitSED(mfrac=False)</code> skips <code>/derived</code>; <code>mfrac=True</code> requires a table before
+sampling. By default, the array is saved when possible, with one log message
+otherwise. <code>/derived</code> is reserved for inexpensive, reproducible functions
+of theta and the model. Spectra, SFR averages, UV properties and ionising
+quantities are computed by <code>PostProcess</code>.</p>
+<p><strong>Model-grid spectra.</strong> These are rest-frame luminosity densities, without
+distance scaling, (1+z) or IGM absorption. Use per-observation predictions
+when comparing with data.</p>
+<p><strong>UV and ionising photons.</strong> <code>LUV</code> is the trapezoidal mean of rest-frame L_ν
+over 1450–1550 Å; <code>MUV = −2.5 log10(LUV / (4π (10 pc)²) / 3631 Jy)</code>.
+<code>nion = (L⊙/h) ∫_{λ&lt;912 Å} L_ν/λ dλ</code> uses the intrinsic spectrum and the
+constants from <code>NebularGridModel.compute_log_qq</code>. It matches the ionising
+photon rate used by the fit. <code>xion = nion / LUV_intrinsic</code>, and <code>fesc</code> is
+the fixed or sampled <code>frac_obrun</code>.</p>
+<h2 id="custom-quantities">Custom quantities<a class="headerlink" href="#custom-quantities" title="Permanent link">&para;</a></h2>
+<p>Pass functions in <code>derived</code> to compute additional quantities. Each receives
+one <code>SpectrumSample</code> and returns a float or 1-D array. Functions run in a
+Python loop for each draw and the best-fit sample, so avoid expensive work:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">A_V</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>                                   <span class="c1"># V-band attenuation from the two spectra</span>
@@ -1105,36 +1105,38 @@ for the best fit:</p>
 <a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="n">out</span><span class="p">[</span><span class="s2">"derived"</span><span class="p">][</span><span class="s2">"A_V"</span><span class="p">]</span>                         <span class="c1"># (N,)</span>
 <a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="n">out</span><span class="p">[</span><span class="s2">"bestfit"</span><span class="p">][</span><span class="s2">"derived"</span><span class="p">][</span><span class="s2">"A_V"</span><span class="p">]</span>              <span class="c1"># float</span>
 </code></pre></div>
-<p><code>SpectrumSample</code> carries <code>wave_rest</code>, <code>full</code>, <code>intrinsic</code>, <code>dustfree</code> (all
-L⊙/Hz × 10^logmass), <code>theta</code> (this draw after the transforms, numpy), <code>zred</code>,
-<code>logmass</code>, <code>sfr</code>, <code>lookback_gyr</code>, <code>cosmo</code>, and the helpers <code>index_of(λ)</code>,
+<p><code>SpectrumSample</code> provides <code>wave_rest</code>, <code>full</code>, <code>intrinsic</code> and <code>dustfree</code>
+(spectra in L⊙/Hz × 10^logmass), transformed NumPy <code>theta</code>, <code>zred</code>, <code>logmass</code>,
+<code>sfr</code>, <code>lookback_gyr</code> and <code>cosmo</code>. Helpers include <code>index_of(λ)</code>,
 <code>mean_lnu(spec, lo, hi)</code> and <code>luminosity(spec, lo, hi)</code>.</p>
 <h2 id="figures">Figures<a class="headerlink" href="#figures" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">pp</span><span class="o">.</span><span class="n">figures</span><span class="p">(</span><span class="s2">"post_figs/"</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">"ID 1009077"</span><span class="p">)</span>      <span class="c1"># summary.pdf, corner.pdf, diagnostics.pdf</span>
 </code></pre></div>
-<p><code>ceridwen.plotting</code> makes three per-galaxy figures from the output (plain
-matplotlib; <code>plotting.COLORS</code> holds the blue default palette and is the only
-styling): a <strong>summary</strong> page (observed-frame SED with the 16–84 % model band,
-data, posterior photometry and χ residuals, across the full width when no lines
-were fitted; emission-line residuals with S/N; the SFH as per-bin SFR against
-lookback time, with the posterior 16–84 % and median, the prior 16–84 % at the
-median mass and the injected SFH when <code>truths</code> gives it, on a linear time axis
-for a uniform node grid and a log axis otherwise; 1-D marginals with
-median, 16–84 %, best fit and prior 16–84 %; header with z, log M, log SFR10, χ²/ν of the best
-fit and ln Z), a <strong>corner</strong> plot of all fitted parameters (median dashed,
-maximum-likelihood sample in red), and a <strong>diagnostics</strong> page (nested sampling:
-dead points in deletion order coloured by posterior weight, the log-likelihood
-run and the cumulative posterior weight with ln Z and the effective sample size;
-MCMC: per-chain traces with split-R̂ and ESS; without <code>vi</code> all NUTS chains start from one
-warmup end state, so R̂ there measures within-run mixing only). The functions
-<code>summary_figure(out, model)</code>, <code>corner_figure(out)</code> and
-<code>diagnostic_figure(result, out)</code> return the matplotlib figures for further
-editing.</p>
+<p><code>ceridwen.plotting</code> creates three matplotlib figures:</p>
+<ul>
+<li><strong>Summary:</strong> observed-frame SED, data, posterior photometry, 16–84% model
+  band and χ residuals, plus line residuals and S/N when lines are fitted.
+  Without lines, the SED spans the page width. The SFH panel shows per-bin
+  SFR, posterior median and 16–84% interval, the prior interval at median
+  mass and the input SFH when supplied in <code>truths</code>. Uniform time grids use
+  a linear axis; other grids use a log axis. Parameter panels show medians,
+  16–84% intervals, best-fit values and prior intervals. The header reports
+  z, log M, log SFR10, best-fit χ²/ν and ln Z.</li>
+<li><strong>Corner:</strong> all fitted parameters, with median dashed lines and the
+  maximum-likelihood sample in red.</li>
+<li><strong>Diagnostics:</strong> nested-sampling dead points in deletion order, coloured
+  by posterior weight, with log-likelihood, cumulative posterior weight,
+  ln Z and effective sample size. MCMC results show per-chain traces,
+  split-R̂ and ESS. Without VI, NUTS chains share one warmup end state,
+  so R̂ measures mixing within that run only.</li>
+</ul>
+<p><code>summary_figure(out, model)</code>, <code>corner_figure(out)</code> and
+<code>diagnostic_figure(result, out)</code> return figures you can edit. The default
+blue palette is defined in <code>plotting.COLORS</code>.</p>
 <h2 id="saving">Saving<a class="headerlink" href="#saving" title="Permanent link">&para;</a></h2>
-<p><code>pp.save("post.npz")</code> writes a flat <code>.npz</code> with <code>/</code>-joined keys
-(<code>extras/sfh/sfr10</code>, <code>bestfit/theta/logmass</code>, ...); strings and lists in
-<code>meta</code> are stored as JSON. <code>load_postprocess(path)</code> returns the nested dict
-again.</p>
+<p><code>pp.save("post.npz")</code> writes a flat <code>.npz</code> file with slash-separated keys,
+such as <code>extras/sfh/sfr10</code> and <code>bestfit/theta/logmass</code>. Strings and lists in
+<code>meta</code> are JSON-encoded. <code>load_postprocess(path)</code> restores the nested dictionary.</p>
 
 
 

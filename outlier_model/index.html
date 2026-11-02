@@ -902,44 +902,38 @@
 
 
 <h1 id="outlier-mixture-likelihood">Outlier mixture likelihood<a class="headerlink" href="#outlier-mixture-likelihood" title="Permanent link">&para;</a></h1>
-<p>A few bad pixels (cosmic rays, detector artefacts, sky residuals) or a mis-calibrated band
-can drag a Gaussian fit a long way, because a 20σ residual costs 200 in ln L. The outlier
-mixture (Hogg, Bovy &amp; Lang 2010, arXiv:1008.4686) lets each datum come either from the
-ordinary noise model or, with probability <code>f</code>, from a Gaussian <code>nsigma</code> times broader. It
-is Prospector's outlier model (<code>prospect.likelihood.NoiseModel</code>, branch <code>f_outlier &gt; 0</code>),
-reproduced to machine precision.</p>
-<div class="admonition note">
-<p class="admonition-title">All outlier fractions default to 0; switch the mixture on explicitly.</p>
-<p>Every <code>f_outlier_*</code> is 0 (off) unless your model samples it or fixes it to a non-zero
-value. With no outlier parameter, or one fixed at 0, the likelihood is the ordinary
-Gaussian, compiled to the same program as a model without the mixture.</p>
-</div>
+<p>Bad pixels, sky residuals and calibration errors can strongly affect a Gaussian
+fit: a 20σ residual contributes −200 to ln L. The outlier mixture models
+each datum with either the ordinary noise distribution or, with probability
+<code>f</code>, a Gaussian <code>nsigma</code> times broader (Hogg, Bovy &amp; Lang 2010,
+arXiv:1008.4686). It reproduces Prospector's <code>f_outlier &gt; 0</code> likelihood
+(<code>prospect.likelihood.NoiseModel</code>) to machine precision.</p>
+<p>All <code>f_outlier_*</code> values default to zero. Enable the mixture by sampling a
+fraction or fixing it above zero. With the fraction absent or fixed at zero,
+the compiled likelihood is the ordinary Gaussian.</p>
 <h2 id="the-likelihood">The likelihood<a class="headerlink" href="#the-likelihood" title="Permanent link">&para;</a></h2>
-<p>Per unmasked datum <em>i</em>, with σ_eff,i the uncertainty after <strong>every</strong> noise term
-(<code>noise_floor</code>, <code>log_err_scale_*</code>, <code>log_jitter_*</code>, <code>log_f_calib_*</code>, <code>log_f_data_*</code>, named
-per observation like the outlier fractions), χ_i =
-(y_i − μ_i)/σ_eff,i and <code>log_det_i = ½ ln(2π σ_eff,i²)</code>:</p>
+<p>For each unmasked datum i, σ_eff,i includes all configured noise terms:
+<code>noise_floor</code>, <code>log_err_scale_*</code>, <code>log_jitter_*</code>, <code>log_f_calib_*</code> and
+<code>log_f_data_*</code>. Define χ_i = (y_i − μ_i)/σ_eff,i and
+<code>log_det_i = ½ ln(2π σ_eff,i²)</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>ln p_good,i = −½ χ_i²          − log_det_i
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>ln p_bad,i  = −½ χ_i² / n²     − log_det_i − ln n
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>ln L_i      = logaddexp( ln(1 − f) + ln p_good,i ,  ln f + ln p_bad,i )
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>ln L        = Σ_i ln L_i          (masked data contribute 0)
 </code></pre></div>
-<p>This is Prospector's expression term by term: its <code>var_bad = var n²</code> gives
-<code>−½ ln(2π var n²) = −½ ln(2π var) − ln n</code>, and its <code>var</code> is the noise model's diagonal
-<code>Sigma</code> (σ² for the default <code>NoiseModel</code>, the kernel sum when kernels are attached), which
-is CERIDWEN's σ_eff². <code>tests/test_outlier_model.py</code> checks equality with a NumPy
-transcription of Prospector's code for every noise-term combination (rtol 1e-12) and with
-values written by Prospector itself (<code>tests/reference/prospector_outlier.npz</code>).</p>
-<p><strong>One deliberate difference.</strong> Prospector's plain branch (<code>f_outlier == 0</code>,
-<code>NoiseModel.lnlikelihood</code>, <code>noise_model.py:90</code> at commit a78d153) computes
-<code>−½[ln(2π) χ² + Σ ln σ²]</code>: the χ² is multiplied by ln 2π and <code>n ln 2π</code> is missing. Its
-outlier branch is correct. CERIDWEN follows the outlier branch for f &gt; 0 and, at f = 0,
-uses its ordinary (correct) Gaussian. Prospector's value at exactly <code>f = 0</code> is therefore
-<strong>not</strong> a reference, and as f → 0 CERIDWEN tends to the correct Gaussian, not to
-Prospector's number.</p>
+<p>Prospector sets <code>var_bad = var n²</code>, giving a broad-component normalisation
+of <code>−½ ln(2π var) − ln n</code>. Its diagonal <code>Sigma</code> is equivalent to
+CERIDWEN's σ_eff², including any noise kernels. <code>tests/test_outlier_model.py</code>
+compares all noise-term combinations with a NumPy transcription at rtol
+1e-12 and with Prospector outputs in <code>tests/reference/prospector_outlier.npz</code>.</p>
+<p>At exactly <code>f_outlier == 0</code>, Prospector's <code>NoiseModel.lnlikelihood</code>
+(<code>noise_model.py:90</code>, commit a78d153) instead computes
+<code>−½[ln(2π) χ² + Σ ln σ²]</code>. This multiplies χ² by ln 2π and omits n ln 2π.
+CERIDWEN uses the ordinary Gaussian at zero, which is also the limit of
+its mixture as f → 0. The two implementations therefore differ at f = 0.</p>
 <h2 id="using-it-with-fitsed">Using it with <code>fitSED</code><a class="headerlink" href="#using-it-with-fitsed" title="Permanent link">&para;</a></h2>
-<p>The mixture is switched on per observation by <strong>name</strong>, like the other noise terms. Each
-observation gets its own fraction; nothing is shared between observations.</p>
+<p>Configure the fraction by observation name, as with other noise terms.
+Each observation has a separate fraction.</p>
 <table>
 <thead>
 <tr>
@@ -988,21 +982,22 @@ observation gets its own fraction; nothing is shared between observations.</p>
 </tr>
 </tbody>
 </table>
-<p>The per-observation names below have the same defaults: 0 (off) and 50.</p>
-<p><strong>Small photometric sets: keep <code>f_outlier_phot</code> at 0.</strong> On a clean mock with 8 NIRCam bands
-and <code>f_outlier_phot</code> free (<code>TopHat(0.0, 0.5)</code>), the current SFR came out
-0.592 [−0.344, 0.753] (median [16, 84 %]) against 0.770 [0.580, 0.965] for the Gaussian
-fit: with few bands the fit can treat a rest-UV band as a possible outlier and the SFR
-constraint loosens (A100 recovery test). Free it only when a bad band is
-suspected and the photometry has enough bands to tell.</p>
-<p><strong>Several observations of one kind</strong> (two spectra, say <code>"G140M"</code> and <code>"G395M"</code>): each takes
-its own <code>f_outlier_spec_G140M</code>, <code>f_outlier_spec_G395M</code> (and <code>nsigma_outlier_spec_&lt;name&gt;</code>),
-<code>&lt;name&gt;</code> being the observation's <code>name</code>. The plain <code>f_outlier_spec</code> is accepted only when the
-model has exactly one spectrum; with two it is an error, as is setting both the plain and the
-per-observation name of one observation. An <code>f_outlier_*</code> / <code>nsigma_outlier_*</code> name that
-matches no observation is an error (it would be sampled without entering the likelihood).</p>
-<p>To opt in, sample a fraction by giving it a prior and a <code>free_param_init</code> (this example
-switches the mixture on for the spectrum only; the photometry stays Gaussian):</p>
+<p>These defaults also apply to names with observation suffixes.</p>
+<p>For small photometric sets, leaving <code>f_outlier_phot=0</code> usually gives a better
+SFR constraint unless a bad band is suspected. In an A100 recovery test with
+eight clean NIRCam bands, sampling <code>f_outlier_phot</code> with <code>TopHat(0.0, 0.5)</code>
+gave an SFR median and [16, 84%] interval of 0.592 [−0.344, 0.753], compared
+with 0.770 [0.580, 0.965] for the Gaussian fit. Treating a rest-UV band as a
+possible outlier weakened the constraint. More bands are needed to distinguish
+bad measurements from changes in the SED.</p>
+<p>For several observations of one type, include their names. Two spectra named
+<code>"G140M"</code> and <code>"G395M"</code> use <code>f_outlier_spec_G140M</code> and
+<code>f_outlier_spec_G395M</code>, with matching <code>nsigma_outlier_spec_&lt;name&gt;</code> keys.
+The plain <code>f_outlier_spec</code> requires exactly one spectrum. Providing both
+plain and suffixed names for one observation, or a name matching no
+observation, raises an error.</p>
+<p>To sample a fraction, give it a prior and <code>free_param_init</code> entry. This
+example enables the mixture for the spectrum while keeping photometry Gaussian:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.priors</span><span class="w"> </span><span class="kn">import</span> <span class="n">TopHat</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">model</span> <span class="o">=</span> <span class="n">SedModel</span><span class="p">(</span><span class="n">csp</span><span class="p">,</span> <span class="p">[</span><span class="n">phot</span><span class="p">,</span> <span class="n">spec</span><span class="p">],</span>
@@ -1011,92 +1006,90 @@ switches the mixture on for the spectrum only; the photometry stays Gaussian):</
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>                 <span class="n">transforms</span><span class="o">=</span><span class="n">transforms</span><span class="p">,</span> <span class="n">zred</span><span class="o">=</span><span class="n">zred</span><span class="p">)</span>
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="s2">"out"</span><span class="p">)</span>
 </code></pre></div>
-<p>The <code>fitSED</code> log names it: <code>spec: DiagonalGaussianLikelihood, outlier mixture f =
-f_outlier_spec (sampled), nsigma = 50 (fixed)</code>; every observation without it reads
-<code>outlier mixture off</code>.</p>
+<p>The <code>fitSED</code> log reports the sampled fraction and fixed width as
+<code>spec: DiagonalGaussianLikelihood, outlier mixture f = f_outlier_spec (sampled),
+nsigma = 50 (fixed)</code>. Other observations report <code>outlier mixture off</code>.</p>
 <ul>
-<li><strong>Fixed values</strong> use the usual constant transform:
-  <code>transforms={"f_outlier_phot": lambda th: jnp.array([0.05])}</code>. It must be a constant
-  (checked at setup); a fixed <code>0.0</code> leaves the mixture off, so the likelihood is the
-  ordinary Gaussian, graph unchanged.</li>
-<li><strong><code>nsigma_outlier_*</code></strong> defaults to 50 (Prospector's). Sample it with a prior whose lower
-  bound is positive, or fix it with a transform. Setting it without the matching <code>f</code> is an
-  error.</li>
-<li><strong>Priors on <code>f</code></strong> must be bounded inside [0, 1] (<code>Uniform</code>, <code>TopHat</code>, <code>ClippedNormal</code>).</li>
-<li><strong>With <code>run_sampler</code></strong>, build the noise model yourself:
-  <code>DiagonalNoiseModel(f_outlier="f_outlier_spec", nsigma_outlier=50.0)</code> (a string is a
-  theta key, a float a fixed value).</li>
+<li>Fix a fraction with a constant transform, for example
+  <code>transforms={"f_outlier_phot": lambda th: jnp.array([0.05])}</code>. Setup checks
+  that the transform is constant. A value of 0 disables the mixture.</li>
+<li><code>nsigma_outlier_*</code> defaults to 50. It can be fixed with a transform or
+  sampled with a prior bounded above zero. It requires a matching fraction.</li>
+<li>Priors on <code>f</code> must be bounded within [0, 1], such as <code>Uniform</code>, <code>TopHat</code>
+  or <code>ClippedNormal</code>.</li>
+<li>With <code>run_sampler</code>, construct the noise model explicitly:
+  <code>DiagonalNoiseModel(f_outlier="f_outlier_spec", nsigma_outlier=50.0)</code>.
+  Strings refer to theta keys; numbers are fixed values.</li>
 </ul>
 <h3 id="line-fluxes-lines">Line fluxes (<code>Lines</code>)<a class="headerlink" href="#line-fluxes-lines" title="Permanent link">&para;</a></h3>
-<p>Prospector's <code>Lines</code> is an ordinary <code>Observation</code> (<code>observation.py:495</code>), so it carries a
-noise model and <code>lnprobfn</code> sends it through the same <code>NoiseModel.lnlike</code>: the mixture works
-for line fluxes there, it just has no template name. CERIDWEN names it <code>f_outlier_lines</code>.
-With a handful of fluxes the data barely constrain f, so a fitted fraction mostly returns its
-prior; the mixture is then a heavy-tailed likelihood that stops one mismeasured line
-(blend, aperture, calibration) from dragging the fit, which is its main use here. A fixed
-small value (for example 0.05) is often the sensible choice.</p>
+<p>Prospector applies the same noise-model likelihood to <code>Lines</code>, though it has
+no template parameter for the fraction. CERIDWEN calls it <code>f_outlier_lines</code>.
+With few line fluxes, the fraction is usually prior-dominated. The mixture
+can still reduce the effect of a mismeasured line, for example from blending
+or aperture errors. A small fixed fraction, such as 0.05, is often sufficient.</p>
 <h3 id="upper-limits">Upper limits<a class="headerlink" href="#upper-limits" title="Permanent link">&para;</a></h3>
-<p>Data flagged as upper limits keep their one-sided penalty <code>−½ max(μ − y, 0)²/σ² − log_det</code>;
-the mixture applies to the detections only (<code>lnlike_diag_outlier_with_upper_limits</code>).
-Prospector has no one-sided kernel, so there is no reference for the limits; the detections
-are Prospector's outlier branch exactly.</p>
+<p>Upper limits retain the one-sided penalty
+<code>−½ max(μ − y, 0)²/σ² − log_det</code>. Only detections use the mixture
+(<code>lnlike_diag_outlier_with_upper_limits</code>). Prospector has no equivalent
+upper-limit kernel; its outlier branch is the reference for detections only.</p>
 <h3 id="emission-line-marginalisation">Emission-line marginalisation<a class="headerlink" href="#emission-line-marginalisation" title="Permanent link">&para;</a></h3>
-<p><code>Spectrum(marginalize_elines=True)</code> marginalises the line fluxes jointly over the
-marginalising spectrum, <strong>every</strong> <code>Photometry</code> and <strong>every</strong> <code>Lines</code> observation of the
-model; that closed-form marginal assumes a Gaussian likelihood. The mixture is therefore
-allowed only on observations outside that system — in practice a second spectrum that does
-not marginalise its lines — and refused (<code>NotImplementedError</code>) inside it.</p>
-<p>Prospector does it differently: with both on it fits the line amplitudes with the plain
-uncertainties (<code>sedmodel.py:324</code>, <code>spec_unc = None</code> → <code>obs["unc"]**2</code> at :686, ignoring even
-its noise kernels), adds a Gaussian Occam penalty, and then applies the mixture to the
-spectrum with the maximum-likelihood lines. That is not the marginal of the mixture over the
-line fluxes, and is not reproduced.</p>
+<p><code>Spectrum(marginalize_elines=True)</code> jointly integrates over line fluxes in
+that spectrum and all <code>Photometry</code> and <code>Lines</code> observations. The analytic
+solution requires a Gaussian likelihood. An outlier mixture within this
+system raises <code>NotImplementedError</code>. A second spectrum outside the
+marginalisation can use the mixture.</p>
+<p>Prospector first fits line amplitudes with the quoted uncertainties
+(<code>sedmodel.py:324,686</code>, <code>spec_unc=None</code>), ignoring noise kernels. It then
+adds a Gaussian Occam term and applies the mixture to the spectrum with
+maximum-likelihood lines. CERIDWEN does not implement this approximation
+to integration over the line fluxes.</p>
 <h3 id="the-prior-at-f-0-and-its-gradient">The prior at f = 0 and its gradient<a class="headerlink" href="#the-prior-at-f-0-and-its-gradient" title="Permanent link">&para;</a></h3>
-<p>f is a fraction and the Gaussian is the mixture at f = 0, so the natural support is
-[0, 1), and a lower bound of 0 keeps "no outliers" inside the model. ln L is concave in f
-(a sum of logs of functions linear in f) and finite at 0, with the exact derivative
-<code>d ln L/df = Σ_i (p_bad,i − p_good,i)/L_i</code>, which at f = 0 is <code>Σ_i (p_bad,i/p_good,i − 1)</code>.
-That is finite unless a datum lies beyond ~38σ (for nsigma = 50) (then +∞ in float64: the likelihood really
-rises that steeply). CERIDWEN evaluates this derivative directly (a custom JVP,
-<code>ceridwen/likelihood/likelihood.py</code> <code>_mixture_jvp</code>), so a sampled f with lower bound 0 has a
-finite gradient at f = 0 (<code>test_gradient_in_f_is_exact_and_finite_at_zero</code>); computing it
-through <code>ln f</code> would give 0·∞ = NaN. Prospector's lower bound of 1e-5 for
-the spectrum is therefore not needed for numerical reasons; either bound works. The upper
-bound 0.5 keeps the inlier component the majority, which is what makes "inlier" and
-"outlier" identifiable (above 0.5 the two labels can swap).</p>
+<p>The mixture becomes Gaussian at f = 0, so a prior starting at zero includes
+the no-outlier case. ln L is concave in f and finite at zero. Its derivative is
+<code>d ln L/df = Σ_i (p_bad,i − p_good,i)/L_i</code>, reducing to
+<code>Σ_i (p_bad,i/p_good,i − 1)</code> at f = 0. For <code>nsigma=50</code>, this overflows
+float64 only for residuals beyond roughly 38σ.</p>
+<p>CERIDWEN evaluates the derivative directly through the custom JVP
+<code>_mixture_jvp</code> in <code>ceridwen/likelihood/likelihood.py</code>. Differentiating through
+ln f at zero would instead produce NaN from 0·∞. The test
+<code>test_gradient_in_f_is_exact_and_finite_at_zero</code> checks this boundary.
+Prospector's lower bound of 1e-5 is therefore unnecessary for numerical
+stability in CERIDWEN. A prior upper bound of 0.5 keeps the ordinary-noise
+component as the majority.</p>
 <h2 id="diagnostics">Diagnostics<a class="headerlink" href="#diagnostics" title="Permanent link">&para;</a></h2>
-<p><code>LikelihoodOutput</code> with the mixture on: <code>lnl_pointwise</code> holds the per-datum mixture terms
-ln L_i (they sum to <code>lnl_total</code>); <code>chi</code> and <code>residuals</code> are those of the inlier Gaussian,
-(y − μ)/σ_eff. The posterior probability that a datum is an outlier,
-<code>p_i = exp(ln f + ln p_bad,i − ln L_i)</code>, is available off the sampling path:</p>
+<p>With the mixture enabled, <code>LikelihoodOutput.lnl_pointwise</code> contains each
+datum's ln L_i and sums to <code>lnl_total</code>. <code>chi</code> and <code>residuals</code> still use the
+ordinary Gaussian residual (y − μ)/σ_eff. To compute each datum's posterior
+outlier probability, <code>p_i = exp(ln f + ln p_bad,i − ln L_i)</code>, use:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">p</span> <span class="o">=</span> <span class="n">likelihood</span><span class="o">.</span><span class="n">outlier_probability</span><span class="p">(</span><span class="n">obs</span><span class="o">.</span><span class="n">flux</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">obs</span><span class="o">.</span><span class="n">uncertainty</span><span class="p">,</span> <span class="n">obs</span><span class="o">.</span><span class="n">mask</span><span class="p">,</span> <span class="n">theta</span><span class="p">)</span>
 </code></pre></div>
-<p>(<code>DiagonalGaussianLikelihood.outlier_probability</code>, or the function
-<code>ceridwen.likelihood.outlier_probability</code>). The sampled likelihood never computes it.</p>
+<p>This is available through <code>DiagonalGaussianLikelihood.outlier_probability</code>
+or <code>ceridwen.likelihood.outlier_probability</code>. It is computed only when requested.</p>
 <h2 id="not-supported">Not supported<a class="headerlink" href="#not-supported" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Correlated noise.</strong> The mixture is diagonal only, as Prospector's
-  (<code>assert Sigma.ndim == 1</code>). On a spectrum with the GP likelihood
-  (<code>docs/gp_likelihood.md</code>) the mixture is refused at setup.</li>
-<li><strong>Inside the emission-line marginalisation</strong> (above).</li>
+<li>The mixture assumes diagonal noise, as does Prospector's implementation
+  (<code>assert Sigma.ndim == 1</code>). Combining it with a
+  <a href="../gp_likelihood/">GP likelihood</a> on the same spectrum raises an error at setup.</li>
+<li>Observations within a joint emission-line marginalisation cannot use the
+  mixture, as described above.</li>
 </ul>
 <h2 id="non-finite-data">Non-finite data<a class="headerlink" href="#non-finite-data" title="Permanent link">&para;</a></h2>
-<p>Observations mask non-finite flux and non-finite or non-positive uncertainties at
-construction and <strong>warn</strong> when those points were not already in your mask. The sampled
-likelihood reads the data with the masked non-finite values replaced by finite
-placeholders, so they reach neither the value nor the gradient (a NaN left in a masked
-slot would otherwise give 0·NaN = NaN in the gradient, for the Gaussian likelihood as well).
-<code>obs.flux</code> itself is kept as given.</p>
+<p>At construction, observations mask non-finite fluxes and uncertainties that
+are non-finite or non-positive. They warn if those points were not already
+masked. The likelihood substitutes finite placeholders for masked non-finite
+values so they cannot contaminate values or gradients through 0·NaN.
+The original <code>obs.flux</code> array is retained.</p>
 <h2 id="cost">Cost<a class="headerlink" href="#cost" title="Permanent link">&para;</a></h2>
-<p>The mixture replaces one <code>−½χ² − log_det</code> per datum by two Gaussians and a <code>logaddexp</code>.
-Measured on one A100 (production spectrum of 3065 pixels + 8 bands, nebular on, fractions
-sampled for spectrum and photometry, 240 interleaved calls): +0.6 % at the nested-sampling
-batch width W = 100 (value and gradient, and value only), −0.1 % to +0.8 % at W = 1 and
-500, and +1.9 % (+49 µs of 2.59 ms) for value and gradient at W = 4 (NUTS with four
-chains), the one case above the 1 % target.
-With it off (no outlier parameter, or <code>f</code> fixed at 0), the compiled likelihood is byte for
-byte the one before the feature: the lowered StableHLO of <code>jit(value_and_grad(lnprob))</code>
-is identical in all four <code>scripts/bit_identity_check.py</code> configurations.</p>
+<p>For each datum, the mixture evaluates two Gaussians and a <code>logaddexp</code> instead
+of one Gaussian. An A100 benchmark used a 3065-pixel spectrum, eight bands,
+nebular emission, sampled fractions for both observation types and 240
+interleaved calls. At the nested-sampling batch width W = 100, runtime
+increased by 0.6% for both value-only and value-and-gradient calculations.
+Changes at W = 1 and 500 ranged from −0.1% to +0.8%. At W = 4, corresponding
+to four NUTS chains, value and gradient cost 1.9% more: 49 µs on 2.59 ms.</p>
+<p>With the fraction absent or fixed at zero, the lowered StableHLO for
+<code>jit(value_and_grad(lnprob))</code> is identical to the likelihood before this
+feature in all four <code>scripts/bit_identity_check.py</code> configurations.</p>
 
 
 

@@ -618,10 +618,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#requirements-each-refused-before-sampling-with-the-fix-in-the-message" class="md-nav__link">
+  <a href="#requirements" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Requirements (each refused before sampling, with the fix in the message)
+        Requirements
       
     </span>
   </a>
@@ -907,13 +907,11 @@
 
 
 <h1 id="emission-line-marginalisation">Emission-line marginalisation<a class="headerlink" href="#emission-line-marginalisation" title="Permanent link">&para;</a></h1>
-<p>Fit a spectrum with the nebular model on, but with the <strong>fluxes of the emission
-lines set free</strong>: they are integrated out analytically instead of being fixed at
-the CLOUDY prediction, so the stellar absorption underneath (Balmer series,
-Ca II H+K, Mg b, the 4000 Å break) still constrains the stellar population while
-the lines can take whatever strength the data demand. This is the alternative to
-<code>Spectrum.mask_lines</code>, which throws the line pixels (and the absorption in them)
-away.</p>
+<p>Emission-line marginalisation fits the stellar spectrum while integrating
+over the line fluxes analytically. The fluxes can vary from the CLOUDY
+predictions, leaving the underlying stellar absorption available to constrain
+the population. This can retain information from features such as the Balmer
+series, Ca II H+K and Mg b that would be removed by <code>Spectrum.mask_lines</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SedModel</span><span class="p">,</span> <span class="n">Kinematics</span><span class="p">,</span> <span class="n">Instrument</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.observation</span><span class="w"> </span><span class="kn">import</span> <span class="n">Spectrum</span>
@@ -930,21 +928,21 @@ away.</p>
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="nb">print</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>                                 <span class="c1"># lists the marginalised lines</span>
 </code></pre></div>
 <h2 id="what-is-computed">What is computed<a class="headerlink" href="#what-is-computed" title="Permanent link">&para;</a></h2>
-<p>The line fluxes α (erg s⁻¹ cm⁻², observed frame, IGM-transmitted at the line)
-enter every observation linearly: the marginalising <code>Spectrum</code> through the
-line profiles (the same painter profile as every other line, width
-√(σ_gas² + σ_inst²), times the spectrum calibration), every <code>Photometry</code>
-through the static line-to-band basis, and every <code>Lines</code> observation through
-its blend matrix. With independent Gaussian noise the likelihood integrated
-over α is a closed form: one weighted least-squares solve and one Cholesky
-factorisation of an n_line × n_line matrix per likelihood call. It is the exact
-marginal likelihood, for</p>
+<p>Line fluxes α are observed-frame, IGM-transmitted fluxes in erg s⁻¹ cm⁻².
+They enter the observations linearly:</p>
 <ul>
-<li>a <strong>flat prior</strong> (default, <code>eline_prior_width=0</code>), or</li>
-<li>a <strong>Gaussian prior</strong> centred on the CLOUDY flux with a fractional width,
-  <code>eline_prior_width=0.2</code> meaning 20 % (Prospector's convention). Ly-α always
-  has a flat prior (resonant scattering makes its grid flux unreliable).</li>
+<li>The marginalising <code>Spectrum</code> uses calibrated line profiles with width
+  √(σ_gas² + σ_inst²).</li>
+<li>Each <code>Photometry</code> observation uses a static line-to-band matrix.</li>
+<li>Each <code>Lines</code> observation uses its blend matrix.</li>
 </ul>
+<p>With independent Gaussian noise, integration over α has a closed-form solution.
+Each likelihood call requires a weighted least-squares solve and Cholesky
+factorisation of an n_line × n_line matrix. The supported priors are flat
+(<code>eline_prior_width=0</code>, the default) or Gaussian about the CLOUDY flux.
+For the latter, <code>eline_prior_width=0.2</code> means a fractional width of 20%,
+following Prospector's convention. Ly-α always uses a flat prior because
+resonant scattering makes its grid flux unreliable.</p>
 <h2 id="options">Options<a class="headerlink" href="#options" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -956,7 +954,7 @@ marginal likelihood, for</p>
 <tbody>
 <tr>
 <td><code>marginalize_elines</code></td>
-<td>switch it on (default <code>False</code>: every line keeps its CLOUDY flux, nothing changes)</td>
+<td>enable marginalisation; default <code>False</code> keeps CLOUDY line fluxes</td>
 </tr>
 <tr>
 <td><code>eline_prior_width</code></td>
@@ -976,138 +974,130 @@ marginal likelihood, for</p>
 </tr>
 </tbody>
 </table>
-<p><code>theta["eline_delta_zred"]</code> (a sampled parameter or a transform) shifts every
-painted line to (1 + zred + eline_delta_zred) λ_rest, as in Prospector.</p>
-<p>A line is fitted when its centre lies inside the spectrum at every redshift the
-projector serves, more than 3σ from the edges, with at least 3 unmasked pixels
-within 2σ. Covered lines that miss this stay at their CLOUDY flux and are listed
-by <code>model.summary()</code>; a line you name in <code>elines_to_fit</code> that misses it is an
-error.</p>
-<h2 id="requirements-each-refused-before-sampling-with-the-fix-in-the-message">Requirements (each refused before sampling, with the fix in the message)<a class="headerlink" href="#requirements-each-refused-before-sampling-with-the-fix-in-the-message" title="Permanent link">&para;</a></h2>
+<p><code>theta["eline_delta_zred"]</code>, supplied as a sampled parameter or transform,
+shifts line centres to (1 + zred + eline_delta_zred) λ_rest, as in Prospector.</p>
+<p>For a line to be fitted, its centre must stay more than 3σ inside the spectrum
+over the projector's full redshift range, with at least three unmasked pixels
+within 2σ. Lines that fail these conditions keep their CLOUDY fluxes and are
+listed by <code>model.summary()</code>. Explicitly requesting such a line in
+<code>elines_to_fit</code> raises an error.</p>
+<h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
+<p>Unsupported configurations raise an error before sampling.</p>
 <ul>
-<li>with a nebular model (<code>add_neb=True</code>), nebular parameters that are <strong>not sampled</strong>: with free line fluxes the lines cannot constrain <code>gas_logu</code> /
-  <code>gas_logz</code>. Fix them with constant transforms, as above, or tie them to
-  another parameter with a transform;</li>
-<li>an <code>Instrument</code> on the spectrum (the line width needs the LSF);</li>
-<li>one marginalising spectrum per model;</li>
-<li>no <code>logify_spectrum</code>, no GP likelihood (<code>noise=GaussianProcess(...)</code> or <code>log_gp_*</code>,
-  <a href="../gp_likelihood/">GP likelihood</a>), no upper limits and no outlier mixture
-  (<code>f_outlier_*</code>, <a href="../outlier_model/">outlier model</a>) in the jointly fitted observations
-  (a spectrum outside the system may carry one);</li>
-<li><code>Photometry</code> together with a sampled <code>zred</code>, or with a sampled <code>sigma_gas</code>
-  and <code>broaden_photometry=True</code>, is not supported yet (<code>NotImplementedError</code>);
-  a sampled <code>zred</code> works for a spectrum-only fit;</li>
-<li>there is no <code>eline_sigma</code>: the width is <code>Kinematics(sigma_gas=...)</code>, a
-  velocity <strong>dispersion</strong> in km/s.</li>
+<li>With <code>add_neb=True</code>, fix <code>gas_logu</code> and <code>gas_logz</code> through constant transforms
+  or tie them to other parameters. They cannot be independently sampled when
+  the line fluxes are free.</li>
+<li>Supply an <code>Instrument</code> for the spectrum so the line width includes the LSF.</li>
+<li>Use at most one marginalising spectrum per model.</li>
+<li>The joint marginalisation does not support <code>logify_spectrum</code>, a
+  <a href="../gp_likelihood/">GP likelihood</a>, upper limits or an
+  <a href="../outlier_model/">outlier mixture</a>. An observation outside that system,
+  such as a second spectrum, can use a separate noise model.</li>
+<li>Joint photometry with sampled <code>zred</code>, or with sampled <code>sigma_gas</code> and
+  <code>broaden_photometry=True</code>, raises <code>NotImplementedError</code>. A spectrum-only
+  fit can sample <code>zred</code>.</li>
+<li>Set the gas velocity dispersion in km/s with <code>Kinematics(sigma_gas=...)</code>.
+  There is no <code>eline_sigma</code> parameter.</li>
 </ul>
 <h2 id="without-a-nebular-model-add_nebfalse-cspbasis_afe">Without a nebular model (<code>add_neb=False</code>, <code>CSPBasis_afe</code>)<a class="headerlink" href="#without-a-nebular-model-add_nebfalse-cspbasis_afe" title="Permanent link">&para;</a></h2>
-<p>The marginalisation does not need a nebular grid when the prior is flat: the line
-list, the rest wavelengths and the names are FSPS's <code>$SPS_HOME/data/emlines_info.dat</code>,
-and the widths are √(σ_gas² + σ_inst²) as always; none of them depends on the
-metallicity or [α/Fe]. So with <code>CSPBasis(..., add_neb=False)</code> and with
-<code>CSPBasis_afe</code> (which has no nebular grid: there are no α-enhanced CLOUDY grids)</p>
+<p>A flat line-flux prior does not require a nebular grid. Line names and rest
+wavelengths come from <code>$SPS_HOME/data/emlines_info.dat</code>; widths remain
+√(σ_gas² + σ_inst²) and are independent of metallicity and [α/Fe].
+For <code>CSPBasis(..., add_neb=False)</code> and <code>CSPBasis_afe</code>:</p>
 <ul>
-<li>the lines the spectrum covers are fitted with a <strong>flat prior</strong> (the default);
-  <code>eline_prior_width &gt; 0</code> and <code>elines_to_fix</code> are refused, because both need the
-  CLOUDY fluxes;</li>
-<li>the model has no nebular continuum and no grid lines, so there are no fixed lines;</li>
-<li><code>$SPS_HOME</code> (or <code>sps_home=...</code> on the basis) must point at the FSPS data, for
-  <code>emlines_info.dat</code>;</li>
-<li><code>Photometry</code> is marginalised jointly as usual; <code>Lines</code> observations are refused
-  (they need the grid's line fluxes);</li>
-<li>the <code>cloudy</code> entries of the outputs are NaN.</li>
+<li>Covered lines use the default flat prior. <code>eline_prior_width &gt; 0</code> and
+  <code>elines_to_fix</code> require CLOUDY fluxes and raise an error.</li>
+<li>The model has no nebular continuum or grid lines, so there are no fixed lines.</li>
+<li>Set <code>$SPS_HOME</code>, or <code>sps_home=</code> on the basis, to locate <code>emlines_info.dat</code>.</li>
+<li>Photometry is marginalised jointly. <code>Lines</code> observations are unsupported
+  because they require grid fluxes.</li>
+<li>Output <code>cloudy</code> entries are NaN.</li>
 </ul>
 <h2 id="choosing-the-prior">Choosing the prior<a class="headerlink" href="#choosing-the-prior" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>Flat (<code>eline_prior_width=0</code>, the default).</strong> Nothing about the lines is assumed:
-  they carry no information about the stellar population, whatever produced them
-  (star formation, an AGN, shocks, evolved stars). The safe choice whenever the lines
-  may not come from young stars, e.g. in quiescent galaxies.</li>
-<li><strong>Gaussian about the CLOUDY flux (<code>eline_prior_width=0.2</code>, Prospector's usual value).</strong>
-  Each fitted line gets a prior N(F_j(θ), (0.2 F_j(θ))²): the data may move a line by
-  about ±20 % from what the star-forming nebular model predicts for the current
-  stellar parameters, more only at a price. Because the centre and the width both
-  follow F_j(θ), the lines inform the stellar fit: a line much stronger than
-  predicted pulls the SFH towards more recent star formation, and where the model
-  predicts no line (F_j → 0, e.g. an old population) the width shrinks to zero and
-  the line is pinned at ~0 even if the data show one. Use it only when the lines are
-  known to come from star formation and the CLOUDY grid describes them to ~20 %. In
-  the injection test (lines rescaled by ×0.5 to ×3 from CLOUDY) it biased the line
-  fluxes towards CLOUDY by up to 3σ, and in 2 of 50 realisations the optimiser moved
-  to an SFH with no recent star formation.</li>
-</ul>
+<p><strong>Flat prior (<code>eline_prior_width=0</code>).</strong> Line strengths are independent of the
+stellar parameters. This is useful when emission may come from an AGN,
+shocks or evolved stars, including in quiescent galaxies.</p>
+<p><strong>Gaussian prior about CLOUDY (<code>eline_prior_width=0.2</code>).</strong> Each fitted line
+has prior N(F_j(θ), (0.2 F_j(θ))²). Both its centre and width follow the
+star-forming nebular model, so the lines affect the inferred stellar
+population. Stronger-than-predicted emission can favour more recent star
+formation. When F_j approaches zero, the prior width also approaches zero,
+restricting the line flux even if emission is present in the data.</p>
+<p>Use this prior when the lines arise from star formation and the CLOUDY grid
+describes them to roughly 20%. In an injection test with fluxes scaled by
+0.5–3 relative to CLOUDY, this prior shifted recovered fluxes towards CLOUDY
+by up to 3σ. In 2 of 50 realisations, the optimiser chose an SFH with no
+recent star formation.</p>
 <h2 id="evidence">Evidence<a class="headerlink" href="#evidence" title="Permanent link">&para;</a></h2>
-<p>With a flat prior the evidence is defined only up to the (infinite) prior volume of
-every fitted line, so <strong>ln Z of a flat-prior marginalised fit must not be compared
-with that of another model</strong> (another line set, a masked fit, a standard fit). Posteriors
-are unaffected. Compare evidences only between fits with the same fitted lines and the
-same prior, or use <code>eline_prior_width &gt; 0</code> (a proper prior) when evidences matter.</p>
+<p>A flat prior has an undefined normalisation for each fitted line. Its ln Z
+cannot be compared across different line sets, masked fits or ordinary fits.
+Posterior inference is unaffected. Comparisons require the same fitted lines
+and prior convention, or a proper prior (<code>eline_prior_width &gt; 0</code>).</p>
 <h2 id="speed">Speed<a class="headerlink" href="#speed" title="Permanent link">&para;</a></h2>
-<p>When nothing the line solve depends on can change between likelihood calls (fixed
-<code>zred</code>, <code>sigma_gas</code> and instrument scale, no <code>eline_delta_zred</code>, no sampled <code>spectrum_scaling*</code>,
-<code>spectrum_calib*</code> or <code>eline_scaling</code>, and no sampled noise terms or <code>noise_floor</code>), the
-line profiles, the design matrices and, for a flat prior, the whole factorisation are
-computed once at setup. On an A100 at the nested sampler's batch width (100) a
-flat-prior marginalised likelihood then costs 0.99-1.00 times the ordinary one, and
-the 20 per cent prior 1.11 times; otherwise the per-call path costs about 1.2-1.25
-times. <code>model._eline_system.static</code> is <code>None</code> when the per-call path is in use.</p>
-<p>On the per-call path the line basis, a dense <code>(n_pix, n_line)</code> matrix of Gaussians, is
-rebuilt at every call. Each profile is exactly 0 in float64 more than about 38.6 of its
-sigma from its centre, so an opt-in windowed basis evaluates each line on a static
-window of +-40 of its largest sigma only (that sigma is set by <code>Kinematics.sigma_max</code> for a sampled
-<code>sigma_gas</code>, the top of the instrument-scale range, and the line centres over <code>zred_range</code>) and
-gives bitwise the dense values on CPU (its gradients agree to 1-2 ulp, the reverse pass
-summing over the window); on a GPU, XLA may contract the windowed basis into a fused
-multiply-add, so the log-likelihood can differ from the dense one in the last bits. Turn it on after building the model and before the first
-likelihood call: <code>model.obs_dict["spec"]._proj.enable_line_windows()</code> (a rebuilt
-projector, as <code>fitSED(observations=...)</code> makes, starts with it off). It is off by
-default because on CPU it is no faster (the full likelihood 0.99-1.14 times the dense one's
-time at batch widths 64 and 100, 4000- and 400-pixel spectra): there the cost is filling the
-matrix, not the exponentials. On an A100 it took 0.77-0.96 times the dense time for a
-4000-pixel grating-like spectrum and 0.97-0.99 times for a 400-pixel prism-like one. A sampled <code>eline_delta_zred</code> always takes the
-dense path; a sampled redshift outside <code>zred_range</code> truncates the windowed lines.</p>
+<p>The line profiles and design matrices can be computed once at setup when
+<code>zred</code>, <code>sigma_gas</code> and instrument scale are fixed, with no <code>eline_delta_zred</code>,
+sampled calibration (<code>spectrum_scaling*</code>, <code>spectrum_calib*</code>, <code>eline_scaling</code>),
+sampled noise terms or <code>noise_floor</code>. For a flat prior, the factorisation can
+also be cached. On an A100 with batch width 100, the cached flat-prior
+likelihood took 0.99–1.00 times the ordinary likelihood's runtime; a 20% prior
+took 1.11 times. Recomputing per call took about 1.2–1.25 times. When caching
+is unavailable, <code>model._eline_system.static</code> is <code>None</code>.</p>
+<p>Without caching, each call builds a dense <code>(n_pix, n_line)</code> Gaussian matrix.
+In float64, profiles are exactly zero beyond about 38.6σ. An optional
+windowed calculation restricts each line to ±40 of its largest possible σ.
+The window uses <code>Kinematics.sigma_max</code> for sampled <code>sigma_gas</code>, the maximum
+instrument scale and the line-centre range over <code>zred_range</code>.</p>
+<p>Enable it after constructing the model and before evaluating the likelihood:
+<code>model.obs_dict["spec"]._proj.enable_line_windows()</code>. Rebuilding the projector,
+including through <code>fitSED(observations=...)</code>, disables it again. CPU values
+are bitwise identical to the dense calculation; gradients differ by 1–2 ulp
+from summation order. GPU fusion may change the last bits of the log-likelihood.</p>
+<p>The option is disabled by default. CPU timings were 0.99–1.14 times the dense
+calculation for 400- and 4000-pixel spectra at batch widths 64 and 100, with
+matrix filling dominating the cost. On an A100, timings were 0.77–0.96 times
+the dense calculation for a 4000-pixel grating-like spectrum and 0.97–0.99
+times for a 400-pixel prism-like spectrum. Sampled <code>eline_delta_zred</code> always
+uses the dense calculation. Sampled redshifts outside <code>zred_range</code> truncate
+the windowed profiles.</p>
 <h2 id="noise-terms">Noise terms<a class="headerlink" href="#noise-terms" title="Permanent link">&para;</a></h2>
-<p>The weights of the line solve are the likelihood's own inverse variances, so the
-result is the exact marginal also with <code>log_err_scale_*</code>, <code>log_jitter_*</code> and
-<code>log_f_data_*</code>. <code>noise_floor</code> and <code>log_f_calib_*</code> scale with the model, which would
-include the lines being solved for; they are evaluated on the model <strong>without</strong>
-the fitted lines.</p>
+<p>The solve uses the likelihood's inverse variances. Marginalisation remains
+exact with <code>log_err_scale_*</code>, <code>log_jitter_*</code> and <code>log_f_data_*</code>.
+Model-dependent terms (<code>noise_floor</code> and <code>log_f_calib_*</code>) are evaluated on
+the model with the fitted lines removed, so they do not depend on the
+unknown line amplitudes.</p>
 <h2 id="outputs">Outputs<a class="headerlink" href="#outputs" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>fitSED</code> writes <code>/elines</code> into <code>ceridwen_result.h5</code>: <code>names</code>, <code>wave_rest</code>,
-  and per posterior draw the line-flux posterior <code>mean</code>, <code>sd</code> and the <code>cloudy</code>
-  prediction; <code>read_result_h5(path)["elines"]</code> returns them.</li>
-<li><code>PostProcess</code> returns <code>out["extras"]["elines"]</code> (the same per draw), and its
-  posterior-predictive spectra, photometry and line fluxes carry each draw's
-  posterior-mean lines.</li>
+<li><code>fitSED</code> saves <code>/elines</code> in <code>ceridwen_result.h5</code>, containing line
+  <code>names</code>, <code>wave_rest</code>, and each draw's posterior <code>mean</code>, <code>sd</code> and
+  <code>cloudy</code> prediction. Read these with <code>read_result_h5(path)["elines"]</code>.</li>
+<li><code>PostProcess</code> returns the same values in <code>out["extras"]["elines"]</code>.
+  Its predicted spectra, photometry and line fluxes use each draw's
+  posterior-mean line fluxes.</li>
 <li><code>ceridwen.likelihood.eline_marginal.eline_line_fluxes(model, theta,
-  likelihood)</code> evaluates the line posterior at one <code>theta</code>.</li>
+  likelihood)</code> returns the line posterior for one parameter vector.</li>
 </ul>
-<p><code>model.predict(theta)</code> is unchanged and still predicts the CLOUDY lines; it is
-the forward model, not the fit.</p>
+<p><code>model.predict(theta)</code> still returns the forward model's CLOUDY lines.
+Use the outputs above for the marginalised line posterior.</p>
 <h2 id="masking-versus-marginalising">Masking versus marginalising<a class="headerlink" href="#masking-versus-marginalising" title="Permanent link">&para;</a></h2>
-<p>Masking removes the information in the line pixels, including the stellar
-absorption the lines sit on. Marginalising keeps it: the continuum model must
-fit those pixels, and only the part a Gaussian of the right width and position
-can absorb is attributed to the line. Where emission fills in an absorption
-line of similar width the two are partly degenerate, and the marginalisation
-reports that honestly as a larger line-flux uncertainty and a wider stellar
-posterior, where masking would simply lose the absorption.</p>
+<p>Masking excludes line pixels and any stellar absorption in them.
+Marginalisation keeps those pixels in the fit and assigns emission to a
+Gaussian with the specified position and width. When emission overlaps
+absorption of a similar width, the two are partly degenerate. The resulting
+line-flux uncertainties and stellar posterior are wider.</p>
 <h2 id="differences-from-prospector">Differences from Prospector<a class="headerlink" href="#differences-from-prospector" title="Permanent link">&para;</a></h2>
-<p>The algebra with a prior is the same (tested to 1e-10 against Prospector
-2.0a2.dev42 on identical inputs). Different by design:</p>
+<p>With a Gaussian prior, the algebra agrees with Prospector 2.0a2.dev42 to
+1e-10 on identical inputs. The implementations differ in these respects:</p>
 <ul>
-<li>the flat-prior penalty is the correct marginal, +½(n ln 2π + ln|Σ̂|);
-  Prospector's no-prior penalty has the opposite sign;</li>
-<li>the profile is the analytic one every other line uses (unit area, exact c),
-  on all unmasked pixels; Prospector renormalises numerically with c = 3e18
-  inside 5σ windows, which makes its likelihood jump when a pixel enters a
-  window;</li>
-<li>the photometry and <code>Lines</code> are marginalised jointly with the spectrum;
-  Prospector plugs the spectrum's fitted fluxes into the photometry, and only
-  when the spectrum is listed first;</li>
-<li>the calibration used to convert amplitudes is the current one (Prospector
-  uses the previous likelihood call's).</li>
+<li>CERIDWEN's flat-prior marginal term is +½(n ln 2π + ln|Σ̂|).
+  Prospector uses the opposite sign for its no-prior term.</li>
+<li>CERIDWEN uses unit-area analytic profiles and the exact speed of light
+  on all unmasked pixels. Prospector numerically renormalises with c = 3e18
+  within 5σ windows, causing jumps when pixels enter a window.</li>
+<li>CERIDWEN marginalises photometry and <code>Lines</code> jointly with the spectrum.
+  Prospector substitutes fitted spectral fluxes into photometry, provided
+  the spectrum is listed first.</li>
+<li>CERIDWEN converts amplitudes with the current calibration. Prospector
+  uses the calibration from the previous likelihood call.</li>
 </ul>
 
 

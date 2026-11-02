@@ -742,10 +742,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-checks" class="md-nav__link">
+  <a href="#checks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The checks
+        Checks
       
     </span>
   </a>
@@ -753,10 +753,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-this-code-was-built" class="md-nav__link">
+  <a href="#development-practices" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How this code was built
+        Development practices
       
     </span>
   </a>
@@ -825,105 +825,109 @@
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nb">export</span><span class="w"> </span><span class="nv">CERIDWEN_TEST_SSP</span><span class="o">=</span><span class="k">$(</span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_bpass_v2'))"</span><span class="k">)</span>
 </code></pre></div>
-<p>The suite's main SSP grid is the published BPASS grid. A grid-dependent test skips when it
-finds no grid, so read the <code>-ra</code> summary at the end of a run: a skip is not a pass. Do not run
-scripts from the folder that contains the clone: Python then finds the clone folder
-<code>ceridwen</code> before the installed package.</p>
-<h2 id="the-checks">The checks<a class="headerlink" href="#the-checks" title="Permanent link">&para;</a></h2>
-<p>Each layer answers a different question.</p>
+<p>The tests use the published BPASS SSP grid. Tests that need a missing grid are
+skipped; check the <code>-ra</code> summary to see which tests ran. Avoid running scripts
+from the directory containing the clone, where Python may import the clone's
+<code>ceridwen</code> folder instead of the installed package.</p>
+<h2 id="checks">Checks<a class="headerlink" href="#checks" title="Permanent link">&para;</a></h2>
+<p>The following checks cover installation, numerical output and input validation.</p>
 <table>
 <thead>
 <tr>
-<th>layer</th>
-<th>command</th>
-<th>what it asserts</th>
-<th>on CI</th>
+<th>Check</th>
+<th>Command</th>
+<th>Coverage</th>
+<th>CI</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Environment</td>
 <td><code>python -m ceridwen.check</code></td>
-<td>Python version, dependencies, filter curves and attenuation laws, float64, nested sampling, <code>$SPS_HOME</code> and its data files</td>
-<td>yes, in the wheel job</td>
+<td>Python, dependencies, filters, attenuation laws, float64, nested sampling and FSPS data</td>
+<td>wheel job</td>
 </tr>
 <tr>
 <td>Tests</td>
 <td><code>pytest -m "not fsps and not gpu" -q -ra</code></td>
-<td>units, conventions, broadening, likelihoods, samplers, post-processing, the misuse guards</td>
-<td>every push and pull request</td>
+<td>units, conventions, broadening, likelihoods, samplers, post-processing and input validation</td>
+<td>each push and pull request</td>
 </tr>
 <tr>
 <td>Regression baselines</td>
 <td><code>pytest tests/regression/test_regression.py -q</code></td>
-<td>22 categories of forward-model and likelihood output (plus 4 optional ones, skipped where their grid is absent, and 3 that need the AGN tables) against stored arrays at <code>rtol=1e-7</code> with an absolute tolerance of 1e-10 times each array's maximum, and, for the first 9, a maximum relative residual of 1e-6; writes comparison figures to <code>tests/regression/figures/</code></td>
-<td>no, needs <code>$SPS_HOME</code></td>
+<td>22 output categories, 4 optional grid-dependent categories and 3 requiring AGN tables; stored arrays compared at <code>rtol=1e-7</code>, with absolute tolerance 1e-10 times each array's maximum; the first 9 also require maximum relative residual 1e-6; figures saved in <code>tests/regression/figures/</code></td>
+<td>requires local FSPS data</td>
 </tr>
 <tr>
 <td>Golden spectra</td>
 <td><code>pytest tests/csp/test_lookback_flip_invariant.py -q</code></td>
-<td>6 SFH and metallicity configurations: SSP weights at <code>rtol=1e-12</code>; spectra, line fluxes and photometry at <code>rtol=1e-6</code> (they pass through float32 contractions)</td>
-<td>no, needs <code>$SPS_HOME</code></td>
+<td>6 SFH/metallicity configurations; SSP weights at <code>rtol=1e-12</code>, spectra, line fluxes and photometry at <code>rtol=1e-6</code> to allow float32 contractions</td>
+<td>requires local FSPS data</td>
 </tr>
 <tr>
 <td>Misuse report</td>
 <td><code>python tests/regression/misuse_report.py</code></td>
-<td>each known user error ends in an exception or a warning; a <code>SILENT</code> row is a bug</td>
-<td>its assertions run in the tests</td>
+<td>checks for an exception or warning for each known input error; <code>SILENT</code> indicates a missing check</td>
+<td>assertions included in tests</td>
 </tr>
 <tr>
-<td>Static API check</td>
+<td>Static API</td>
 <td><code>python scripts/check_api_usage.py</code></td>
-<td>every call in <code>tests/</code>, <code>examples/</code> and the Python blocks of <code>README.md</code>, <code>GOTCHAS.md</code> and <code>docs/</code> uses only keyword arguments that exist and no removed name</td>
+<td>checks keyword arguments and removed names in tests, examples and Python blocks in <code>README.md</code>, <code>GOTCHAS.md</code> and <code>docs/</code></td>
 <td>no</td>
 </tr>
 <tr>
 <td>Byte identity</td>
-<td><code>python scripts/bit_identity_check.py --save old.npz</code> on one commit, <code>--compare old.npz</code> on the next</td>
-<td>the footprint of a change: which output arrays differ at all under <code>tobytes()</code>; <code>--ns</code> adds a nested-sampling run at the same RNG key</td>
+<td><code>python scripts/bit_identity_check.py --save old.npz</code>, then <code>--compare old.npz</code> on another commit</td>
+<td>compares output arrays using <code>tobytes()</code>; <code>--ns</code> adds nested sampling with the same RNG key</td>
 <td>no</td>
 </tr>
 <tr>
 <td>Physical standard</td>
-<td><code>python scripts/physical_check.py --save old.npz</code> on one commit, <code>--compare old.npz</code> on the next</td>
-<td>no spectrum (model grid or projected), photometry, <code>Lines</code> prediction or line flux moves by more than 1e-3 relative, per element where its value exceeds 1e-4 of the array's maximum and in units of that maximum below it, over every configuration of the byte-identity check plus one with every component on, at 16 draws and four prior extremes (faintest, brightest, all-low, all-high); prints the worst case per output with its theta and exits 1 above the standard</td>
+<td><code>python scripts/physical_check.py --save old.npz</code>, then <code>--compare old.npz</code> on another commit</td>
+<td>limits spectral, photometric and line-flux changes to 1e-3; covers the byte-identity configurations plus all components, at 16 draws and four prior extremes (faintest, brightest, all-low, all-high); reports the worst output and theta, exiting 1 on failure</td>
 <td>no</td>
 </tr>
 </tbody>
 </table>
-<p>CI has no FSPS data, so the nebular tests, the regression baselines and the golden spectra run
-only on a machine with <code>$SPS_HOME</code> set. Byte identity is a CPU statement: on a GPU, the
-scatter-add that paints emission lines can differ in the last bit from run to run.</p>
-<p>Run the byte-identity check on an idle machine, never alongside the test suites. A loaded
-<code>--compare</code> once reported a single differing array (a float64 <code>PostProcess</code> spectrum, about 3
-ulp) that did not recur on a quiet machine, where the same code was byte-identical across all
-23,232 arrays. A lone differing array from a loaded run is not evidence of a code change:
-re-run it quietly first. The cause is unknown and was not reproduced.</p>
-<h2 id="how-this-code-was-built">How this code was built<a class="headerlink" href="#how-this-code-was-built" title="Permanent link">&para;</a></h2>
-<p>CERIDWEN is written and maintained by one person, with AI coding assistants used for drafting,
-refactoring and review. The safeguard is not trust in the tool but the checks above, and a
-few rules that apply to every change, whoever or whatever proposes it:</p>
+<p>The physical-standard check measures relative differences where values exceed
+1e-4 of an array's maximum. Below that threshold, differences are expressed
+relative to the maximum.</p>
+<p>CI has no FSPS data. Nebular tests, regression baselines and golden-spectrum
+tests therefore need to run locally with <code>$SPS_HOME</code> set. Byte identity is
+checked on the CPU. On a GPU, emission-line scatter-adds can differ in the
+last bit between runs.</p>
+<p>Run the byte-identity check on an idle machine, separately from the test suites.
+One comparison on a busy machine reported a difference of about 3 ulp in a
+float64 <code>PostProcess</code> spectrum. The same code was byte-identical across all
+23,232 arrays when rerun on an idle machine. The cause was not identified.
+Repeat an isolated difference under those conditions before attributing it to
+a code change.</p>
+<h2 id="development-practices">Development practices<a class="headerlink" href="#development-practices" title="Permanent link">&para;</a></h2>
+<p>CERIDWEN has one author and maintainer. AI coding assistants are used for
+drafting, refactoring and review. Changes are checked using the tests above
+and the following requirements.</p>
 <ul>
-<li><strong>Conventions are written down where a tool reads them first.</strong>
-  <a href="https://github.com/Espe13/ceridwen/blob/main/AGENTS.md"><code>AGENTS.md</code></a> holds the conventions
-  that are easy to get wrong (solar-relative <code>logzsol</code>, lookback-time ordering, units and
-  frames), the hard requirements and the module map;
-  <a href="https://github.com/Espe13/ceridwen/blob/main/GOTCHAS.md"><code>GOTCHAS.md</code></a> is the misuse guide.</li>
-<li><strong>A change has to say what it is.</strong> A refactor or optimisation is either byte-identical on
-  CPU, or it changes output arrays within the physical standard above (the physical-standard
-  check passes, with the size of the change predicted before it was measured); the standard
-  is set at the level of the code's own float32 error (the float32 SSP cube is good to ~1e-4
-  in faint photometric bands at extreme parameters, against float64). Log-likelihoods and
-  gradients are judged on their own scale, and posteriors are compared statistically, not
-  draw by draw. An intended change to the physics must come with its predicted size, and a new
-  feature must add a golden configuration of its own. Existing baselines are not re-captured
-  to make a test pass: when a change within the standard moves one, the moved arrays are
-  listed with their sizes and justified before it is re-captured.</li>
-<li><strong>Wrong input fails loudly.</strong> Every guard sits in construction or setup code, or runs once
-  at trace time, so the compiled sampling path is unchanged.</li>
-<li><strong>Independent references where they exist.</strong> The spectral broadening is tested against
-  direct quadrature and, when <code>sedpy</code> is installed, against its smoothing routines
-  (<code>tests/test_broadening.py</code>).</li>
+<li><a href="https://github.com/Espe13/ceridwen/blob/main/AGENTS.md"><code>AGENTS.md</code></a>
+  documents conventions, requirements and the module structure, including
+  solar-relative <code>logzsol</code>, lookback-time ordering, units and frames.
+  <a href="https://github.com/Espe13/ceridwen/blob/main/GOTCHAS.md"><code>GOTCHAS.md</code></a>
+  describes common usage errors.</li>
+<li>Refactors and optimisations must either preserve CPU output byte for byte
+  or pass the physical-standard check above. For changes to output, predict
+  and document the size before measuring it. The tolerance reflects the
+  model's float32 error: faint photometric bands at extreme parameters can
+  differ from float64 by about 1e-4. Assess log-likelihoods and gradients on
+  their own scales, and compare posteriors statistically.</li>
+<li>Changes to the physics need a predicted effect size. New features need a
+  golden test configuration. Before updating an affected baseline, list the
+  changed arrays, quantify the differences and explain them.</li>
+<li>Validate inputs during construction, setup or tracing, so checks do not
+  add work to the compiled sampling loop.</li>
+<li>Use independent numerical references where available. Broadening tests
+  compare with direct quadrature and, when installed, sedpy's smoothing
+  routines (<code>tests/test_broadening.py</code>).</li>
 </ul>
 
 

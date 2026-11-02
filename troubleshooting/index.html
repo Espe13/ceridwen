@@ -749,47 +749,49 @@
 
 
 <h1 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h1>
-<p>Start with the environment check. It reports the Python version, every dependency, the
-bundled filter curves and attenuation laws, float64, nested sampling and <code>$SPS_HOME</code>, each
-problem with its fix:</p>
+<p>Run the environment check first. It checks Python, dependencies, filter curves,
+attenuation laws, float64, nested sampling and <code>$SPS_HOME</code>, and suggests fixes
+for any problems:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>python<span class="w"> </span>-m<span class="w"> </span>ceridwen.check
 </code></pre></div>
-<p><strong>pip says "No matching distribution found for jaxlib&gt;=0.9.0" on a Mac.</strong> The Python is an
-Intel (x86_64) build: jax publishes no Intel-Mac wheels after 0.4.38, and CERIDWEN needs
-jax &gt;= 0.9. On Apple Silicon this happens when conda itself is an Intel install, such as an
-old Anaconda, running under Rosetta. Check with</p>
+<p><strong>pip reports "No matching distribution found for jaxlib&gt;=0.9.0" on a Mac.</strong>
+This usually means Python is an Intel (<code>x86_64</code>) build. JAX has no Intel-Mac
+wheels after 0.4.38, while CERIDWEN requires JAX &gt;= 0.9. On Apple Silicon,
+an older Intel Anaconda installation running under Rosetta can cause this.
+Check Python's architecture with:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import platform; print(platform.machine())"</span><span class="w">     </span><span class="c1"># must print arm64</span>
 </code></pre></div>
 <p>If it prints <code>x86_64</code>, install <a href="https://github.com/conda-forge/miniforge">Miniforge</a> for
 arm64 and create the environment with its <code>conda</code>. Intel Macs cannot run CERIDWEN.</p>
-<p><strong><code>$SPS_HOME</code> is unset or incomplete.</strong> <code>CSPBasis(add_neb=True)</code> or
-<code>add_dust_emission=True</code> raises a <code>ValueError</code> when neither <code>sps_home=</code> nor <code>$SPS_HOME</code> is
-given. Clone FSPS and set the variable in your shell startup file
-(<a href="../installation/">Installation</a>). Open a new terminal and check that <code>echo $SPS_HOME</code> prints
-the path; if it is blank, the line went into the wrong file (<code>echo $SHELL</code> tells you which
-shell you use).</p>
-<p><strong><code>python-fsps</code> does not import.</strong> You need it only to build your own SSP grid
-(<code>SSPData.from_fsps</code>). It compiles Fortran against <code>$SPS_HOME</code>, so set <code>$SPS_HOME</code> first and
-install a Fortran compiler (<a href="../installation/#building-your-own-ssp-grid">Installation</a>).</p>
-<p><strong><code>fetch_grid</code> says the cached grid fails its checksum.</strong> The file in <code>~/.ceridwen/grids</code> (or
-<code>$CERIDWEN_GRID_DIR</code>) is incomplete or an earlier release. <code>fetch_grid(name, force=True)</code>
-downloads it again.</p>
-<p><strong>An import picks up the wrong <code>ceridwen</code>.</strong> Started from the folder that contains a clone,
-Python finds the clone folder <code>ceridwen</code> before the installed package. Run scripts from
-inside the clone or from any other folder.</p>
-<p><strong>NUTS prints nothing for a long time.</strong> Warmup and sampling are each one compiled loop, so
-there is no progress output, and Ctrl-C does not stop them; use <code>kill</code>. On a CPU, NUTS takes
-hours for a typical fit; use nested sampling there, or a GPU (<a href="../samplers/">Samplers</a>).</p>
-<p><strong>A test skips.</strong> A grid-dependent test skips when it finds no SSP grid; a skip is not a pass.
-Point the tests at the published BPASS grid:</p>
+<p><strong><code>$SPS_HOME</code> is unset or incomplete.</strong> <code>CSPBasis(add_neb=True)</code> and
+<code>add_dust_emission=True</code> require either <code>sps_home=</code> or <code>$SPS_HOME</code>. Clone FSPS
+and add the path to your shell startup file; see <a href="../installation/">Installation</a>.
+Open a new terminal and run <code>echo $SPS_HOME</code>. If it is blank, check that you
+edited the startup file for your shell (<code>echo $SHELL</code>).</p>
+<p><strong><code>python-fsps</code> fails to import.</strong> The wrapper is needed only for
+<code>SSPData.from_fsps</code>, which builds SSP grids. Set <code>$SPS_HOME</code> and install a
+Fortran compiler before installing it. See
+<a href="../installation/#building-your-own-ssp-grid">Building a grid</a>.</p>
+<p><strong>A cached grid fails its checksum.</strong> The file in <code>~/.ceridwen/grids</code> or
+<code>$CERIDWEN_GRID_DIR</code> may be incomplete or from an earlier release. Download
+a replacement with <code>fetch_grid(name, force=True)</code>.</p>
+<p><strong>Python imports the wrong <code>ceridwen</code>.</strong> Running from the directory containing
+a clone can cause Python to find that folder before the installed package.
+Run the script from inside the clone or another directory.</p>
+<p><strong>NUTS produces no output for a long time.</strong> Warmup and sampling each run as a
+compiled loop without progress output. Ctrl-C does not interrupt these loops;
+use <code>kill</code> to stop the process. Typical CPU fits take hours. Use nested
+sampling on the CPU or run NUTS on a GPU; see <a href="../samplers/">Samplers</a>.</p>
+<p><strong>Grid-dependent tests are skipped.</strong> These tests cannot run without an SSP
+grid. Point them at the published BPASS grid:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">CERIDWEN_TEST_SSP</span><span class="o">=</span><span class="k">$(</span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"from ceridwen.ssps import fetch_grid; print(fetch_grid('mist_bpass_v2'))"</span><span class="k">)</span>
 </code></pre></div>
-<p><strong>A number looks plausible but wrong.</strong> The common causes are a metallicity in the wrong
-units (<code>logzsol</code> is log10(Z/Z_sun) of the grid), a lookback-time grid in the wrong order
-(index 0 is today), and a misspelt <code>theta</code> key. See <a href="../conventions/">Conventions</a> and
-<a href="https://github.com/Espe13/ceridwen/blob/main/GOTCHAS.md"><code>GOTCHAS.md</code></a>. If an AI assistant
-helps you use CERIDWEN, point it at
-<a href="https://github.com/Espe13/ceridwen/blob/main/AGENTS.md"><code>AGENTS.md</code></a>.</p>
+<p><strong>Results have unexpected values.</strong> Check metallicity units (<code>logzsol</code> is
+log10(Z/Z_sun) for the loaded grid), lookback-time ordering (index 0 is today)
+and spelling of <code>theta</code> keys. See <a href="../conventions/">Conventions</a> and
+<a href="https://github.com/Espe13/ceridwen/blob/main/GOTCHAS.md"><code>GOTCHAS.md</code></a>.
+If you use an AI assistant, give it the repository's
+<a href="https://github.com/Espe13/ceridwen/blob/main/AGENTS.md"><code>AGENTS.md</code></a> instructions.</p>
 
 
 

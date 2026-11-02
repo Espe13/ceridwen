@@ -391,10 +391,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-float32-mode-changes-inside-the-package" class="md-nav__link">
+  <a href="#implementation-of-float32-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What float32 mode changes inside the package
+        Implementation of float32 mode
       
     </span>
   </a>
@@ -402,10 +402,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-the-mode-guarantees" class="md-nav__link">
+  <a href="#numerical-comparisons" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What the mode guarantees
+        Numerical comparisons
       
     </span>
   </a>
@@ -841,36 +841,41 @@
 
 
 <h1 id="apple-gpu-float32-mode">Apple GPU (float32 mode)<a class="headerlink" href="#apple-gpu-float32-mode" title="Permanent link">&para;</a></h1>
-<p>CERIDWEN runs on the GPU of an Apple Silicon Mac through
-<a href="https://github.com/dfm/jax-graft">jax-graft</a>, which registers JAX's <code>mtl</code> platform. Apple
-GPUs have no float64, so on that backend CERIDWEN runs in <strong>float32 mode</strong>. This page says
-what to install, what the mode changes, what it guarantees and what it refuses.</p>
+<p>CERIDWEN uses <a href="https://github.com/dfm/jax-graft">jax-graft</a> to run on Apple
+Silicon GPUs through JAX's <code>mtl</code> platform. Apple GPUs do not support float64,
+so this backend uses float32. The sections below describe installation,
+numerical differences, performance and unsupported features.</p>
 <h2 id="install-and-run">Install and run<a class="headerlink" href="#install-and-run" title="Permanent link">&para;</a></h2>
-<p><code>examples/apple_gpu_mock_fit.ipynb</code> is the whole story in one notebook: a mock galaxy
-(photometry and a spectrum), its figure, a nested-sampling fit on the GPU and the recovered
-parameters against the input, with the priors shown next to the posteriors; about three and
-a half minutes on an M3 Pro. Four more notebooks go through the observation types one at a time:
-<code>mock_fit_1_photometry.ipynb</code>, <code>mock_fit_2_photometry_lines.ipynb</code> (adds line fluxes and the
-gas parameters), <code>mock_fit_3_spectrum.ipynb</code> (a spectrum alone: a per-pixel resolving power, a
-sampled velocity dispersion, emission lines) and <code>mock_fit_4_spectrum_photometry.ipynb</code> (a
-spectrum whose flux scale is a sampled nuisance, anchored by the photometry).</p>
-<p><code>pip install ceridwen</code> installs jax-graft on an Apple Silicon Mac with macOS 26 and
-Python 3.12 or newer (the only platform jax-graft ships wheels for; the marker in
-<code>pyproject.toml</code> keeps older Macs and Python 3.11 on the CPU build). Nothing else is needed:
-jax-graft makes the GPU JAX's default backend, and <code>import ceridwen</code> sees that and switches
-the process to float32, with one warning of its own (JAX and tensorflow-probability add theirs, see "Known limits"):</p>
+<p><code>examples/apple_gpu_mock_fit.ipynb</code> generates mock photometry and a spectrum,
+fits them with nested sampling on the GPU and compares recovered parameters
+with their inputs and priors. It takes about three and a half minutes on
+an M3 Pro. Four other notebooks cover specific observation types:</p>
+<ul>
+<li><code>mock_fit_1_photometry.ipynb</code>: photometry only.</li>
+<li><code>mock_fit_2_photometry_lines.ipynb</code>: photometry and line fluxes, including gas parameters.</li>
+<li><code>mock_fit_3_spectrum.ipynb</code>: a spectrum with per-pixel resolving power, sampled
+  velocity dispersion and emission lines.</li>
+<li><code>mock_fit_4_spectrum_photometry.ipynb</code>: a spectrum with a sampled flux scale,
+  constrained by photometry.</li>
+</ul>
+<p>On Apple Silicon with macOS 26 and Python 3.12 or newer, <code>pip install ceridwen</code>
+includes jax-graft. Older Macs and Python 3.11 use the CPU build, as specified
+by the dependency marker in <code>pyproject.toml</code>. Jax-graft selects the GPU as
+JAX's default device. Importing CERIDWEN then switches the process to float32
+and issues a warning. JAX and tensorflow-probability also issue warnings;
+see <a href="#known-limits">Known limits</a>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>UserWarning: float32 mode: JAX's default backend is the Apple GPU (mtl), which has no float64.
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>Evidences, gradients and the sampler state are float32 (docs/mac_gpu.md); for a float64 fit
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>set JAX_PLATFORMS=cpu
 </code></pre></div>
-<p><code>python -m ceridwen.check</code> reports the two lines</p>
+<p><code>python -m ceridwen.check</code> reports:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>  [ok  ] jax float64  -- off: float32 mode, chosen because the Apple GPU is JAX's default backend ...
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  [ok  ] jax backend  -- mtl (mtl:0): Apple GPU via jax-graft, float32
 </code></pre></div>
-<p>and every <code>fitSED</code> header prints <code>Device : MTL (mtl:0)</code> and
-<code>Precision : float32</code>. The result file records both: <code>config/precision</code> (<code>"float32"</code>) and
-<code>config/platform</code> (<code>"mtl"</code>).</p>
-<p>The environment switches:</p>
+<p>Each <code>fitSED</code> header reports <code>Device : MTL (mtl:0)</code> and
+<code>Precision : float32</code>. Result files save these as <code>config/platform</code> (<code>"mtl"</code>)
+and <code>config/precision</code> (<code>"float32"</code>).</p>
+<p>Environment variables control the device and precision:</p>
 <table>
 <thead>
 <tr>
@@ -881,14 +886,14 @@ the process to float32, with one warning of its own (JAX and tensorflow-probabil
 </thead>
 <tbody>
 <tr>
-<td>nothing set (jax-graft installed)</td>
+<td>no variables set; jax-graft installed</td>
 <td>float32</td>
 <td>Apple GPU</td>
 </tr>
 <tr>
 <td><code>JAX_PLATFORMS=cpu</code></td>
 <td>float64</td>
-<td>CPU, the same numbers as any other CPU</td>
+<td>CPU</td>
 </tr>
 <tr>
 <td><code>CERIDWEN_X64=0</code> (any machine)</td>
@@ -902,39 +907,45 @@ the process to float32, with one warning of its own (JAX and tensorflow-probabil
 </tr>
 </tbody>
 </table>
-<p><code>CERIDWEN_X64=0</code> on a CPU or CUDA machine is the same float32 mode without the GPU: useful
-to reproduce a Mac result elsewhere, not a precision to choose when float64 is available.</p>
-<h2 id="what-float32-mode-changes-inside-the-package">What float32 mode changes inside the package<a class="headerlink" href="#what-float32-mode-changes-inside-the-package" title="Permanent link">&para;</a></h2>
-<p>The forward model, the likelihood and the samplers run unchanged in float32. Three things
-are done differently so that they survive it; all three are no-ops under float64, and the
-float64 compiled programs are byte-identical to 1.0.13 (T4: 21 445 arrays compared, none
-differ; the physical standard, <code>scripts/physical_check.py</code>: 1680 arrays, every output
-identical).</p>
-<p><strong>Data rescaling at the observation layer.</strong> A spectrum in cgs F_nu has sigma ~ 1e-31, whose
-square underflows float32 (smallest normal number 1.2e-38), so every kernel that forms
-sigma^2, 1/sigma^2 or A^T W A would be wrong. <code>ceridwen.likelihood.observation_data</code> multiplies
-each observation's data, uncertainties and calibration vector by one power of two that brings
-its median uncertainty to order unity (exact: a power of two changes no mantissa bit), the
-noise model's jitter parameter (data units) is shifted by ln(scale), and the kernels run in
-those units. Their ln L is the true ln L minus <code>ndof ln(scale)</code>, a constant of the
-observation; the sampler works in those units (adding ~1e6 inside a float32 kernel would
-quantise ln L to 0.1), and <code>run_sampler</code> / <code>map_fit</code> add the constant back, in float64 on the
-host, to the reported ln Z, ln L and MAP ln posterior. <code>likelihood.float32_rescaling</code> and
-<code>likelihood.loglike_offset</code> expose the numbers.</p>
-<p><strong>No literal float64 on the device.</strong> <code>ceridwen.precision.float_dtype()</code> is the working dtype;
-every device array whose dtype the package chooses goes through it. Host-side NumPy stays
-float64 everywhere: the SSP grid axes, Z_sun resolution, provenance and the result file.</p>
-<p><strong>Constants outside the float32 range.</strong> The ionising-photon table (<code>L_sun / h</code> = 5.8e59)
-is computed on the host in float64 and stored in the working dtype, and the 1e-70 floors
-of the metallicity and dust-emission kernels become the smallest normal float32.</p>
-<p>Refused in float32 mode, with the error saying so: <code>Spectrum(marginalize_elines=True)</code> (the
-line marginal forms A^T W A in flux units) and a noise model with a <em>fixed numeric</em> jitter
-(it cannot be rescaled with the data; sample it instead).</p>
-<h2 id="what-the-mode-guarantees">What the mode guarantees<a class="headerlink" href="#what-the-mode-guarantees" title="Permanent link">&para;</a></h2>
-<p><code>tests/test_float32_parity.py</code> runs the six golden configurations and a mock galaxy in
-physical units (SDSS photometry, a 600-pixel cgs spectrum with sigma ~ 1e-31, three line
-fluxes; nine free parameters) in float64, in float32 on the CPU and in float32 on the GPU, in
-separate processes. Measured on an M3 Pro (jax 0.11.2, jax-graft 0.0.5, 2026-10-15):</p>
+<p><code>CERIDWEN_X64=0</code> also enables float32 on CPU or CUDA devices. This is useful
+for comparing with Mac results. Use float64 when the device supports it
+unless you need that comparison.</p>
+<h2 id="implementation-of-float32-mode">Implementation of float32 mode<a class="headerlink" href="#implementation-of-float32-mode" title="Permanent link">&para;</a></h2>
+<p>The forward model, likelihood and samplers use float32 with the adjustments
+below. These adjustments have no effect in float64. Compared with version
+1.0.13, the float64 compiled programs were byte-identical across 21,445 arrays
+in the T4 check. All 1680 output arrays in <code>scripts/physical_check.py</code> were
+also identical.</p>
+<p><strong>Rescaling observations.</strong> A cgs F_nu spectrum can have uncertainties near
+1e-31. Squaring these underflows float32, whose smallest normal value is
+1.2e-38. Before evaluating sigma², inverse variance or A^T W A,
+<code>ceridwen.likelihood.observation_data</code> scales each observation's data,
+uncertainties and calibration vector by a power of two, bringing the median
+uncertainty close to one. Power-of-two scaling preserves the mantissa.
+The sampled log-jitter is shifted by ln(scale).</p>
+<p>The scaled likelihood differs from the physical-unit likelihood by
+<code>−ndof ln(scale)</code>, constant for each observation. Sampling retains this
+offset: adding a constant of about 1e6 inside a float32 kernel would reduce
+ln L resolution to about 0.1. <code>run_sampler</code> and <code>map_fit</code> restore the constant
+on the host in float64 for reported ln Z, ln L and MAP log-posterior.
+The values are available as <code>likelihood.float32_rescaling</code> and
+<code>likelihood.loglike_offset</code>.</p>
+<p><strong>Array types.</strong> Device arrays use <code>ceridwen.precision.float_dtype()</code>.
+Host-side NumPy calculations retain float64, including SSP axes, Z_sun
+resolution, provenance and result-file data.</p>
+<p><strong>Numerical range.</strong> The ionising-photon table uses a constant L_sun / h =
+5.8e59. It is computed on the host in float64 before storage in the working
+type. The metallicity and dust-emission kernels replace their 1e-70 floors
+with the smallest normal float32 value.</p>
+<p>Float32 mode does not support <code>Spectrum(marginalize_elines=True)</code>, whose
+normal equations use flux units. It also rejects fixed numeric jitter,
+which cannot be rescaled with the data; use sampled jitter instead.</p>
+<h2 id="numerical-comparisons">Numerical comparisons<a class="headerlink" href="#numerical-comparisons" title="Permanent link">&para;</a></h2>
+<p><code>tests/test_float32_parity.py</code> compares six golden configurations and a
+nine-parameter mock galaxy with SDSS photometry, a 600-pixel cgs spectrum
+(sigma ~ 1e-31) and three line fluxes. Separate processes evaluate float64
+on the CPU, float32 on the CPU and float32 on the GPU. These measurements
+used an M3 Pro, JAX 0.11.2 and jax-graft 0.0.5 on 15 October 2026:</p>
 <table>
 <thead>
 <tr>
@@ -989,28 +1000,29 @@ separate processes. Measured on an M3 Pro (jax 0.11.2, jax-graft 0.0.5, 2026-10-
 </tr>
 </tbody>
 </table>
-<p>The line-pixel error comes from evaluating the profile argument <code>(lambda - lambda_0) /
-sigma</code> in float32: at 1e4 Angstrom a float32 resolves 1e-3 Angstrom, so the profile wings move
-by that fraction of a pixel. It is a property of the mode, not of the GPU (the CPU float32
-run shows the same numbers). The gradient varies run to run on the GPU because the transpose
-of the redshift interpolation is a scatter-add, which is atomic there; the forward model and
-ln L are byte-identical run to run.</p>
-<p>So: a float32 fit gives the same posterior as a float64 fit to well within the sampling
-error, and the same ln Z once the sampler is given twice the inner steps (see "Speed"
-below), but <strong>its numbers are not comparable bit for bit</strong> with a float64 fit, and two
-nested-sampling runs with the same <code>rng_key</code> are only identical on the CPU.</p>
+<p>Line-pixel differences arise from evaluating <code>(lambda - lambda_0) / sigma</code>
+in float32. Near 1e4 Å, float32 resolves about 1e-3 Å, which shifts the
+profile wings slightly. CPU float32 shows the same effect.</p>
+<p>GPU gradients vary between runs because the transpose of redshift
+interpolation uses atomic scatter-adds. The forward predictions and ln L
+were byte-identical between runs in these checks.</p>
+<p>The tested float32 posteriors agreed with float64 within sampling variation.
+Evidence agreement required twice as many inner steps; see <a href="#speed">Speed</a>.
+Float32 and float64 outputs differ numerically, and GPU nested-sampling
+runs with the same <code>rng_key</code> need not be identical.</p>
 <h2 id="speed">Speed<a class="headerlink" href="#speed" title="Permanent link">&para;</a></h2>
-<p><code>scripts/bench_mac_metal.py</code> fits the parity mock with nested sampling in each mode and times
-the sampler's value-only ln L at its batch widths:</p>
+<p><code>scripts/bench_mac_metal.py</code> fits the comparison mock in each precision mode
+and times value-only likelihood calls at the sampler's batch widths:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>python<span class="w"> </span>tests/baselines/_capture_f32.py<span class="w"> </span>--no-goldens<span class="w"> </span>ref.npz
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">JAX_PLATFORMS</span><span class="o">=</span>cpu<span class="w">                </span>python<span class="w"> </span>scripts/bench_mac_metal.py<span class="w"> </span>--mock-data<span class="w"> </span>ref.npz<span class="w"> </span>--out<span class="w"> </span>bench/f64_cpu
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nv">JAX_PLATFORMS</span><span class="o">=</span>cpu<span class="w"> </span><span class="nv">CERIDWEN_X64</span><span class="o">=</span><span class="m">0</span><span class="w"> </span>python<span class="w"> </span>scripts/bench_mac_metal.py<span class="w"> </span>--mock-data<span class="w"> </span>ref.npz<span class="w"> </span>--out<span class="w"> </span>bench/f32_cpu
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">                                 </span>python<span class="w"> </span>scripts/bench_mac_metal.py<span class="w"> </span>--mock-data<span class="w"> </span>ref.npz<span class="w"> </span>--out<span class="w"> </span>bench/f32_mtl
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>python<span class="w"> </span>scripts/bench_mac_metal.py<span class="w"> </span>--compare<span class="w"> </span>bench/*/summary.json
 </code></pre></div>
-<p>Measured on the M3 Pro (jax 0.11.2, jax-graft 0.0.5, 2026-10-15), nine free parameters,
-num_live 200, num_delete 40; <code>us/point</code> is the value-only ln L under <code>vmap</code> at the sampler's
-two batch widths (median of 200 calls, compile excluded):</p>
+<p>The benchmark used an M3 Pro, JAX 0.11.2 and jax-graft 0.0.5 on 15 October
+2026, with nine free parameters, <code>num_live=200</code> and <code>num_delete=40</code>.
+<code>us/point</code> is the median value-only ln L runtime under <code>vmap</code> over 200 calls,
+excluding compilation:</p>
 <table>
 <thead>
 <tr>
@@ -1080,48 +1092,46 @@ two batch widths (median of 200 calls, compile excluded):</p>
 </tr>
 </tbody>
 </table>
-<p>The GPU evaluates the likelihood 9 to 10 times faster than the CPU in float64 and 4 to 6
-times faster than the CPU in float32, and the whole fit runs 4 times faster than the float64
-CPU fit (the sampler's own loop runs on the CPU side and is not sped up).</p>
-<p><strong>The evidence needs more inner steps in float32.</strong> The two float64 seeds agree in ln Z to
-0.05. Every float32 fit with the default 30 inner slice steps comes out 1.1 to 2.2 nats
-lower, 3 to 6 times the quoted error, on the CPU as on the GPU; with 60 inner steps the GPU
-fit returns 40933.77 +- 0.38, within the error of float64. The slice sampler mixes less well
-per step in float32 (cause not identified; the peak ln L agrees to 0.3 in every run), and
-nested sampling with incomplete mixing underestimates Z. Posterior means and widths of all
-six runs scatter alike: between the two float64 seeds the means move by up to 1.8 standard
-deviations and the widths by factors 0.3 to 1.7 (200 live points), and the float32 runs sit
-inside that scatter. Posterior constraints need no change.</p>
-<blockquote>
-<p><strong>Do not compare evidences between runs of different precision or different
-<code>num_inner_steps</code>.</strong> A float32 ln Z sits 1 to 2 nats below a float64 ln Z of the same data
-at the same settings, and twice the inner steps moves it by the same amount. Bayes factors
-are only meaningful between fits made with the same precision, the same <code>num_live</code>,
-<code>num_delete</code> and <code>num_inner_steps</code> (<code>fitSED</code> records all of them in the result file:
-<code>config/precision</code>, <code>config/platform</code> and the sampler settings). Nothing is changed by
-default: the inner-steps default stays 30 in both precisions.</p>
-</blockquote>
-<p><code>scripts/mac_metal_probe.py</code> times the 34 JAX operations CERIDWEN uses one by one on the CPU
-and the GPU and checks their values agree (all 34 do; the table is in its output).</p>
+<p>In this benchmark, GPU likelihood evaluations were 9–10 times faster than
+float64 CPU evaluations and 4–6 times faster than float32 CPU evaluations.
+The 30-step GPU fit took about a quarter of the float64 CPU runtime.
+The sampler's control loop still runs on the CPU.</p>
+<p>The evidence estimates were sensitive to inner-step count in float32.
+The two float64 seeds differed by 0.05 in ln Z. With 30 inner slice steps,
+float32 estimates on both devices were 1.1–2.2 nats lower, or 3–6 times
+their quoted errors. With 60 steps, the GPU estimate was 40933.77 ± 0.38,
+consistent with float64. The float32 slice sampler appears to mix less
+efficiently per step; the cause is unknown. Peak ln L agreed within 0.3
+across runs, while incomplete mixing in nested sampling can bias Z downward.</p>
+<p>Posterior means and widths showed similar variation in all six runs.
+The two float64 runs differed by up to 1.8 standard deviations in their
+means, with width ratios of 0.3–1.7 at 200 live points. Float32 results fell
+within this variation.</p>
+<p>When comparing evidences, use matching precision, <code>num_live</code>, <code>num_delete</code>
+and <code>num_inner_steps</code>, and check mixing. In this test, changing precision
+or doubling the inner steps shifted ln Z by 1–2 nats. <code>fitSED</code> records
+precision, platform and sampler settings in the result file. The default
+remains 30 inner steps in both precision modes.</p>
+<p><code>scripts/mac_metal_probe.py</code> compares the values and runtimes of 34 JAX
+operations on CPU and GPU. All 34 agreed in the comparison; the script
+prints the results.</p>
 <h2 id="known-limits">Known limits<a class="headerlink" href="#known-limits" title="Permanent link">&para;</a></h2>
 <ul>
-<li>jax-graft is at version 0.0.5 ("expect some sharp edges", its README). An operation it
-  cannot compile fails at compile time with <code>UNIMPLEMENTED: Metal: ...</code>; report it with the
-  <code>fitSED</code> header and <code>python -m ceridwen.check</code>.</li>
-<li>tensorflow-probability's samplers ask for float64 internally and are truncated to float32,
-  with <code>UserWarning: Explicitly requested dtype float64 requested in ... is not available</code>
-  the first time a prior is drawn (several lines, from tfp's <code>random_generators.py</code>,
-  <code>numpy_array.py</code> and <code>ops.py</code>, and one from <code>jax/_src/numpy/array_methods.py</code>). JAX itself
-  prints <code>Platform 'mtl' is experimental ...</code>. All of these are harmless. A large model can
-  also make XLA print <code>E... slow_operation_alarm.cc:73] Constant folding an instruction is
-  taking &gt; 1s</code>: a compile-time message, not an error.</li>
-<li>The nested sampler's progress bar shows ln Z in the rescaled units the sampler works in
-  (above, "Data rescaling"), so it can differ from the final <code>log Z</code> by the constant
-  <code>ndof ln(scale)</code>, thousands of nats for a spectrum. The final value and the result file are
-  in true units.</li>
-<li>The nested sampler's inner loop is dispatched step by step; at small batch widths the GPU is
-  slower than the CPU (see the benchmark), so the GPU pays off for wide batches and
-  gradient-based samplers.</li>
+<li>Jax-graft 0.0.5 is experimental. Unsupported operations fail during
+  compilation with <code>UNIMPLEMENTED: Metal: ...</code>. Include the <code>fitSED</code> header
+  and <code>python -m ceridwen.check</code> output when reporting a failure.</li>
+<li>Tensorflow-probability requests float64 internally. On the first prior
+  draw, JAX warns that it is truncating those requests to float32, with
+  messages from tfp's <code>random_generators.py</code>, <code>numpy_array.py</code> and <code>ops.py</code>,
+  and JAX's <code>array_methods.py</code>. JAX also prints <code>Platform 'mtl' is experimental ...</code>.
+  These warnings are expected. XLA may report slow constant folding for
+  large models; this indicates compilation time rather than a failed fit.</li>
+<li>The nested-sampling progress bar reports ln Z in scaled units. It may
+  differ from the final value by <code>ndof ln(scale)</code>, which can be thousands
+  of nats for a spectrum. The final report and result file use physical units.</li>
+<li>The nested sampler dispatches its inner loop step by step. Small GPU
+  batches can be slower than CPU batches. Wider batches and gradient-based
+  samplers make better use of the GPU.</li>
 </ul>
 
 

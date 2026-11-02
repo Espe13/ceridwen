@@ -808,17 +808,17 @@
 
 
 <h1 id="fitting-fe">Fitting [α/Fe]<a class="headerlink" href="#fitting-fe" title="Permanent link">&para;</a></h1>
-<p>The α-enhanced grid (FSPS v4.0, aMIST isochrones + C3K spectra,
-[α/Fe] ∈ {−0.2, 0.0, +0.2, +0.4, +0.6}) adds α-element enhancement as a sampled stellar axis:
-a chemical clock for the formation timescale, measured jointly with, and degenerate with, the
-total metallicity. <code>SSPDataAfe</code> and <code>CSPBasis_afe</code> are subclasses of <code>SSPData</code> and
-<code>CSPBasis</code>. The [α/Fe] axis and its interpolation are the only additions, the nebular
-arguments are dropped, and everything else (SFH weights, dust, projection, flux factor,
-cosmology) is inherited.</p>
+<p>The α-enhanced grid uses FSPS v4.0, aMIST isochrones and C3K spectra, with
+[α/Fe] ∈ {−0.2, 0.0, +0.2, +0.4, +0.6}. It lets you fit [α/Fe] alongside
+metallicity. [α/Fe] can help constrain the formation timescale, although it is
+degenerate with total metallicity.</p>
+<p><code>SSPDataAfe</code> and <code>CSPBasis_afe</code> extend <code>SSPData</code> and <code>CSPBasis</code> with an [α/Fe]
+axis and interpolation. They omit the nebular arguments and inherit the SFH
+weights, dust, projection, flux scaling and cosmology.</p>
 <h2 id="the-grid">The grid<a class="headerlink" href="#the-grid" title="Permanent link">&para;</a></h2>
-<p>Download it by name (612 MB, cached and SHA-256 verified like every published grid).
-Building it yourself needs python-fsps compiled from source with <code>AFE_FLAG=1</code> against the
-FSPS v4.0 data tree, which is easy to get silently wrong.</p>
+<p>Download the grid by name. The 612 MB file is cached and verified with SHA-256.
+To build it yourself, compile python-fsps from source with <code>AFE_FLAG=1</code> against
+the FSPS v4.0 data tree. Check both settings before building.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.ssps</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_grid</span><span class="p">,</span> <span class="n">SSPDataAfe</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.csp</span><span class="w"> </span><span class="kn">import</span> <span class="n">CSPBasis_afe</span>
@@ -845,37 +845,39 @@ FSPS v4.0 data tree, which is easy to get silently wrong.</p>
 <a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="n">i</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">jnp</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">wave</span> <span class="o">-</span> <span class="mf">5500.0</span><span class="p">)))</span>
 <a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">fnu</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> pixels, L_nu(5500 A) = </span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">fnu</span><span class="p">[</span><span class="n">i</span><span class="p">])</span><span class="si">:</span><span class="s2">.3e</span><span class="si">}</span><span class="s2"> Lsun/Hz per Msun"</span><span class="p">)</span>
 </code></pre></div>
-<p><code>amist_c3k_hr_krou_afe</code> is built from the alpha-MC C3K high-resolution SSPs (MIST v2.5 +
-C3K v2.3) of M. J. Park, with a Kroupa IMF. The C3K spectra are resampled onto pixels of
-λ/Δλ = 6000 between 3000 and 9000 Å, so the file resolves R ≈ 3000 at the two-pixel floor
-there; <code>ssp.display()</code> reports the floor. Its native axis is the FSPS label
-log10 Z = [Fe/H] + log10(0.0185), i.e. <code>logzsol</code> = [Fe/H].</p>
+<p><code>amist_c3k_hr_krou_afe</code> uses M. J. Park's alpha-MC C3K high-resolution SSPs
+(MIST v2.5 + C3K v2.3) and a Kroupa IMF. Between 3000 and 9000 Å, the spectra
+are resampled at λ/Δλ = 6000 per pixel. The two-pixel resolution limit is
+therefore R ≈ 3000; <code>ssp.display()</code> reports it. The native FSPS metallicity
+axis is log10 Z = [Fe/H] + log10(0.0185), so <code>logzsol</code> represents [Fe/H].</p>
 <h2 id="what-differs-from-cspbasis">What differs from <code>CSPBasis</code><a class="headerlink" href="#what-differs-from-cspbasis" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>theta["afe"]</code> is interpolated linearly between the two bracketing grid planes, so it works
-  under <code>jit</code>, <code>grad</code> and <code>vmap</code> and in every sampler.</li>
-<li><code>logzsol</code> is [Fe/H]: every [α/Fe] plane shares one [Fe/H] axis (FSPS <code>AFE_FLAG=1</code>). The
-  total metallicity [Z/H] is the derived <code>logzsol_total</code>
-  = <code>logzsol + log10(1 - x + x 10^[α/Fe])</code>, x = 0.687490 (MIST v2.5, GS98).</li>
-<li>There is no nebular model (no α-enhanced CLOUDY grids exist): <code>Lines</code> observations are
-  refused, and the basis reads nothing from <code>$SPS_HOME</code> unless <code>add_dust_emission=True</code>.</li>
-<li><code>CSPBasis_afe</code> accepts only α-aware 4-D grids; a solar-scaled 3-D grid raises a <code>TypeError</code>
-  that points to <code>CSPBasis</code>. <code>ssp_afe=</code> is keyword-only when you construct a grid by hand.</li>
-<li><code>logzsol</code> above +0.25 together with [α/Fe] above +0.4 is refused: FSPS ships the same
-  isochrone file for [α/Fe] = +0.4 and +0.6 at [Fe/H] = +0.5, and <code>display()</code> lists the cell.
-  A prior that reaches it raises at construction.</li>
-<li>The grid does not carry a surviving-mass table yet, so fit it with
-  <code>fitSED(..., mfrac=False)</code> and quote the formed mass.</li>
-<li>Memory: a sampled <code>afe</code> enters the contraction as interpolation weights over the [α/Fe]
-  axis, so no interpolated flux plane is built per sample and vectorised evaluation
-  (<code>jax.vmap</code>, as nested sampling does over its live points) costs about as much memory as
-  without <code>afe</code>. XLA's temporary memory for <code>jit(vmap(csp.get_spectrum))</code> on
-  <code>amist_c3k_hr_krou_afe</code> (CPU, compile-time <code>memory_analysis</code>): 0.005 GB at W = 1, 0.002 GB
-  at W = 80, 0.011 GB at W = 400. The basis keeps two copies of the flux cube (2 × 306 MB for
-  this grid, float32).</li>
+<li><code>theta["afe"]</code> is interpolated linearly between adjacent grid planes. It supports
+  <code>jit</code>, <code>grad</code>, <code>vmap</code> and all samplers.</li>
+<li>All [α/Fe] planes share the FSPS <code>AFE_FLAG=1</code> [Fe/H] axis. Total metallicity
+  is derived as <code>logzsol_total = logzsol + log10(1 - x + x 10^[α/Fe])</code>, with
+  x = 0.687490 for MIST v2.5, GS98.</li>
+<li>There is no nebular model because α-enhanced CLOUDY grids are unavailable.
+  <code>Lines</code> observations raise an error. The basis reads from <code>$SPS_HOME</code> only
+  when <code>add_dust_emission=True</code>.</li>
+<li><code>CSPBasis_afe</code> requires an α-aware 4-D grid. Passing a solar-scaled 3-D grid
+  raises a <code>TypeError</code> directing you to <code>CSPBasis</code>. When constructing a grid
+  by hand, pass <code>ssp_afe=</code> as a keyword.</li>
+<li>A prior that includes both <code>logzsol &gt; +0.25</code> and [α/Fe] &gt; +0.4 raises an error
+  at construction. FSPS supplies the same isochrone file at [Fe/H] = +0.5 for
+  [α/Fe] = +0.4 and +0.6. <code>display()</code> identifies this cell.</li>
+<li>The grid has no surviving-mass table. Use <code>fitSED(..., mfrac=False)</code> and
+  report formed mass.</li>
+<li>Sampling <code>afe</code> uses interpolation weights in the [α/Fe] contraction rather
+  than constructing a flux plane for each sample. Vectorised evaluation uses
+  roughly the same memory as evaluation without <code>afe</code>. For
+  <code>jit(vmap(csp.get_spectrum))</code> on the CPU, XLA's compile-time <code>memory_analysis</code>
+  reports temporary memory of 0.005 GB at W = 1, 0.002 GB at W = 80 and
+  0.011 GB at W = 400 for this grid. The basis also stores two float32 copies
+  of the flux cube, each 306 MB.</li>
 </ul>
-<p>A full fit of a quiescent galaxy with [α/Fe], including a fitted spectrophotometric
-normalisation, is <code>examples/demo_afe_quiescent.py</code>.</p>
+<p><code>examples/demo_afe_quiescent.py</code> fits a quiescent galaxy with [α/Fe] and a
+sampled spectrophotometric normalisation.</p>
 
 
 

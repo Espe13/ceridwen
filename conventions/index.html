@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#conventions-gotchas" class="md-skip">
+        <a href="#conventions-and-common-errors" class="md-skip">
           Skip to content
         </a>
       
@@ -677,10 +677,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#metallicity-is-solar-relative-logzsol-log10zz_sun" class="md-nav__link">
+  <a href="#metallicity" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Metallicity is solar-relative: logzsol = log10(Z/Z_sun)
+        Metallicity
       
     </span>
   </a>
@@ -688,10 +688,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#lookback-time-increases-with-index-index-0-today" class="md-nav__link">
+  <a href="#lookback-time-ordering" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Lookback time increases with index (index 0 = today)
+        Lookback-time ordering
       
     </span>
   </a>
@@ -710,10 +710,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#precision-float32-values-float64-where-float32-would-be-wrong" class="md-nav__link">
+  <a href="#precision" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Precision: float32 values, float64 where float32 would be wrong
+        Precision
       
     </span>
   </a>
@@ -732,10 +732,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#theta-is-a-dict-so-typos-are-silently-ignored" class="md-nav__link">
+  <a href="#unrecognised-theta-keys" class="md-nav__link">
     <span class="md-ellipsis">
       
-        theta is a dict, so typos are silently ignored
+        Unrecognised theta keys
       
     </span>
   </a>
@@ -743,15 +743,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#broadening-one-kernel-three-widths" class="md-nav__link">
+  <a href="#spectral-broadening" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Broadening: one kernel, three widths
+        Spectral broadening
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Broadening: one kernel, three widths">
+    <nav class="md-nav" aria-label="Spectral broadening">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -794,10 +794,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#the-library-subtracted-automatically" class="md-nav__link">
+  <a href="#library-resolution" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The library: subtracted automatically
+        Library resolution
       
     </span>
   </a>
@@ -805,10 +805,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#photometry-is-broadened-too" class="md-nav__link">
+  <a href="#photometric-broadening" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Photometry is broadened too
+        Photometric broadening
       
     </span>
   </a>
@@ -821,10 +821,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#cosmology-one-object-chosen-on-the-csp-never-silent" class="md-nav__link">
+  <a href="#cosmology" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Cosmology: one object, chosen on the CSP, never silent
+        Cosmology
       
     </span>
   </a>
@@ -832,10 +832,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#nebular-grid-cloudy-without-dust-in-the-h-ii-region" class="md-nav__link">
+  <a href="#nebular-grids" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Nebular grid: CLOUDY without dust in the H II region
+        Nebular grids
       
     </span>
   </a>
@@ -973,41 +973,40 @@
   
 
 
-<h1 id="conventions-gotchas">Conventions &amp; gotchas<a class="headerlink" href="#conventions-gotchas" title="Permanent link">&para;</a></h1>
-<p>A few conventions cause silent mistakes if you get them wrong. Read them before
-fitting real data. The repository also ships a fuller misuse guide in
-<code>GOTCHAS.md</code>.</p>
-<h2 id="metallicity-is-solar-relative-logzsol-log10zz_sun">Metallicity is solar-relative: <code>logzsol = log10(Z/Z_sun)</code><a class="headerlink" href="#metallicity-is-solar-relative-logzsol-log10zz_sun" title="Permanent link">&para;</a></h2>
-<p>The stellar metallicity is <code>theta["logzsol"]</code> (constant) or <code>theta["logzsol_hist"]</code>
-(one value per lookback node), in <code>log10(Z / Z_sun)</code> with the <strong>Z_sun of the grid you
-loaded</strong>: <code>0.0</code> is solar everywhere. The keys <code>Z</code> / <code>zh</code> (<code>log10</code> of the <em>absolute</em> metallicity)
-are not accepted: they raise, printing the converted value.</p>
-<p>Typical ranges: BPASS <code>[-2.30, +0.30]</code> (Z_sun = 0.020); MIST and aMIST <code>[-2.50, +0.50]</code>
-(Z_sun = 0.0185, or 0.0142 for grids built with python-fsps &lt;= 0.4.7). Print the axis of
-your own grid with <code>print(csp.zmet.min(), csp.zmet.max(), csp.zsun_nominal)</code>.</p>
-<p>Z_sun comes from the grid, never from <code>isoc_type</code> (FSPS versions give MIST different values
-under the same name): an explicit <code>zsun=</code>, the file's <code>log10_zsun</code> provenance, or the
-content-hash table in <code>ceridwen.ssps.grid_metadata</code>. A grid whose Z_sun cannot be
-established raises at load.</p>
-<p>On MIST and aMIST grids <code>logzsol</code> <strong>is <code>[Fe/H]</code></strong>; the total metallicity <code>[Z/H]</code> is the
-derived <code>logzsol_total</code> (see <code>grid_metadata.logzsol_total</code>). The gas-phase <code>gas_logz</code> is
-solar-relative on the CLOUDY grid's own reference, and <code>CSPBasis(gas_tied=True)</code> sets
-<code>gas_logz := logzsol</code> — the same number on two axes whose solar references are not identical
-(the SSP grid's Z_sun vs the CLOUDY grid's), which is what FSPS and Prospector mean by tying
-the gas to the stars.</p>
-<div class="admonition danger">
-<p class="admonition-title">Common mistake</p>
-<p>Passing an absolute <code>log10 Z</code> such as <code>-1.85</code> as <code>logzsol</code>: on BPASS that is inside the
-grid (0.014 Z_sun), so it cannot be an error — it warns instead. A <em>bounded</em> prior wider
-than the grid raises; <code>Uniform(low=-2.0, high=0.2)</code> is a safe default on every shipped
-grid. <code>csp.check_param_ranges(theta)</code> reports in logzsol and names the grid's Z_sun.</p>
-</div>
-<h2 id="lookback-time-increases-with-index-index-0-today">Lookback time increases with index (index 0 = today)<a class="headerlink" href="#lookback-time-increases-with-index-index-0-today" title="Permanent link">&para;</a></h2>
-<p><code>lookback_time</code> element 0 is the present; the last element is the oldest bin,
-near the age of the universe. The <code>sfh</code> array is indexed the same way. A
-decreasing convention (<code>lookback = T_univ - t_grid</code>) is rejected at construction
-with a <code>ValueError</code>, so do not use it, and do not reverse arrays "to be
-safe".</p>
+<h1 id="conventions-and-common-errors">Conventions and common errors<a class="headerlink" href="#conventions-and-common-errors" title="Permanent link">&para;</a></h1>
+<p>This page describes the units, parameter definitions and model settings
+needed to interpret a fit. <code>GOTCHAS.md</code> in the repository covers additional
+usage errors.</p>
+<h2 id="metallicity">Metallicity<a class="headerlink" href="#metallicity" title="Permanent link">&para;</a></h2>
+<p>Use <code>theta["logzsol"]</code> for constant metallicity or <code>theta["logzsol_hist"]</code>
+for one value per lookback-time node. Values are log10(Z/Z_sun), using
+the loaded grid's Z_sun; 0.0 is solar. Absolute-metallicity keys <code>Z</code> and
+<code>zh</code> are rejected with an error that shows the converted value.</p>
+<p>Typical ranges are [−2.30, +0.30] for BPASS (Z_sun = 0.020) and
+[−2.50, +0.50] for MIST/aMIST (Z_sun = 0.0185, or 0.0142 for grids built
+with python-fsps &lt;= 0.4.7). Inspect your grid with
+<code>print(csp.zmet.min(), csp.zmet.max(), csp.zsun_nominal)</code>.</p>
+<p>Z_sun is resolved from an explicit <code>zsun=</code>, the file's <code>log10_zsun</code>
+provenance or the content-hash table in <code>ceridwen.ssps.grid_metadata</code>.
+It cannot be inferred reliably from <code>isoc_type</code>, since FSPS versions use
+different solar values under the same isochrone name. Loading fails if
+Z_sun cannot be determined.</p>
+<p>For MIST and aMIST, <code>logzsol</code> represents [Fe/H]. Total metallicity [Z/H]
+is derived as <code>logzsol_total</code>; see <code>grid_metadata.logzsol_total</code>.
+<code>gas_logz</code> uses the CLOUDY grid's solar reference. <code>CSPBasis(gas_tied=True)</code>
+sets <code>gas_logz := logzsol</code>, matching the FSPS and Prospector convention
+even though the stellar and gas solar references differ.</p>
+<p>An absolute log10 Z, such as −1.85, can be mistaken for <code>logzsol</code>.
+On BPASS this is within the allowed axis but means 0.014 Z_sun, so the
+package warns rather than rejecting it. Bounded priors extending beyond
+the grid raise an error. <code>Uniform(low=-2.0, high=0.2)</code> fits within all
+published grids. <code>csp.check_param_ranges(theta)</code> reports ranges in
+<code>logzsol</code> and identifies the grid's Z_sun.</p>
+<h2 id="lookback-time-ordering">Lookback-time ordering<a class="headerlink" href="#lookback-time-ordering" title="Permanent link">&para;</a></h2>
+<p><code>lookback_time</code> increases from the present at index 0 to the oldest node.
+The <code>sfh</code> array uses the same ordering. Decreasing grids, including
+<code>lookback = T_univ - t_grid</code> applied to an increasing <code>t_grid</code>, raise
+<code>ValueError</code> at construction.</p>
 <h2 id="units">Units<a class="headerlink" href="#units" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1055,23 +1054,22 @@ safe".</p>
 </tr>
 </tbody>
 </table>
-<p>The spectrum of <code>theta['sfh']</code> is scaled by <code>10**logmass</code>. The SSP weights sum to the
-integral of <code>theta['sfh']</code> over the construction lookback grid (<code>csp.sfh_times</code>, or a
-predict-time <code>theta['lookback_time']</code>), at every redshift: with <code>track_zred_age=True</code> the
-grid is stretched to <code>age(zred)</code> and the SFR scaled by <code>T_grid / age(zred)</code>, so the
-stretched SFH forms the same mass. It is unit mass, and <code>logmass</code> the formed mass, whenever
-<code>theta['sfh']</code> integrates to 1 M☉ on the construction grid, as
-<code>logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)</code> arranges (below), with a fixed or
-a free redshift; a directly sampled <code>sfh</code> carries its own normalisation.</p>
-<h2 id="precision-float32-values-float64-where-float32-would-be-wrong">Precision: float32 values, float64 where float32 would be wrong<a class="headerlink" href="#precision-float32-values-float64-where-float32-would-be-wrong" title="Permanent link">&para;</a></h2>
-<p><code>jax_enable_x64</code> is on wherever the device has float64 (<code>import ceridwen</code> sets it; do not set
-it yourself): evidence estimates and gradients depend on it. On an Apple GPU, which has no
-float64, <code>import ceridwen</code> runs the process in float32 instead (<a href="../mac_gpu/">Apple GPU</a>).
-Within that, every large array, one that holds a spectrum, a curve or a projection on
-the model grid or the observed pixels, is <strong>float32</strong>, so that a GPU with slow float64 (most
-consumer cards) spends its time in float32. Float64 is kept where float32 would give a wrong
-answer, and for small arrays where it costs nothing. Each float64 site carries a comment naming
-its reason.</p>
+<p>The spectrum from <code>theta['sfh']</code> is multiplied by <code>10**logmass</code>. SSP weights
+sum to the SFH integral on the construction grid (<code>csp.sfh_times</code>, or a
+prediction-time <code>theta['lookback_time']</code>). With <code>track_zred_age=True</code>, the
+grid stretches to <code>age(zred)</code> and SFR is scaled by <code>T_grid / age(zred)</code>
+to preserve the integral. When that integral is 1 M☉, <code>logmass</code> is the
+formed mass. <code>logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)</code> provides
+this normalisation for fixed or sampled redshift. A directly sampled
+<code>sfh</code> has its own normalisation.</p>
+<h2 id="precision">Precision<a class="headerlink" href="#precision" title="Permanent link">&para;</a></h2>
+<p>Importing CERIDWEN enables <code>jax_enable_x64</code> on devices that support float64.
+Let the package set this option. Apple GPUs instead use float32 throughout;
+see <a href="../mac_gpu/">Apple GPU</a>.</p>
+<p>On float64-capable devices, large spectral, curve and projection arrays use
+float32 to reduce memory and computation costs. Float64 is retained for
+calculations requiring greater range or precision, and for small arrays.
+Comments in the code explain each float64 calculation.</p>
 <table>
 <thead>
 <tr>
@@ -1090,7 +1088,7 @@ its reason.</p>
 </tr>
 <tr>
 <td>nebular line/continuum arrays, once interpolated</td>
-<td>the grid interpolation and <code>10**x</code> in float64 (log values near 50), then float32: the line-profile contraction (<code>NebularGridModel</code>) and the kernel's</td>
+<td>grid interpolation and <code>10**x</code> use float64 for log values near 50; interpolated arrays and line-profile contractions use float32</td>
 </tr>
 <tr>
 <td>the projector's work</td>
@@ -1101,8 +1099,8 @@ its reason.</p>
 <td><code>Photometry._T</code>, <code>Photometry</code> predictions</td>
 </tr>
 <tr>
-<td>scaled, exactly</td>
-<td>the projector's float32 work runs on <code>x / s</code>, <code>s</code> a power of two near max&#124;x&#124;, and is multiplied back by <code>s</code> in float64: exact in binary floating point, so the values are those of the unscaled float32 work, and the likelihood's cotangent reaches float32 already multiplied by <code>s</code> (unscaled, <code>\|r\| / sigma^2</code> ~ 1e35 .. 1e41 at cgs scale exceeds float32's maximum 3.4e38 and the gradient is NaN)</td>
+<td>projector scaling</td>
+<td>divide by a power of two before float32 projection, then restore the scale in float64</td>
 </tr>
 <tr>
 <td>line apertures and painted line profiles</td>
@@ -1124,7 +1122,7 @@ its reason.</p>
 <tbody>
 <tr>
 <td><code>DustEmission</code>'s trapezoid dots and <code>labs0 = lboln - lbold</code></td>
-<td>catastrophic cancellation: the absorbed luminosity is a difference of two nearly equal numbers</td>
+<td>absorbed luminosity is a difference of nearly equal numbers, requiring greater precision</td>
 </tr>
 <tr>
 <td>the AGN <code>L_bol</code> and energy balance (<code>csp.py</code>, <code>agn/blr.py</code>)</td>
@@ -1144,40 +1142,45 @@ its reason.</p>
 </tr>
 <tr>
 <td>line fluxes (<code>predict_line_fluxes</code>) and <code>Lines</code> predictions</td>
-<td>small arrays (one number per line): free on any GPU; the AGN line sets add into them, and their span (~1e-51 to 1e2 L_sun) suits float64</td>
+<td>small arrays covering roughly 1e-51 to 1e2 L_sun, including summed AGN line contributions</td>
 </tr>
 <tr>
-<td>the returned <code>Spectrum</code> prediction</td>
-<td>the float64 multiply that undoes the projector's scaling (one per pixel), so the likelihood's cotangent never enters float32 unscaled</td>
+<td>returned <code>Spectrum</code> prediction</td>
+<td>float64 multiplication restores the projector's scale before the likelihood gradient is propagated into float32</td>
 </tr>
 <tr>
-<td><code>DustEmission</code>'s output spectrum</td>
-<td>kept by decision: converting it removes no measurable float64 work (8.5 % of FLOPs with or without it in <code>neb_duste</code>) and moves two goldens</td>
+<td><code>DustEmission</code> output spectrum</td>
+<td>converting it to float32 did not reduce measured float64 work (8.5% of FLOPs in <code>neb_duste</code>) and changed two golden baselines</td>
 </tr>
 </tbody>
 </table>
-<p>With dust emission the model-grid spectrum is float64 (<code>DustEmission</code>, above).</p>
-<p>Data are stored float64 by every <code>Observation</code>, whatever dtype you pass, at construction or
-by assigning <code>obs.flux</code> / <code>obs.uncertainty</code> later (a float32 FITS spectrum is fine).</p>
+<p>Before float32 projection, the spectrum is divided by a power of two
+near its largest absolute value. The scale is restored in float64.
+This preserves binary mantissas and scales the likelihood gradient
+before it enters float32. At cgs flux scales, an unscaled gradient
+<code>|r| / sigma^2</code> can reach 1e35–1e41, exceeding the float32 maximum
+of 3.4e38 and producing NaN.</p>
+<p>With dust emission enabled, the model-grid spectrum is float64.
+Observations store data in float64, both at construction and when assigning
+<code>obs.flux</code> or <code>obs.uncertainty</code>. Input arrays may use float32.</p>
 <h2 id="sfh-mass-normalisation">SFH mass normalisation<a class="headerlink" href="#sfh-mass-normalisation" title="Permanent link">&para;</a></h2>
-<p>The <code>logsfr_ratios_to_sfh</code> transform normalises the SFH so the trapezoidal
-integral of SFR over the lookback grid it is given (<code>sfh_times_yr=csp.sfh_times</code>, the
-construction grid, also for a free redshift) equals 1 M☉, and <code>logmass</code> sets the
-amplitude. Use the provided transform rather than hand-rolling it. Getting this
-wrong biases <code>logmass</code> by many dex.</p>
-<h2 id="theta-is-a-dict-so-typos-are-silently-ignored"><code>theta</code> is a dict, so typos are silently ignored<a class="headerlink" href="#theta-is-a-dict-so-typos-are-silently-ignored" title="Permanent link">&para;</a></h2>
-<p>A mistyped key (<code>logmas</code> for <code>logmass</code>, <code>dust2</code> for <code>diffuse_tau_kc</code>, and so on)
-is simply not read, so the parameter takes its default. <code>predict()</code> and
-<code>get_spectrum_components()</code> emit a warning listing unrecognised keys at trace
-time, at no cost to the hot path. Model-level free parameters like
-<code>logsfr_ratios</code> are registered automatically and do not warn.</p>
-<h2 id="broadening-one-kernel-three-widths">Broadening: one kernel, three widths<a class="headerlink" href="#broadening-one-kernel-three-widths" title="Permanent link">&para;</a></h2>
-<p>Every width a spectral feature acquires is a Gaussian in <code>ln λ</code>, so the
-projection of the model onto a spectrum applies a single kernel per pixel:</p>
+<p><code>logsfr_ratios_to_sfh</code> normalises the trapezoidal SFR integral to 1 M☉
+on the supplied <code>sfh_times_yr=csp.sfh_times</code> construction grid, including
+when redshift is free. <code>logmass</code> then sets the mass. Use this transform
+to avoid normalisation errors that can shift <code>logmass</code> by several dex.</p>
+<h2 id="unrecognised-theta-keys">Unrecognised <code>theta</code> keys<a class="headerlink" href="#unrecognised-theta-keys" title="Permanent link">&para;</a></h2>
+<p>The model ignores keys it does not read. A typo such as <code>logmas</code> or <code>dust2</code>
+therefore leaves <code>logmass</code> or <code>diffuse_tau_kc</code> at its default. <code>predict()</code>
+and <code>get_spectrum_components()</code> warn about unrecognised keys during tracing,
+without adding work to the sampling loop. Model-level parameters such as
+<code>logsfr_ratios</code> are registered automatically.</p>
+<h2 id="spectral-broadening">Spectral broadening<a class="headerlink" href="#spectral-broadening" title="Permanent link">&para;</a></h2>
+<p>Broadening is modelled with Gaussian widths in ln λ. Projection combines
+the relevant widths at each pixel:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>continuum:  σ_cont² = σ_gal² + σ_inst²(λ) − σ_lib²(λ)
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>lines:      σ_line² = σ_gas² + σ_inst²(λ)
 </code></pre></div>
-<p>The three widths live in three different places, and each is set exactly once:</p>
+<p>Set the widths through the following objects:</p>
 <table>
 <thead>
 <tr>
@@ -1204,17 +1207,17 @@ projection of the model onto a spectrum applies a single kernel per pixel:</p>
 </tr>
 </tbody>
 </table>
-<p>The IGM acts between the galaxy and the instrument, in the order the light meets them:
-galaxy kinematics (rest frame), redshift, IGM, instrument. A <code>Spectrum</code> smooths the model by
-<code>σ_gal</code>, multiplies by the IGM transmission, then applies the instrument (and library) part of
-the kernel; broadened photometry multiplies by the transmission after the <code>σ_gal</code> broadening.
-So the Ly-α break is as sharp as the IGM model and the instrument make it. (With <code>σ_gal</code> fixed
-at 0 the IGM is applied on the model grid, as without broadening.)</p>
-<p>There is no other place where a width enters. In particular the model spectrum
-(<code>csp.get_spectrum</code>) is <strong>not</strong> broadened by the galaxy any more, and emission
-lines are painted onto a spectrum's pixels from their luminosities with
-<code>σ_line</code>, never resampled from the model grid. <code>Lines</code> observations (integrated
-fluxes) are read straight from the nebular grid and never see any width.</p>
+<p>The projection applies galaxy kinematics in the rest frame, then redshift,
+IGM transmission and the instrumental response. A <code>Spectrum</code> is smoothed by
+σ_gal before IGM attenuation, then by the instrument/library contribution.
+Broadened photometry also applies IGM transmission after galaxy broadening.
+The Ly-α break therefore retains the sharpness set by the IGM model and
+instrument. When σ_gal is fixed at zero, IGM transmission is applied on
+the model grid.</p>
+<p><code>csp.get_spectrum</code> returns a model-grid spectrum without galaxy broadening.
+Emission lines are projected directly from their luminosities onto spectral
+pixels with width σ_line. <code>Lines</code> observations use integrated nebular fluxes
+and do not depend on these widths.</p>
 <h3 id="the-galaxy-kinematics">The galaxy: <code>Kinematics</code><a class="headerlink" href="#the-galaxy-kinematics" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">Kinematics</span><span class="p">,</span> <span class="n">DEFAULT_KINEMATICS</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
@@ -1224,27 +1227,21 @@ fluxes) are read straight from the nebular grid and never see any width.</p>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">DEFAULT_KINEMATICS</span>                                    <span class="c1"># == Kinematics(sigma_gal=300.0); what SedModel uses if you pass nothing</span>
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">Kinematics</span><span class="o">.</span><span class="n">none</span><span class="p">()</span>                                     <span class="c1"># no kinematic broadening at all</span>
 </code></pre></div>
-<p>A <strong>float is fixed</strong> (folded into the compiled graph), a <strong>string is the name
-of a free parameter</strong> in <code>theta</code> and must carry a prior. <code>sigma_gas</code> defaults
-to <code>TIED</code>, i.e. the same value or key as <code>sigma_gal</code>. <code>Kinematics(...)</code> itself
-has no default for <code>sigma_gal</code>; the 300 km/s lives in one named constant so
-that it is never hidden, and the model summary prints whichever values are in
-force. <code>sigma_max</code> (default 2000 km/s) is the largest dispersion the compiled
-kernels support: a prior whose upper bound exceeds it is rejected at setup,
-and a sampled value is clipped to it.</p>
-<div class="admonition danger">
-<p class="admonition-title">Two sources of truth</p>
-<p>Fixing <code>sigma_gal=250.0</code> <em>and</em> putting <code>"sigma_gal"</code> into <code>theta</code> raises a
-<code>ValueError</code> at setup. Naming a key that is not in <code>theta</code> raises a
-<code>KeyError</code>; a key without a prior gets the usual unpriored-parameter
-warning. There is no silent fallback.</p>
-</div>
+<p>A numeric width is fixed; a string refers to a <code>theta</code> parameter that needs
+a prior. <code>sigma_gas</code> defaults to <code>TIED</code>, sharing the value or key of
+<code>sigma_gal</code>. <code>Kinematics(...)</code> requires <code>sigma_gal</code> explicitly. Omitting
+kinematics from <code>SedModel</code> uses the named default of 300 km/s, shown in
+the model summary.</p>
+<p><code>sigma_max</code>, default 2000 km/s, bounds the compiled kernels. Priors extending
+above it are rejected at setup; sampled values are clipped to it.
+Providing a fixed <code>sigma_gal</code> and also placing that key in <code>theta</code> raises
+<code>ValueError</code>. A named key missing from <code>theta</code> raises <code>KeyError</code>, and a
+sampled key without a prior produces a warning.</p>
 <h3 id="the-instrument-instrument">The instrument: <code>Instrument</code><a class="headerlink" href="#the-instrument-instrument" title="Permanent link">&para;</a></h3>
-<p>Published resolutions come in several units and in two resolving-power
-conventions that differ by <code>2√(2 ln 2) ≈ 2.35</code>: instrument datasheets quote
-<code>R = λ/FWHM</code>, the sedpy/Prospector tradition uses <code>R = λ/σ</code>. CERIDWEN will not
-guess: the unit <strong>and</strong> the convention are the name of the constructor, so
-there is nothing to declare and nothing to forget.</p>
+<p>Instrument resolutions are published in several units. Resolving power also
+has two conventions: R = λ/FWHM, commonly used in datasheets, and R = λ/σ,
+used by sedpy/Prospector. They differ by 2√(2 ln 2) ≈ 2.35. Choose the
+<code>Instrument</code> constructor that specifies both the unit and convention:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">Instrument</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">Instrument</span><span class="o">.</span><span class="n">R_fwhm</span><span class="p">(</span><span class="mi">2700</span><span class="p">)</span>                    <span class="c1"># R = λ/FWHM  (datasheet, e.g. NIRSpec gratings)</span>
@@ -1255,15 +1252,15 @@ there is nothing to declare and nothing to forget.</p>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">Instrument</span><span class="o">.</span><span class="n">fwhm_kms</span><span class="p">(</span><span class="mf">111.0</span><span class="p">)</span>                 <span class="c1"># FWHM in km/s</span>
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">Instrument</span><span class="o">.</span><span class="n">R_fwhm</span><span class="p">(</span><span class="n">R_array</span><span class="p">,</span> <span class="n">wave</span><span class="o">=</span><span class="n">obs_wave</span><span class="p">)</span>  <span class="c1"># any of the above per pixel, on observed wavelengths</span>
 </code></pre></div>
-<p>Widths must be finite and positive; an array needs <code>wave=</code> on the same grid
-and must cover the spectrum's pixels. The LSF is taken as <em>measured on the
-detector</em> (from arc lines), so it already contains the pixel width and the
-model profiles are sampled at pixel centres, not integrated over the pixel a
-second time.</p>
+<p>Widths must be finite and positive. Width arrays require a matching <code>wave=</code>
+grid covering all spectral pixels. The LSF is interpreted as measured on
+the detector, including pixel width. Model profiles are therefore evaluated
+at pixel centres without a second integration over the pixel.</p>
 <h4 id="a-free-lsf-scale-instrument-scale">A free LSF scale: <code>Instrument(..., scale=...)</code><a class="headerlink" href="#a-free-lsf-scale-instrument-scale" title="Permanent link">&para;</a></h4>
-<p>When the quoted LSF is uncertain, every constructor takes <code>scale=</code>: the width in
-force is <code>s · σ_inst(λ)</code>, in the continuum kernel <em>and</em> in the line widths
-(<code>σ_cont² = σ_gal² + s² σ_inst² − σ_lib²</code>, <code>σ_line² = σ_gas² + s² σ_inst²</code>).</p>
+<p>Every constructor accepts <code>scale=</code> to model uncertainty in the LSF. The
+effective width is s · σ_inst(λ), applied to both continuum and lines:
+<code>σ_cont² = σ_gal² + s² σ_inst² − σ_lib²</code> and
+<code>σ_line² = σ_gas² + s² σ_inst²</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">Instrument</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.priors</span><span class="w"> </span><span class="kn">import</span> <span class="n">Uniform</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
@@ -1273,70 +1270,61 @@ force is <code>s · σ_inst(λ)</code>, in the continuum kernel <em>and</em> in 
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">priors</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"lsf_scale"</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">1.3</span><span class="p">)}</span>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">Instrument</span><span class="o">.</span><span class="n">R_fwhm</span><span class="p">(</span><span class="mi">2700</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="s2">"lsf_scale"</span><span class="p">,</span> <span class="n">scale_range</span><span class="o">=</span><span class="p">(</span><span class="mf">0.8</span><span class="p">,</span> <span class="mf">1.3</span><span class="p">))</span>  <span class="c1"># range given explicitly</span>
 </code></pre></div>
-<p>A fixed scale is folded into the static response at setup (no runtime cost). A
-sampled scale recomputes the response weights per call on a band sized for the top
-of its range: exact for any wavelength dependence of <code>σ_inst</code>, and differentiable.
-The range comes from the prior's finite bounds (or <code>scale_range=</code>, required when the
-key is a transform); it must satisfy <code>0 &lt; lo &lt; hi</code>, a prior reaching beyond an
-explicit <code>scale_range</code> is refused, and a sampled value outside it is clipped. The
-instrument-below-library warning is evaluated at the lower end of the range, and a
-second warning names the pixels whose continuum kernel crosses half a log-grid pixel
-inside the range, where the response switches from linear interpolation to a
-Gaussian and the prediction takes a small step in <code>s</code>. Photometry and <code>Lines</code> never
-see the instrument, so neither depends on the scale.</p>
-<p>Prospector's <code>resolution_jitter_parameter</code> (<code>prospect/models/sedmodel.py:289-295</code>)
-multiplies the resolution too, but only the continuum's (the line widths are cached
-from the unscaled resolution just before, <code>sedmodel.py:283</code>), by overwriting
-<code>obs.padded_resolution</code> on every call, and without validation.</p>
-<h3 id="the-library-subtracted-automatically">The library: subtracted automatically<a class="headerlink" href="#the-library-subtracted-automatically" title="Permanent link">&para;</a></h3>
-<p>The SSP library's own resolution curve is subtracted in quadrature from the
-instrumental width, pixel by pixel, at the rest-frame wavelength of each
-observed pixel (velocity widths are frame-invariant). Where the instrument is
-<em>finer</em> than the library the subtraction floors at zero and the continuum is
-delivered at library resolution, which is the correct model for a grid coarser
-than the instrument (<code>C3K_lr</code>, <code>BaSeL</code>), and you get a warning with the pixel
-count and range so that a wrong unit on the <code>Instrument</code> cannot pass unseen.
-<code>Spectrum(..., subtract_library=False)</code> turns the
-subtraction off for a grid whose stored curve you do not trust; with
-<code>instrument=None</code> there is nothing to subtract from and the continuum is
-delivered as the library has it.</p>
-<h3 id="photometry-is-broadened-too">Photometry is broadened too<a class="headerlink" href="#photometry-is-broadened-too" title="Permanent link">&para;</a></h3>
-<p>Filters integrate the spectrum <em>as observed</em>, so by default the photometry is
-computed from the <code>σ_gal</code>-broadened spectrum (<code>SedModel(broaden_photometry=True)</code>,
-the Prospector behaviour). For broad bands this changes nothing measurable
-(below <code>5e-4</code> mag at 300 km/s, <code>5e-3</code> at 1000 km/s, even with 1000 Å lines and
-hard breaks); for a medium or narrow band with a line on its edge it reaches
-the per-cent level, which is why the switch exists rather than the effect
-being silently dropped. Turn it off only for broad-band-only fits where you
-want to save the one FFT per likelihood call. With <code>broaden_photometry=False</code>
-nothing in the photometry is broadened: the continuum is integrated at
-model-grid resolution and any emission lines enter at the grid's pixel-floor
-width, independent of <code>σ_gas</code>. Generate mocks and fit them with the same
-setting.</p>
-<p>How the lines reach the filters depends on whether <code>σ_gas</code> is fixed or
-sampled. With a <strong>fixed</strong> <code>σ_gas</code> (and a fixed redshift: a sampled <code>zred</code> on
-free-z photometry always takes the painted path) the emission lines are not painted onto the
-model grid at all: each <code>Photometry</code> holds a static line-to-band basis
-<code>G = T · Γ(σ_gas)</code> (the line profiles at <code>σ_gas</code> in quadrature with the
-two-pixel grid floor, times the IGM transmission), and the band fluxes are
-<code>T · continuum_broadened + G · F_line</code> — exact for the same profile, and cheap.
-With a <strong>sampled</strong> <code>σ_gas</code> the width is a runtime quantity, so the lines are
-painted onto the grid and broadened with the continuum-independent gas width
-(<code>σ_gas</code> untied) or together with the continuum (<code>σ_gas</code> tied to <code>σ_gal</code>);
-this is the slower path, chosen automatically. <code>csp._force_paint_lines = True</code>
-forces the painted path for A/B checks.</p>
-<h2 id="cosmology-one-object-chosen-on-the-csp-never-silent">Cosmology: one object, chosen on the CSP, never silent<a class="headerlink" href="#cosmology-one-object-chosen-on-the-csp-never-silent" title="Permanent link">&para;</a></h2>
-<p>The cosmology enters the forward model in two places, both evaluated by the
-CSP: the flux factor <code>(1+z) (10 pc / D_L)^2</code> that turns the rest-frame
-luminosity density into observed-frame F_ν in cgs (<code>CSPBasis._flux_factor</code>, applied
-to spectra, photometry and line fluxes), and the age of the universe that
-rescales the SFH grid when <code>zred</code> is sampled with <code>track_zred_age=True</code>
-(<code>CSPBasis._lookback_from_zred</code>). A sampled <code>zred</code> reaches every observation:
-<code>Photometry</code> is projected through the filters per sample, <code>Lines</code> fluxes carry
-the per-sample flux factor, Jacobian and IGM, and a <code>Spectrum</code> is projected by
-a redshift-aware projector built for the prior's support (<code>Spectrum(zred_range=)</code>
-when that support is not given by a bounded prior). So the cosmology is a required argument of
-<code>CSPBasis</code> / <code>CSPBasis_afe</code>, there is no default and no global to patch:</p>
+<p>A fixed scale is incorporated into the response at setup. A sampled scale
+requires response weights to be recomputed at each call over a band sized
+for the maximum scale. This supports wavelength-dependent σ_inst and
+derivatives with respect to scale.</p>
+<p>The scale range comes from finite prior bounds, or from <code>scale_range=</code>
+when the key is supplied by a transform. It must satisfy <code>0 &lt; lo &lt; hi</code>.
+A prior exceeding an explicit range raises an error; sampled values outside
+the range are clipped. The library-resolution warning uses the minimum
+scale. Another warning identifies pixels where the continuum width crosses
+half a log-grid pixel: switching from linear interpolation to Gaussian
+response introduces a small step in the prediction. Photometry and <code>Lines</code>
+do not use the instrument scale.</p>
+<p>Prospector's <code>resolution_jitter_parameter</code>
+(<code>prospect/models/sedmodel.py:289–295</code>) scales only the continuum resolution.
+Line widths are cached from the unscaled resolution at line 283. It also
+overwrites <code>obs.padded_resolution</code> at each call without validation.</p>
+<h3 id="library-resolution">Library resolution<a class="headerlink" href="#library-resolution" title="Permanent link">&para;</a></h3>
+<p>The SSP library's resolution is subtracted in quadrature from the instrumental
+width at each pixel's rest-frame wavelength. Velocity widths are independent
+of frame. Where the instrument is finer than the library, the subtraction
+is limited to zero and the continuum stays at library resolution. A warning
+reports the affected pixels and wavelength range; this can also indicate
+incorrect instrument units.</p>
+<p>Use <code>Spectrum(..., subtract_library=False)</code> if the grid's stored resolution
+curve is unreliable. With <code>instrument=None</code>, no subtraction is made and
+the continuum retains library resolution.</p>
+<h3 id="photometric-broadening">Photometric broadening<a class="headerlink" href="#photometric-broadening" title="Permanent link">&para;</a></h3>
+<p>By default, photometry integrates the galaxy-broadened spectrum
+(<code>SedModel(broaden_photometry=True)</code>), following Prospector. The effect on
+broad bands is below 5e-4 mag at 300 km/s and 5e-3 mag at 1000 km/s, even
+with 1000 Å emission lines and sharp breaks. For medium or narrow bands,
+a line near a filter edge can change the flux by about a percent.</p>
+<p>For broad-band-only fits, <code>broaden_photometry=False</code> saves one FFT per
+likelihood call. It integrates the continuum at model-grid resolution and
+uses grid pixel-floor widths for emission lines, independent of σ_gas.
+Use the same setting to generate and fit mocks.</p>
+<p>With fixed σ_gas and redshift, each <code>Photometry</code> stores a line-to-band
+matrix <code>G = T · Γ(σ_gas)</code>. It includes the gas width in quadrature with the
+two-pixel grid floor and IGM transmission. Band predictions are then
+<code>T · continuum_broadened + G · F_line</code>.</p>
+<p>With sampled σ_gas, lines are placed on the model grid at each call.
+If σ_gas is untied, they are broadened separately from the continuum;
+if tied to σ_gal, they are broadened together. Sampled redshift also
+requires this calculation. It is slower than the static matrix method.
+Set <code>csp._force_paint_lines = True</code> to compare the two calculations.</p>
+<h2 id="cosmology">Cosmology<a class="headerlink" href="#cosmology" title="Permanent link">&para;</a></h2>
+<p>Pass a cosmology explicitly to <code>CSPBasis</code> or <code>CSPBasis_afe</code>. The CSP uses
+it for the flux factor <code>(1+z) (10 pc / D_L)^2</code>
+(<code>CSPBasis._flux_factor</code>) and for the universe age that sets the SFH grid
+when <code>track_zred_age=True</code> (<code>CSPBasis._lookback_from_zred</code>).</p>
+<p>All observation types follow sampled <code>zred</code>. Photometry is projected
+through filters at each sample; <code>Lines</code> uses the corresponding flux
+factor, Jacobian and IGM transmission. Spectra use a redshift-aware
+projector covering the prior's support. Provide <code>Spectrum(zred_range=)</code>
+if that range is not specified by bounded prior support.
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">Cosmology</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">planck18</span><span class="p">()</span>                <span class="c1"># Planck 2018 VI, the usual choice</span>
@@ -1347,78 +1335,79 @@ when that support is not given by a bounded prior). So the cosmology is a requir
 <a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="n">cosmo</span> <span class="o">=</span> <span class="n">Cosmology</span><span class="o">.</span><span class="n">from_astropy</span><span class="p">(</span><span class="n">astropy_cosmo</span><span class="p">)</span>   <span class="c1"># any flat astropy cosmology</span>
 <a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="n">lookback_time</span><span class="o">=...</span><span class="p">,</span> <span class="n">cosmo</span><span class="o">=</span><span class="n">cosmo</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
-</code></pre></div>
-<p>Everything downstream reads it from the CSP: <code>model.cosmo</code> is a read-only
-view, <code>SedModel(cosmo=...)</code> is accepted only when it equals <code>csp.cosmo</code>
-and refused otherwise, <code>repr(csp)</code>, <code>model.summary()</code> and the <code>fitSED</code>
-log print it, and <code>fitSED</code> writes it into the HDF5 result (<code>/model</code> attrs
-<code>cosmo_H0</code>, <code>cosmo_Om0</code>, <code>cosmo_Tcmb0</code>, <code>cosmo_Neff</code>, <code>cosmo_m_nu_ev_sum</code>,
-<code>cosmo_name</code>), from which <code>ceridwen.result_cosmology(path)</code> or
-<code>Cosmology.from_dict(attrs)</code> rebuilds the same object.</p>
-<p>Ages and distances come from the same object: <code>cosmo.age(z)</code> and
-<code>csp.age_at(z)</code> give the age of the universe in Gyr (<code>cosmo.age</code> always returns a JAX
-array, 0-d for a scalar; <code>csp.age_at</code> returns a float for a scalar), <code>cosmo.luminosity_distance(z)</code> the
-luminosity distance in Mpc. There is no <code>tuniv</code> argument any more; size the
-SFH grid from the cosmology, <code>jnp.linspace(0.0, cosmo.age(z), n)</code>, and
-<code>SedModel</code> refuses (with both numbers in the message) a grid whose oldest
-node lies more than 0.5 % beyond <code>csp.age_at(zred)</code> at a fixed redshift.
-The check is skipped when the CSP rescales the grid itself
-(<code>track_zred_age=True</code>, which also acts on a fixed non-zero <code>zred</code>
-because <code>SedModel</code> injects it) or a <code>lookback_time</code> transform replaces it.</p>
-<p><code>zred = 0</code> applies <strong>no</strong> flux factor: the CSP scales only when <code>theta</code>
-carries <code>zred</code>, and <code>SedModel</code> does not inject a zero. Predictions are then
-<code>L_sun/Hz x 10^logmass</code>, not maggies. For a nearby object give the distance
-explicitly, <code>SedModel(csp, obs, priors, zred=0.0, lumdist_mpc=3.5)</code>: the
-flux factor is then evaluated with that distance in place of <code>D_L(zred)</code>
-(and <code>(1+zred)</code> still from <code>zred</code>), which is prospector's <code>lumdist</code>.
-<code>model.summary()</code> says which of the three cases is in force, and
-<code>SedModel</code> warns at construction when <code>zred = 0</code> is combined with
-observations (no flux factor) and when <code>lumdist_mpc</code> overrides a non-zero
-<code>zred</code>'s D_L. <code>csp.cosmo</code> cannot be reassigned after construction, and the
-CSP constructors refuse unknown keyword arguments instead of swallowing
-them.</p>
-<p><code>SedModel</code> builds every observation's projection at construction. Replacing
-<code>model.observations</code> later requires <code>model.setup_observations()</code> (called for
-you by <code>fitSED(model, observations)</code>); a <code>Spectrum</code> therefore needs its
-<code>wavelength=</code> at construction even if the flux is attached later.</p>
-<h2 id="nebular-grid-cloudy-without-dust-in-the-h-ii-region">Nebular grid: CLOUDY without dust in the H II region<a class="headerlink" href="#nebular-grid-cloudy-without-dust-in-the-h-ii-region" title="Permanent link">&para;</a></h2>
-<p><code>CSPBasis</code> reads the Byler et al. (2017) CLOUDY grids from <code>$SPS_HOME/nebular</code>. By default it
-uses the grids <strong>without dust inside the H II region</strong> (<code>ZAU_ND_&lt;isochrones&gt;</code>), the default of
-FSPS, python-fsps and Prospector, so the nebular lines match theirs.
-<code>init_neb_params={"cloudy_dust": True}</code> selects the grids with dust (<code>ZAU_WD_&lt;isochrones&gt;</code>),
-whose lines are fainter in hydrogen and Ly-alpha. The factor depends on the grid: for a constant
-SFR over 0-1 Gyr at solar metallicity and logU = -2.5, WD/ND is 0.78 (H-alpha), 0.79 (H-beta),
-0.17 (Ly-alpha) and 1.13 ([O III] 5007) on MIST, and 0.95, 0.95, 0.40 and 0.99 on BPASS. The
-result file records the choice (<code>csp_config['cloudy_dust']</code>); a file that does not record it
-was made with <code>cloudy_dust=True</code>, and <code>rebuild_model</code> asks for that CSP.</p>
+</code></pre></div></p>
+<p><code>model.cosmo</code> is a read-only view of the CSP cosmology. <code>SedModel(cosmo=...)</code>
+is accepted only if it equals <code>csp.cosmo</code>, and <code>csp.cosmo</code> cannot be
+reassigned after construction. The cosmology appears in <code>repr(csp)</code>,
+<code>model.summary()</code> and the <code>fitSED</code> log.</p>
+<p>Result files store it as <code>/model</code> attributes <code>cosmo_H0</code>, <code>cosmo_Om0</code>,
+<code>cosmo_Tcmb0</code>, <code>cosmo_Neff</code>, <code>cosmo_m_nu_ev_sum</code> and <code>cosmo_name</code>.
+Reconstruct it with <code>ceridwen.result_cosmology(path)</code> or
+<code>Cosmology.from_dict(attrs)</code>.</p>
+<p><code>cosmo.age(z)</code> and <code>csp.age_at(z)</code> return universe age in Gyr. The former
+always returns a JAX array; the latter returns a Python float for scalar
+input. <code>cosmo.luminosity_distance(z)</code> returns Mpc. Build an SFH grid from
+the cosmology, for example <code>jnp.linspace(0.0, cosmo.age(z), n)</code>; there is
+no <code>tuniv</code> argument. At fixed redshift, <code>SedModel</code> rejects an oldest node
+more than 0.5% older than <code>csp.age_at(zred)</code>. This check is skipped if
+<code>track_zred_age=True</code> rescales the grid or a <code>lookback_time</code> transform
+replaces it. Age tracking also applies to fixed non-zero redshift,
+which <code>SedModel</code> supplies to the CSP.</p>
+<p>At <code>zred=0</code> without <code>lumdist_mpc</code>, there is no flux factor. The CSP scales
+only when <code>theta</code> contains <code>zred</code>, and <code>SedModel</code> does not insert zero.
+Predictions are then <code>L_sun/Hz × 10^logmass</code>. For a nearby object, supply
+the distance, for example
+<code>SedModel(csp, obs, priors, zred=0.0, lumdist_mpc=3.5)</code>. This uses the
+given distance in place of D_L(zred), retaining the redshift's (1+z)
+factor, as in Prospector's <code>lumdist</code>.</p>
+<p><code>model.summary()</code> reports the distance convention. <code>SedModel</code> warns when
+observations have <code>zred=0</code> without flux scaling, or when <code>lumdist_mpc</code>
+overrides the distance at a non-zero redshift. CSP constructors also
+reject unknown keyword arguments.</p>
+<p><code>SedModel</code> builds observation projections at construction. After replacing
+<code>model.observations</code>, call <code>model.setup_observations()</code>; passing observations
+to <code>fitSED(model, observations)</code> does this automatically. A <code>Spectrum</code>
+requires <code>wavelength=</code> at construction, even if flux is supplied later.</p>
+<h2 id="nebular-grids">Nebular grids<a class="headerlink" href="#nebular-grids" title="Permanent link">&para;</a></h2>
+<p><code>CSPBasis</code> reads the Byler et al. (2017) CLOUDY grids from
+<code>$SPS_HOME/nebular</code>. The default <code>ZAU_ND_&lt;isochrones&gt;</code> grids omit dust
+inside H II regions, matching FSPS, python-fsps and Prospector.
+Choose <code>init_neb_params={"cloudy_dust": True}</code> for <code>ZAU_WD_&lt;isochrones&gt;</code>.</p>
+<p>The effect depends on the grid. For constant SFR over 0–1 Gyr, solar
+metallicity and logU = −2.5, WD/ND flux ratios on MIST are 0.78 for Hα,
+0.79 for Hβ, 0.17 for Ly-α and 1.13 for [O III] 5007. BPASS ratios are
+0.95, 0.95, 0.40 and 0.99 respectively. The result file stores the choice
+in <code>csp_config['cloudy_dust']</code>. Older files without this setting used
+<code>cloudy_dust=True</code>; <code>rebuild_model</code> requires a matching CSP.</p>
 <h2 id="dust-geometry-and-the-escape-fraction-frac_obrun">Dust geometry and the escape fraction <code>frac_obrun</code><a class="headerlink" href="#dust-geometry-and-the-escape-fraction-frac_obrun" title="Permanent link">&para;</a></h2>
-<p>The CSP attenuates each SSP age row by its age bin's dust (<code>init_dust_params['bin_edges']</code>,
-log10 age/Gyr; by default one "birth-cloud" bin, ages below 10^-1.97 Gyr = 10.7 Myr) and then
-everything by the diffuse dust. <code>theta['frac_obrun']</code> opens an escape channel, and
-<code>fesc_geometry</code> (on <code>CSPBasis</code>) chooses what escapes:</p>
+<p>Each SSP age row receives attenuation from its age bin, then diffuse dust
+attenuation. Set bin edges with <code>init_dust_params['bin_edges']</code> in log10
+age/Gyr. The default birth-cloud bin covers ages below 10^-1.97 Gyr,
+or 10.7 Myr. <code>theta['frac_obrun']</code> specifies the fraction escaping some
+of this attenuation, with geometry set by <code>fesc_geometry</code> on <code>CSPBasis</code>:</p>
 <ul>
-<li><strong><code>'runaway_bc'</code></strong> (default). A fraction <code>frac_obrun</code> of the light of <strong>every age row</strong> skips
-  that row's age-bin attenuation; it is still attenuated by the diffuse dust. The nebular ages
-  also emit a fraction <code>frac_obrun</code> of their ionising photons (free of the age-bin dust) and
-  power <code>1 - frac_obrun</code> of the nebular emission. With the default single bin only the ages
-  below 10.7 Myr are attenuated by a bin, so only they are affected. With several attenuated
-  age bins, old stars escape their own bin's dust too: an old-only population (two power-law
-  bins, <code>tau_pow1 = 1</code>, <code>tau_pow2 = 0.5</code>, SFR zero below 2.6 Gyr) is 1.19x brighter at 5500 A
-  for <code>frac_obrun = 0.3</code> and 1.65x for <code>frac_obrun = 1</code>.</li>
-<li><strong><code>'picket'</code></strong>. A fraction <code>frac_obrun</code> of the <strong>young</strong> light (the ages of the nebular CLOUDY
-  grid, log age &lt;= 7.3, 20 Myr, on the shipped grids), ionising photons included, is not
-  attenuated by any dust or gas: no age-bin dust, no diffuse dust, no nebular reprocessing
-  (the nebular emission scales with <code>1 - frac_obrun</code> and the escape fraction of ionising
-  photons is <code>frac_obrun</code>), and it is not counted as absorbed in the dust-emission energy
-  balance. Requires <code>add_neb=True</code>. The picket's "young" (to 20 Myr) is wider than the default
-  birth-cloud bin (to 10.7 Myr): the 11-20 Myr ages get no birth-cloud dust, but a fraction
-  <code>frac_obrun</code> of their light still skips the diffuse dust.</li>
+<li><strong><code>'runaway_bc'</code> (default):</strong> a fraction <code>frac_obrun</code> from every age row
+  bypasses its age-bin dust but still receives diffuse attenuation.
+  Nebular-age populations release that fraction of their ionising photons
+  without age-bin attenuation, leaving <code>1 - frac_obrun</code> to power nebular
+  emission. With the default bin, only ages below 10.7 Myr are affected.
+  With several attenuated bins, older stars can also bypass their bin's
+  dust. For an old-only population with two power-law bins, <code>tau_pow1=1</code>,
+  <code>tau_pow2=0.5</code> and no SFR below 2.6 Gyr, the 5500 Å flux increases by
+  factors of 1.19 at <code>frac_obrun=0.3</code> and 1.65 at <code>frac_obrun=1</code>.</li>
+<li><strong><code>'picket'</code>:</strong> a fraction <code>frac_obrun</code> of young light, including ionising
+  photons, bypasses all dust and gas. It produces no nebular emission and
+  adds no absorbed energy to dust emission. The remaining fraction powers
+  nebular emission. This requires <code>add_neb=True</code>. Young ages are those in
+  the CLOUDY grid, up to log age = 7.3 (20 Myr) in the published grids.
+  Thus light at 11–20 Myr has no default birth-cloud attenuation, but its
+  escaping fraction still bypasses diffuse dust.</li>
 </ul>
-<p><code>frac_obrun = 0</code> is the model without the key in both geometries.</p>
+<p>In either geometry, <code>frac_obrun=0</code> reproduces the model without that key.</p>
 <h2 id="fsps-at-runtime">FSPS at runtime<a class="headerlink" href="#fsps-at-runtime" title="Permanent link">&para;</a></h2>
-<p>With <code>add_neb=True</code> or <code>add_dust_emission=True</code>, the forward model reads CLOUDY
-nebular grids and Draine &amp; Li templates from <code>$SPS_HOME</code>. FSPS must be installed
-and <code>$SPS_HOME</code> set. See <a href="../installation/">Installation</a>.</p>
+<p>Nebular and dust-emission models read data from <code>$SPS_HOME</code> at runtime.
+Install the FSPS data and set this path before using <code>add_neb=True</code> or
+<code>add_dust_emission=True</code>; see <a href="../installation/">Installation</a>.</p>
 
 
 

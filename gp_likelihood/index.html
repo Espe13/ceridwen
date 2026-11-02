@@ -841,47 +841,43 @@
 
 
 <h1 id="gaussian-process-likelihood-for-correlated-spectral-residuals">Gaussian-process likelihood for correlated spectral residuals<a class="headerlink" href="#gaussian-process-likelihood-for-correlated-spectral-residuals" title="Permanent link">&para;</a></h1>
-<p>Neighbouring pixels of a reduced spectrum are often not independent: resampling onto a
-common grid, combining dithers, or imperfect sky subtraction leave residuals that are
-correlated over a few to tens of pixels. A diagonal likelihood then counts each
-correlated stretch as many independent measurements, and the posterior comes out too
-narrow. The GP likelihood gives the spectrum a squared-exponential covariance in
-wavelength. It is part of the compiled likelihood that nested sampling, NUTS, VI and
-<code>map_fit</code> use, and its two hyperparameters can be fixed or sampled.</p>
-<div class="admonition note">
-<p class="admonition-title">Off by default.</p>
-<p>A spectrum has a GP only when you switch one on (below). Without one, the likelihood
-is the diagonal Gaussian, compiled to the same program as a model without a GP.</p>
-</div>
+<p>Resampling, combining dithers and sky-subtraction errors can leave correlated
+residuals across neighbouring spectral pixels. A diagonal likelihood treats
+these pixels as independent and can underestimate posterior uncertainty.
+The GP likelihood models a squared-exponential covariance in wavelength.
+Its amplitude and length scale can be fixed or sampled with nested sampling,
+NUTS, VI-preconditioned NUTS or <code>map_fit</code>.</p>
+<p>The GP is disabled by default. Without GP parameters, the spectrum uses the
+ordinary diagonal Gaussian likelihood and the compiled program is unchanged.</p>
 <h2 id="the-likelihood">The likelihood<a class="headerlink" href="#the-likelihood" title="Permanent link">&para;</a></h2>
-<p>The residuals are first whitened by the diagonal noise model. σ_eff,i is the
-uncertainty after <strong>every</strong> noise term (<code>noise_floor</code>, <code>log_err_scale_spec</code>,
-<code>log_jitter_spec</code>, <code>log_f_calib_spec</code>, <code>log_f_data_spec</code>):
-r_i = (y_i − μ_i)/σ_eff,i, with y the sky-subtracted data and μ the model (times any
-calibration). Over the n unmasked pixels:</p>
+<p>Residuals are divided by the effective diagonal uncertainty σ_eff,i, including
+<code>noise_floor</code>, <code>log_err_scale_spec</code>, <code>log_jitter_spec</code>, <code>log_f_calib_spec</code>
+and <code>log_f_data_spec</code>. Thus r_i = (y_i − μ_i)/σ_eff,i, where y is the
+sky-subtracted flux and μ includes any model calibration. For n unmasked pixels:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>K_ij = δ_ij + a² exp(−(λ_i − λ_j)² / 2ℓ²) + ε δ_ij
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>ln L = −½ rᵀ K⁻¹ r − ½ ln|K| − Σ_i ½ ln(2π σ_eff,i²)
 </code></pre></div>
 <ul>
-<li>λ is the <strong>observed-frame</strong> pixel wavelength in Å (<code>Spectrum.wavelength</code>).</li>
-<li>a is dimensionless, in units of σ_eff: a = 1 puts as much correlated variance into
-  each pixel as white variance.</li>
-<li>ℓ is in observed-frame Å.</li>
-<li>ε = 1e-6 is a fixed diagonal jitter (<code>GP_JITTER</code>, the default of
+<li>λ is the observed-frame wavelength in Å (<code>Spectrum.wavelength</code>).</li>
+<li>a is dimensionless and measured relative to σ_eff. At a = 1, the correlated
+  and white-noise variances are equal at each pixel.</li>
+<li>ℓ is the length scale in observed-frame Å.</li>
+<li>ε is a fixed diagonal jitter, default 1e-6 (<code>GP_JITTER</code>, or
   <code>GaussianProcess(jitter=)</code>).</li>
 </ul>
-<p>The white noise enters once, as the identity. As a → 0 the value tends to the diagonal
-Gaussian, apart from the ε term, which is exactly
-<code>½ Σ r_i² ε/(1+ε) − ½ n ln(1+ε)</code> (about 5e-7 per pixel). The mask is fixed at setup.
-Masked pixels get the identity row and column of K and r = 0, so they add exactly 0.</p>
-<p>The kernel is <code>ceridwen.likelihood.lnlike_gp_gaussian</code>. It uses a dense Cholesky
-factorisation in float64 and is differentiable in a, ℓ and every model parameter.
-<code>tests/likelihood/test_gp_likelihood.py</code> checks it against the independent NumPy
-implementation <code>GaussianProcess.log_likelihood</code> (rtol 1e-10), checks its gradients with
-<code>jax.test_util.check_grads</code>, and checks <code>jit</code> / <code>vmap</code> against a Python loop.</p>
+<p>The identity term accounts for white noise. As a → 0, the log-likelihood
+approaches the diagonal Gaussian plus
+<code>½ Σ r_i² ε/(1+ε) − ½ n ln(1+ε)</code>, about 5e-7 per pixel. The mask is fixed
+at setup. Masked pixels receive identity rows and columns in K and r = 0,
+so their contribution is zero.</p>
+<p><code>ceridwen.likelihood.lnlike_gp_gaussian</code> uses dense float64 Cholesky
+factorisation and supports derivatives in a, ℓ and all model parameters.
+<code>tests/likelihood/test_gp_likelihood.py</code> compares it with the independent
+NumPy implementation <code>GaussianProcess.log_likelihood</code> at rtol 1e-10,
+checks gradients with <code>jax.test_util.check_grads</code> and compares <code>jit</code>/<code>vmap</code>
+results with a Python loop.</p>
 <h2 id="using-it-with-fitsed">Using it with <code>fitSED</code><a class="headerlink" href="#using-it-with-fitsed" title="Permanent link">&para;</a></h2>
-<p>Two parameters per spectrum, named like the other per-observation noise terms. Both are
-natural logs:</p>
+<p>Each spectrum has two parameters, both expressed as natural logarithms:</p>
 <table>
 <thead>
 <tr>
@@ -903,11 +899,11 @@ natural logs:</p>
 </tr>
 </tbody>
 </table>
-<p>With several spectra, each takes its own <code>log_gp_amp_spec_&lt;obs.name&gt;</code> /
-<code>log_gp_length_spec_&lt;obs.name&gt;</code>. The plain names are accepted only when the model has
-exactly one spectrum. A GP name that matches no spectrum is an error (e.g.
-<code>log_gp_amp_phot</code>: only spectra take a GP).</p>
-<p><strong>Sampled.</strong> Give both a prior and a <code>free_param_init</code>:</p>
+<p>For several spectra, use <code>log_gp_amp_spec_&lt;obs.name&gt;</code> and
+<code>log_gp_length_spec_&lt;obs.name&gt;</code>. Unsuffixed names require exactly one
+spectrum. A name that matches no spectrum, such as <code>log_gp_amp_phot</code>, raises
+an error.</p>
+<p><strong>Sampled parameters.</strong> Give each a prior and a <code>free_param_init</code> entry:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.priors</span><span class="w"> </span><span class="kn">import</span> <span class="n">Uniform</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">model</span> <span class="o">=</span> <span class="n">SedModel</span><span class="p">(</span><span class="n">csp</span><span class="p">,</span> <span class="p">[</span><span class="n">phot</span><span class="p">,</span> <span class="n">spec</span><span class="p">],</span>
@@ -922,24 +918,24 @@ exactly one spectrum. A GP name that matches no spectrum is an error (e.g.
 <p>The <code>fitSED</code> log names the GP:
 <code>spec: GPGaussianLikelihood, outlier mixture off, GP (squared exponential, 600 pixels)
 a = exp(theta['log_gp_amp_spec']) (sampled), l = exp(theta['log_gp_length_spec']) (sampled)</code>.</p>
-<p><strong>Fixed.</strong> Either use a constant transform for each name,
+<p><strong>Fixed parameters.</strong> Use constant transforms, such as
 <code>transforms={"log_gp_amp_spec": lambda th: jnp.array([0.0]), "log_gp_length_spec":
-lambda th: jnp.array([np.log(30.0)])}</code>, or give the spectrum a <code>GaussianProcess</code>:</p>
+lambda th: jnp.array([np.log(30.0)])}</code>, or pass a <code>GaussianProcess</code> to the spectrum:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.observation</span><span class="w"> </span><span class="kn">import</span> <span class="n">GaussianProcess</span><span class="p">,</span> <span class="n">Spectrum</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">spec</span> <span class="o">=</span> <span class="n">Spectrum</span><span class="p">(</span><span class="n">wavelength</span><span class="o">=</span><span class="n">w</span><span class="p">,</span> <span class="n">flux</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">uncertainty</span><span class="o">=</span><span class="n">e</span><span class="p">,</span> <span class="n">noise</span><span class="o">=</span><span class="n">GaussianProcess</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">30.0</span><span class="p">))</span>
 </code></pre></div>
-<p><code>GaussianProcess(amplitude, length_scale)</code> takes a and ℓ themselves, not their logs. Its
-<code>jitter</code> becomes ε.</p>
-<p><strong>Both are needed.</strong> Setting only one of the two names is an error. So is giving a
-<code>GaussianProcess</code> <em>and</em> the names for the same spectrum: choose fixed (the object) or
-named (sampled, or fixed by transforms).</p>
-<p><strong>Priors.</strong> Nothing is enforced; bounded priors are advisable. A very small ℓ (below
-the pixel spacing) makes the GP a second white-noise term, degenerate with
-<code>log_err_scale_spec</code>. A very large ℓ makes it a smooth offset, degenerate with the
-calibration.</p>
-<p>The mock-data example <code>examples/recipes/gp_likelihood.py</code> fits a spectrum with sampled
-hyperparameters and compares the result with the diagonal fit.</p>
+<p><code>GaussianProcess(amplitude, length_scale)</code> takes a and ℓ directly, without
+logarithms. Its <code>jitter</code> argument sets ε.</p>
+<p>Supply both named parameters together. For a given spectrum, choose either
+the <code>GaussianProcess</code> object or the named parameters; providing both raises
+an error. Named parameters may be sampled or fixed through transforms.</p>
+<p>Bounded priors are useful, though the package does not require them. A length
+scale below the pixel spacing acts as another white-noise term and is
+degenerate with <code>log_err_scale_spec</code>. A very long length scale acts as a
+smooth offset and is degenerate with calibration.</p>
+<p><code>examples/recipes/gp_likelihood.py</code> fits a mock spectrum with sampled GP
+parameters and compares it with a diagonal-Gaussian fit.</p>
 <h2 id="what-it-can-be-combined-with">What it can be combined with<a class="headerlink" href="#what-it-can-be-combined-with" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -991,30 +987,32 @@ hyperparameters and compares the result with the diagonal fit.</p>
 </tr>
 </tbody>
 </table>
-<p>These refusals are current limitations, not physics. The mixture and the upper-limit
-penalty are per pixel, and the line marginal and the profiled polynomial solve assume
-independent pixels. Each could be generalised to a full covariance.</p>
+<p>These combinations are unsupported by the implementation. The outlier and
+upper-limit terms operate per pixel, while the line-marginalisation and
+profiled-polynomial solvers assume independent pixels. Supporting a full
+covariance would require changes to those calculations.</p>
 <h2 id="after-the-fit">After the fit<a class="headerlink" href="#after-the-fit" title="Permanent link">&para;</a></h2>
 <ul>
-<li>The result file records the GP in the spectrum's <code>likelihood_json</code>
-  (<code>read_result_h5(path)["obs"][name]["likelihood"]["gp"]</code>): the kernel, <code>log_amp</code> and
-  <code>log_len</code> (a theta key when sampled, the fixed ln value otherwise), <code>eps</code>, <code>n_pix</code>,
-  and the sampled names. The GP parameters are ordinary samples in <code>/samples</code>.</li>
-<li><code>Spectrum.log_likelihood(model_flux)</code> (host-side, fixed hyperparameters from
-  <code>noise=GaussianProcess(...)</code>) gives the same value as the compiled likelihood.
-  <code>Spectrum.chi_sq</code> is always the <strong>diagonal</strong> χ².</li>
-<li>The summary figure's χ²/ν is diagonal with the quoted uncertainties. When a spectrum
-  was fitted with a GP it says so ("diagonal, no GP").</li>
-<li><code>GPGaussianLikelihood.conditional_mean(y, mu, sigma, mask, theta)</code> (or
-  <code>ceridwen.likelihood.gp_conditional_mean</code>) returns the GP's estimate of the correlated
-  residual in data units, for plotting model + GP against the data. The sampled
-  likelihood never computes it.</li>
+<li>The spectrum's <code>likelihood_json</code> records the kernel, <code>log_amp</code>, <code>log_len</code>,
+  <code>eps</code>, <code>n_pix</code> and sampled names. Read it with
+  <code>read_result_h5(path)["obs"][name]["likelihood"]["gp"]</code>. Amplitude and length
+  are stored as theta keys when sampled and fixed log values otherwise.
+  Sampled GP parameters also appear in <code>/samples</code>.</li>
+<li>For fixed <code>noise=GaussianProcess(...)</code> parameters,
+  <code>Spectrum.log_likelihood(model_flux)</code> returns the same value as the compiled
+  likelihood. <code>Spectrum.chi_sq</code> always returns diagonal χ².</li>
+<li>The summary figure reports diagonal χ²/ν using the quoted uncertainties,
+  labelled "diagonal, no GP" for spectra fitted with a GP.</li>
+<li><code>GPGaussianLikelihood.conditional_mean(y, mu, sigma, mask, theta)</code>, also
+  available as <code>ceridwen.likelihood.gp_conditional_mean</code>, estimates the
+  correlated residual in data units. Use it to plot model + GP against the
+  data. It is not computed during sampling.</li>
 </ul>
 <h2 id="cost">Cost<a class="headerlink" href="#cost" title="Permanent link">&para;</a></h2>
-<p>A dense Cholesky: O(n³) per likelihood call and an n × n float64 matrix (8n² bytes) per
-batch lane. The kernel alone was measured on CPU (value, and value plus gradient as NUTS
-and the gradient-based steps use it), with <code>jit(vmap)</code> over W parameter vectors and
-compile time excluded:</p>
+<p>Dense Cholesky factorisation costs O(n³) per likelihood call. Each batch lane
+needs an n × n float64 covariance matrix (8n² bytes). The CPU measurements
+below use <code>jit(vmap)</code> over W parameter vectors, exclude compilation and
+time only the GP kernel, without the forward model:</p>
 <table>
 <thead>
 <tr>
@@ -1102,14 +1100,16 @@ compile time excluded:</p>
 </tr>
 </tbody>
 </table>
-<p>(Apple M3 Pro laptop CPU, float64, with another CPU-heavy job running on the
-machine, so treat these as indicative. The GP kernel only; the forward model comes on top.)
-The gradient costs 5-8 times the value, and from 1000 to 2000 pixels the cost grows by a
-factor of about 7 (close to n³). At 1000 pixels the GP adds ~26 ms of value and gradient per
-lane, about 2 h of CPU for the ~2.5e5 gradient calls of a NUTS run (4 chains × 2000 draws
-× ~32 leapfrog steps); at 2000 pixels, ~13 h.</p>
-<p><code>fitSED</code> warns at setup above <code>GP_WARN_NPIX</code> = 1000 pixels. For longer spectra,
-fit a wavelength window or bin the spectrum. A GPU timing is still to be done.</p>
+<p>These measurements used an Apple M3 Pro CPU in float64 while another
+CPU-intensive job was running. The gradient calculation took 5–8 times as
+long as the value alone. Doubling the pixel count from 1000 to 2000 increased
+the cost by about sevenfold, consistent with O(n³) scaling.</p>
+<p>At 1000 pixels, the GP adds about 26 ms per lane for value and gradient.
+For a NUTS run with roughly 2.5e5 gradient calls (4 chains × 2000 draws ×
+about 32 leapfrog steps), this is about two CPU hours; at 2000 pixels it is
+about thirteen hours. GPU timings have not yet been measured.</p>
+<p><code>fitSED</code> warns above <code>GP_WARN_NPIX=1000</code> pixels. For longer spectra, consider
+fitting a wavelength window or binning the data.</p>
 
 
 

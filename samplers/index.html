@@ -858,10 +858,10 @@
 
 
 <h1 id="samplers">Samplers<a class="headerlink" href="#samplers" title="Permanent link">&para;</a></h1>
-<p><code>fitSED(model, sampler=...)</code> runs one of two samplers on the same log-posterior and returns
-the same <code>SamplingResult</code>, so everything after the fit (<code>PostProcess</code>, the figures, the result
-file) is identical. The examples below continue the <a href="../quickstart/">Quick start</a>: <code>model</code> is
-the model built there.</p>
+<p><code>fitSED(model, sampler=...)</code> supports nested sampling and NUTS, with optional
+VI preconditioning for NUTS. Each uses the same log-posterior and returns a
+<code>SamplingResult</code> compatible with <code>PostProcess</code>, plotting and result files.
+The examples use <code>model</code> from the <a href="../quickstart/">Quick start</a>.</p>
 <table>
 <thead>
 <tr>
@@ -897,8 +897,9 @@ the model built there.</p>
 </tbody>
 </table>
 <h2 id="nested-sampling">Nested sampling<a class="headerlink" href="#nested-sampling" title="Permanent link">&para;</a></h2>
-<p>The default. It draws its live points from the prior, needs no gradients and returns the
-Bayesian evidence (log Z) for model comparison. Every free parameter needs a proper prior.</p>
+<p>Nested sampling is the default. It draws live points from the prior, uses no
+gradients and estimates the Bayesian evidence (log Z). Every free parameter
+requires a proper prior.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">jax</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">fitSED</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
@@ -911,59 +912,67 @@ Bayesian evidence (log Z) for model comparison. Every free parameter needs a pro
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">)</span>
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"log Z = </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> +/- </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence_err</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </code></pre></div>
-<p>The settings, passed in <code>sampler_kwargs</code>:</p>
+<p>Pass these settings in <code>sampler_kwargs</code>:</p>
 <ul>
-<li><code>num_live</code>: live points (fitSED's default 500). More live points give a smoother posterior and
-  a more precise log Z, and cost proportionally more.</li>
-<li><code>num_delete</code>: live points replaced per iteration (default <code>num_live // 5</code>).</li>
-<li><code>num_inner_steps</code>: inner MCMC steps per replacement (fitSED's default 30).</li>
-<li><code>logZ_tol</code>: the run stops when the evidence left in the live points, ln(Z_live / Z), falls
-  below this (default -5).</li>
-<li><code>slice_kernel</code>: the inner slice kernel, <code>"lanes"</code> (default), <code>"stock"</code> (<code>blackjax.nss</code>
-  unchanged) or <code>"carry"</code>. <code>"lanes"</code> runs every replacement's chain of slice steps as one lane
-  of a shared loop, so lanes do not wait for the slowest one, candidates below the prior slice
-  level skip the likelihood, and idle batch slots evaluate look-ahead candidates (Dance et al.
-  2025, arXiv:2503.17405; implemented by Liu Hao, @potatoist314). <code>"carry"</code> evaluates each stepping-out
-  edge once instead of twice under <code>vmap</code>. Both use the same random numbers and the same
-  evaluations as <code>"stock"</code>. <code>"carry"</code> is bitwise equal to it on CPU; <code>"lanes"</code> is bitwise equal
-  on Apple-silicon CPUs and equal to the last bits on x86 CPUs (XLA orders its batched
-  arithmetic differently there), so long x86 runs of the two can separate and then agree
-  statistically. One exception, by design: <code>"lanes"</code> gives a replacement
-  particle whose moves were all rejected the contour it replaced as its birth, which is
-  blackjax 1.7's rule (1.6 kept the birth of the particle it started from, which biases ln Z
-  where the likelihood is flat). With blackjax &gt;= 1.7 <code>"stock"</code> follows the same
-  rule; with 1.6 they differ in those births and in what depends on them (the weights
-  and ln Z), only where a chain had no accepted move. On a GPU the batches differ in composition, so float
-  rounding can separate the trajectories after many iterations; the results then agree
-  statistically, not bitwise. GPU runs are not bit-reproducible between processes with any
-  kernel: two <code>"stock"</code> runs with the same key on two A100s differ in the last bits. For a
-  JADES photometry + emission-line model (19 dimensions, <code>num_live=300</code>, <code>num_delete=64</code>),
-  <code>"lanes"</code> sampled 3.5-3.8x faster than <code>"stock"</code> on an A100, with the same posteriors and ln Z
-  to 2e-5 or better. On a loaded 11-core laptop CPU it was about 7x faster per iteration (one
-  measurement). Pass <code>slice_kernel="stock"</code> to run <code>blackjax.nss</code> exactly as released.</li>
+<li><code>num_live</code>: number of live points, default 500. Increasing this generally
+  improves posterior resolution and evidence precision at a proportional cost.</li>
+<li><code>num_delete</code>: points replaced per iteration, default <code>num_live // 5</code>.</li>
+<li><code>num_inner_steps</code>: MCMC steps per replacement, default 30.</li>
+<li><code>logZ_tol</code>: stopping threshold for the remaining evidence,
+  ln(Z_live / Z), default −5.</li>
+<li><code>slice_kernel</code>: <code>"lanes"</code> (default), <code>"stock"</code> or <code>"carry"</code>.</li>
 </ul>
-<p>The sampler shows a progress bar of dead points. Its cost scales with <code>num_live</code>: on a shared
-11-core laptop CPU, the Quick start model at <code>num_live=100, num_delete=20, logZ_tol=-2.0</code>
-took 12 min with <code>"lanes"</code> and 21-29 min with <code>"stock"</code>, 67 800 likelihood calls either way; at
-<code>num_live=400</code> with <code>"stock"</code> it advanced about 1.3 dead points per second, i.e. hours.</p>
+<p><code>"stock"</code> uses <code>blackjax.nss</code> unchanged. <code>"carry"</code> evaluates each stepping-out
+edge once rather than twice under <code>vmap</code>. <code>"lanes"</code> runs replacement chains in
+a shared loop, skips likelihood evaluation for candidates below the prior
+slice level and uses idle batch slots to evaluate candidates in advance. It
+implements Dance et al. (2025, arXiv:2503.17405), with code by Liu Hao
+(@potatoist314).</p>
+<p><code>"carry"</code> and <code>"lanes"</code> use the same random numbers and evaluations as
+<code>"stock"</code>. On CPUs, <code>"carry"</code> is bitwise identical to <code>"stock"</code>. <code>"lanes"</code>
+is bitwise identical on Apple Silicon; on x86, XLA's arithmetic ordering
+introduces differences in the last bits. Long x86 runs can consequently
+follow different trajectories while agreeing statistically.</p>
+<p>There is one intentional difference with blackjax 1.6. When all moves in a
+replacement chain are rejected, <code>"lanes"</code> assigns the replacement particle
+the birth contour of the particle it replaces. Blackjax 1.7 uses the same
+rule. Version 1.6 retained the starting particle's birth contour, which can
+bias ln Z on a flat likelihood. This affects weights and evidence only for
+chains without an accepted move.</p>
+<p>GPU arithmetic can produce different trajectories as batch composition
+changes. Runs need not be bitwise reproducible across processes, including
+two <code>"stock"</code> runs with the same key on A100s. Compare their results
+statistically.</p>
+<p>For a 19-parameter JADES photometry and emission-line model with
+<code>num_live=300</code> and <code>num_delete=64</code>, <code>"lanes"</code> was 3.5–3.8 times faster than
+<code>"stock"</code> on an A100. Posteriors agreed, and ln Z differed by at most 2e-5.
+A single measurement on a busy 11-core laptop CPU gave a sevenfold speedup
+per iteration.</p>
+<p>The progress bar counts dead points. Runtime grows with <code>num_live</code>. On a
+shared 11-core laptop CPU, the Quick start model with <code>num_live=100</code>,
+<code>num_delete=20</code> and <code>logZ_tol=-2.0</code> took 12 minutes with <code>"lanes"</code> and
+21–29 minutes with <code>"stock"</code>. Both used 67,800 likelihood calls. With 400
+live points, <code>"stock"</code> processed about 1.3 dead points per second and took hours.</p>
 <h3 id="checkpoints-and-resuming">Checkpoints and resuming<a class="headerlink" href="#checkpoints-and-resuming" title="Permanent link">&para;</a></h3>
-<p>With <code>checkpoint_dir=</code> (or <code>$CERIDWEN_CHECKPOINT_DIR</code>), the run writes
-<code>ns_checkpoint_&lt;pid&gt;.pkl</code> every <code>checkpoint_interval_s</code> seconds (default 1200). After a kill,
-pass that file as <code>resume_from=</code> with the same <code>rng_key</code> and settings: the run continues from
-the saved live and dead points and reproduces the uninterrupted run. It refuses a checkpoint
-whose settings, parameter shapes or live-point log-likelihoods (to a relative 1e-6) do not
-match the model. <code>slice_kernel</code> may differ between the killed run and the resumed one: the
-kernels make the same moves with the same random numbers.</p>
+<p>Set <code>checkpoint_dir=</code> or <code>$CERIDWEN_CHECKPOINT_DIR</code> to save
+<code>ns_checkpoint_&lt;pid&gt;.pkl</code> periodically. <code>checkpoint_interval_s</code> defaults to
+1200 seconds. To resume an interrupted run, pass the checkpoint as
+<code>resume_from=</code> with the same <code>rng_key</code> and settings. It restores the live
+and dead points and can reproduce an uninterrupted run.</p>
+<p>Loading checks the settings, parameter shapes and live-point log-likelihoods
+(relative tolerance 1e-6) against the model. You may change <code>slice_kernel</code>
+when resuming because the kernels use the same moves and random numbers,
+subject to the numerical and version differences described above.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sampler</span><span class="o">=</span><span class="s2">"nested"</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="s2">"./my_fit"</span><span class="p">,</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>                <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">42</span><span class="p">),</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>                <span class="n">sampler_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"checkpoint_dir"</span><span class="p">:</span> <span class="s2">"./ckpt"</span><span class="p">,</span>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>                                <span class="s2">"resume_from"</span><span class="p">:</span> <span class="s2">"./ckpt/ns_checkpoint_12345.pkl"</span><span class="p">})</span>
 </code></pre></div>
 <h2 id="nuts">NUTS<a class="headerlink" href="#nuts" title="Permanent link">&para;</a></h2>
-<p>The No-U-Turn sampler uses the gradient of the log-posterior, which the JAX forward model
-provides. It suits a GPU and many parameters. Defaults: 4 chains, 2000 samples each, 1500
-warmup steps with a dense mass matrix, target acceptance 0.95; bounded priors are sampled in
-an unconstrained space automatically.</p>
+<p>The No-U-Turn sampler uses gradients from the JAX forward model. It is suited
+to GPU fits with many parameters. Defaults are 4 chains, 2000 samples per
+chain, 1500 warmup steps, a dense mass matrix and target acceptance 0.95.
+Bounded parameters are automatically mapped to an unconstrained space.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">model</span><span class="p">,</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">"nuts"</span><span class="p">,</span>
@@ -972,13 +981,14 @@ an unconstrained space automatically.</p>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">output_dir</span><span class="o">=</span><span class="s2">"./my_fit"</span><span class="p">,</span>
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="p">)</span>
 </code></pre></div>
-<p>Warmup and sampling are each one compiled loop, so NUTS prints nothing while it runs, and
-Ctrl-C does not stop it inside a loop; stop it with <code>kill</code>. A killed NUTS run writes no result.</p>
+<p>Warmup and sampling each run as a compiled loop without progress output.
+Ctrl-C does not interrupt a loop; stop the process with <code>kill</code>. An interrupted
+NUTS run does not save a result.</p>
 <h2 id="vi-preconditioned-nuts">VI-preconditioned NUTS<a class="headerlink" href="#vi-preconditioned-nuts" title="Permanent link">&para;</a></h2>
-<p>Variational inference first fits a transport map to the posterior; NUTS then samples in the
-whitened space (Hoffman et al. 2019). <code>vi="tril"</code> is a full-rank Gaussian, <code>vi="iaf"</code> an
-inverse autoregressive flow (NeuTra). With VI the warmup defaults to 200 steps with a
-diagonal mass matrix.</p>
+<p>Variational inference fits a transport map before NUTS samples in the
+transformed space (Hoffman et al. 2019). Use <code>vi="tril"</code> for a full-rank
+Gaussian or <code>vi="iaf"</code> for an inverse autoregressive flow (NeuTra).
+With VI, warmup defaults to 200 steps and a diagonal mass matrix.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">model</span><span class="p">,</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">sampler</span><span class="o">=</span><span class="s2">"nuts"</span><span class="p">,</span>
@@ -996,11 +1006,12 @@ diagonal mass matrix.</p>
 <a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">"vi_losses.png"</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="starting-at-the-map">Starting at the MAP<a class="headerlink" href="#starting-at-the-map" title="Permanent link">&para;</a></h2>
-<p><code>fitSED(..., optimize=True)</code> first maximises the same log-posterior with L-BFGS
-(<code>ceridwen.optimize.map_fit</code>, from <code>model.theta_init</code> plus <code>n_starts</code> prior draws), starts NUTS
-(and its VI map) there, and stores the MAP under <code>/map</code> in the result file. Nested sampling
-draws its live points from the prior, so there the MAP is only recorded. <code>map_fit(model)</code> on
-its own returns a <code>MAPResult</code> whose <code>.theta</code> can be passed as <code>free_param_init</code>.</p>
+<p><code>fitSED(..., optimize=True)</code> first finds a MAP estimate using L-BFGS
+(<code>ceridwen.optimize.map_fit</code>). It starts from <code>model.theta_init</code> and
+<code>n_starts</code> prior draws. NUTS and its VI map start from the MAP; nested sampling
+still draws live points from the prior. Both save the MAP under <code>/map</code> in
+the result file. You can also call <code>map_fit(model)</code> separately and pass
+the returned <code>MAPResult.theta</code> as <code>free_param_init</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.optimize</span><span class="w"> </span><span class="kn">import</span> <span class="n">map_fit</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">best</span> <span class="o">=</span> <span class="n">map_fit</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">n_starts</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="n">rng_key</span><span class="o">=</span><span class="n">jax</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">PRNGKey</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
@@ -1008,9 +1019,9 @@ its own returns a <code>MAPResult</code> whose <code>.theta</code> can be passed
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>                <span class="n">optimize_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"n_starts"</span><span class="p">:</span> <span class="mi">16</span><span class="p">},</span> <span class="n">output_dir</span><span class="o">=</span><span class="s2">"./my_fit"</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="nuts-on-a-cpu-measured-times">NUTS on a CPU: measured times<a class="headerlink" href="#nuts-on-a-cpu-measured-times" title="Permanent link">&para;</a></h2>
-<p>Measured on shared 11-core laptop CPUs with the Quick start model (a
-12-band photometry + 600-pixel spectrum fit, 9 free parameters). The machines were running
-other jobs, so these times are upper limits, but they show the order of magnitude:</p>
+<p>These measurements used the Quick start model: twelve photometric bands,
+a 600-pixel spectrum and nine free parameters. They ran on shared 11-core
+laptop CPUs with other jobs active, so use them as approximate timings.</p>
 <table>
 <thead>
 <tr>
@@ -1033,7 +1044,7 @@ other jobs, so these times are upper limits, but they show the order of magnitud
 </tr>
 </tbody>
 </table>
-<p>On a CPU, use nested sampling. Run NUTS on a GPU.</p>
+<p>Nested sampling is generally the practical choice on a CPU; NUTS benefits from a GPU.</p>
 
 
 

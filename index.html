@@ -324,10 +324,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#features" class="md-nav__link">
+  <a href="#model-components" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Features
+        Model components
       
     </span>
   </a>
@@ -335,10 +335,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#where-to-next" class="md-nav__link">
+  <a href="#documentation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Where to next
+        Documentation
       
     </span>
   </a>
@@ -839,42 +839,48 @@
 
 
 <h1 id="ceridwen">CERIDWEN<a class="headerlink" href="#ceridwen" title="Permanent link">&para;</a></h1>
-<p><strong>C</strong>omprehensive <strong>S</strong>ED <strong>E</strong>stimation <strong>R</strong>outine <strong>I</strong>nvolving <strong>D</strong>ata-driven
-<strong>WE</strong>ight calculatio<strong>N</strong>s. CERIDWEN fits the spectral energy distributions of galaxies
-(photometry, spectra and emission-line fluxes, alone or jointly) to infer their stellar
-populations, dust, nebular emission and star formation histories. The forward model is a
-single differentiable JAX graph: it builds a galaxy spectrum from stellar populations, applies
-dust attenuation and emission, adds nebular continuum and lines, attenuates it by the
-intergalactic medium, and projects it to the observed frame at the galaxy's redshift.
-Inference runs on a CPU or a GPU.</p>
-<h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h2>
+<p>CERIDWEN fits galaxy spectral energy distributions to infer stellar populations,
+dust properties, nebular emission and star formation histories. It accepts
+photometry, spectra and emission-line fluxes, separately or in a joint fit.</p>
+<p>The forward model uses JAX to combine stellar populations, apply dust attenuation
+and emission, add nebular continuum and lines, and account for intergalactic
+absorption. It then projects the spectrum into the observed frame at the galaxy's
+redshift. The model is differentiable, and inference can run on a CPU or GPU.</p>
+<h2 id="model-components">Model components<a class="headerlink" href="#model-components" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Star formation history on a lookback-time grid: non-parametric continuity (<code>logsfr_ratios</code>) or any parametric form written as a transform</li>
-<li>Constant metallicity or a metallicity history (<code>zh_const</code>)</li>
-<li>[α/Fe] as a sampled stellar axis (<code>CSPBasis_afe</code>, aMIST + C3K grid)</li>
-<li>Dust attenuation: Kriek &amp; Conroy diffuse dust, power-law birth clouds, 12 registered laws (Calzetti, SMC, LMC, Gordon+03 SMC bar, Reddy+15, ...)</li>
-<li>Dust emission from Draine &amp; Li (2007) or THEMIS templates</li>
-<li>Nebular continuum and emission lines from the FSPS CLOUDY grids</li>
-<li>IGM attenuation (Madau 1995), with an optional damping wing and damped Ly-α absorber (<code>MadauDampingDLA</code>)</li>
-<li>Photometry, spectra and emission-line fluxes, fitted alone or jointly</li>
-<li>One broadening kernel: stellar and gas velocity dispersions, instrument line-spread function, library resolution removed automatically</li>
-<li>Analytic marginalisation over emission-line fluxes (<code>Spectrum(marginalize_elines=True)</code>)</li>
-<li>Noise and calibration terms: jitter, calibration polynomials (sampled, profiled or marginalised), an outlier mixture, a Gaussian-process likelihood for correlated residuals</li>
-<li>Samplers: nested sampling (with the evidence), NUTS, VI-preconditioned NUTS, and a MAP optimiser</li>
-<li>Post-processing (<code>PostProcess</code>): SFRs, M_UV, ionising photon rates, posterior-predictive data, and summary, corner and diagnostic figures</li>
+<li>Star formation histories on a lookback-time grid, using non-parametric
+  continuity (<code>logsfr_ratios</code>) or parametric forms supplied as transforms.</li>
+<li>Constant metallicity or a metallicity history (<code>zh_const</code>).</li>
+<li>Sampled [α/Fe] with <code>CSPBasis_afe</code> and the aMIST + C3K grid.</li>
+<li>Kriek &amp; Conroy diffuse dust, power-law birth clouds and 12 attenuation laws,
+  including Calzetti, SMC, LMC, Gordon+03 SMC bar and Reddy+15.</li>
+<li>Dust emission from Draine &amp; Li (2007) or THEMIS templates.</li>
+<li>Nebular continuum and emission lines from FSPS CLOUDY grids.</li>
+<li>Madau (1995) IGM attenuation, with optional damping wing and damped Ly-α
+  absorption through <code>MadauDampingDLA</code>.</li>
+<li>Broadening from stellar and gas velocity dispersions and the instrumental
+  LSF, accounting for the SSP library resolution.</li>
 </ul>
-<h2 id="where-to-next">Where to next<a class="headerlink" href="#where-to-next" title="Permanent link">&para;</a></h2>
+<p>Fits can include noise rescaling, jitter, calibration polynomials, an outlier
+mixture and a GP for correlated spectral residuals. Emission-line fluxes and
+calibration coefficients can be marginalised analytically. Inference options
+are nested sampling, NUTS, VI-preconditioned NUTS and MAP optimisation.
+<code>PostProcess</code> computes derived quantities, posterior predictions and figures.</p>
+<h2 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="installation/">Installation</a>: the package, FSPS and <code>$SPS_HOME</code>, SSP grids.</li>
-<li><a href="quickstart/">Quick start</a>: one fit end to end, on a laptop CPU.</li>
-<li><a href="tutorial/">Tutorial: joint fit</a>: photometry, a spectrum and emission-line fluxes fitted together.</li>
-<li><a href="samplers/">Samplers</a>: nested sampling, NUTS, VI-preconditioned NUTS, the MAP.</li>
-<li><a href="postprocessing/">Post-processing</a>: derived quantities, predictions and figures.</li>
-<li><a href="noise_calibration/">Noise and calibration</a>, <a href="gp_likelihood/">GP likelihood</a>, <a href="outlier_model/">Outlier model</a>, <a href="eline_marginalisation/">Emission-line marginalisation</a>.</li>
+<li><a href="installation/">Installation</a>: dependencies, FSPS data and SSP grids.</li>
+<li><a href="quickstart/">Quick start</a>: fit a mock galaxy on a laptop.</li>
+<li><a href="tutorial/">Joint-fit tutorial</a>: photometry, a spectrum and line fluxes.</li>
+<li><a href="samplers/">Samplers</a>: settings, checkpoints and MAP initialisation.</li>
+<li><a href="postprocessing/">Post-processing</a>: SFRs, UV and ionising-photon quantities,
+  predictions and figures.</li>
+<li><a href="noise_calibration/">Noise and calibration</a>, <a href="gp_likelihood/">GP likelihood</a>,
+  <a href="outlier_model/">Outlier model</a> and <a href="eline_marginalisation/">Emission-line marginalisation</a>.</li>
 <li><a href="afe/">α/Fe</a>: the α-enhanced grid and <code>CSPBasis_afe</code>.</li>
-<li><a href="conventions/">Conventions &amp; gotchas</a>: units, metallicity, lookback time, broadening, cosmology. Read this before fitting real data.</li>
-<li><a href="troubleshooting/">Troubleshooting</a> and the <a href="api/">API reference</a>.</li>
-<li><a href="development/">Development and verification</a>: the test layers and how the code is built.</li>
+<li><a href="conventions/">Conventions and common errors</a>: units, metallicity, lookback
+  time, broadening and cosmology.</li>
+<li><a href="troubleshooting/">Troubleshooting</a> and <a href="api/">API reference</a>.</li>
+<li><a href="development/">Development and verification</a>: tests and development practices.</li>
 </ul>
 <h2 id="citing">Citing<a class="headerlink" href="#citing" title="Permanent link">&para;</a></h2>
 <p>If you use CERIDWEN in your research, please cite it:</p>
@@ -896,7 +902,10 @@ Inference runs on a CPU or a GPU.</p>
 <li><strong>Conroy, Gunn &amp; White 2009</strong> (FSPS, the SSP and data-file provider)</li>
 </ul>
 <h2 id="related-projects">Related projects<a class="headerlink" href="#related-projects" title="Permanent link">&para;</a></h2>
-<p><a href="https://github.com/bd-j/sedpy">sedpy</a> by Benjamin D. Johnson is the origin of the filter-convolution and attenuation-curve code that CERIDWEN carries internally (via <a href="https://github.com/Espe13/sedpy_jax">sedpy_jax</a>, the JAX rewrite), and of the AB photon-counting conventions it follows. CERIDWEN depends on neither package.</p>
+<p>CERIDWEN's internal filter-convolution and attenuation-curve code comes from
+Benjamin D. Johnson's <a href="https://github.com/bd-j/sedpy">sedpy</a>, through the JAX
+rewrite <a href="https://github.com/Espe13/sedpy_jax">sedpy_jax</a>. It also follows
+sedpy's AB photon-counting conventions. Neither package is a dependency.</p>
 <p>Maintainer: <a href="https://www.amanda-stoffers.de">Amanda Stoffers</a>, Kavli Institute for Cosmology, University of Cambridge, <code>aas208@cam.ac.uk</code></p>
 
 

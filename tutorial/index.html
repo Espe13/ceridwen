@@ -445,10 +445,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-a-photometry" class="md-nav__link">
+  <a href="#2-photometry" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. (a) Photometry
+        2. Photometry
       
     </span>
   </a>
@@ -456,10 +456,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-b-spectrum" class="md-nav__link">
+  <a href="#3-spectrum" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. (b) Spectrum
+        3. Spectrum
       
     </span>
   </a>
@@ -467,10 +467,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-c-emission-lines" class="md-nav__link">
+  <a href="#4-emission-lines" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. (c) Emission lines
+        4. Emission lines
       
     </span>
   </a>
@@ -511,10 +511,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#consistency-checklist-for-real-joint-fits" class="md-nav__link">
+  <a href="#checks-before-fitting-data" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Consistency checklist for real joint fits
+        Checks before fitting data
       
     </span>
   </a>
@@ -874,30 +874,29 @@
 
 
 <h1 id="tutorial-fitting-photometry-spectroscopy-and-lines-jointly">Tutorial: fitting photometry, spectroscopy and lines jointly<a class="headerlink" href="#tutorial-fitting-photometry-spectroscopy-and-lines-jointly" title="Permanent link">&para;</a></h1>
-<p>CERIDWEN treats the three observation types uniformly: broadband <strong>photometry</strong>,
-a resolved <strong>spectrum</strong>, and <strong>emission-line</strong> fluxes. Each is a small container
-that knows how to project the model spectrum onto its own data space, and the
-joint likelihood is the sum of their χ² contributions. You can fit any one of
-them, or all three together, with no change to the model or sampler.</p>
-<p>This tutorial builds one of each and fits them jointly. Replace the mock arrays
-with your own data.</p>
+<p>CERIDWEN can fit broadband photometry, resolved spectra and emission-line
+fluxes separately or together. Each observation object projects the forward
+model into the appropriate data space. The joint likelihood combines the
+individual observation likelihoods.</p>
+<p>This tutorial constructs one observation of each type and fits them jointly.
+Replace the mock arrays with your data when using it for a real fit.</p>
 <div class="admonition tip">
-<p class="admonition-title">Runnable scripts</p>
-<p>The runnable counterparts of this tutorial are
-<code>examples/demo_2_photometry_lines.py</code> (photometry + lines) and
-<code>examples/demo_3_spectrum_advanced.py</code> (photometry + spectrum with an
-<code>Instrument</code>, a fitted <code>sigma_gal</code>, line masking and a noise floor).</p>
+<p class="admonition-title">Example scripts</p>
+<p><code>examples/demo_2_photometry_lines.py</code> fits photometry and line fluxes.
+<code>examples/demo_3_spectrum_advanced.py</code> fits photometry and a spectrum
+with an <code>Instrument</code>, sampled <code>sigma_gal</code>, line masking and a noise floor.</p>
 </div>
 <div class="admonition note">
-<p class="admonition-title">Before you start</p>
-<p>Read <strong><a href="../conventions/">Conventions &amp; gotchas</a></strong>, especially that <code>Z</code> is
-<code>logzsol = log10(Z/Z_sun)</code> of the loaded grid and that <code>lookback_time</code> index 0 is <em>today</em>.
-Make sure FSPS and <code>$SPS_HOME</code> are set up (<a href="../installation/">Installation</a>);
-emission lines and nebular continuum need the CLOUDY grids from FSPS.</p>
+<p class="admonition-title">Requirements</p>
+<p>See <a href="../conventions/">Conventions and common errors</a> for metallicity
+(<code>logzsol = log10(Z/Z_sun)</code> for the loaded grid) and lookback-time
+ordering (index 0 is today). Set up FSPS and <code>$SPS_HOME</code> as described
+in <a href="../installation/">Installation</a>. Nebular continuum and lines require
+the FSPS CLOUDY grids.</p>
 </div>
 <h2 id="1-build-the-forward-model">1. Build the forward model<a class="headerlink" href="#1-build-the-forward-model" title="Permanent link">&para;</a></h2>
-<p>Lines and nebular continuum require <code>add_neb=True</code>. We also enable diffuse and
-birth-cloud dust here.</p>
+<p>Set <code>add_neb=True</code> to include lines and nebular continuum. This example also
+enables diffuse and birth-cloud dust attenuation.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">jax</span><span class="o">,</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
@@ -935,26 +934,25 @@ birth-cloud dust here.</p>
 <a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>    <span class="c1"># sps_home defaults to $SPS_HOME</span>
 <a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="p">)</span>
 </code></pre></div>
-<p>The galaxy's velocity dispersions are a property of the galaxy, not of any one
-observation, so they are set once, on the model (section 5), through a
-<code>Kinematics</code> object. Here we fit the stellar dispersion and tie the gas
-dispersion of the emission lines to it:</p>
+<p>Set the galaxy's velocity dispersions on the model through <code>Kinematics</code>,
+which is shared by all observations. Here the stellar dispersion is sampled
+and the gas dispersion is tied to it:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">kin</span> <span class="o">=</span> <span class="n">Kinematics</span><span class="p">(</span><span class="n">sigma_gal</span><span class="o">=</span><span class="s2">"sigma_gal"</span><span class="p">)</span>     <span class="c1"># free (theta key); sigma_gas tied to sigma_gal</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># Kinematics(sigma_gal=250.0, sigma_gas="sigma_gas")   stars fixed, gas free</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="c1"># Kinematics(sigma_gal=300.0)                          both fixed (the SedModel default)</span>
 </code></pre></div>
-<p>For photometry this choice has a cost: with a <em>sampled</em> <code>sigma_gas</code> (here tied
-to the sampled <code>sigma_gal</code>) the emission lines are painted onto the model grid
-and broadened at run time for every likelihood call; with a <em>fixed</em> <code>sigma_gas</code>
-(<code>Kinematics(sigma_gal="sigma_gal", sigma_gas=150.0)</code>, or both fixed) they enter
-the photometry through a static line-to-band basis, which is cheaper. Free
-redshift always uses the painted path. See <a href="../conventions/">Conventions</a>.</p>
-<h2 id="2-a-photometry">2. (a) Photometry<a class="headerlink" href="#2-a-photometry" title="Permanent link">&para;</a></h2>
-<p>Broadband fluxes in <strong>AB maggies</strong>, with filter names resolved from the
-filter library bundled with CERIDWEN (<code>python -c "from
-ceridwen.observation.filters import list_available_filters as f; print(f())"</code>
-lists all 293). Photometry captures the full aperture, so it sees the
-intrinsic (unscaled) line + continuum flux.</p>
+<p>With sampled <code>sigma_gas</code>, emission lines are placed on the model grid and
+broadened at each likelihood call. This also applies when the gas width
+is tied to sampled <code>sigma_gal</code>, as here. Fixed gas width, for example
+<code>Kinematics(sigma_gal="sigma_gal", sigma_gas=150.0)</code>, allows photometry
+to use a faster static line-to-band matrix. Sampled redshift requires
+line profiles to be recomputed. See <a href="../conventions/">Conventions</a>.</p>
+<h2 id="2-photometry">2. Photometry<a class="headerlink" href="#2-photometry" title="Permanent link">&para;</a></h2>
+<p>Supply broadband fluxes in AB maggies. Filter names refer to CERIDWEN's
+bundled library of 293 filters; list them with
+<code>python -c "from ceridwen.observation.filters import list_available_filters as f; print(f())"</code>.
+The photometric prediction includes continuum and lines without the aperture
+or spectral calibration factors discussed below.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># If your catalogue is in nJy (common for JWST), convert to maggies and apply a</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># small error floor (here 5%), as the JADES pipeline does:</span>
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">flux_nJy</span><span class="p">,</span> <span class="n">unc_nJy</span> <span class="o">=</span> <span class="n">my_phot_nJy</span><span class="p">,</span> <span class="n">my_phot_unc_nJy</span>
@@ -968,25 +966,20 @@ intrinsic (unscaled) line + continuum flux.</p>
 <a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"phot"</span><span class="p">,</span>                    <span class="c1"># the key this observation is reported under</span>
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="p">)</span>
 </code></pre></div>
-<p>Optional: <code>mask=</code> (bool per band, True = used) and <code>upper_limit=</code> (bool per band;
-non-detections enter as one-sided χ²).</p>
-<h2 id="3-b-spectrum">3. (b) Spectrum<a class="headerlink" href="#3-b-spectrum" title="Permanent link">&para;</a></h2>
-<p>A densely-sampled spectrum. Pass the <strong>observed-frame, vacuum</strong> wavelength grid
-in Å (the pixel wavelengths as delivered by the instrument, since the forward
-model redshifts the model spectrum by <code>(1 + zred)</code> onto these pixels; at
-<code>zred = 0</code> observed and rest frame coincide) and flux in observed-frame <code>F_ν</code>
-in erg s⁻¹ cm⁻² Hz⁻¹ (cgs, the model's unit; 1 nJy = 1e-32).
-The instrument's line-spread function is attached to the spectrum as an
-<code>Instrument</code>. Its unit <strong>and</strong> its convention are the name of the constructor,
-because published resolutions come in several units and in two resolving-power
-conventions that differ by 2.35x (datasheets quote <code>R = λ/FWHM</code>, the
-sedpy/Prospector tradition <code>R = λ/σ</code>); there is deliberately no plain <code>R</code>.
-The SSP library's own resolution (stored in every schema-2 grid) is subtracted
-in quadrature from the instrumental width automatically, pixel by pixel; you do
-not need to set anything for that. The galaxy's own dispersion is <strong>not</strong> set
-here: it comes from the model-level <code>Kinematics</code> (section 1) and is combined
-with the instrument in quadrature at projection time, so nothing is broadened
-twice.</p>
+<p>Optional boolean arrays are <code>mask=</code> (True includes a band) and <code>upper_limit=</code>
+(True marks a non-detection for the one-sided χ² penalty).</p>
+<h2 id="3-spectrum">3. Spectrum<a class="headerlink" href="#3-spectrum" title="Permanent link">&para;</a></h2>
+<p>Supply observed-frame vacuum wavelengths in Å and observed-frame F_ν in
+erg s⁻¹ cm⁻² Hz⁻¹. One nJy is 1e-32 in these units. The model is redshifted
+onto the supplied pixels; at <code>zred=0</code>, rest and observed frames coincide.</p>
+<p>Attach the line-spread function using <code>Instrument</code>. Its constructor specifies
+both the unit and resolving-power convention: R = λ/FWHM in most datasheets,
+or R = λ/σ in sedpy/Prospector. These differ by a factor of about 2.35,
+so there is no constructor taking an unspecified R.</p>
+<p>For schema-2 grids, library resolution is subtracted in quadrature from
+the instrumental width at each pixel. Galaxy velocity dispersion comes
+from the model's <code>Kinematics</code> and is combined with the instrument during
+projection.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">spec</span> <span class="o">=</span> <span class="n">Spectrum</span><span class="p">(</span>
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">wavelength</span><span class="o">=</span><span class="n">my_obs_wave_aa</span><span class="p">,</span>      <span class="c1"># Å, vacuum, OBSERVED frame, shape (n_pix,)</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">flux</span><span class="o">=</span><span class="n">my_spec_fnu</span><span class="p">,</span>               <span class="c1"># F_nu per pixel, erg s^-1 cm^-2 Hz^-1 (cgs)</span>
@@ -1008,19 +1001,17 @@ twice.</p>
 <a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="c1"># do not double-count against the Lines object, redshifting line centres first.</span>
 <a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="n">spec</span><span class="o">.</span><span class="n">mask_lines</span><span class="p">([</span><span class="mf">4862.76</span><span class="p">,</span> <span class="mf">5008.31</span><span class="p">,</span> <span class="mf">6564.72</span><span class="p">],</span> <span class="n">dv</span><span class="o">=</span><span class="mf">500.0</span><span class="p">,</span> <span class="n">zred</span><span class="o">=</span><span class="n">ZRED</span><span class="p">)</span>   <span class="c1"># vacuum rest</span>
 </code></pre></div>
-<p>Other optional knobs: <code>calibration=</code> (per-pixel multiplicative flux-calibration
-vector) and <code>mask=</code>. If the instrument is <em>finer</em> than the library at some
-pixels the continuum stays at library resolution there (the right model for a
-coarse grid) and you are warned with the pixel count and range; a warning over
-the whole spectrum with a high-resolution grid means a wrong unit on the
-<code>Instrument</code>.</p>
-<h2 id="4-c-emission-lines">4. (c) Emission lines<a class="headerlink" href="#4-c-emission-lines" title="Permanent link">&para;</a></h2>
-<p>Integrated line fluxes. <code>line_ind</code> are indices into FSPS's
-<code>emlines_info.dat</code>; <code>wavelength</code> are the vacuum rest wavelengths in Å. The
-forward model matches each line to the nebular grid <strong>by rest wavelength</strong>
-(and raises if no grid line lies within 1 Å), so the wavelengths are what must
-be right — the indices are bookkeeping, checked against the wavelength match
-and warned about on disagreement.</p>
+<p>You can also pass a fixed per-pixel multiplicative <code>calibration=</code> vector
+and <code>mask=</code>. Where the instrument is finer than the SSP library, the
+continuum remains at library resolution. A warning reports the affected
+pixel count and range. If this affects the whole spectrum despite a
+high-resolution grid, check the <code>Instrument</code> units.</p>
+<h2 id="4-emission-lines">4. Emission lines<a class="headerlink" href="#4-emission-lines" title="Permanent link">&para;</a></h2>
+<p>Supply integrated line fluxes. <code>line_ind</code> contains indices into the FSPS
+<code>emlines_info.dat</code> list; <code>wavelength</code> contains vacuum rest wavelengths in Å.
+The model matches nebular lines by wavelength within 1 Å and raises an error
+if no match exists. Indices are checked against that match, with a warning
+on disagreement.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Catalogue line fluxes are often quoted in 1e-20 erg s^-1 cm^-2; scale to</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1"># absolute CGS to match the model (adjust the factor to your catalogue).</span>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">LINE_UNIT</span> <span class="o">=</span> <span class="mf">1.0e-20</span>
@@ -1034,116 +1025,112 @@ and warned about on disagreement.</p>
 <a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>    <span class="n">name</span><span class="o">=</span><span class="s2">"lines"</span><span class="p">,</span>
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="p">)</span>
 </code></pre></div>
-<p>The model prediction for a <code>Lines</code> observation is the line luminosity read
-from the nebular grid and carried through dust, mass, distance and IGM like the
-continuum (the IGM transmission averaged over the line's profile on the model grid,
-which matters at Ly-α, where the Madau forest starts inside the line); no other
-width enters, so <code>Kinematics</code> and <code>Instrument</code> play no role here. A basis built with <code>add_neb=False</code> (and <code>CSPBasis_afe</code>,
-which has no nebular model) refuses a <code>Lines</code> observation with a <code>ValueError</code>
-rather than predicting zeros for it.</p>
+<p>A <code>Lines</code> prediction starts from the nebular grid luminosity and applies
+dust attenuation, mass and distance scaling, and IGM transmission. IGM
+transmission is averaged over the model-grid profile, which matters for
+Ly-α because the Madau forest begins within the line. Integrated fluxes
+do not depend on <code>Kinematics</code> or <code>Instrument</code>. Models with <code>add_neb=False</code>,
+including <code>CSPBasis_afe</code>, reject <code>Lines</code> observations with <code>ValueError</code>.</p>
 <div class="admonition tip">
-<p class="admonition-title">Two independent calibrations: <code>eline_scaling</code> and <code>spectrum_scaling</code></p>
-<p>Photometry sees the full field of view, but slit/fibre spectroscopy and
-aperture-measured line fluxes lose (or miscalibrate) flux. CERIDWEN
-exposes <strong>two separate, independent</strong> nuisances for this:</p>
+<p class="admonition-title">Flux calibration: <code>eline_scaling</code> and <code>spectrum_scaling</code></p>
+<p>Aperture losses or calibration errors may put line fluxes and spectra
+on a different scale from the photometry. Two parameters handle this:</p>
 <ul>
-<li><code>eline_scaling</code> — the fractional aperture correction applied to the
-  emission-<strong>LINE</strong> component only (1.0 = no loss, 0.65 = lines at 65%).
-  It drives the <code>Lines</code> observation and does <strong>not</strong> touch the spectrum.</li>
-<li><code>spectrum_scaling</code> — a multiplicative spectrophotometric normalisation applied
-  to the whole <strong><code>Spectrum</code></strong> prediction (continuum + any lines), rescaling
-  it onto the photometric flux scale. Photometry is left unscaled, so it
-  anchors the absolute flux while <code>spectrum_scaling</code> absorbs the spectrum's
-  uncertain flux calibration (the Prospector <code>spec_norm</code> convention).</li>
+<li><code>eline_scaling</code> multiplies only <code>Lines</code> predictions. A value of 0.65
+  gives 65% of the predicted line flux. It does not affect a <code>Spectrum</code>.</li>
+<li><code>spectrum_scaling</code> multiplies the entire <code>Spectrum</code> prediction,
+  including lines, relative to the photometric flux scale. This follows
+  Prospector's <code>spec_norm</code> convention.</li>
 </ul>
-<p>The two are decoupled by construction: <code>eline_scaling</code> scales lines,
-<code>spectrum_scaling</code> scales the spectrum, and neither affects the photometry. Add a
-prior on each nuisance you want to marginalise over (below).</p>
+<p>Neither changes photometry. Add a prior for each factor you want to fit.</p>
 </div>
 <div class="admonition tip">
 <p class="admonition-title">Wavelength-dependent calibration: <code>spectrum_calib</code></p>
-<p>A grey factor cannot absorb a <em>shape</em> error in the spectrophotometric
-calibration (relative throughput, differential refraction, aperture colour
-terms; typical for slit spectra flux-calibrated against broad-band
-photometry). <code>spectrum_calib</code> is a vector of Legendre coefficients
-<code>c_1 .. c_order</code> multiplying the <code>Spectrum</code> prediction by
-<code>1 + sum_k c_k P_k(x)</code>, with <code>x</code> the observed pixel wavelength mapped
-affinely onto [-1, 1] (the Prospector <code>polyorder</code> / pPXF <code>mdegree</code>
-idea, but sampled, not solved analytically). There is no <code>c_0</code>: the
-level is <code>spectrum_scaling</code>, and the total factor is
-<code>spectrum_scaling * (1 + sum_k c_k P_k(x))</code>. Photometry is untouched, so
-keep photometry in the fit: it is what pins the continuum shape while the
-polynomial soaks up the spectrum-vs-photometry mismatch. Orders 2-6 are
-typical; higher orders start to eat real features (the 4000 Å break, wide
-molecular bands), so watch the recovered curve. Give it one prior, which is
-broadcast over the vector exactly like <code>logsfr_ratios</code>:</p>
+<p>A single scale factor cannot describe wavelength-dependent calibration
+errors from throughput, differential refraction or aperture colour terms.
+<code>spectrum_calib</code> supplies Legendre coefficients <code>c_1 .. c_order</code> for
+the multiplicative response <code>1 + sum_k c_k P_k(x)</code>. Here x maps all
+observed pixel wavelengths to [-1, 1]. There is no c_0 term because
+<code>spectrum_scaling</code> sets the level. The combined response is
+<code>spectrum_scaling * (1 + sum_k c_k P_k(x))</code>.</p>
+<p>This resembles Prospector's <code>polyorder</code> and pPXF's <code>mdegree</code>, with
+coefficients sampled rather than solved analytically. Including
+photometry helps constrain the continuum shape. Orders 2–6 are typical;
+higher orders may fit real features such as the 4000 Å break or broad
+molecular bands. Inspect the fitted response. A single prior is
+broadcast over the coefficient vector:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">priors</span><span class="p">[</span><span class="s2">"spectrum_calib"</span><span class="p">]</span> <span class="o">=</span> <span class="n">Uniform</span><span class="p">(</span><span class="n">low</span><span class="o">=-</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">free_param_init</span><span class="p">[</span><span class="s2">"spectrum_calib"</span><span class="p">]</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span>      <span class="c1"># order 4</span>
 </code></pre></div>
-<p>Absent from <code>theta</code>, the factor is exactly 1 (existing fits are unchanged).
-Implementation: <code>ceridwen/csp/spectrum_calibration.py</code>, applied in
-<code>_project_observations</code> of both <code>CSPBasis</code> and <code>CSPBasis_afe</code>.</p>
-<p><strong>Several spectra.</strong> Each spectrum has its own calibration:
-<code>spectrum_scaling_&lt;obs.name&gt;</code> / <code>spectrum_calib_&lt;obs.name&gt;</code>. The plain names are
-accepted only when the model has exactly one <code>Spectrum</code>; with two they are
-ambiguous and <code>SedModel</code> raises.</p>
+<p>Without <code>spectrum_calib</code> in <code>theta</code>, its factor is one. The implementation
+is in <code>ceridwen/csp/spectrum_calibration.py</code>, applied by
+<code>_project_observations</code> in both <code>CSPBasis</code> and <code>CSPBasis_afe</code>.</p>
+<p>For several spectra, use <code>spectrum_scaling_&lt;obs.name&gt;</code> and
+<code>spectrum_calib_&lt;obs.name&gt;</code>. Unsuffixed names are accepted only when
+there is exactly one spectrum; otherwise <code>SedModel</code> raises an error.</p>
 </div>
 <div class="admonition tip">
-<p class="admonition-title">Profiled calibration polynomial: <code>Spectrum(polynomial_order=M)</code></p>
-<p>Instead of sampling the calibration, let the likelihood solve it:
-<code>Spectrum(..., polynomial_order=3)</code> multiplies the model by
-<code>1 + sum_{m=0}^{3} c_m T_m(x)</code> (Chebyshev, <code>x</code> over the unmasked wavelength range)
-with the coefficients that maximise the likelihood at every call, a weighted linear
-least-squares solve inside the jitted likelihood (Prospector's <code>PolyOptCal</code>). It adds
-no sampled dimensions and is differentiable. The weights are the noise model's
-<code>1/sigma_eff^2</code> (Prospector uses the raw <code>1/sigma^2</code>; the two agree unless noise terms
-are on). <code>T_0</code> is the level, so <code>spectrum_scaling</code> / <code>spectrum_calib</code> of the same
-spectrum are refused. It is a <em>profile</em>, not a marginalisation: the posterior is
-conditional on the best polynomial. <code>polynomial_regularization=</code> adds a ridge term.
-<code>PostProcess</code> predictions include each draw's response
-(<code>out["prediction"]["calibration"][name]</code>).</p>
+<p class="admonition-title">Profiled polynomial: <code>Spectrum(polynomial_order=M)</code></p>
+<p><code>Spectrum(..., polynomial_order=3)</code> multiplies the model by
+<code>1 + sum_{m=0}^{3} c_m T_m(x)</code>, using Chebyshev polynomials over the
+unmasked wavelength range. A weighted least-squares solve finds the
+maximum-likelihood coefficients at every call, as in Prospector's
+<code>PolyOptCal</code>. The calculation is differentiable and adds no sampled
+parameters.</p>
+<p>Weights are <code>1/sigma_eff^2</code>, including noise terms. Prospector uses
+the quoted <code>1/sigma^2</code>, so results agree when no noise terms are active.
+T_0 sets the level; <code>spectrum_scaling</code> and <code>spectrum_calib</code> for that
+spectrum are therefore rejected. <code>polynomial_regularization=</code> adds a
+ridge term. The posterior is conditional on the fitted polynomial and
+omits its uncertainty. <code>PostProcess</code> returns each draw's response in
+<code>out["prediction"]["calibration"][name]</code> and applies it to predictions.</p>
 </div>
 <div class="admonition tip">
-<p class="admonition-title">Marginalised calibration polynomial: <code>polynomial_mode=\"marginalize\"</code></p>
-<p>The likelihood is linear in the polynomial coefficients, so under a Gaussian prior
-they can be integrated out in closed form instead of being profiled or sampled:</p>
+<p class="admonition-title">Marginalised calibration polynomial</p>
+<p>The model depends linearly on polynomial coefficients. With Gaussian
+priors, these can be integrated out analytically:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">spec</span> <span class="o">=</span> <span class="n">Spectrum</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">polynomial_order</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span> <span class="n">polynomial_mode</span><span class="o">=</span><span class="s2">"marginalize"</span><span class="p">,</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>                <span class="n">polynomial_prior_sigma</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>     <span class="c1"># float, or one width per T_0..T_6</span>
 </code></pre></div>
-<p>With the prior <code>c_m ~ N(0, s_m^2)</code> and the response <code>1 + sum_m c_m T_m(x)</code> (the same
-Chebyshev basis as the profiled mode), the likelihood is the exact marginal</p>
+<p>Using the same Chebyshev basis, response <code>1 + sum_m c_m T_m(x)</code> and
+priors <code>c_m ~ N(0, s_m^2)</code>, the marginal likelihood is</p>
 <p><code>ln L = ln L_diag(y - mu) + 1/2 b^T M^-1 b - 1/2 ln|M| - 1/2 ln|Lambda|</code>,</p>
-<p><code>M = D^T W D + Lambda^-1</code>, <code>b = D^T W (y - mu)</code>, <code>D = diag(mu) A</code>, <code>Lambda = diag(s^2)</code>:
-O(n k^2) per call, no sampled dimension, and the calibration uncertainty is
-propagated into the posterior and the evidence (the profiled mode conditions on the
-best polynomial). Units of <code>s</code>: the fractional response, so <code>s = 0.1</code> allows ~10 %
-calibration errors per term. <code>s_m = 0</code> pins a coefficient at 0; <code>s = inf</code> (a flat prior)
-is refused, because the marginal likelihood would be undefined.</p>
+<p><code>M = D^T W D + Lambda^-1</code>, <code>b = D^T W (y - mu)</code>, <code>D = diag(mu) A</code>, <code>Lambda = diag(s^2)</code>.</p>
+<p>The calculation costs O(n k^2) per call and adds no sampled parameters.
+Calibration uncertainty is propagated into the posterior and evidence.
+The prior width s is in fractional-response units: 0.1 allows roughly
+10% calibration errors per term. Set <code>s_m=0</code> to fix a coefficient at
+zero. An infinite width is rejected because it leaves the marginal
+likelihood undefined.</p>
 <ul>
-<li><code>T_0</code> is a grey scale with prior width <code>s_0</code>: degenerate with the mass unless the
-  photometry (or a fixed flux scale) anchors the level. To sample the level instead,
-  pin <code>T_0</code> (<code>polynomial_prior_sigma=[0.0, s_1, ..., s_M]</code>) and sample
-  <code>spectrum_scaling</code>; any other sampled calibration of that spectrum is refused.</li>
-<li><code>polynomial_regularization</code> belongs to the profiled mode and is refused here: the
-  prior width is its analogue (<code>reg_m = 1/s_m</code> gives the same best polynomial, which is
-  the conditional mean below).</li>
-<li>Refused (they make the likelihood non-Gaussian or non-linear in <code>c</code>): the outlier
-  mixture on this spectrum, upper limits, <code>logify_spectrum=True</code>, a Gaussian-process
-  <code>noise</code>, and <code>marginalize_elines=True</code> on the same spectrum (the polynomial also
-  scales the lines, so the model is bilinear in the two sets of coefficients).</li>
-<li>The noise weights <code>W</code> are the noise model's <code>1/sigma_eff^2</code> at the uncalibrated
-  model, as in the profiled mode (exact when no noise term depends on the model).</li>
-<li><code>PostProcess</code> applies each draw's conditional-mean response
-  (<code>out["prediction"]["calibration"][name]</code>, included in <code>spectra[name]</code>) and returns
-  the coefficients in <code>out["extras"]["calibration"][name]</code>: <code>mean</code>, <code>sd</code>, <code>cov</code> per draw
-  and <code>draws</code> (one draw from each conditional Gaussian: together a sample of the
-  marginal posterior of <code>c</code>). The result file records mode, order and prior widths
-  (<code>read_result_h5(path)["obs"][name]["likelihood"]["poly_calibration"]</code>).</li>
+<li>T_0 sets the overall scale and is degenerate with mass unless
+  photometry or a fixed calibration constrains the level. To sample
+  <code>spectrum_scaling</code> instead, fix T_0 with
+  <code>polynomial_prior_sigma=[0.0, s_1, ..., s_M]</code>. Other sampled
+  calibration terms for that spectrum are rejected.</li>
+<li><code>polynomial_regularization</code> is available only in profiled mode.
+  Here the prior width supplies the constraint; <code>reg_m = 1/s_m</code>
+  gives the same best-fitting polynomial as the conditional mean.</li>
+<li>The same spectrum cannot use an outlier mixture, upper limits,
+  <code>logify_spectrum=True</code>, GP noise or <code>marginalize_elines=True</code>.
+  These invalidate the assumed Gaussian linear model; jointly
+  scaling line and polynomial coefficients makes it bilinear.</li>
+<li>W uses the noise model's <code>1/sigma_eff^2</code> at the uncalibrated model,
+  as in profiled mode. This is exact when the variance has no
+  model-dependent terms.</li>
+<li><code>PostProcess</code> returns the conditional-mean response in
+  <code>out["prediction"]["calibration"][name]</code> and applies it to <code>spectra[name]</code>.
+  <code>out["extras"]["calibration"][name]</code> contains per-draw <code>mean</code>, <code>sd</code>,
+  <code>cov</code> and <code>draws</code>. The last contains one draw from each conditional
+  Gaussian, together sampling the marginal coefficient posterior.
+  The result file records mode, order and prior widths in
+  <code>read_result_h5(path)["obs"][name]["likelihood"]["poly_calibration"]</code>.</li>
 </ul>
-<p><strong>Cost.</strong> Per call the marginal costs the same as the profile (both O(n k^2)); the sampled
-route is cheaper per call but adds M + 1 dimensions to the sampler. Measured on CPU
-(Apple, shared machine, +-20 %; <code>scripts/bench_poly_marginal.py</code>), jitted, float64, a batch
-of W draws under <code>vmap</code>, microseconds per batch:</p>
+<p>Profiling and marginalisation both cost O(n k^2). Sampling is cheaper
+per likelihood call but adds M + 1 parameters. The following CPU
+measurements used float64 and <code>jit(vmap)</code> over W draws on a shared
+Apple machine, with about ±20% timing variation
+(<code>scripts/bench_poly_marginal.py</code>). Units are microseconds per batch:</p>
 <table>
 <thead>
 <tr>
@@ -1254,15 +1241,15 @@ of W draws under <code>vmap</code>, microseconds per batch:</p>
 </tr>
 </tbody>
 </table>
-<p>The forward model dominates the log-posterior: the three modes cost the same there at
-every order, so a high order costs nothing per call in the profiled or marginalised mode,
-while in the sampled mode it costs sampler dimensions. GPU timing at the production width
-W = 100 is not measured yet.</p>
-<p>Code: <code>ceridwen/likelihood/poly_marginal.py</code>.</p>
+<p>In the full log-posterior, the forward model dominated runtime and
+differences between calibration methods were within timing variation
+at every tested order. Sampling still adds dimensions as the order
+increases. GPU timings at production batch width W = 100 have not
+been measured. Code is in <code>ceridwen/likelihood/poly_marginal.py</code>.</p>
 </div>
 <h2 id="5-priors-and-the-model">5. Priors and the model<a class="headerlink" href="#5-priors-and-the-model" title="Permanent link">&para;</a></h2>
-<p>Collect the observations into a single list. Any subset is fine; use an empty
-list for a type you are not fitting. Then define priors for every free parameter.</p>
+<p>Collect the observations into one list. Include only the types you are
+fitting, using empty lists for the others, and give each free parameter a prior.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">observations</span> <span class="o">=</span> <span class="p">[</span><span class="n">phot</span><span class="p">,</span> <span class="n">spec</span><span class="p">,</span> <span class="n">lines</span><span class="p">]</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">priors</span> <span class="o">=</span> <span class="p">{</span>
@@ -1313,42 +1300,38 @@ list for a type you are not fitting. Then define priors for every free parameter
 <a id="__codelineno-7-48" name="__codelineno-7-48" href="#__codelineno-7-48"></a>    <span class="n">broaden_photometry</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                  <span class="c1"># photometry sees the sigma_gal-broadened spectrum (default)</span>
 <a id="__codelineno-7-49" name="__codelineno-7-49" href="#__codelineno-7-49"></a><span class="p">)</span>
 </code></pre></div>
-<p><code>SedModel</code> checks the <code>Kinematics</code> against <code>theta</code> and the priors at setup:
-a free key that is missing from <code>theta</code>, a fixed width that also appears in
-<code>theta</code>, or a bounded prior reaching above <code>sigma_max</code> all raise before
-anything is compiled (a free key without a prior gets the usual
-"no prior for sampled parameter" warning). Leaving <code>kinematics=</code> out uses <code>DEFAULT_KINEMATICS</code>,
-<code>Kinematics(sigma_gal=300.0)</code> for stars and gas, which the model summary
-prints so that it is never a hidden number.</p>
-<p>To fit redshift instead of fixing it, add <code>"zred"</code> to <code>free_param_init</code> with a
-bounded prior (<code>Uniform</code> / <code>ClippedNormal</code>) and, for a non-parametric SFH,
-build the CSP with <code>track_zred_age=True</code> so the SFH age-bin grid tracks the
-sampled redshift: the grid is stretched so its oldest node is <code>age(zred)</code>, and the SFR
-is scaled by <code>T_grid / age(zred)</code> so the SFH still forms the mass it forms on the
-construction grid. Keep the transform above,
-<code>logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)</code>: <code>logmass</code> is then the formed mass
-at every sampled redshift, and <code>PostProcess</code> reports each draw's SFR on its own
-<code>age(zred)</code> grid with <code>mass_formed = 10**logmass</code>. Every observation type follows the sampled value: the flux
-factor, the IGM and the line fluxes are evaluated at <code>theta["zred"]</code>;
-<code>Photometry</code> is projected through the filters per sample; a <code>Spectrum</code> gets
-a redshift-aware projector whose log-wavelength window covers the prior's
-support: the model is read at the sampled redshift on every call and the
-lines are painted at <code>lambda_rest (1 + z)</code> (pass <code>Spectrum(zred_range=(z_min,
-z_max))</code> when the prior has no finite bounds or <code>zred</code> comes from a
-transform). The log grid is the fixed-z grid of the reference redshift (the
-<code>zred</code> start value) extended over the range, so at that redshift the free-z
-projection equals the fixed-z one exactly; elsewhere the model is read at a
-different node phase (per-mille level for a MILES-resolution grid), and the
-library width in the fixed kernel stays the one at the reference redshift
-(<code>build</code> warns when it would change by more than 10 %). The gradient with
-respect to <code>zred</code> is that of the linear interpolation: exact for the current
-node configuration, piecewise constant on the scale of one log-grid node
-(1e-8 in z), which NUTS never resolves. Keep the prior as tight as the data
-allow; the window must fit on the model grid for the whole range.</p>
+<p><code>SedModel</code> validates <code>Kinematics</code> before compilation. It rejects missing
+free keys, fixed widths also present in <code>theta</code>, and bounded priors above
+<code>sigma_max</code>. A sampled key without a prior produces a warning.
+Omitting <code>kinematics=</code> uses <code>DEFAULT_KINEMATICS</code>, or
+<code>Kinematics(sigma_gal=300.0)</code> for both stars and gas. The summary reports
+these values.</p>
+<p>To fit redshift, add <code>zred</code> to <code>free_param_init</code> with a bounded prior such
+as <code>Uniform</code> or <code>ClippedNormal</code>. For a non-parametric SFH, construct the
+CSP with <code>track_zred_age=True</code>. It stretches the SFH grid to <code>age(zred)</code>
+and scales SFR by <code>T_grid / age(zred)</code> to preserve mass. Keep the transform
+<code>logsfr_ratios_to_sfh(..., sfh_times_yr=csp.sfh_times)</code>; <code>logmass</code> then
+represents formed mass at every redshift. <code>PostProcess</code> reports each draw's
+SFR on its own age grid with <code>mass_formed = 10**logmass</code>.</p>
+<p>All observations follow sampled redshift. Flux scaling, IGM transmission
+and line fluxes use <code>theta["zred"]</code>, and photometry is projected through
+filters at that redshift. The spectral projector covers the full prior
+range, reads the model at each redshift and places lines at
+<code>lambda_rest (1 + z)</code>. Set <code>Spectrum(zred_range=(z_min, z_max))</code> if the
+prior lacks finite bounds or a transform supplies redshift.</p>
+<p>The projector extends the fixed-redshift log grid around the initial
+<code>zred</code> value. At that value, free- and fixed-redshift projections agree
+exactly. Elsewhere, interpolation occurs at a different grid phase,
+causing differences at roughly the per-mille level for a MILES-resolution
+grid. The library width in the fixed kernel remains that of the initial
+redshift; <code>build</code> warns if it would vary by more than 10%.</p>
+<p>The redshift derivative follows the linear interpolation and is piecewise
+constant between log-grid nodes, on a scale of about 1e-8 in z, below the
+scale NUTS resolves. Use a prior as narrow as the data justify. The
+projector's window must fit inside the model grid throughout the range.</p>
 <h2 id="6-fit">6. Fit<a class="headerlink" href="#6-fit" title="Permanent link">&para;</a></h2>
-<p><code>fitSED</code> builds the joint likelihood automatically from <code>model.observations</code>
-(one Gaussian likelihood per observation, keyed by <code>name</code>) and writes an HDF5
-result.</p>
+<p><code>fitSED</code> constructs a joint likelihood from <code>model.observations</code>, with one
+Gaussian likelihood per observation name, and saves an HDF5 result.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">fitSED</span><span class="p">(</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">model</span><span class="p">,</span>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">observations</span><span class="p">,</span>
@@ -1359,9 +1342,9 @@ result.</p>
 <a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>
 <a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"ln Z = </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> +/- </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">log_evidence_err</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </code></pre></div>
-<p><code>fitSED(model, observations)</code> replaces <code>model.observations</code> and re-runs
-<code>model.setup_observations()</code>; if you assign <code>model.observations = [...]</code>
-yourself, call <code>model.setup_observations()</code> before predicting or fitting.</p>
+<p><code>fitSED(model, observations)</code> replaces the model's observations and calls
+<code>model.setup_observations()</code>. If you assign <code>model.observations</code> directly,
+call setup yourself before prediction or fitting.</p>
 <h2 id="7-posterior-and-diagnostics">7. Posterior and diagnostics<a class="headerlink" href="#7-posterior-and-diagnostics" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">PostProcess</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
@@ -1380,33 +1363,33 @@ yourself, call <code>model.setup_observations()</code> before predicting or fitt
 <a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="n">pp</span><span class="o">.</span><span class="n">figures</span><span class="p">(</span><span class="s2">"./joint_fit/figures"</span><span class="p">,</span> <span class="n">title</span><span class="o">=</span><span class="s2">"joint fit"</span><span class="p">)</span>
 <a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="n">pp</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">"./joint_fit/post.npz"</span><span class="p">)</span>
 </code></pre></div>
-<p><code>result.samples</code> holds the raw posterior keyed by parameter name; the HDF5 file in
-<code>output_dir</code> stores the observations, priors, samples, and (for nested sampling)
-the log-evidence, and <code>PostProcess(model, "joint_fit/ceridwen_result.h5")</code>
-reloads it. See <a href="../postprocessing/">Post-processing</a> for the output layout and
-<code>examples/demo_3_spectrum_advanced.py</code> for a runnable photometry + spectrum fit.</p>
-<h2 id="consistency-checklist-for-real-joint-fits">Consistency checklist for real joint fits<a class="headerlink" href="#consistency-checklist-for-real-joint-fits" title="Permanent link">&para;</a></h2>
+<p><code>result.samples</code> contains raw samples keyed by parameter name. The HDF5
+file stores observations, priors, samples and nested-sampling evidence.
+Pass the file to <code>PostProcess(model, "joint_fit/ceridwen_result.h5")</code> to
+reload it. See <a href="../postprocessing/">Post-processing</a> for its fields and
+<code>examples/demo_3_spectrum_advanced.py</code> for a photometry-and-spectrum script.</p>
+<h2 id="checks-before-fitting-data">Checks before fitting data<a class="headerlink" href="#checks-before-fitting-data" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Flux systems must agree.</strong> Photometry (maggies), spectrum (<code>F_ν</code> in cgs, erg s⁻¹ cm⁻² Hz⁻¹) and line
-  fluxes (erg s⁻¹ cm⁻²) must be calibrated to the same physical normalisation
-  the model produces at <code>zred</code>. Inconsistent absolute calibration between data
-  sets is the most common cause of a "good χ² per set but bad joint fit".</li>
-<li><strong>Don't double-count lines.</strong> If you fit both a spectrum <em>and</em> the line
-  fluxes, mask the lines out of the continuum spectrum (<code>spec.mask_lines(...)</code>).</li>
-<li><strong>Aperture and flux calibration.</strong> Use <code>eline_scaling</code> for the emission-line
-  aperture loss (Lines) and <code>spectrum_scaling</code> for the spectrum's overall
-  flux-calibration offset relative to the photometry (Spectrum). They are
-  independent; fit whichever your data need. <code>noise_floor</code> (and a fixed
-  per-pixel <code>calibration</code> vector) further absorb residual systematics.</li>
-<li><strong>One width per source.</strong> The galaxy's <code>sigma_gal</code>/<code>sigma_gas</code> are set once
-  in <code>Kinematics</code>; each <code>Spectrum</code> carries only its <code>Instrument</code>. If a fitted
-  <code>sigma_gal</code> comes out at the edge of its prior, check the <code>Instrument</code> unit
-  first (a datasheet <code>R</code> passed as <code>R_sigma</code>, or the reverse, is a factor 2.35
-  in width).</li>
-<li><strong>Know your frames.</strong> The spectrum's pixel grid is <strong>observed-frame</strong> vacuum
-  Å (the model is redshifted onto it); line-list wavelengths and
-  <code>mask_lines(..., zred=z)</code> centres are <strong>rest-frame</strong> vacuum Å (redshifted by the
-  <code>(1 + zred)</code> you pass; without <code>zred</code> it warns and uses 0).</li>
+<li>Put photometry in maggies, spectra in cgs F_ν and line fluxes in
+  erg s⁻¹ cm⁻². Their calibrations must correspond to the same model
+  normalisation at <code>zred</code>. Inconsistent calibrations can give acceptable
+  separate fits but a poor joint fit.</li>
+<li>When fitting line fluxes measured from the same spectrum, mask those
+  lines in the spectrum with <code>spec.mask_lines(...)</code> to avoid counting
+  their measurements twice.</li>
+<li>Use <code>eline_scaling</code> for <code>Lines</code> aperture losses and <code>spectrum_scaling</code>
+  for the spectral calibration relative to photometry. Fit whichever
+  factors are needed. A fixed per-pixel <code>calibration</code> vector can correct
+  known calibration differences; <code>noise_floor</code> accounts for additional
+  uncertainty.</li>
+<li>Set galaxy dispersions through <code>Kinematics</code> and instrumental widths
+  through each spectrum's <code>Instrument</code>. If <code>sigma_gal</code> reaches a prior
+  boundary, check whether resolving power was supplied as R_FWHM or R_sigma;
+  confusing them changes the width by a factor of 2.35.</li>
+<li>Spectral pixels use observed-frame vacuum Å. Line-list wavelengths and
+  <code>mask_lines(..., zred=z)</code> centres use rest-frame vacuum Å. <code>mask_lines</code>
+  shifts centres by the supplied (1 + zred); omitting redshift gives a
+  warning and uses zero.</li>
 </ul>
 
 
