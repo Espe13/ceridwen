@@ -353,6 +353,10 @@ class Filter:
 
 
 
+#: the highest redshift the static windows of FilterSet.windowed_maggies cover
+FLUX_WINDOW_ZMAX = 30.0
+
+
 class FilterSet:
     """
     A collection of filters that share a common wavelength grid, enabling
@@ -498,6 +502,115 @@ class FilterSet:
         self.trans_list = [self.trans[i, inds_start[i]:inds_stop[i]] for i in range(n_filters)]
         self.frange = jnp.stack([inds_start, inds_stop], axis=1)
 
+    def _flux_tables(self):
+        """Float64 NumPy tables of :meth:`flux_weights`, built once per filter on the filter's own
+        grid ``f.wavelength`` (the grid of its ``ab_zero_counts``): the knots, ``g = R lambda /
+        ab_zero_counts`` (linear between knots, zero outside), its slopes, the filter's mean
+        wavelength ``c``, and the cumulative integrals ``G0 = int g`` and
+        ``G1 = int (lambda - c) g``, exact at the knots, plus ``ln lam[0]`` and the grid's
+        step in ln lambda (0 when the grid is not log-uniform)."""
+        t = getattr(self, "_flux_tables_np", None)
+        if t is not None:
+            return t
+        tables = []
+        for f in self.filters:
+            lam = np.asarray(f.wavelength, dtype=np.float64)
+            g = np.asarray(f.transmission, dtype=np.float64) * lam / float(f.ab_zero_counts)
+            h = np.diff(lam)
+            s = np.diff(g) / h
+            c = float((g * lam).sum() / g.sum())
+            u = lam - c
+            seg0 = h * (g[:-1] + g[1:]) / 2
+            seg1 = h * (u[:-1] * (2 * g[:-1] + g[1:]) + u[1:] * (g[:-1] + 2 * g[1:])) / 6
+            G0 = np.concatenate([[0.0], np.cumsum(seg0)])
+            G1 = np.concatenate([[0.0], np.cumsum(seg1)])
+            # the filter grids are log-uniform (_set_filters): the segment of a wavelength is
+            # then arithmetic, which is much faster than a search for a traced grid
+            dln = np.diff(np.log(lam))
+            uniform = float(np.abs(dln - dln.mean()).max()) <= 1e-9 * float(dln.mean())
+            tables.append((lam, g, s, c, G0, G1, np.log(lam[0]),
+                           float(dln.mean()) if uniform else 0.0))
+        self._flux_tables_np = tables
+        return tables
+
+    def flux_weights(self, wave, xp=jnp):
+        """(n_filters, n_wave) weights ``W`` with maggies = ``W @ f_lambda`` for an f_lambda
+        [erg/s/cm^2/A] on the ascending grid ``wave`` [A]: the exact integral of
+        R lambda f_lambda / ab_zero_counts, with f_lambda linear between the points of ``wave``
+        and R lambda linear between those of the filter's own grid.  It conserves the flux of a
+        feature of any width (a line narrower than the filter grid included), which sampling
+        f_lambda at the filter grid (:meth:`interp_source`) does not.  ``xp``: ``numpy`` at setup
+        (float64), ``jax.numpy`` for a traced ``wave`` (sampled redshift)."""
+        tables = self._flux_tables() if xp is np else self._flux_tables_traced()
+        x = xp.asarray(wave)
+        lnx = xp.log(x)
+        return xp.stack([self._row_weights(x, lnx, t, xp) for t in tables])
+
+    def _flux_tables_traced(self):
+        """:meth:`_flux_tables` as JAX arrays in the working float dtype (cached)."""
+        t = getattr(self, "_flux_tables_jnp", None)
+        if t is None:
+            from ceridwen.precision import float_dtype
+            t = self._flux_tables_jnp = [
+                tuple(jnp.asarray(a, dtype=float_dtype()) for a in row[:7]) + (row[7],)
+                for row in self._flux_tables()]
+        return t
+
+    @staticmethod
+    def _row_weights(x, lnx, table, xp):
+        """One filter's row of :meth:`flux_weights` on the grid ``x`` (``lnx = log x``)."""
+        lam, g, s, c, G0, G1, ln0, dln = table
+        n = lam.shape[0]
+        if dln > 0.0:
+            k = xp.clip(xp.floor((lnx - ln0) / dln).astype(xp.int32), 0, n - 2)
+            k = xp.clip(k - (x < lam[k]) + (x >= lam[xp.minimum(k + 1, n - 1)]), 0, n - 2)
+        else:
+            k = xp.clip(xp.searchsorted(lam, x, side="right") - 1, 0, n - 2)
+        dx = xp.clip(x, lam[0], lam[-1]) - lam[k]          # 0 below the filter, the last
+        gk, sk, uk = g[k], s[k], lam[k] - c                 # step above it
+        G0x = G0[k] + gk * dx + sk * dx ** 2 / 2
+        G1x = G1[k] + uk * gk * dx + (gk + uk * sk) * dx ** 2 / 2 + sk * dx ** 3 / 3
+        d0, d1 = G0x[1:] - G0x[:-1], G1x[1:] - G1x[:-1]
+        a, b = x[:-1] - c, x[1:] - c
+        h = x[1:] - x[:-1]
+        w_lo = (b * d0 - d1) / h                    # int (x_{i+1} - lambda) g / h: weight of f_i
+        w_hi = (d1 - a * d0) / h                    # int (lambda - x_i) g / h: weight of f_{i+1}
+        zero = xp.zeros((1,), dtype=w_lo.dtype)
+        return xp.concatenate([w_lo, zero]) + xp.concatenate([zero, w_hi])
+
+    def flux_window_widths(self, wave_rest, zmax=FLUX_WINDOW_ZMAX, nz=6001):
+        """Static window lengths for :meth:`windowed_maggies`: per filter, the most points of
+        ``(1 + z) wave_rest`` inside the filter for 0 <= z <= ``zmax``, plus one on each side and
+        a margin of 2 (the maximum is taken on ``nz`` redshifts); at most ``len(wave_rest)``."""
+        w = np.asarray(wave_rest, dtype=np.float64)
+        opz = 1.0 + np.linspace(0.0, float(zmax), int(nz))
+        out = []
+        for lam, *_ in self._flux_tables():
+            lo = np.searchsorted(w, lam[0] / opz, side="left")
+            hi = np.searchsorted(w, lam[-1] / opz, side="right")
+            out.append(int(min(w.size, (hi - lo).max() + 4)))
+        return out
+
+    def windowed_maggies(self, flam, wave, widths):
+        """Maggies (n_filters,) of one f_lambda on the traced grid ``wave`` [A]: the
+        :meth:`flux_weights` integral evaluated only on each filter's window of ``widths[j]``
+        points (static, from :meth:`flux_window_widths`), which holds every point with a
+        non-zero weight while ``wave`` is ``(1 + z) wave_rest`` with z <= the zmax of the widths.
+        The same numbers as ``flux_weights(wave) @ flam`` at a fraction of the cost."""
+        from jax import lax
+        x = jnp.asarray(wave)
+        f = jnp.asarray(flam)
+        n = x.shape[0]
+        out = []
+        for t, m in zip(self._flux_tables_traced(), widths):
+            if m >= n:
+                out.append(self._row_weights(x, jnp.log(x), t, jnp) @ f)
+                continue
+            start = jnp.clip(jnp.searchsorted(x, t[0][0], side="left") - 1, 0, n - m)
+            xs = lax.dynamic_slice(x, (start,), (m,))
+            out.append(self._row_weights(xs, jnp.log(xs), t, jnp) @ lax.dynamic_slice(f, (start,), (m,)))
+        return jnp.stack(out)
+
     def interp_source(self, inwave, sourceflux):
         """
         Interpolate input source SEDs onto the FilterSet's wavelength grid.
@@ -535,7 +648,9 @@ class FilterSet:
         sourceflux = jnp.atleast_2d(sourceflux)  # ensure (N_source, N_pix)
 
         if sourcewave is not None:
-            interp_flux = self.interp_source(sourcewave, sourceflux)  # (N_source, N_lam)
+            # the exact, flux-conserving integral over the source pixels (flux_weights)
+            maggies = jnp.dot(sourceflux, self.flux_weights(sourcewave).T)
+            return maggies.squeeze()
         else:
             assert sourceflux.shape[1] == self.lam.shape[0], \
                 "Input flux must be on the same wavelength grid as FilterSet.lam"

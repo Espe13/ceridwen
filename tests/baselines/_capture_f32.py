@@ -53,7 +53,9 @@ with open(THIS_DIR / "manifest.json") as f:
     MANIFEST = json.load(f)
 N_TIME = MANIFEST["n_time"]
 LOGZSOL_BASELINE = -0.30102999566398125
-CONFIGS = [(c["sfh_interp"], c["zh_const"], c["per_bin"], c["tag"]) for c in MANIFEST["configs"]]
+# the core goldens only: the AGN and fixed= configs need the extras this builder does not apply
+CONFIGS = [(c["sfh_interp"], c["zh_const"], c["per_bin"], c["tag"]) for c in MANIFEST["configs"]
+           if "agn" not in c and "csp" not in c]
 
 
 def _golden_theta(zh_const, per_bin):
@@ -96,8 +98,9 @@ def golden_arrays(ssp) -> dict:
         out[f"W_{tag}"] = np.asarray(csp.calculate_ssp_weights(theta))
         out[f"spec_{tag}"] = np.asarray(csp.get_spectrum(theta))
         out[f"lines_{tag}"] = np.asarray(csp.get_line_spec(theta))
-        spec_phot = csp._apply_mass_redshift_igm(*csp._assemble_observer_spectra(theta), theta)[0]
-        out[f"maggies_{tag}"] = np.asarray(phot.get_maggies(csp.wave, spec_phot))
+        # the model's photometry, as T3 computes it (tests/csp/test_lookback_flip_invariant.py)
+        phot.setup_for_model(csp.wave, zred=0.0)
+        out[f"maggies_{tag}"] = np.asarray(csp.predict(theta, [phot])[phot.name])
         print(f"  golden {tag}: done", flush=True)
     return out
 

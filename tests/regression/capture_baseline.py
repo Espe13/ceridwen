@@ -264,7 +264,9 @@ def compute_baselines() -> dict[str, dict[str, np.ndarray]]:
 
     # ----- Observations + predict ------------------------------------------
     phot = Photometry(filters=p["filters"], name="phot")
-    phot.setup_for_model(csp.wave)
+    # at the model's redshift, as a fit sets it up (before 1.1.0 this was z = 0 for a z = 2
+    # theta, and the static line basis put the lines (1 + z) too bright relative to it)
+    phot.setup_for_model(csp.wave, zred=float(p["zred"]))
     wave_spec = jnp.asarray(np.geomspace(p["spec_lo"], p["spec_hi"], p["spec_n"]))
     spec_obs = Spectrum(
         wavelength=wave_spec,

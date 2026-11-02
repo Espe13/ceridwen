@@ -173,9 +173,7 @@ def agn_arrays(ssp, cfg):
     W = np.asarray(csp.calculate_ssp_weights(theta_full))
     spec = np.asarray(csp.get_spectrum(theta_full))
     lines = np.asarray(csp.get_line_spec(theta_full))
-    spec_phot = csp._apply_mass_redshift_igm(*csp._assemble_observer_spectra(theta_full),
-                                             theta_full)[0]
-    maggies = np.asarray(phot.get_maggies(csp.wave, spec_phot))
+    maggies = _model_maggies(csp, phot, theta_full)
     return W, spec, lines, maggies
 
 
@@ -201,8 +199,7 @@ def check_agn2_zero(ssp, cfg):
     th.update({k: jnp.array([v]) for k, v in plain.items()})
     b = (np.asarray(csp.calculate_ssp_weights(th)), np.asarray(csp.get_spectrum(th)),
          np.asarray(csp.get_line_spec(th)),
-         np.asarray(phot.get_maggies(csp.wave, csp._apply_mass_redshift_igm(
-             *csp._assemble_observer_spectra(th), th)[0])))
+         _model_maggies(csp, phot, th))
     for name, x, y in zip(("W", "spec", "lines", "maggies"), a, b):
         assert x.tobytes() == y.tobytes(), f"{cfg['tag']}: {name} at zero AGN != no AGN"
 
@@ -254,6 +251,13 @@ def capture_agn(configs=None):
     man["configs"] = keep
     with open(THIS_DIR / "manifest.json", "w") as f:
         json.dump(man, f, indent=2)
+
+
+def _model_maggies(csp, phot, theta):
+    """The model's photometry as a fit computes it (``csp.predict``), at theta's redshift: the
+    same as tests/csp/test_lookback_flip_invariant.py ``_maggies``."""
+    phot.setup_for_model(csp.wave, zred=float(np.ravel(np.asarray(theta.get("zred", [0.0])))[0]))
+    return np.asarray(csp.predict(theta, [phot])[phot.name])
 
 
 def _photometry(csp):

@@ -175,6 +175,16 @@ def _tied_gas_with_prior():
     return _model_with(priors={"gas_logz": TopHat(low=-1.0, high=0.2)}, csp_obj=c)
 
 
+def _old_res_floor_factor():
+    """res_floor_factor= (pixels per sigma, removed in 1.1.0): must raise, naming res_floor_fwhm_px."""
+    if not os.environ.get("SPS_HOME"):
+        raise RuntimeError("SPS_HOME unset: needs the nebular grids (scenario n/a)")
+    from ceridwen import NebularModel
+    return NebularModel(  # deliberate misuse
+        sps_home=os.environ["SPS_HOME"], csp_lambda=np.asarray(_ssp.ssp_wave),
+        isoc_type=_ssp.isoc_type, res_floor_factor=1.0)
+
+
 def _gas_prior_outside_cloudy_axis(transform=False):
     """gas_logz prior U[-2, 0.5] (the CLOUDY axis is [-1.3, 0.3]), or a fixed gas_logz = -1.5."""
     if not os.environ.get("SPS_HOME"):
@@ -509,6 +519,8 @@ def run_scenarios():
                                          instrument=Instrument.R_fwhm(1000.0, scale="lsf_scale"))],
                           priors={"lsf_scale": Normal(mean=1.0, sigma=0.1)},
                           free_param_init={"lsf_scale": 1.0}, zred=0.0)),
+        ("NebularModel(res_floor_factor=) (removed: res_floor_fwhm_px)", {"ERROR"},
+         _old_res_floor_factor),
         ("gas_logz prior beyond the CLOUDY axis", {"ERROR"}, _gas_prior_outside_cloudy_axis),
         ("fixed gas_logz outside the CLOUDY axis", {"ERROR"},
          lambda: _gas_prior_outside_cloudy_axis(transform=True)),

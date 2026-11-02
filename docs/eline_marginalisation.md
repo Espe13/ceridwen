@@ -77,9 +77,10 @@ Unsupported configurations raise an error before sampling.
   [GP likelihood](gp_likelihood.md), upper limits or an
   [outlier mixture](outlier_model.md). An observation outside that system,
   such as a second spectrum, can use a separate noise model.
-- Joint photometry with sampled `zred`, or with sampled `sigma_gas` and
-  `broaden_photometry=True`, raises `NotImplementedError`. A spectrum-only
-  fit can sample `zred`.
+- Photometry fitted jointly takes the marginalised lines through its own line
+  term (each line's flux through each filter), also with a sampled `zred` or a
+  sampled `sigma_gas` with `broaden_photometry=True`; the photometric columns
+  are then evaluated at each call's redshift and gas width.
 - Set the gas velocity dispersion in km/s with `Kinematics(sigma_gas=...)`.
   There is no `eline_sigma` parameter.
 

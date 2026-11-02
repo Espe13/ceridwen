@@ -341,22 +341,46 @@ def test_lines_observation_reads_grid_rows_and_sums_blends(built, csp):
     assert np.all(got > 0)
 
 
-def test_photometry_static_line_basis_matches_painted_lines(csp):
-    """Fixed sigma_gas: the static line-to-band basis gives the same photometry as painting
-    the lines onto the model grid (the A/B switch _force_paint_lines)."""
+def test_photometry_lines_are_their_flux_through_the_filters(csp):
+    """Each line enters the photometry as its observed flux through each filter
+    (Photometry._line_photometry): with broaden_photometry the exact integral of a Gaussian of
+    sigma_gas against the piecewise-linear filter.  Reference: every line a Gaussian on a
+    sigma/50 grid through the exact filter integral (FilterSet.flux_weights)."""
     spec, phot, lines = _obs()
     model = _model(csp, (spec, phot, lines))
     th = _theta(model)
-    static = np.asarray(model.predict(th)["phot"], dtype=np.float64)
-    csp._force_paint_lines = True
+    obs = model.obs_dict["phot"]
+    F = np.asarray(csp.predict_line_fluxes(_csp_theta(model, th), for_spectrum=True), float)
+    got = np.asarray(obs._line_photometry(F), dtype=np.float64)
+    pos = np.asarray(csp.neb.nebem_line_pos, dtype=np.float64) * (1.0 + ZRED)
+    lam = np.asarray(obs.filterset.lam)
+    ref = np.zeros(len(FILTERS))
+    for p, f in zip(pos, F):
+        sig = p * SIGMA_GAS / CKMS
+        if f <= 0.0 or p + 10 * sig < lam[0] or p - 10 * sig > lam[-1]:
+            continue
+        x = np.arange(p - 10 * sig, p + 10 * sig, sig / 50.0)
+        g = f * np.exp(-0.5 * ((x - p) / sig) ** 2) / (np.sqrt(2.0 * np.pi) * sig)
+        ref += obs.filterset.flux_weights(x, xp=np) @ g
+    np.testing.assert_allclose(got, ref, rtol=1e-6)
+    # and model.predict adds exactly this to the continuum photometry
+    full = np.asarray(model.predict(th)["phot"], dtype=np.float64)
+
+    class _NoLines:                     # the line term set to zero (None would be rebuilt)
+        free_z = sampled = False
+
+        def __call__(self, line_flux, opz=None, sigma_kms=None):
+            return jnp.zeros(len(FILTERS))
+
+    saved, obs._line_photometry = obs._line_photometry, _NoLines()
     try:
-        painted = np.asarray(model.predict(th)["phot"], dtype=np.float64)
+        model.__dict__.pop("_predict_jit_fn", None)
+        cont = np.asarray(model.predict(th)["phot"], dtype=np.float64)
     finally:
-        csp._force_paint_lines = False
-    np.testing.assert_allclose(static, painted, rtol=2e-4)
-    # and the lines matter: dropping them changes the band containing H-alpha (sdss_i0)
-    th0 = dict(th, frac_obrun=jnp.array([1.0]))
-    assert abs(static[2] / float(model.predict(th0)["phot"][2]) - 1.0) > 1e-3
+        obs._line_photometry = saved
+    np.testing.assert_allclose(full - cont, got, rtol=2e-5, atol=1e-7 * full.max())
+    # and the lines are a measurable part of the photometry
+    assert np.max(got / full) > 1e-3
 
 
 def test_eline_scaling_acts_on_lines_observation_only(csp):

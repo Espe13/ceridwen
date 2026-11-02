@@ -47,6 +47,15 @@ class FixedValue:
         return f"FixedValue({self.name!r}, {self.value.tolist()})"
 
 
+def _prior_median(prior):
+    """The median of a prior (its mean when the distribution has no quantile)."""
+    d = prior.tfp_dist()
+    try:
+        return np.asarray(d.quantile(0.5), dtype=float)
+    except (NotImplementedError, AttributeError):
+        return np.asarray(d.mean(), dtype=float)
+
+
 def _value_source(model, name):
     """How a fixed value of ``name`` was given, for the range-check messages."""
     if name in getattr(model, "fixed", {}):
@@ -157,6 +166,14 @@ class SedModel:
                     del self.theta_init[p]
                 if p in self.param_names:
                     self.param_names.remove(p)
+
+        # logmass with a prior and no start value is sampled, from the prior's median
+        if ("logmass" in self.priors and "logmass" not in self.param_names
+                and "logmass" not in self.transforms
+                and "logmass" not in (free_param_init or {})):
+            self.theta_init["logmass"] = jnp.atleast_1d(jnp.asarray(
+                _prior_median(self.priors["logmass"]), dtype=float))
+            self.param_names.append("logmass")
 
         if free_param_init is not None:
             for p, v in free_param_init.items():

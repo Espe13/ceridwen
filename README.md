@@ -219,10 +219,10 @@ To receive release notifications through GitHub, select **Watch → Custom → R
 The test suite checks units and conventions, the broadening against direct quadrature, the
 likelihoods, the samplers, post-processing and the misuse guards. Two layers compare the
 forward model with stored arrays: 22 regression categories (plus optional ones that need a grid or the AGN tables) at
-`rtol=1e-7` with an absolute tolerance of 1e-10 times each array's maximum
-(`tests/regression/test_regression.py`), and six SFH and
-metallicity configurations (`tests/csp/test_lookback_flip_invariant.py`) with SSP weights at
-`rtol=1e-12` and spectra, line fluxes and photometry at `rtol=1e-6`. See
+`rtol=2e-6` (AGN lines 2e-5) with an absolute tolerance of 1e-10 times each array's maximum
+(`tests/regression/test_regression.py`), and 13 golden configurations (SFH and
+metallicity, AGN, and a fixed nebular block; `tests/csp/test_lookback_flip_invariant.py`) with
+SSP weights at `rtol=1e-12` and spectra, line fluxes and photometry at `rtol=1e-6`. See
 [For developers](#for-developers) to run them.
 
 ## Documentation
@@ -288,7 +288,7 @@ If you use CERIDWEN in your research, please cite it:
   author       = {Stoffers, Amanda},
   title        = {{CERIDWEN}: Fast and Flexible {GPU}-Accelerated Stellar Population Inference},
   year         = {2026},
-  note         = {Version 1.0.13},
+  note         = {Version 1.1.0},
   howpublished = {\url{https://github.com/Espe13/ceridwen}}
 }
 ```

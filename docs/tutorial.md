@@ -358,8 +358,7 @@ model = SedModel(
     observations=observations,
     priors=priors,
     transforms={"sfh": logsfr_to_sfh},        # REQUIRED for logsfr_ratios
-    free_param_init={"logsfr_ratios": jnp.zeros(N_RATIOS),
-                     "logmass": jnp.array([10.0]),
+    free_param_init={"logsfr_ratios": jnp.zeros(N_RATIOS),   # logmass needs only its prior
                      "sigma_gal": jnp.array([150.0]),
                      "eline_scaling": jnp.array([1.0]),      # sampled nuisances that are
                      "spectrum_scaling": jnp.array([1.0])},  # not CSP parameters need a start value

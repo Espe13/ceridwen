@@ -1,4 +1,39 @@
-## Unreleased
+## 1.1.0 (2026-11-02)
+
+- `SedModel.display()` / `model_structure()` with a `Lines` observation of more than one line
+  raised "truth value of an array ... is ambiguous" (`describe._obs_details`); fixed, with a test.
+- `SedModel.display()` / `describe`: a `Lines` observation with several fluxes no longer raises
+  ("truth value of an array ... is ambiguous"), and a single zero flux counts as one line.
+- `logmass` needs only a prior: without a `free_param_init` entry it is sampled, starting at
+  the prior's median. A `free_param_init` value still takes precedence, so existing models are
+  unchanged.
+
+- Photometry integrates the model pixels exactly (`FilterSet.flux_weights`: the spectrum linear
+  between model pixels, the filter linear between its own points) instead of sampling the
+  spectrum at the filter grid. A line at the pixel floor was off by 0.4 % of its flux through a
+  band (median; up to 4.9 %); continua were 0.8-2.5e-4 high (an AB source gave 1.00024
+  maggies, now 1 to 1e-8), so photometry of a continuum moves down by 0.8-2.0e-4. At a
+  sampled redshift the integral runs on each filter's window of model pixels: as fast as before
+  or faster (13 filters, 15000 pixels, 500 parallel draws: 550 -> 85 ms).
+- Emission lines enter the photometry as their observed flux through each filter
+  (`ceridwen.observation.line_photometry`), not painted on the model grid: delta lines without
+  `broaden_photometry`, and with it the exact integral of a Gaussian of `sigma_gas` against the
+  filter. Exact at a fixed redshift and `sigma_gas`; a table of the exact integral at a sampled
+  redshift or width. The painted path through the photometric broadener lost up to 1.5e-3 of a
+  band with narrow lines; it is now only the reference `csp._force_paint_lines`. With
+  `marginalize_elines`, the fitted lines reach the photometry the same way, also with a
+  sampled redshift or a sampled `sigma_gas` with `broaden_photometry` (both refused before
+  1.1.0, when the photometric lines were painted on the model grid).
+- Nebular and AGN line widths on the model grid: the pixel floor is `res_floor_fwhm_px` pixels
+  per FWHM (sigma = 2 px / 2.355 by default), as in FSPS (`sps_setup.f90:999-1002`); it was 2
+  pixels per sigma, 2.355x wider. Lines at the floor are 2.355x narrower and taller; their
+  integrated flux changes only by the lambda_0^2 convention of the profile (FSPS's), -3
+  (sigma_old^2 - sigma_new^2) / lambda^2: <= 4.7e-5 at the Lyman series, 2.7e-5 at Ly-alpha,
+  < 2e-6 in the optical. Ly-alpha under the IGM keeps 0.79 (z = 3) and 0.44 (z = 6) of its
+  flux on the BPASS grid (0.81 and 0.49 before). `NebularModel(res_floor_factor=)` is renamed
+  `res_floor_fwhm_px` and the old name raises with the conversion; the internal helpers
+  `eline_marginal.line_profiles_on_grid` and `broadening.agn_line_profiles_on_grid` take
+  `res_floor_fwhm_px` too.
 
 - `CSPBasis(fixed={name: value})` and `CSPBasis_afe(fixed=...)` hold CSP parameters fixed at
   construction, so priors are needed only for what is fitted. A fixed name leaves

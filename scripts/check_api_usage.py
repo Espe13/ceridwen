@@ -21,6 +21,7 @@ PKG = ROOT / "ceridwen"
 REMOVED_KWARGS = {
     "sigma_losvd_kms", "sigma_losvd", "smoothtype", "res_convention", "fit_sigma_smooth",
     "tuniv", "inres", "resolution", "sigma_smooth", "nebular_smooth_init",
+    "res_floor_factor",
 }
 REMOVED_NAMES = {
     "_apply_losvd", "_setup_losvd_kernel", "NebularModelFSPSMatch", "SVDCSPBasis",

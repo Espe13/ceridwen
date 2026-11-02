@@ -533,9 +533,19 @@ def test_only_one_marginalising_spectrum(csp):
         _model(csp, spectra=2)
 
 
-def test_photometry_with_sampled_redshift_is_refused(csp):
-    with pytest.raises(NotImplementedError, match="sampled zred"):
-        _model(csp, zred_prior=Uniform(low=0.29, high=0.31))
+def test_photometry_with_sampled_redshift_uses_the_redshift_of_the_call(csp):
+    """With a sampled zred the fitted lines reach the photometry through its own line term
+    (Photometry._line_photometry) at the redshift of the call (refused before 1.1.0, when the
+    photometric lines were painted on the model grid)."""
+    import jax.numpy as jnp
+    model, _ = _model(csp, zred_prior=Uniform(low=0.29, high=0.31))
+    lp = model.obs_dict["phot"]._line_photometry
+    rows = np.asarray(model._eline_system.fit_rows)
+    th = {k: jnp.asarray(v) for k, v in model.theta_init.items()}
+    for z in (0.295, 0.305):
+        _, aux = model.predict_with_elines({**th, "zred": jnp.array([z])})
+        want = np.asarray(lp.weights(opz=1.0 + z, sigma_kms=jnp.asarray(T.SIGMA_GAS)))[:, rows]
+        np.testing.assert_array_equal(np.asarray(aux["cols"]["phot"]), want)
 
 
 def test_degenerate_lines_are_refused():

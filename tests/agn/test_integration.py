@@ -195,7 +195,7 @@ def test_lines_match_independent_computation(mode, igm):
         t_l = t_dust * np.interp(agn.line_wave, np.asarray(csp.wave), t_igm)
         F_l = F * t_l
         prof = np.asarray(agn_line_profiles_on_grid(csp.wave, agn.line_wave, sig,
-                                                    csp.neb.res_floor_factor))
+                                                    csp.neb.res_floor_fwhm_px))
         mass = 10.0 ** float(np.ravel(mt["logmass"])[0])
         grid = prof @ (np.asarray(agn.line_luminosity(mt)) * mf * mass * t_dust) * ff * t_igm
         d_phot = np.asarray(phot._T, np.float64) @ grid

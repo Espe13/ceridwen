@@ -270,7 +270,8 @@ def _obs_details(o) -> list:
         if ins is not None:
             lines.append(_instrument_line(ins))
     elif kind == "lines":
-        n = int(np.size(getattr(o, "flux", []) or []))
+        flux = getattr(o, "flux", None)
+        n = 0 if flux is None else int(np.size(flux))
         lines.append(f"{n} line fluxes")
     lik = type(getattr(o, "noise", None)).__name__ if getattr(o, "noise", None) is not None else None
     if lik and lik != "NoneType":

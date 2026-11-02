@@ -119,7 +119,10 @@ def test_static_and_painted_photometry_agree_with_dust_emission():
     finally:
         csp._force_paint_lines = False
     r = out[True] / out[False] - 1
-    assert np.all(np.abs(r[2:]) < 1e-6), r      # infrared bands (were 2-3%)
-    # UV/optical: the float32 static-basis vs painted line projection, independent of the
-    # energy balance (GALEX FUV 8.6e-6 here with dust emission on AND off, measured 2026-09-24)
-    assert np.all(np.abs(r) < 2e-5), r
+    # the energy balance is the same on both paths (the infrared differed by 2-3% before it
+    # was).  What remains is the lines: without broaden_photometry the photometry adds them as
+    # delta lines, exact, while the painted reference samples each at the pixel floor, which on
+    # the coarse infrared pixels gets a line's flux to ~1e-4 and at a steep UV filter edge
+    # differs by the line width (measured 2026-11-02: FUV 7.9e-5, PACS 70 1.0e-4, others
+    # <= 3.8e-6)
+    assert np.all(np.abs(r) < 2e-4), r

@@ -42,8 +42,10 @@ def test_lyman_alpha_line_flux_matches_painted_path(csp, z):
     sig = float(np.asarray(csp.neb.dlam_lines)[k])
     th = dict(csp.theta_init, zred=jnp.array([z]), logmass=jnp.array([9.0]))
     th0 = dict(th, igm_factor=jnp.array([0.0]))                  # no IGM, same everything else
-    win = np.abs(w - pos[k]) < 5 * sig
-    near = pos[np.abs(pos - pos[k]) < 10 * sig]                  # grid lines sharing the window
+    # 10 sigma: at the 2 px FWHM floor (sigma = 0.85 px) a 5 sigma window is 8 pixels and its
+    # edges cut 1e-5 of the line (measured 1.5e-5 to 7.8e-5); 10 sigma agrees to 3e-8
+    win = np.abs(w - pos[k]) < 10 * sig
+    near = pos[np.abs(pos - pos[k]) < 20 * sig]                  # grid lines sharing the window
     nu = C / w
     ls, ls0 = (np.asarray(csp.get_line_spec(t), float) for t in (th, th0))
     painted = np.trapezoid(ls[win], nu[win]) / np.trapezoid(ls0[win], nu[win])

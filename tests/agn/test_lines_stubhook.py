@@ -80,7 +80,7 @@ class SimpleModel:
         out[self.spec.name] = out[self.spec.name] + sp.astype(out[self.spec.name].dtype)
         if self.mode == "corrected":
             prof = agn_line_profiles_on_grid(self.csp.wave, agn.line_wave, s,
-                                             self.csp.neb.res_floor_factor)
+                                             self.csp.neb.res_floor_fwhm_px)
             mass = 10.0 ** jnp.ravel(mt["logmass"])[0]
             ph = (self.phot._T.astype(prof.dtype) @ prof) @ (agn.line_luminosity(thl) * mass * ff)
         else:

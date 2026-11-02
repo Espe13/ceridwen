@@ -201,16 +201,16 @@ def line_table_for(csp) -> dict:
     return {"wave": np.asarray(wave, dtype=np.float64), "names": names}
 
 
-def line_profiles_on_grid(wave, pos, sigma_kms=0.0, res_floor_factor=2.0):
+def line_profiles_on_grid(wave, pos, sigma_kms=0.0, res_floor_fwhm_px=2.0):
     """(n_wave, n_line) f_nu profiles of unit-luminosity lines at ``pos`` on the model grid
     ``wave``, exactly as ``NebularModel.line_profiles(sigma_kms)`` builds them (default
     NebularModel settings: smooth_velocity, sigma_smooth = 0): a Gaussian in lambda of width
-    sqrt(floor^2 + (pos sigma/c)^2), floor = res_floor_factor x the local pixel width."""
-    from ..neb.NebularGridModel import CLIGHT_AA_S, SQRT_2PI
+    sqrt(floor^2 + (pos sigma/c)^2), floor = res_floor_fwhm_px x the local pixel width / 2.355."""
+    from ..neb.NebularGridModel import CLIGHT_AA_S, SQRT_2PI, FWHM_PER_SIGMA
     lam = np.asarray(wave, dtype=np.float64)
     pos = np.asarray(pos, dtype=np.float64)
     idx = np.clip(np.searchsorted(lam, pos, side="right") - 1, 1, lam.size - 2)
-    floor = (lam[idx + 1] - lam[idx]) * res_floor_factor
+    floor = (lam[idx + 1] - lam[idx]) * res_floor_fwhm_px / FWHM_PER_SIGMA
     base = pos * 0.0 / CLIGHT_AA_S * 1.0e13
     dl0 = np.maximum(base, floor)
     dl = np.sqrt(dl0 ** 2 + (pos * float(sigma_kms) / CLIGHT_AA_S * 1.0e13) ** 2)
@@ -312,13 +312,14 @@ def build_eline_system(model) -> Optional[ElineSystem]:
                 stacklevel=3)
     fitted_neb = sorted(set(getattr(csp, "neb_param_names", [])) & set(model.param_names))
     if fitted_neb:
+        fixed = ", ".join(f'"{k}": ...' for k in fitted_neb)
         example = ", ".join(f'"{k}": lambda th: jnp.array([...])' for k in fitted_neb)
         raise ValueError(
             f"marginalize_elines=True with the nebular parameter(s) {fitted_neb} sampled: with "
             "the line fluxes marginalised the lines no longer constrain the nebular model, so "
-            "it must not be fitted. Fix them with a constant transform, "
-            f"SedModel(..., transforms={{{example}}}) (and drop their priors), or fit the "
-            "lines at their CLOUDY fluxes instead")
+            f"it must not be fitted. Fix them on the CSP, CSPBasis(..., fixed={{{fixed}}}), or "
+            f"with a constant transform, SedModel(..., transforms={{{example}}}) (and drop "
+            "their priors), or fit the lines at their CLOUDY fluxes instead")
     phots = [o for o in model.observations if isinstance(o, Photometry)]
     lines_obs = [o for o in model.observations if isinstance(o, Lines)]
     for o in phots + lines_obs:
@@ -328,17 +329,6 @@ def build_eline_system(model) -> Optional[ElineSystem]:
                 f"observation {o.name!r} has upper limits; the joint line marginalisation "
                 "is Gaussian and cannot include one-sided data")
     gas = model.kinematics.effective_sigma_gas
-    if phots and model.zred_is_free:
-        raise NotImplementedError(
-            "marginalize_elines=True with Photometry and a sampled zred: the photometric line "
-            "contribution is then painted on the model grid, which the joint marginalisation "
-            "does not support yet. Fix zred, or fit the spectrum without the photometry")
-    if phots and isinstance(gas, str) and model.broaden_photometry:
-        raise NotImplementedError(
-            "marginalize_elines=True with Photometry, a sampled sigma_gas and "
-            "broaden_photometry=True: the photometric lines are then painted on the model grid, "
-            "which the joint marginalisation does not support yet. Fix sigma_gas, or use "
-            "broaden_photometry=False")
 
     proj = spec._proj
     kept = np.asarray(proj.line_idx, dtype=np.int64)
@@ -410,18 +400,14 @@ def build_eline_system(model) -> Optional[ElineSystem]:
                | (np.abs(wave_rest - LYA_REST_AA) < 1.0))
 
     zfix = float(model.zred)
-    phot_cols = {}
-    for o in phots:
-        if has_grid:
-            basis = getattr(o, "_line_basis", None)
-            gnb = np.asarray(basis if basis is not None else neb.gaussnebarr,
-                             dtype=np.float64)[:, fit_rows]
-        else:           # the same profiles NebularModel.line_profiles gives (setup_broadening)
-            s_phot = (float(gas) if (model.broaden_photometry and not isinstance(gas, str)
-                                     and float(gas) > 0.0) else 0.0)
-            gnb = line_profiles_on_grid(np.asarray(csp.wave), pos[fit_rows], s_phot)
-        T = np.asarray(o._T, dtype=np.float64)
-        phot_cols[o.name] = (1.0 + zfix) * (T @ gnb)
+    # maggies per unit line flux: each line's flux through each filter, as the photometry adds
+    # it (Photometry._line_photometry): delta lines, or Gaussians of the fixed gas width; with a
+    # sampled redshift or gas width CSPBasis.predict evaluates them per call instead
+    from ..observation.line_photometry import line_weights, CKMS
+    s_phot = (float(gas) if (model.broaden_photometry and not isinstance(gas, str)) else 0.0)
+    lam_obs = pos[fit_rows] * (1.0 + zfix)
+    phot_cols = {o.name: line_weights(o.filterset, lam_obs, lam_obs * s_phot / CKMS)
+                 for o in phots}
     lines_cols = {}
     for o in lines_obs:
         B = csp._neb_blend_matrix_for(o)

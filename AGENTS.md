@@ -156,8 +156,9 @@ projection → likelihood → sampler.
 - `csp/` — `csp.py`: `CSPBasis`, the core forward model. Holds the `get_spectrum_*`
   variants (stellar ± dust attenuation ± dust emission ± nebular), step/linear
   SFH interpolation, constant or time-varying metallicity, dict-based `theta`,
-  fully JAX-traceable; `predict` projects onto the observations (static
-  line-to-band basis for fixed-z photometry, painted lines otherwise).
+  fully JAX-traceable; `predict` projects onto the observations (the photometry adds each
+  line's flux through each filter, `observation/line_photometry.py`; a Spectrum paints them on
+  its pixels).
   `CSPBasis(fixed={name: value})` holds CSP parameters fixed at construction (out of
   `param_names`, kept in `theta_init`; `SedModel` makes each a constant transform, GOTCHAS
   section 28).
@@ -183,10 +184,12 @@ projection → likelihood → sampler.
 - `neb/` — `NebularGridModel.py`: `NebularModel` (CLOUDY grids, default
   `cloudy_dust=False` = `ZAU_ND_<isoc>` as in FSPS/Prospector, `True` = `ZAU_WD`; each cube
   interpolated against its own gas_logz/gas_logu/age axes, line profiles at
-  the pixel floor, `line_profiles(sigma)` for the photometric line basis).
+  the pixel floor, a FWHM of `res_floor_fwhm_px` pixels).
 - `observation/` — `base.py` (`Observation` base class), `photometry.py` (filter convolution via
-  `filters.FilterSet` → matrix-vector projection `_T`, optional
-  `PhotometricBroadener` and static line basis), `spectrum.py` (`Instrument`
+  `filters.FilterSet.flux_weights` → matrix-vector projection `_T`, the exact integral over the
+  model pixels; windowed at a sampled redshift), `line_photometry.py` (each nebular line's flux
+  through each filter: delta lines, or the exact Gaussian integral with `broaden_photometry`),
+  optional `PhotometricBroadener`, `spectrum.py` (`Instrument`
   + `SpectralProjector` built by `setup_for_model`), `lines.py` (line fluxes
   read from the nebular grid by `CSPBasis`; Gaussian aperture matrix `W` for
   `Lines.predict` alone), `gp.py` (`GaussianProcess`, host-side GP likelihood for `Spectrum.log_likelihood`; `fitSED` uses its values as fixed hyperparameters of `GPGaussianLikelihood`). `observation.py` is a re-export shim so

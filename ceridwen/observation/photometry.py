@@ -91,6 +91,7 @@ class Photometry(Observation):
         """Precompute the ``(n_filters, n_wave)`` float32 projection matrix ``_T`` (F_nu -> maggies)
         for the rest-frame grid ``wave_model`` [Å] observed at fixed ``zred``; required before ``predict``."""
         wm_rest = np.asarray(wave_model, dtype=np.float64)
+        self._setup_zred = float(zred)
         opz = 1.0 + float(zred)
         wm = opz * wm_rest
         n_wave = len(wm)
@@ -98,29 +99,19 @@ class Photometry(Observation):
 
         fnu_to_flam = _c / wm**2
 
-        lam_filt = np.asarray(self.filterset.lam, dtype=np.float64)
-        n_lam = len(lam_filt)
-
-        idx = np.searchsorted(wm, lam_filt, side="right") - 1
-        idx = np.clip(idx, 0, n_wave - 2)
-        frac = (lam_filt - wm[idx]) / (wm[idx + 1] - wm[idx])
-        frac = np.clip(frac, 0.0, 1.0)
-
-        outside = (lam_filt < wm[0]) | (lam_filt > wm[-1])
-        frac[outside] = 0.0
-
-        trans = np.asarray(self.filterset.trans, dtype=np.float64)  # (n_filt, n_lam)
-        inside = ~outside
-        TH = np.zeros((trans.shape[0], n_wave), dtype=np.float64)
-        np.add.at(TH.T, idx[inside],     (trans[:, inside] * (1.0 - frac[inside])).T)
-        np.add.at(TH.T, idx[inside] + 1, (trans[:, inside] * frac[inside]).T)
-        T  = TH * fnu_to_flam[None, :]
+        # the exact integral over the model pixels (FilterSet.flux_weights): flux-conserving
+        # for lines narrower than the filter grid
+        T = self.filterset.flux_weights(wm, xp=np) * fnu_to_flam[None, :]
+        # static window lengths for predict_at_redshift (a sampled redshift up to
+        # filters.FLUX_WINDOW_ZMAX), on this rest-frame grid
+        self._flux_windows = self.filterset.flux_window_widths(wm_rest)
+        self._flux_windows_n = int(wm_rest.size)
 
         T32 = T.astype(np.float32)
         self._T = jnp.array(T32)
         self._has_precomputed_T = True
         self._broadener = None
-        self._line_basis = None
+        self._line_photometry = None
         cols = np.flatnonzero(np.any(T32 != 0.0, axis=0))
         self._T_support = (int(cols[0]), int(cols[-1]) + 1) if cols.size else (0, 0)
 
@@ -142,12 +133,23 @@ class Photometry(Observation):
 
     def setup_broadening(self, wave_model, zred, kinematics, *, free_z=False, neb=None):
         """Build the sigma_gal broadener over the rest range the filters cover (the
-        whole 912-25000 A window when ``free_z``) and, when ``neb`` is given and
-        sigma_gas is fixed, the static line basis at that width.  Both are None
-        for ``Kinematics.none()``; call after ``setup_for_model``."""
+        whole 912-25000 A window when ``free_z``; None for ``Kinematics.none()`` or no
+        ``kinematics``) and, when ``neb`` is given, the line term ``_line_photometry``
+        (``observation.line_photometry.LinePhotometry``): each nebular line's flux through
+        each filter, without painting it, as a delta line without ``kinematics``
+        (``broaden_photometry=False``) and as a Gaussian of the gas width with it.  Call after
+        ``setup_for_model``."""
         from ..broadening import PhotometricBroadener
+        from .line_photometry import LinePhotometry
         self._broadener = None
-        self._line_basis = None
+        self._line_photometry = None
+        if neb is not None and self.filterset is not None:
+            gas = None if kinematics is None else kinematics.effective_sigma_gas
+            self._line_photometry = LinePhotometry(
+                self.filterset, np.asarray(neb.nebem_line_pos, dtype=np.float64),
+                zred=zred, free_z=free_z,
+                sigma="sampled" if isinstance(gas, str) else gas,
+                sigma_max_kms=None if kinematics is None else kinematics.sigma_max)
         if kinematics is None:
             return
         wm = np.asarray(wave_model, dtype=np.float64)
@@ -164,9 +166,6 @@ class Photometry(Observation):
                 wmax = min(lam.max() / opz, wm[-1])
             if wmin < wmax:
                 self._broadener = PhotometricBroadener.build(kinematics, wm, wmin, wmax)
-        gas = kinematics.effective_sigma_gas
-        if neb is not None and not isinstance(gas, str) and float(gas) > 0.0:
-            self._line_basis = np.asarray(neb.line_profiles(float(gas)), dtype=np.float32)
 
     def predict(self, spectrum, wave_model):
         """Synthetic AB maggies, shape (n_filters,), as ``_T @ spectrum`` (F_nu on ``wave_model``)."""
@@ -185,6 +184,10 @@ class Photometry(Observation):
             raise ValueError("No FilterSet configured; call set_filters() first.")
         wave_obs = (1.0 + jnp.asarray(zred)) * jnp.asarray(wave_rest)
         flux_flam = spectrum_fnu_observed * (2.998e18 / (wave_obs * wave_obs))
+        widths = getattr(self, "_flux_windows", None)
+        if widths is not None and jnp.shape(wave_rest)[0] == self._flux_windows_n:
+            # each filter's window of model pixels only (static lengths from setup_for_model)
+            return self.filterset.windowed_maggies(flux_flam, wave_obs, widths)
         return self.filterset.get_sed_maggies(flux_flam, sourcewave=wave_obs)
 
     def chi_sq(self, model_maggies):

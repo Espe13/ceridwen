@@ -136,7 +136,7 @@ def test_D_BLR_3_cigale_fwhm_convention(fwhm):
     k2 = 0.5 * np.sqrt(np.pi / np.log(2.0))
     sig = fwhm / _ref.FWHM_PER_SIGMA
     prof = np.asarray(agn_line_profiles_on_grid(lam, np.array([lam0]), jnp.asarray(sig),
-                                                res_floor_factor=0.0))[:, 0]
+                                                res_floor_fwhm_px=0.0))[:, 0]
     ours = prof * CLIGHT_AA_S / lam0 ** 2     # L_nu of a unit line -> L_lambda
     for c_ms, tol in ((CLIGHT_AA_S * 1e-10, 1e-12), (299792458.0, 2e-5)):
         w = lam0 * fwhm * 1e3 / c_ms

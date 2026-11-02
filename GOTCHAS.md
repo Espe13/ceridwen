@@ -239,15 +239,32 @@ prefer `predict`/`get_spectrum_components`.
   (`SedModel(broaden_photometry=True)`); < 5e-4 mag for broad bands at
   300 km/s, per-cent level for a narrow band with a line on its edge. With
   `broaden_photometry=False` nothing in the photometry is broadened: the
-  continuum enters the filters at model-grid resolution and the lines at the
-  grid's pixel-floor width, so `sigma_gas` plays no role there. A mock made
+  continuum enters the filters at model-grid resolution and the lines as delta
+  lines, so `sigma_gas` plays no role there. A mock made
   with one setting must be fitted with the same setting
   (`examples/quickstart.py` sets it False for that reason).
-- Lines in the photometry: with a **fixed** `sigma_gas` they enter through a
-  static line-to-band basis built at that width (no painting on the model
-  grid, the fast path); with a **sampled** `sigma_gas` they are painted onto
-  the grid and broadened at runtime (slower, chosen automatically). Free-z
-  photometry always paints. `csp._force_paint_lines = True` forces painting.
+- **Lines in the photometry are not painted.** Each line adds its observed flux
+  times the filter's response to it (`ceridwen.observation.line_photometry`): a
+  delta line, `T(lambda_obs)`, without `broaden_photometry` (Prospector's choice),
+  and with it the exact integral of a Gaussian of `sigma_gas` against the filter,
+  which keeps the smoothing of a filter edge (the two differ only for a line within a
+  few sigma of an edge, by about sigma^2 T''/2). Both conserve the
+  line flux for any width. At a fixed redshift and `sigma_gas` this is one exact
+  matrix; at a sampled redshift or `sigma_gas` a table of the exact integral (exact
+  for delta lines; a sampled width to <= 1.3e-5 of a band's response, for a line on a
+  filter edge, 1e-7 typical). `csp._force_paint_lines = True` instead paints the lines on
+  the model grid at the pixel floor (a reference path; on coarse infrared pixels it
+  gets a line's flux to ~1e-4).
+- **Photometry integrates the model pixels.** The filter integral is exact for a
+  spectrum linear between the model pixels and a filter linear between its own points
+  (`FilterSet.flux_weights`), so a feature narrower than the filter grid keeps its flux.
+  Before 1.1.0 the spectrum was sampled at the filter grid: a line at the old pixel floor
+  lost or gained 0.4 % of its flux through a band (median; up to 4.9 %), and continua were
+  0.8-2.5e-4 high.
+- **Line width floor.** On the model grid a line is at least `res_floor_fwhm_px`
+  pixels wide as a FWHM (`NebularModel`, default 2, sigma = 2 px / 2.355, as FSPS).
+  The old `res_floor_factor` (pixels per sigma) raises with the conversion
+  (`res_floor_fwhm_px = res_floor_factor x 2.355`).
 - `add_neb=False` + a `Lines` observation is refused at `predict` in every
   basis (`ValueError`), not answered with zeros.
 - `Lines` (integrated fluxes) never see a width: they are read directly from
@@ -675,13 +692,13 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
 - **The dust-emission energy balance counts the lines.** The energy the dust absorbs from the
   nebular lines is re-emitted in the IR on every path, so `get_spectrum(include_lines=False)`
   (the continuum) already carries the re-emission of the lines; `include_lines` only adds the
-  attenuated lines themselves. Fixed-z photometry (static line basis) and free-z photometry
-  (painted lines) give the same IR fluxes.
+  attenuated lines themselves. Fixed-z and free-z photometry give the same IR fluxes.
 - **Line fluxes under the IGM** (`Lines`, and the lines a `Spectrum` paints) use the IGM
   transmission averaged over the line's profile on the model grid, the same as the painted
   path. At Ly-α the Madau forest starts inside the line, so its blue half is absorbed (the
-  line keeps 0.81 of its flux at z = 3, 0.49 at z = 6 on the BPASS grid); the value depends on how finely the model grid samples the line (2 Å pixels on BPASS:
-  1-3% below a continuous quadrature at z = 3-9).
+  line keeps 0.79 of its flux at z = 3, 0.44 at z = 6 on the BPASS grid, with the 2 px
+  FWHM floor; 0.81 and 0.49 with the pre-1.1.0 floor); the value depends on how finely the
+  model grid samples the line. The photometry uses the same line fluxes.
 - **The IGM acts after `σ_gal`** and before the instrument (`docs/conventions.md`,
   Broadening). A fixed `σ_gal = 0` keeps the IGM on the model grid.
 
@@ -700,8 +717,8 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
   the same setting. The result file records it (`csp_config['wavelength_support']`, present
   only when on), so `check_model_against_result` reports a rebuilt model with the other setting.
 - **Silently the whole grid** (no warning, same numbers as off) for dust emission (the energy
-  balance integrates over every pixel), lines painted on the model grid (free-z Photometry,
-  a sampled `sigma_gas` with `broaden_photometry`, `_force_paint_lines`), a Photometry at a
+  balance integrates over every pixel), lines painted on the model grid
+  (`_force_paint_lines`), a Photometry at a
   sampled redshift, an observation class that declares no `model_support`, or a range that
   is the whole grid.
 - `csp.get_spectrum(...)`, `get_spectrum_components`, `PostProcess` spectra and figures are

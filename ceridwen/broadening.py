@@ -689,17 +689,17 @@ PROSPECT_LIGHTSPEED = 2.998e18
 _PROSPECT_NU_NUMER = 3e18          # SpecModel.get_eline_gaussians: trapezoid(g, 3e18 / warr)
 
 
-def agn_line_profiles_on_grid(wave, line_wave, sigma_kms, res_floor_factor=2.0):
+def agn_line_profiles_on_grid(wave, line_wave, sigma_kms, res_floor_fwhm_px=2.0):
     """(n_wave, n_lines) L_nu profiles of unit-luminosity lines on the rest model grid ``wave``
     for a traced width ``sigma_kms``: ``NebularModel.line_profiles(sigma_kms)`` with its default
     settings (a Gaussian in lambda of width sqrt(floor^2 + (pos sigma / c)^2), floor =
-    ``res_floor_factor`` x the local pixel width, times pos^2 / c), the nebular convention, so the
+    ``res_floor_fwhm_px`` x the local pixel width / 2.355, times pos^2 / c), the nebular convention, so the
     AGN lines reach the photometry exactly as the nebular lines do."""
-    from .neb.NebularGridModel import CLIGHT_AA_S, SQRT_2PI
+    from .neb.NebularGridModel import CLIGHT_AA_S, SQRT_2PI, FWHM_PER_SIGMA
     lam = np.asarray(wave, dtype=np.float64)
     pos = np.asarray(line_wave, dtype=np.float64)
     idx = np.clip(np.searchsorted(lam, pos, side="right") - 1, 1, lam.size - 2)
-    floor = jnp.asarray((lam[idx + 1] - lam[idx]) * float(res_floor_factor))
+    floor = jnp.asarray((lam[idx + 1] - lam[idx]) * float(res_floor_fwhm_px) / FWHM_PER_SIGMA)
     posj = jnp.asarray(pos)
     dl = jnp.sqrt(floor ** 2 + (posj * sigma_kms / CLIGHT_AA_S * 1.0e13) ** 2)
     prof = jnp.exp(-0.5 * ((jnp.asarray(lam)[:, None] - posj[None, :]) / dl[None, :]) ** 2)

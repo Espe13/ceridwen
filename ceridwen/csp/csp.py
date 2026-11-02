@@ -184,6 +184,15 @@ _MODEL_LEVEL_KEYS = ("logmass", "zred", "lumdist_mpc", "igm_factor", "eline_scal
                      "frac_obrun", "spectrum_scaling", "spectrum_calib", "lookback_time")
 
 
+def _eline_phot_cols(es, obs, lp, opz, sigma_kms):
+    """The marginalised lines' design columns of one Photometry (maggies per unit line flux):
+    the photometry's own line term at this call's redshift and gas width when either is
+    sampled, else the static columns built with the line system."""
+    if lp is not None and (lp.free_z or lp.sampled):
+        return lp.weights(opz=opz, sigma_kms=sigma_kms)[:, np.asarray(es.fit_rows)]
+    return jnp.asarray(es.phot_cols[obs.name])
+
+
 def _fixed_key_message(csp, name):
     """Why ``name`` cannot be in ``fixed=`` for this CSP, and which switch adds it."""
     valid = sorted(csp.param_names)
@@ -1215,9 +1224,9 @@ class CSPBasis:
                 trans = (self._igm_transmission(z, theta).astype(float_dtype())
                          if (self.igm is not None and z_in) else None)
                 from ..broadening import agn_line_profiles_on_grid
-                rff = getattr(getattr(self, "neb", None), "res_floor_factor", 2.0)
+                rff = getattr(getattr(self, "neb", None), "res_floor_fwhm_px", 2.0)
                 prof = agn_line_profiles_on_grid(self.wave, lines.line_wave, sigma,
-                                                 res_floor_factor=rff)          # (n_wave, n)
+                                                 res_floor_fwhm_px=rff)         # (n_wave, n)
                 grid = prof @ (L if t_l is None else L * t_l) * ff
                 if trans is not None:
                     grid = grid * trans
@@ -1422,33 +1431,20 @@ class CSPBasis:
         ``theta`` carries ``zred``.
 
         ``kinematics`` (``Kinematics`` or None) supplies sigma_gal / sigma_gas; ``broaden_photometry``
-        applies them to the spectrum entering each Photometry's ``_broadener``.  Lines are painted on
-        the model grid only when a consumer needs them there (free-z Photometry, Photometry with a
-        sampled sigma_gas and ``broaden_photometry``, or ``_force_paint_lines``); otherwise fixed-z
-        Photometry adds them through the static basis ``G = obs._T @ (IGM * profiles)``, Spectrum
-        paints them on the observed pixels and Lines reads them from the grid.
+        applies them to the spectrum entering each Photometry's ``_broadener``.  The lines are not
+        painted on the model grid (only with ``_force_paint_lines``, a reference path): Photometry
+        adds each line's flux through each filter (``obs._line_photometry``: delta lines, or
+        Gaussians of the gas width with ``broaden_photometry``), Spectrum paints them on the
+        observed pixels and Lines reads them from the grid.
 
         ``eline_system`` (``ElineSystem`` of ``SedModel``, line marginalisation): returns
         ``(predictions, aux)`` with the fitted lines removed from every prediction and
         ``aux = {"prior_mean": CLOUDY fluxes of the fitted lines, "cols": {obs.name: design}}``.
         """
-        from ..observation.observation import (
-            Spectrum as _Spectrum, Photometry as _Photometry,
-        )
         if kinematics is not None:
             self._known_theta_keys |= set(kinematics.free_keys)
         has_neb = getattr(self, "neb", None) is not None
-        gas_free = (kinematics is not None
-                    and isinstance(kinematics.effective_sigma_gas, str))
-        paint_lines = has_neb and (
-            getattr(self, "_force_paint_lines", False)
-            or any(
-                isinstance(o, _Photometry)
-                and ((getattr(o, "free_z", False) and "zred" in theta)
-                     or (gas_free and broaden_photometry))
-                for o in observations
-            )
-        )
+        paint_lines = has_neb and bool(getattr(self, "_force_paint_lines", False))
         support = self._support_for(observations, theta, paint_lines)
         if support is None:
             cont, lines = self._assemble_components(theta, paint_lines)
@@ -1600,8 +1596,10 @@ class CSPBasis:
                         if _has_lines_obs and _has_neb else None)
         _line_fluxes_spec = (self.predict_line_fluxes(theta, for_spectrum=True)
                              if _has_spec_obs and _has_neb else None)
+        # the photometry adds each line's observed flux through its filters (obs._line_photometry)
         _line_fluxes_phot = (
-            self.predict_line_fluxes(theta, for_photometry=True)
+            (_line_fluxes_spec if _line_fluxes_spec is not None
+             else self.predict_line_fluxes(theta, for_spectrum=True))
             if (not paint_lines) and _has_neb and _has_phot_obs
             else None)
         agn_sets = self._agn_line_set_terms(theta)
@@ -1721,28 +1719,33 @@ class CSPBasis:
                 else:
                     d = self._agn_photometry_lines(obs, agn_l)
                     agn_delta = d if agn_delta is None else agn_delta + d
+            lp = getattr(obs, "_line_photometry", None)
+            if lp is None and _line_fluxes_phot is not None and obs.filterset is not None:
+                # a Photometry set up by setup_for_model alone (direct CSP use, no SedModel):
+                # delta lines at its redshift, built once (the SedModel calls setup_broadening)
+                from ..observation.line_photometry import LinePhotometry
+                lp = obs._line_photometry = LinePhotometry(
+                    obs.filterset, np.asarray(self.neb.nebem_line_pos, dtype=np.float64),
+                    zred=getattr(obs, "_setup_zred", 0.0))
             if getattr(obs, "free_z", False) and z_in_theta:
-                pred = obs.predict_at_redshift(
-                    spec_for_obs, self.wave, jnp.ravel(theta["zred"])[0]
-                )
-                out[obs.name] = pred if agn_delta is None else pred + agn_delta.astype(pred.dtype)
+                z_scalar = jnp.ravel(theta["zred"])[0]
+                pred = obs.predict_at_redshift(spec_for_obs, self.wave, z_scalar)
+                if agn_delta is not None:
+                    pred = pred + agn_delta.astype(pred.dtype)
+                if _line_fluxes_phot is not None and lp is not None:
+                    pred = pred + lp(_line_fluxes_phot, opz=1.0 + z_scalar,
+                                     sigma_kms=s_gas).astype(pred.dtype)
+                if es is not None and obs.name in es.phot_cols:
+                    aux_cols[obs.name] = _eline_phot_cols(es, obs, lp, 1.0 + z_scalar, s_gas)
+                out[obs.name] = pred
                 continue
             pred = obs.predict(spec_for_obs, self.wave)
             if agn_delta is not None:
                 pred = pred + agn_delta.astype(pred.dtype)
-            if _line_fluxes_phot is not None:
-                basis = getattr(obs, "_line_basis", None)
-                gnb = (jnp.asarray(basis) if basis is not None
-                       else self.neb.gaussnebarr).astype(obs._T.dtype)
-                if self.igm is not None and z_in_theta:
-                    z_scalar = jnp.ravel(theta["zred"])[0]
-                    trans = self._igm_transmission(z_scalar, theta).astype(obs._T.dtype)
-                    G = (obs._T * trans[None, :]) @ gnb
-                else:
-                    G = obs._T @ gnb
-                pred = pred + G @ _line_fluxes_phot.astype(pred.dtype)
+            if _line_fluxes_phot is not None and lp is not None:
+                pred = pred + lp(_line_fluxes_phot, sigma_kms=s_gas).astype(pred.dtype)
             if es is not None and obs.name in es.phot_cols:
-                aux_cols[obs.name] = jnp.asarray(es.phot_cols[obs.name])
+                aux_cols[obs.name] = _eline_phot_cols(es, obs, lp, None, s_gas)
             out[obs.name] = pred
         if es is not None:
             return out, {"prior_mean": prior_mean, "cols": aux_cols}

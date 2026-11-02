@@ -263,19 +263,25 @@ a line near a filter edge can change the flux by about a percent.
 
 For broad-band-only fits, `broaden_photometry=False` saves one FFT per
 likelihood call. It integrates the continuum at model-grid resolution and
-uses grid pixel-floor widths for emission lines, independent of σ_gas.
+adds the emission lines as delta lines, independent of σ_gas.
 Use the same setting to generate and fit mocks.
 
-With fixed σ_gas and redshift, each `Photometry` stores a line-to-band
-matrix `G = T · Γ(σ_gas)`. It includes the gas width in quadrature with the
-two-pixel grid floor and IGM transmission. Band predictions are then
-`T · continuum_broadened + G · F_line`.
+The filter integral is exact for a spectrum linear between the model pixels
+and a filter linear between its own points (`FilterSet.flux_weights`), so a
+feature narrower than the filter grid keeps its flux. For a fixed redshift it
+is the matrix `T`; for a sampled redshift it is evaluated on each filter's
+window of model pixels.
 
-With sampled σ_gas, lines are placed on the model grid at each call.
-If σ_gas is untied, they are broadened separately from the continuum;
-if tied to σ_gal, they are broadened together. Sampled redshift also
-requires this calculation. It is slower than the static matrix method.
-Set `csp._force_paint_lines = True` to compare the two calculations.
+Emission lines are not painted for photometry. Band predictions are
+`T · continuum_broadened + E(σ_gas) · F_line`, with `F_line` the observed line
+fluxes (dust, escape and the profile-averaged IGM applied, as for a `Spectrum`)
+and `E` each filter's response to each line: `R(λ) λ / ab` at the line for a
+delta line (`broaden_photometry=False`), the exact integral of a Gaussian of
+σ_gas against the filter with `broaden_photometry=True`. At a fixed redshift
+and σ_gas, `E` is one exact matrix; at a sampled redshift or σ_gas it is
+interpolated from a table of the exact integral. Set
+`csp._force_paint_lines = True` to paint the lines on the model grid instead
+(a reference path).
 
 ## Cosmology
 

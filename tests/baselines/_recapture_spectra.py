@@ -50,7 +50,6 @@ def main():
         theta = t._build_theta_new(zh_const, per_bin)
         csp = t._build_csp(ssp, theta, sfh_interp=sfh_interp, zh_const=zh_const,
                            agn=extra.get("agn"), **extra.get("csp", {}))
-        phot = t._photometry()
         th = {k: jnp.asarray(v) for k, v in csp.theta_init.items()}
         th.setdefault("logmass", jnp.zeros(1)); th.setdefault("zred", jnp.zeros(1))
         th.setdefault("igm_factor", jnp.ones(1)); th.setdefault("eline_scaling", jnp.ones(1))
@@ -58,10 +57,10 @@ def main():
         W = np.asarray(csp.calculate_ssp_weights(th))
         W_ref = np.load(HERE / f"W_{tag}.npy")
         np.testing.assert_allclose(W, W_ref, rtol=1e-12, atol=0)   # never re-captured
-        spec_phot = csp._apply_mass_redshift_igm(*csp._assemble_observer_spectra(th), th)[0]
+
         np.save(HERE / f"spec_{tag}.npy", np.asarray(csp.get_spectrum(th)))
         np.save(HERE / f"lines_{tag}.npy", np.asarray(csp.get_line_spec(th)))
-        np.save(HERE / f"maggies_{tag}.npy", np.asarray(phot.get_maggies(csp.wave, spec_phot)))
+        np.save(HERE / f"maggies_{tag}.npy", t._maggies(csp, th))
         m.setdefault("spectra_recaptured_by_tag", {})[tag] = a.reason
         print(f"{tag:<40} re-captured (W unchanged)")
     json.dump(m, open(HERE / "manifest.json", "w"), indent=2)

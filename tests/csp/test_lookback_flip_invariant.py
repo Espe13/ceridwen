@@ -131,6 +131,14 @@ def _photometry():
     )
 
 
+def _maggies(csp, theta):
+    """The model's photometry of the five SDSS bands, as a fit computes it (``csp.predict``: the
+    exact filter integral and each line's flux through the filters), at theta's redshift."""
+    phot = _photometry()
+    phot.setup_for_model(csp.wave, zred=float(np.ravel(np.asarray(theta.get("zred", [0.0])))[0]))
+    return np.asarray(csp.predict(theta, [phot])[phot.name])
+
+
 # AGN and fixed= configs (tests/baselines/_capture.py --agn / --fixed) carry "agn" (AGNConfig
 # kwargs or None), "csp" (CSPBasis overrides) and "theta" (AGN / dust / zred values)
 CONFIGS = [(c["sfh_interp"], c["zh_const"], c["per_bin"], c["tag"])
@@ -150,7 +158,6 @@ def test_lookback_flip_invariant(ssp, sfh_interp, zh_const, per_bin, tag):
     theta = _build_theta_new(zh_const, per_bin)
     csp   = _build_csp(ssp, theta, sfh_interp=sfh_interp, zh_const=zh_const,
                        agn=extra.get("agn"), **extra.get("csp", {}))
-    phot  = _photometry()
 
     theta_full = {k: jnp.asarray(v) for k, v in csp.theta_init.items()}
     theta_full.setdefault("logmass",       jnp.zeros(1))
@@ -162,8 +169,7 @@ def test_lookback_flip_invariant(ssp, sfh_interp, zh_const, per_bin, tag):
     W_new       = np.asarray(csp.calculate_ssp_weights(theta_full))
     spec_new    = np.asarray(csp.get_spectrum(theta_full))
     lines_new   = np.asarray(csp.get_line_spec(theta_full))
-    spec_phot = csp._apply_mass_redshift_igm(*csp._assemble_observer_spectra(theta_full), theta_full)[0]
-    maggies_new = np.asarray(phot.get_maggies(csp.wave, spec_phot))
+    maggies_new = _maggies(csp, theta_full)
 
     W_ref       = np.load(BASELINES / f"W_{tag}.npy")
     spec_ref    = np.load(BASELINES / f"spec_{tag}.npy")

@@ -7,6 +7,7 @@ V-INT-PR-3  agn_mode="cigale": a prior on fagn reaching 1 raises (CIGALE's fracA
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import sys
 import warnings
@@ -48,6 +49,8 @@ def _need(path):
 
 def test_nlr_prior_beyond_grid_raises():
     _need(default_nlr_file())
+    if not os.environ.get("SPS_HOME"):          # the NLR lines read FSPS's line list
+        pytest.skip("SPS_HOME not set (FSPS line list for the NLR lines)")
     agn = AGNConfig(torus=False, disk=False, nlr_model="feltre16")
     init = {"nlr_logu": jnp.array([-2.5])}
     _model(agn, {"nlr_logu": Uniform(low=-4.0, high=-1.5)}, init)

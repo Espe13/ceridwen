@@ -2,7 +2,7 @@
 
 Each cube (``ZAU_<ND|WD>_<isoc>.cont`` / ``.lines``) is interpolated linearly in
 (logZ, log age, logU) against its own axes and scaled by the ionising-photon rate Q of
-each SSP; lines are painted as Gaussians of width max(sigma_smooth, res_floor_factor pixels).
+each SSP; lines are painted as Gaussians of width max(sigma_smooth, a FWHM of res_floor_fwhm_px pixels).
 """
 
 from pathlib import Path
@@ -21,6 +21,7 @@ HPLANK_ERG_S   = 6.6261e-27    # erg s
 LSUN_ERG_S     = 3.839e33      # erg/s
 LYMAN_LIMIT_AA = 912.0         # Lyman limit, Angstrom
 SQRT_2PI       = float(np.sqrt(2.0 * np.pi))
+FWHM_PER_SIGMA = 2.355   # FSPS's literal (sps_setup.f90:1001): the floor is res_floor_fwhm_px pixels per FWHM
 TINY           = 1.0e-95       # floor for log10
 
 
@@ -141,7 +142,8 @@ class NebularModel:
     nebnz, nebnage, nebnip : int -- cube dimensions.
     smooth_velocity : bool -- ``sigma_smooth`` in km/s (True) or A.
     sigma_smooth : float -- intrinsic width of the painted lines (0: pixel floor only).
-    res_floor_factor : float -- minimum painted width in local pixels.
+    res_floor_fwhm_px : float -- minimum painted FWHM in local pixels (FSPS: 2 pixels per FWHM,
+        sigma = pixel x 2 / 2.355, ``sps_setup.f90:999-1002``).
 
     Attributes
     ----------
@@ -162,8 +164,9 @@ class NebularModel:
                  nebnz=11, nebnage=10, nebnip=7,
                  smooth_velocity=True,
                  sigma_smooth=0.0,
-                 res_floor_factor=2.0,
-                 nebular_smooth_init=None):
+                 res_floor_fwhm_px=2.0,
+                 nebular_smooth_init=None,
+                 **removed):
         if nebular_smooth_init is not None:
             sigma_smooth = float(nebular_smooth_init)
 
@@ -172,7 +175,17 @@ class NebularModel:
 
         self.smooth_velocity = bool(smooth_velocity)
         self.sigma_smooth    = float(sigma_smooth)
-        self.res_floor_factor = float(res_floor_factor)
+        if "res_floor_factor" in removed:
+            old = float(removed.pop("res_floor_factor"))
+            raise TypeError(
+                "NebularModel(res_floor_factor=) was removed in 1.1.0: it was the minimum line "
+                "SIGMA in model-grid pixels. The floor is now res_floor_fwhm_px, the minimum "
+                "FWHM in pixels (sigma = res_floor_fwhm_px / 2.355, as in FSPS; default 2). "
+                f"The old width is res_floor_fwhm_px={old * FWHM_PER_SIGMA:g} "
+                f"(res_floor_factor x 2.355).")
+        if removed:
+            raise TypeError(f"NebularModel() got unexpected keyword argument(s) {sorted(removed)}")
+        self.res_floor_fwhm_px = float(res_floor_fwhm_px)
 
         self.nebnz   = int(nebnz)
         self.nebnage = int(nebnage)
@@ -406,7 +419,7 @@ class NebularModel:
         """
         pos = np.asarray(self.nebem_line_pos, dtype=np.float64)
         lam = np.asarray(self.csp_lambda, dtype=np.float64)
-        floor = np.asarray(self.neb_res_min, dtype=np.float64) * self.res_floor_factor
+        floor = np.asarray(self.neb_res_min, dtype=np.float64) * self.res_floor_fwhm_px / FWHM_PER_SIGMA
         if self.smooth_velocity:
             base = pos * self.sigma_smooth / CLIGHT_AA_S * 1.0e13
         else:
@@ -423,7 +436,7 @@ class NebularModel:
             dlam = line_pos * self.sigma_smooth / CLIGHT_AA_S * 1.0e13
         else:
             dlam = jnp.full_like(line_pos, self.sigma_smooth)
-        dlam = jnp.maximum(dlam, self.neb_res_min * self.res_floor_factor)
+        dlam = jnp.maximum(dlam, self.neb_res_min * self.res_floor_fwhm_px / FWHM_PER_SIGMA)
 
         lam   = self.csp_lambda[:, None]
         l0    = line_pos[None, :]

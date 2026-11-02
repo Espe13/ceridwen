@@ -140,3 +140,17 @@ def test_display_draws(model):
     out = model.display(ax=own, return_fig=True)                # into a given axes: no panel
     assert out[1] is own and len(fig.axes) == 1
     plt.close(fig)
+
+
+def test_lines_details_count_every_line():
+    # describe._obs_details on a Lines observation: a multi-line flux array is counted, not
+    # tested for truth (``x or []`` on a JAX array raised "truth value ... is ambiguous"),
+    # and a single zero flux still counts as one line
+    from ceridwen.model.describe import _obs_details
+    from ceridwen.observation import Lines
+    many = Lines(line_ind=[0, 1, 2], wavelength=[4862.7, 5008.2, 6564.6],
+                 flux=np.array([1.0, 2.0, 3.0]), uncertainty=np.ones(3), name="lines")
+    assert _obs_details(many)[0] == "3 line fluxes"
+    one = Lines(line_ind=[0], wavelength=[6564.6], flux=np.array([0.0]),
+                uncertainty=np.ones(1), name="lines")
+    assert _obs_details(one)[0] == "1 line fluxes"
