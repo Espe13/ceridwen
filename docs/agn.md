@@ -68,7 +68,8 @@ free_param_init = {"log_fagn": jnp.array([-1.0]), "log_fagn_bbb": jnp.array([-1.
 Add `log_fagn` and `log_fagn_bbb` to `free_param_init` as well as `priors`
 and `transforms`. `SedModel` rejects priors for names missing from the
 initial parameters. With `add_neb=True` and `add_dust_emission=True`, provide
-priors or constant transforms for `gas_logz`, `gas_logu`, `duste_qpah`,
+priors, or fixed values (`CSPBasis(fixed=...)` or constant transforms), for
+`gas_logz`, `gas_logu`, `duste_qpah`,
 `duste_umin`, `duste_gamma`, `tau_pow` and `alpha_pow`. AGN lines also add
 `agn_eline_sigma`. Nested sampling requires a prior for every free parameter.
 Dust emission requires both `add_dust=True` and `add_diffuse_dust=True`,
@@ -109,7 +110,8 @@ instrumental sigma exceeds three times the prior's upper bound at every
 AGN line. Fix the width in these cases:
 
 ```python
-transforms = {"agn_eline_sigma": lambda th: jnp.array([100.0])}   # and no prior on it
+csp = CSPBasis(ssp, ..., agn=AGNConfig(), fixed={"agn_eline_sigma": 100.0})   # no prior on it
+# or, on the SedModel: transforms={"agn_eline_sigma": lambda th: jnp.array([100.0])}
 ```
 
 The instrumental sigma is sigma_inst = c / (2.3548 R_FWHM):

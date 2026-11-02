@@ -398,6 +398,40 @@
           5
         ]
       }
+    },
+    {
+      "tag": "fixed_neb",
+      "sfh_interp": "step",
+      "zh_const": true,
+      "per_bin": false,
+      "agn": null,
+      "csp": {
+        "add_diffuse_dust": true,
+        "add_igm": true,
+        "fixed": {
+          "gas_logu": -2.5,
+          "gas_logz": -0.3
+        }
+      },
+      "theta": {
+        "zred": 2.0,
+        "diffuse_tau_kc": 0.6
+      },
+      "shapes": {
+        "W": [
+          12,
+          43
+        ],
+        "spec": [
+          15000
+        ],
+        "lines": [
+          15000
+        ],
+        "maggies": [
+          5
+        ]
+      }
     }
   ],
   "spectra_recaptured": "2026-09-10 broadening merge (W_*.npy untouched)",

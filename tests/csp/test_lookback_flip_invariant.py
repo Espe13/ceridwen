@@ -131,11 +131,11 @@ def _photometry():
     )
 
 
-# AGN configs (tests/baselines/_capture.py --agn) carry "agn" (AGNConfig kwargs), "csp"
-# (CSPBasis overrides) and "theta" (AGN / dust / zred values) in the manifest
+# AGN and fixed= configs (tests/baselines/_capture.py --agn / --fixed) carry "agn" (AGNConfig
+# kwargs or None), "csp" (CSPBasis overrides) and "theta" (AGN / dust / zred values)
 CONFIGS = [(c["sfh_interp"], c["zh_const"], c["per_bin"], c["tag"])
            for c in MANIFEST["configs"]]
-_EXTRA = {c["tag"]: c for c in MANIFEST["configs"] if "agn" in c}
+_EXTRA = {c["tag"]: c for c in MANIFEST["configs"] if "agn" in c or "csp" in c}
 
 
 @pytest.mark.parametrize("sfh_interp,zh_const,per_bin,tag", CONFIGS)

@@ -46,6 +46,9 @@ SPEC_WAVE = np.linspace(3800.0, 8800.0, 600)
 LINES = {"Hbeta": 4862.71, "OIII5007": 5008.24, "Halpha": 6564.61}
 N_THETA = 16
 SEED = 20260906
+N_FIXED = 4                       # draws per fixed= / constant-transform pair
+AFE_GRID = HERE.parent / "ceridwen" / "data" / "test_data" / "amist_c3k_lr_chab_afe.h5"
+FIXED_BAD = []                    # fixed= arrays that differ from their constant-transform twin
 
 
 def _flat(prefix, obj, out):
@@ -63,16 +66,29 @@ def _flat(prefix, obj, out):
 
 def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False, lsf=None,
            interp="step", track=False, zred=ZRED, spec_wave=SPEC_WAVE, filters=FILTERS,
-           marg=False, line_windows=False, support=False, agn=None):
-    path = find_test_grid()
-    if path is None:
-        sys.exit("no test SSP grid found (tests/_gridfixture.py)")
-    ssp = SSPData.load(str(path))
+           marg=False, line_windows=False, support=False, agn=None, fix=None, fix_via="fixed",
+           csp_extra=None, afe=False):
+    """``fix``: {name: value} held fixed, by ``CSPBasis(fixed=fix)`` (``fix_via="fixed"``) or by
+    the equivalent constant transforms (``"transform"``); ``afe``: CSPBasis_afe on the alpha grid."""
+    fix = dict(fix or {})
+    if afe:
+        from ceridwen.ssps import SSPDataAfe
+        ssp = SSPDataAfe.load(str(AFE_GRID))
+    else:
+        path = find_test_grid()
+        if path is None:
+            sys.exit("no test SSP grid found (tests/_gridfixture.py)")
+        ssp = SSPData.load(str(path))
     cosmo = Cosmology.planck18()
     kw = dict(lookback_time=jnp.linspace(0.0, float(cosmo.age(0.0 if track else zred)), N_TIME),
               zh_const=True, sfh_interp=interp, add_dust=True, add_diffuse_dust=True,
               add_neb=add_neb, add_igm=add_igm, add_dust_emission=dust_emission,
               verbose=False, cosmo=cosmo)
+    kw.update(csp_extra or {})
+    if afe:
+        del kw["add_neb"]              # CSPBasis_afe has no nebular model
+    if fix and fix_via == "fixed":
+        kw["fixed"] = fix
     if track:                          # grid built to age(0), rescaled to age(ZRED) in the forward pass
         kw["track_zred_age"] = True
     if gas_tied:
@@ -87,7 +103,11 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
     if agn is not None:                # ceridwen.agn: AGNConfig kwargs
         from ceridwen.agn import AGNConfig
         kw["agn"] = AGNConfig(**agn)
-    csp = CSPBasis(ssp, **kw)
+    if afe:
+        from ceridwen.csp import CSPBasis_afe
+        csp = CSPBasis_afe(ssp, **kw)
+    else:
+        csp = CSPBasis(ssp, **kw)
     sfh_times_yr = np.array(csp.sfh_times)
 
     def _sfh(t, _t=sfh_times_yr):
@@ -116,8 +136,10 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
     if agn is not None:                # every AGN key of this configuration is sampled
         vals = {"fagn": 0.3, "agn_tau": 20.0, "fagn_bbb": 0.5, "dust4": 0.3,
                 "dust4_index": -1.2, "agn_elum": 1e-3, "agn_eline_sigma": 200.0}
-        init.update({k: jnp.array([vals[k]]) for k in csp._agn.param_names})
+        init.update({k: jnp.array([vals[k]]) for k in csp._agn.param_names if k not in fix})
     transforms = {"sfh": _sfh}
+    if fix_via == "transform":
+        transforms.update({k: (lambda th, _v=float(v): jnp.array([_v])) for k, v in fix.items()})
     kin = Kinematics(sigma_gal=sigma_losvd)
     if marg:
         # marginalised line fluxes (the nebular parameters fixed, as eline_marginal requires)
@@ -320,7 +342,9 @@ def _nested(model, tag, out, kernel=None):
                     "tau_pow": Uniform(low=0.0, high=2.0),
                     "alpha_pow": Uniform(low=-2.0, high=0.0),
                     "diffuse_tau_kc": Uniform(low=0.0, high=2.0),
-                    "diffuse_dust_index": Uniform(low=-1.0, high=0.4)}
+                    "diffuse_dust_index": Uniform(low=-1.0, high=0.4),
+                    "gas_logz": Uniform(low=-1.3, high=0.3),
+                    "gas_logu": Uniform(low=-4.0, high=-1.0)}
     missing = [k for k in model.param_names if k not in model.priors]
     if missing:
         sys.exit(f"bit_identity_check: no prior defined for {missing}")
@@ -439,7 +463,68 @@ def collect(args):
             for kernel in _explicit_kernels():
                 _nested(model, tag, out, kernel)
         print(f"{tag:<12} {len(out)} arrays so far  ({time.perf_counter() - t0:.1f} s)")
+    if "fixed" in inspect.signature(CSPBasis.__init__).parameters:
+        _fixed_pairs(args, out)
+    else:
+        print("  (package has no CSPBasis(fixed=): fixed-parameter pairs skipped)")
     return out
+
+
+def _weights(model, theta_np, tag, out):
+    """The SSP weights W per draw."""
+    n = next(iter(theta_np.values())).shape[0]
+    for i in range(n):
+        t = model.apply_transforms({k: jnp.asarray(v[i]) for k, v in theta_np.items()})
+        out[f"{tag}/W/{i}"] = np.asarray(model.csp.calculate_ssp_weights(t))
+
+
+def _fixed_pairs(args, out):
+    """CSPBasis(fixed=...) against the same model with constant transforms: every array of the
+    pair must be byte-identical (FIXED_BAD lists the ones that are not).  The lowered program's
+    SHA-256 is left out of the comparison: its text carries the source location of the
+    transform (a lambda here, FixedValue.__call__ there)."""
+    neb = dict(add_neb=True, add_igm=True, sigma_losvd=250.0, dust_emission=False)
+    plain = dict(add_neb=False, add_igm=True, sigma_losvd=250.0, dust_emission=False)
+    pairs = [("fx_alpha_pow", plain, {"alpha_pow": -0.7}),
+             ("fx_cal00", dict(plain, csp_extra={"diffuse_law": "calzetti"}),
+              {"diffuse_R_v_cal00": 3.1})]
+    if os.environ.get("SPS_HOME"):
+        pairs += [("fx_gas_logu", neb, {"gas_logu": -2.5}),
+                  ("fx_gas_logz", neb, {"gas_logz": -0.3}),
+                  ("fx_diffuse_index", neb, {"diffuse_dust_index": -0.3}),
+                  ("fx_duste", dict(neb, dust_emission=True),
+                   {"duste_qpah": 2.0, "duste_umin": 3.0, "duste_gamma": 0.02}),
+                  ("fx_agn_tau", dict(neb, agn={"agn_mode": "corrected", "dust4_type": 1}),
+                   {"agn_tau": 30.0})]
+    if AFE_GRID.is_file():
+        pairs.append(("fx_afe", dict(plain, afe=True), {"afe": 0.2}))
+    else:
+        print(f"  ({AFE_GRID.name} not found: fx_afe skipped)")
+    n_cmp = 0
+    for tag, cfg, fix in pairs:
+        t0 = time.perf_counter()
+        for via in ("fixed", "transform"):
+            model = _build(**cfg, fix=fix, fix_via=via)
+            theta = _draws(model, N_FIXED, np.random.default_rng(SEED + 7))
+            key = f"{tag}/{via}"
+            _forward(model, theta, key, out)
+            _weights(model, theta, key, out)
+            _postprocess(model, theta, key, out)
+            _likelihood(model, theta, key, out)
+            if args.ns and tag == "fx_gas_logu":
+                _nested(model, key, out)
+        for k in [k for k in out if k.startswith(f"{tag}/fixed/")]:
+            if k.endswith("stablehlo_sha256"):
+                continue
+            twin = k.replace("/fixed/", "/transform/", 1)
+            a, b = out[k], out.get(twin)
+            n_cmp += 1
+            if b is None or a.dtype != b.dtype or a.shape != b.shape or a.tobytes() != b.tobytes():
+                FIXED_BAD.append(k)
+        print(f"{tag:<16} {len(out)} arrays so far  ({time.perf_counter() - t0:.1f} s)")
+    print(f"fixed= vs constant transforms: {n_cmp} arrays, {len(FIXED_BAD)} differ")
+    for k in FIXED_BAD[:40]:
+        print(f"  DIFF {k}")
 
 
 def main():
@@ -468,7 +553,7 @@ def main():
     if args.save:
         np.savez(args.save, **out)
         print(f"saved {len(out)} arrays -> {args.save}")
-        if kernel_bad and not args.compare:
+        if (kernel_bad or FIXED_BAD) and not args.compare:
             sys.exit(1)
     if args.compare:
         ref = np.load(args.compare)
@@ -488,7 +573,7 @@ def main():
             print(f"  DIFF {k}: max|old-new| = {d}")
         for k in missing[:20]:
             print(f"  MISSING {k}")
-        sys.exit(1 if (bad or missing or kernel_bad) else 0)
+        sys.exit(1 if (bad or missing or kernel_bad or FIXED_BAD) else 0)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ To sample any of the following variance terms, add a prior and a
 Replace `<kind>` with `phot`, `spec` or `lines`. For several observations of
 the same type, use `<root>_<kind>_<obs.name>`, such as
 `log_jitter_spec_nirspec`; the unsuffixed name is then ambiguous and raises
-an error. Use a constant transform to fix a term.
+an error. Use a constant transform to fix a term. `CSPBasis(fixed=...)` takes only CSP parameters; these names belong to the observations, so they are fixed with a constant transform.
 
 `fitSED` reads these names automatically. With `run_sampler`, construct the
 `DiagonalNoiseModel` yourself. `log_jitter` is the natural log of a flux in

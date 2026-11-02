@@ -56,6 +56,7 @@ class CSPBasis_afe(CSPBasis):
         duste_model="DL07",
         wavelength_support=False,
         agn=None,
+        fixed=None,
         **kwargs,
     ):
         self.verbose = bool(verbose)
@@ -102,6 +103,8 @@ class CSPBasis_afe(CSPBasis):
             )
         init_dust_params = ({'bin_edges': [(-jnp.inf, -1.97)], 'laws': ['powerlaw']}
                             if init_dust_params is None else dict(init_dust_params))
+        if isinstance(fixed, dict) and 'afe' in fixed and 'afe' not in theta:
+            theta = {**theta, 'afe': fixed['afe']}    # afe is a parameter only when given
 
         _flux_in = np.asarray(SSPData.ssp_flux)            # host NumPy (SSPData keeps it there)
         _afe_in  = getattr(SSPData, "ssp_afe", None)
@@ -245,6 +248,7 @@ class CSPBasis_afe(CSPBasis):
             print(f"SFH integration scheme : {sfh_interp}")
 
         self.initialize_model_structure(theta)
+        self._set_fixed(fixed)
 
         if verbose:
             print("\nCSPBasis (dict theta) — registered parameters:")
@@ -268,6 +272,7 @@ class CSPBasis_afe(CSPBasis):
                     stacklevel=3,
                 )
         self._known_theta_keys = (self._known_theta_keys | {'afe'}) - {'eline_scaling'}
+        self._apply_fixed()
 
     def check_param_ranges(self, theta=None, warn=True):
         """``CSPBasis.check_param_ranges`` plus theta['afe'] against the [alpha/Fe] grid."""

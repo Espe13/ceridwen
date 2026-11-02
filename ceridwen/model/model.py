@@ -25,6 +25,35 @@ AGN_ELINE_SIGMA_MAX = float(Kinematics.__dataclass_fields__["sigma_max"].default
 AGN_ELINE_SIGMA_RESOLVE = 3.0
 
 
+FIXED_PREFIX = "CSPBasis(fixed="
+
+
+class FixedValue:
+    """The constant transform of a ``CSPBasis(fixed={name: value})`` entry: the same value for
+    every theta, exactly what ``lambda th: jnp.array([value])`` gives.  Its ``__name__``
+    (``CSPBasis(fixed=[...])``) is what the result file records for the transform."""
+
+    def __init__(self, name, value):
+        self.name = name
+        self.value = np.array(value, dtype=np.float64)
+        self.value.setflags(write=False)
+        self.__name__ = (FIXED_PREFIX + "[" + ", ".join(repr(float(x)) for x in self.value)
+                         + "])")
+
+    def __call__(self, theta):
+        return jnp.asarray(self.value)
+
+    def __repr__(self):
+        return f"FixedValue({self.name!r}, {self.value.tolist()})"
+
+
+def _value_source(model, name):
+    """How a fixed value of ``name`` was given, for the range-check messages."""
+    if name in getattr(model, "fixed", {}):
+        return f"CSPBasis(fixed={{{name!r}: ...}}) gives"
+    return f"the transform for {name!r} gives"
+
+
 class SedModel:
     """Parameter manager and prediction layer: ``predict(theta)`` returns a dict keyed
     by observation name, ``log_prob(theta)`` the summed log-prior on free parameters.
@@ -61,6 +90,18 @@ class SedModel:
         self.observations = list(observations)
         self.priors       = dict(priors) if priors is not None else {}
         self.transforms   = dict(transforms) if transforms is not None else {}
+        self.fixed        = dict(getattr(csp, "fixed", None) or {})
+        for name, value in self.fixed.items():
+            for where, given in (("priors", self.priors), ("transforms", self.transforms),
+                                 ("free_param_init", free_param_init or {})):
+                if name in given:
+                    raise ValueError(
+                        f"{name!r} is fixed on the CSP (CSPBasis(fixed={{{name!r}: "
+                        f"{value.tolist() if value.size > 1 else float(value[0])}}})) and is "
+                        f"also in {where}.  To sample it, build the CSP without it in fixed= "
+                        "and give it a prior; to derive it, drop it from fixed= and keep the "
+                        "transform.")
+            self.transforms[name] = FixedValue(name, value)
         self.zred         = float(zred)
         if kinematics is None:
             kinematics = DEFAULT_KINEMATICS
@@ -246,13 +287,13 @@ class SedModel:
                 lo = float(np.min(fixed)); hi = float(np.max(fixed))
                 if lo < zlo - 1e-12 or hi > zhi + 1e-12:
                     raise ValueError(
-                        f"the transform for {name!r} gives {np.array2string(fixed, precision=3)}, "
+                        f"{_value_source(self, name)} {np.array2string(fixed, precision=3)}, "
                         f"outside this grid's logzsol range [{zlo:+.3f}, {zhi:+.3f}] (Z_sun = "
                         f"{getattr(csp, 'zsun_nominal', float('nan')):.6g}); the metallicity "
                         "interpolation would clamp there.")
                 if hi < ABSOLUTE_LOOKING_LOGZSOL:
                     warnings.warn(
-                        f"the transform for {name!r} gives {np.array2string(fixed, precision=3)}, "
+                        f"{_value_source(self, name)} {np.array2string(fixed, precision=3)}, "
                         f"below logzsol = {ABSOLUTE_LOOKING_LOGZSOL} everywhere: is it an OLD "
                         f"absolute log10 Z?  It would be logzsol = "
                         f"{np.array2string(fixed - l0, precision=3)}.", stacklevel=3)
@@ -308,7 +349,7 @@ class SedModel:
                                                  dtype=float))
                 except Exception:
                     v = None
-                where = f"the transform for {key!r} gives"
+                where = _value_source(self, key)
             elif key in self.theta_init:
                 v = np.atleast_1d(np.asarray(self.theta_init[key], dtype=float))
                 where = f"theta[{key!r}] is"
@@ -476,7 +517,7 @@ class SedModel:
                 continue
             if float(np.min(fixed)) < glo - 1e-9 or float(np.max(fixed)) > ghi + 1e-9:
                 raise ValueError(
-                    f"the transform for {name!r} gives {np.array2string(fixed, precision=3)}, outside the "
+                    f"{_value_source(self, name)} {np.array2string(fixed, precision=3)}, outside the "
                     f"nebular grid's {name} axis [{glo:+.3f}, {ghi:+.3f}]{grid}; the CLOUDY "
                     "interpolation would clamp to the edge.  Give a value inside the axis.")
 
@@ -512,7 +553,7 @@ class SedModel:
             if fixed is not None and (float(np.min(fixed)) < alo - 1e-12
                                       or float(np.max(fixed)) > ahi + 1e-12):
                 raise ValueError(
-                    f"the transform for 'afe' gives {np.array2string(fixed, precision=3)}, "
+                    f"{_value_source(self, 'afe')} {np.array2string(fixed, precision=3)}, "
                     f"outside this grid's [alpha/Fe] range [{alo:+.3f}, {ahi:+.3f}]; the "
                     "interpolation would clamp there.")
             return

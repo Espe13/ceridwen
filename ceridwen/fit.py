@@ -1124,6 +1124,8 @@ def _write_csp_config(mod_grp, model) -> None:
         cfg["wavelength_support"] = True
     if getattr(csp, "_agn", None) is not None:  # CSPBasis(agn=...); absent without AGN
         cfg["agn"] = csp._agn.provenance()
+    if getattr(csp, "fixed", None):             # CSPBasis(fixed=...); absent when none
+        cfg["fixed"] = {k: np.asarray(v, dtype=float).tolist() for k, v in csp.fixed.items()}
     mod_grp.attrs["csp_config"] = json.dumps(cfg, default=str)
     if hasattr(csp, "sfh_times"):
         mod_grp.create_dataset("sfh_times_yr", data=np.asarray(csp.sfh_times))

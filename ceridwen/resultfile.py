@@ -287,7 +287,9 @@ def rebuild_model(path, csp, observations, transforms=None, *, check: bool = Tru
     lumdist_mpc, kinematics and ``broaden_photometry``.  Not recorded, so supplied by you: the
     CSP (built as for the fit, with the same grid and cosmology), the observation objects and
     the transform callables (the file lists them as ``derived <- function name``; the derived
-    names must match).  With ``check`` (default) the rebuilt model is compared with the file by
+    names must match).  Parameters fixed with ``CSPBasis(fixed=...)`` (stored as
+    ``name <- CSPBasis(fixed=[...])``) come from the CSP, which must fix them to the same
+    values.  With ``check`` (default) the rebuilt model is compared with the file by
     :func:`check_model_against_result` and any difference raises a ``ValueError`` saying which.
     """
     from .fit import read_result_h5
@@ -297,7 +299,15 @@ def rebuild_model(path, csp, observations, transforms=None, *, check: bool = Tru
     mod = rec["model"]
     transforms = dict(transforms or {})
     stored = json.loads(mod["transforms"]) if "transforms" in mod else []
-    want = [t.split(" <- ")[0] for t in stored]
+    from .model.model import FIXED_PREFIX
+    on_csp = [t.split(" <- ")[0] for t in stored if t.split(" <- ", 1)[-1].startswith(FIXED_PREFIX)]
+    missing = sorted(set(on_csp) - set(getattr(csp, "fixed", {}) or {}))
+    if missing:
+        raise ValueError(
+            f"{path} was fitted with {missing} fixed on the CSP "
+            f"({[t for t in stored if t.split(' <- ')[0] in missing]}); build the CSP with the "
+            "same CSPBasis(fixed={...}) to rebuild it")
+    want = [t.split(" <- ")[0] for t in stored if t.split(" <- ")[0] not in on_csp]
     if sorted(want) != sorted(transforms):
         raise ValueError(
             f"{path} was fitted with transforms {stored}; the transforms given are for "

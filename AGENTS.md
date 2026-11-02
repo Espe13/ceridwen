@@ -158,6 +158,9 @@ projection → likelihood → sampler.
   SFH interpolation, constant or time-varying metallicity, dict-based `theta`,
   fully JAX-traceable; `predict` projects onto the observations (static
   line-to-band basis for fixed-z photometry, painted lines otherwise).
+  `CSPBasis(fixed={name: value})` holds CSP parameters fixed at construction (out of
+  `param_names`, kept in `theta_init`; `SedModel` makes each a constant transform, GOTCHAS
+  section 28).
   `CSPBasis(wavelength_support=True)` (opt-in, not byte-identical) synthesises only the
   model pixels the observations read (`Observation.model_support`, `CSPBasis._support_for`).
   `csp_afe.py`: `CSPBasis_afe`, the [alpha/Fe] variant without a nebular model.

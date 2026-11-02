@@ -1,5 +1,15 @@
 ## Unreleased
 
+- `CSPBasis(fixed={name: value})` and `CSPBasis_afe(fixed=...)` hold CSP parameters fixed at
+  construction, so priors are needed only for what is fitted. A fixed name leaves
+  `csp.param_names` and stays in `csp.theta_init` with its value; `SedModel` turns it into a
+  constant transform, so the model is byte-identical to the one with
+  `transforms={name: lambda th: jnp.array([value])}`. A name the configuration does not have
+  (naming the switch that adds it), a model-level name, a value of the wrong shape, `gas_logz`
+  with `gas_tied=True`, and a fixed name that also has a prior, transform or `free_param_init`
+  entry raise. Result files record the values (`csp_config["fixed"]`); `rebuild_model` takes
+  them from the CSP. GOTCHAS section 28.
+
 - README quick start and `examples/quickstart.py`: `logZ_tol=-5`, the library default, instead
   of the early stop at -2 (chosen when the quick start ran on a CPU). Same posterior and ln Z
   (README mock: logmass 10.43, ln Z within 0.002), 16 % more likelihood calls; the README

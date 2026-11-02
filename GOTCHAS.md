@@ -386,7 +386,8 @@ prefer `predict`/`get_spectrum_components`.
   still has to be fixed.
 - **The nebular model must not be sampled** (`gas_logu`, `gas_logz`): with free
   line fluxes the lines cannot constrain it. CERIDWEN samples every CSP key
-  unless a transform derives it, so fix them with constant transforms
+  unless it is fixed or a transform derives it, so fix them on the CSP,
+  `CSPBasis(..., fixed={"gas_logu": -2.5, "gas_logz": -0.3})`, or with constant transforms
   (`transforms={"gas_logu": lambda th: jnp.array([-2.5]), ...}`); a sampled one
   raises at construction.
 - **Line names** are FSPS's (`"[O III] 5007"`, `"Ba-alpha 6563"`); a near miss
@@ -430,7 +431,8 @@ switch on Prospector's outlier mixture for the `Spectrum` / `Photometry` / `Line
   ln 2 pi and drops n ln 2 pi (`noise_model.py:90`); CERIDWEN equals Prospector's outlier
   branch for f > 0 and the correct Gaussian at f = 0.
 - **Fixed means a constant transform**, `transforms={"f_outlier_phot": lambda th:
-  jnp.array([0.05])}`; a transform that depends on sampled parameters raises. Fixed at
+  jnp.array([0.05])}` (an observation-level name: `CSPBasis(fixed=)` takes only CSP
+  parameters, section 28); a transform that depends on sampled parameters raises. Fixed at
   0.0 = off (the plain Gaussian).
 - **Upper limits** keep the one-sided penalty; the mixture acts on the detections.
 - **With `marginalize_elines`** the mixture is refused on the marginalised system (the
@@ -830,3 +832,36 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
   template ends at 91 A and `"corrected"` zeroes it blueward (`disk.py:98-100`), while the
   SKIRTOR parametric disc is defined from 8 A (`skirtor.py:113-116`). What reaches a prediction
   is set by the model grid's blue end and the IGM, not by the AGN model.
+
+## 28. Fixing CSP parameters: `CSPBasis(fixed=...)` or a constant transform
+
+- **Two ways, one model.** `CSPBasis(..., fixed={"gas_logu": -2.5})` and
+  `SedModel(..., transforms={"gas_logu": lambda th: jnp.array([-2.5])})` give the same model
+  byte for byte: `SedModel` turns each fixed entry into that constant transform
+  (`ceridwen.model.model.FixedValue`), so the range checks, `model.describe()` / `latex()`, the
+  fit-time resolution and the result file see a constant transform. Give priors only for what
+  you fit; a fixed name with a prior, a `free_param_init` entry or a transform raises.
+- **What the CSP reports.** A fixed name is not in `csp.param_names` (nor
+  `model.param_names`); its value is in `csp.theta_init` (so `csp.predict(csp.theta_init, ...)`
+  uses it) and in `csp.fixed`. Rebuilding the structure (`initialize_model_structure`, the
+  template-copy recipe of section 25) keeps the fixed values.
+- **Only CSP parameters, of this configuration.** A name the CSP does not have raises and says
+  which switch adds it (`gas_logu` needs `add_neb=True`, `duste_*` needs
+  `add_dust_emission=True`, `diffuse_R_v_cal00` needs `diffuse_law='calzetti'`, the AGN keys
+  need `agn=`, `afe` needs `CSPBasis_afe`). `gas_logz` with `gas_tied=True` raises (fix
+  `logzsol`). Model-level names (`logmass`, `zred`, `eline_scaling`, `frac_obrun`,
+  `spectrum_scaling`, the noise, outlier and GP terms) are refused: fix them with a constant
+  transform. `igm_factor` has its own constructor argument, `CSPBasis(igm_factor=...)`; a
+  transform or prior on `igm_factor` replaces that value per call.
+- **Shapes.** A value must have the parameter's shape: a number for a `(1,)` parameter, an
+  array of `(n_time,)` for `logzsol_hist` or `sfh`; anything else, or a non-finite value,
+  raises.
+- **Ranges.** A fixed value outside the logzsol grid, the CLOUDY `gas_logz` / `gas_logu` axes,
+  the [alpha/Fe] axis or the AGN line-width range raises in `SedModel`, the same check as for a
+  constant transform. The DL07 / THEMIS `duste_qpah` / `duste_umin` axes are NOT checked, for a
+  fixed value, a constant transform or a prior alike: the dust-emission interpolation clamps to
+  the template axes there.
+- **Result files.** `fitSED` records the fixed values in `csp_config["fixed"]` and the
+  transforms as `name <- CSPBasis(fixed=[...])`. `rebuild_model` takes those from the CSP you
+  pass, which must fix the same names to the same values (anything else raises or is reported
+  by `check_model_against_result`).

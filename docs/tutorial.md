@@ -376,6 +376,23 @@ Omitting `kinematics=` uses `DEFAULT_KINEMATICS`, or
 `Kinematics(sigma_gal=300.0)` for both stars and gas. The summary reports
 these values.
 
+To hold a CSP parameter fixed instead of fitting it, set it when you build
+the CSP and give it no prior:
+
+```python
+csp = CSPBasis(ssp, lookback_time=lb, zh_const=True, add_neb=True, cosmo=cosmo,
+               fixed={"gas_logu": -2.5, "duste_qpah": 2.0})   # duste_*: add_dust_emission=True
+```
+
+A fixed name is no longer a parameter: it is absent from `csp.param_names`
+and `model.param_names`, and its value is in `csp.theta_init` and
+`csp.fixed`. A name this CSP does not have (`gas_logu` with `add_neb=False`),
+a value of the wrong shape, or a prior on a fixed name raises. Model-level
+names (`logmass`, `zred`, `eline_scaling`, `spectrum_scaling`, the noise terms)
+are fixed with a constant transform on the `SedModel`,
+`transforms={"eline_scaling": lambda th: jnp.array([1.0])}`, which also works
+for CSP parameters and gives the same model.
+
 To fit redshift, add `zred` to `free_param_init` with a bounded prior such
 as `Uniform` or `ClippedNormal`. For a non-parametric SFH, construct the
 CSP with `track_zred_age=True`. It stretches the SFH grid to `age(zred)`

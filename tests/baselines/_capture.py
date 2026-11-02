@@ -19,6 +19,9 @@ Usage
     python tests/baselines/_capture.py --agn    # ONLY the AGN configs (AGN_CONFIGS): writes the
                                                 # agn_* files and replaces just their manifest
                                                 # entries; the existing entries are not touched
+    python tests/baselines/_capture.py --fixed  # ONLY the CSPBasis(fixed=...) configs
+                                                # (FIXED_CONFIGS), after checking each equals
+                                                # the same model with the values in theta
     python tests/baselines/_capture.py --agn2   # ONLY the AGN2 configs (AGN2_CONFIGS: SKIRTOR,
                                                 # polar dust, Feltre+16 NLR, BLR; they need the
                                                 # converted tables of $CERIDWEN_AGN_DATA)
@@ -143,12 +146,24 @@ AGN2_CONFIGS = [
 ]
 
 
+# CSPBasis(fixed=...) golden configs: the AGN goldens' SFH at zred = 2 with the IGM and the
+# nebular block fixed at construction (the T3 test reads "csp" and "theta" as for the AGN)
+FIXED_CONFIGS = [
+    {"tag": "fixed_neb", "agn": None,
+     "csp": {"add_diffuse_dust": True, "add_igm": True,
+             "fixed": {"gas_logu": -2.5, "gas_logz": -0.3}},
+     "theta": {"zred": 2.0, "diffuse_tau_kc": 0.6}},
+]
+
+
 def agn_arrays(ssp, cfg):
-    """(W, spec, lines, maggies) of one AGN config, exactly as the T3 test computes them."""
+    """(W, spec, lines, maggies) of one AGN (or fixed=) config, exactly as the T3 test computes
+    them."""
     from ceridwen.agn import AGNConfig
     theta = _build_theta(True, False)
     csp = _build_csp(ssp, theta, sfh_interp="step", zh_const=True,
-                     agn=AGNConfig(**cfg["agn"]), **cfg["csp"])
+                     agn=None if cfg.get("agn") is None else AGNConfig(**cfg["agn"]),
+                     **cfg["csp"])
     phot = _photometry(csp)
     theta_full = {k: jnp.asarray(v) for k, v in csp.theta_init.items()}
     theta_full.setdefault("logmass", jnp.zeros(1))
@@ -192,6 +207,21 @@ def check_agn2_zero(ssp, cfg):
         assert x.tobytes() == y.tobytes(), f"{cfg['tag']}: {name} at zero AGN != no AGN"
 
 
+def check_fixed_equal(ssp, cfg):
+    """Independent check before a fixed= capture: the four arrays equal, byte for byte, those of
+    the same CSP built without ``fixed=`` and given the fixed values in theta (what a constant
+    transform passes the CSP)."""
+    a = agn_arrays(ssp, cfg)
+    fixed = cfg["csp"]["fixed"]
+    plain = dict(cfg, csp={k: v for k, v in cfg["csp"].items() if k != "fixed"},
+                 theta={**cfg["theta"], **fixed})
+    b = agn_arrays(ssp, plain)
+    for name, x, y in zip(("W", "spec", "lines", "maggies"), a, b):
+        assert x.tobytes() == y.tobytes(), f"{cfg['tag']}: {name} with fixed= != theta values"
+    print(f"[capture --fixed] {cfg['tag']}: W, spec, lines, maggies byte-identical to the "
+          f"model with {sorted(fixed)} in theta")
+
+
 def capture_agn(configs=None):
     """The AGN configs (default ``AGN_CONFIGS``) on the grid the T3 test loads
     (tests/_gridfixture.py); only their files and manifest entries are written."""
@@ -209,6 +239,8 @@ def capture_agn(configs=None):
     for cfg in configs:
         if "data" in cfg:
             check_agn2_zero(ssp, cfg)
+        if "fixed" in cfg["csp"]:
+            check_fixed_equal(ssp, cfg)
         W, spec, lines, maggies = agn_arrays(ssp, cfg)
         for name, arr in (("W", W), ("spec", spec), ("lines", lines), ("maggies", maggies)):
             np.save(THIS_DIR / f"{name}_{cfg['tag']}.npy", arr)
@@ -308,6 +340,8 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--fixed" in sys.argv[1:]:
+        sys.exit(capture_agn(FIXED_CONFIGS))
     if "--agn2" in sys.argv[1:]:
         sys.exit(capture_agn(AGN2_CONFIGS))
     sys.exit(capture_agn() if "--agn" in sys.argv[1:] else main())

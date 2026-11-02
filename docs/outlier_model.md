@@ -87,7 +87,7 @@ nsigma = 50 (fixed)`. Other observations report `outlier mixture off`.
 
 - Fix a fraction with a constant transform, for example
   `transforms={"f_outlier_phot": lambda th: jnp.array([0.05])}`. Setup checks
-  that the transform is constant. A value of 0 disables the mixture.
+  that the transform is constant. A value of 0 disables the mixture. `CSPBasis(fixed=...)` takes only CSP parameters; these names belong to the observations, so they are fixed with a constant transform.
 - `nsigma_outlier_*` defaults to 50. It can be fixed with a transform or
   sampled with a prior bounded above zero. It requires a matching fraction.
 - Priors on `f` must be bounded within [0, 1], such as `Uniform`, `TopHat`

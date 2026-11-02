@@ -178,6 +178,55 @@ def spectrum_model_name(csp, default=None):
     return getattr(fn, "__name__", default)
 
 
+
+#: model-level theta keys: set on the SedModel (a prior, or a constant transform), not on the CSP
+_MODEL_LEVEL_KEYS = ("logmass", "zred", "lumdist_mpc", "igm_factor", "eline_scaling",
+                     "frac_obrun", "spectrum_scaling", "spectrum_calib", "lookback_time")
+
+
+def _fixed_key_message(csp, name):
+    """Why ``name`` cannot be in ``fixed=`` for this CSP, and which switch adds it."""
+    valid = sorted(csp.param_names)
+    tail = f"  The CSP parameters of this configuration are {valid}."
+    if name in getattr(csp, "fixed", {}):
+        return f"fixed: {name!r} is given twice." + tail
+    if name == "gas_logz" and getattr(csp, "gas_tied", False):
+        return ("fixed: 'gas_logz' with gas_tied=True: the gas metallicity is the stellar "
+                "logzsol, not a parameter.  Fix 'logzsol', or build the CSP with "
+                "gas_tied=False to fix the gas metallicity on its own." + tail)
+    if name in _MODEL_LEVEL_KEYS or name.startswith(("spectrum_scaling_", "spectrum_calib_")):
+        how = ("CSPBasis(igm_factor=...) sets it at construction (a SedModel transform or "
+               "prior on 'igm_factor' replaces that value per call)" if name == "igm_factor"
+               else "fix it with a constant transform on the SedModel, "
+                    f"transforms={{{name!r}: lambda th: jnp.array([value])}}")
+        return (f"fixed: {name!r} is a model-level parameter, not a CSP parameter; {how}." + tail)
+    from ..agn import AGN_THETA_DEFAULTS, AGN2_THETA_KEYS
+    from ..dust.attenuation_laws import ATTENUATION_LAWS
+    agn_keys = set(AGN_THETA_DEFAULTS).union(*map(set, AGN2_THETA_KEYS.values()))
+    need = None
+    if name in ("gas_logz", "gas_logu"):
+        need = "add_neb=True"
+    elif name.startswith("duste_"):
+        need = "add_dust_emission=True"
+    elif name in agn_keys:
+        need = "agn=AGNConfig(...) with the component that reads it"
+    elif name == "afe":
+        need = "CSPBasis_afe (an alpha-enhanced SSP grid)"
+    elif name in ("logzsol", "logzsol_hist"):
+        need = ("zh_const=True" if name == "logzsol" else "zh_const=False")
+    elif name.startswith("diffuse_"):
+        laws = [k for k, v in ATTENUATION_LAWS.items() if name[len("diffuse_"):] in v["params"]]
+        if laws:
+            need = f"add_diffuse_dust=True with diffuse_law={laws[0]!r}"
+    else:
+        laws = [k for k, v in ATTENUATION_LAWS.items() if name in v["params"]]
+        if laws:
+            need = (f"add_dust=True with a birth-cloud law that has it "
+                    f"(init_dust_params={{'laws': [{laws[0]!r}], ...}})")
+    if need is not None:
+        return (f"fixed: {name!r} is not a parameter of this CSP; it needs {need}." + tail)
+    return f"fixed: {name!r} is not a parameter of this CSP." + tail
+
 class CSPBasis:
     """Composite stellar population basis.  ``predict(theta, observations)`` projects the model onto observations.
 
@@ -276,6 +325,7 @@ class CSPBasis:
         gas_tied=False,
         wavelength_support=False,
         agn=None,
+        fixed=None,
         **kwargs,
     ):
         self.verbose = bool(verbose)
@@ -450,6 +500,7 @@ class CSPBasis:
             print(f"SFH integration scheme : {sfh_interp}")
 
         self.initialize_model_structure(theta)
+        self._set_fixed(fixed)
 
         if verbose:
             print("\nCSPBasis (dict theta) — registered parameters:")
@@ -651,6 +702,44 @@ class CSPBasis:
             'frac_obrun', 'spectrum_scaling', 'spectrum_calib',
         } | set(getattr(getattr(self, "igm", None), "param_names", ())) \
           | set(getattr(self._agn, "param_names", ()))
+        self._apply_fixed()
+
+    def _set_fixed(self, fixed):
+        """Validate ``CSPBasis(fixed=...)`` against this configuration and store it as
+        ``self.fixed`` (name -> float64 array of the parameter's shape); see :meth:`_apply_fixed`."""
+        self.fixed = {}
+        if fixed is None:
+            return
+        if not isinstance(fixed, dict):
+            raise TypeError(f"fixed= must be a dict {{name: value}}, got {type(fixed).__name__}")
+        free = set(self.param_names)
+        for name, value in fixed.items():
+            if name not in free:
+                raise ValueError(_fixed_key_message(self, name))
+            val = np.atleast_1d(np.asarray(value, dtype=np.float64)).copy()
+            shape = tuple(np.shape(self.theta_init[name]))
+            if val.shape != shape:
+                raise ValueError(
+                    f"fixed[{name!r}] has shape {val.shape}, but {name!r} has shape {shape} in "
+                    f"this CSP; give {'a number' if shape == (1,) else f'an array of shape {shape}'}.")
+            if not np.all(np.isfinite(val)):
+                raise ValueError(f"fixed[{name!r}] = {val} is not finite")
+            val.setflags(write=False)
+            self.fixed[name] = val
+        self._apply_fixed()
+
+    def _apply_fixed(self):
+        """Put the fixed values into ``theta_init`` (direct CSP calls from it use them) and take
+        their names out of ``param_names``.  A ``SedModel`` turns each into a constant transform
+        (``model.FixedValue``), so it is not sampled.  Called again whenever
+        ``initialize_model_structure`` rebuilds ``theta_init``."""
+        for name, val in getattr(self, "fixed", {}).items():
+            if name in self.theta_init and tuple(np.shape(self.theta_init[name])) != val.shape:
+                raise ValueError(f"fixed[{name!r}] has shape {val.shape}, but the rebuilt CSP "
+                                 f"needs {tuple(np.shape(self.theta_init[name]))}")
+            self.theta_init[name] = jnp.asarray(val)
+            if name in self.param_names:
+                self.param_names.remove(name)
 
 
     def register_known_theta_keys(self, keys):

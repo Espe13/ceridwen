@@ -8,20 +8,24 @@ series, Ca II H+K and Mg b that would be removed by `Spectrum.mask_lines`.
 
 ```python
 import jax.numpy as jnp
-from ceridwen import SedModel, Kinematics, Instrument
+from ceridwen import CSPBasis, SedModel, Kinematics, Instrument
 from ceridwen.observation import Spectrum
 
 spec = Spectrum(wavelength=w_obs, flux=f, uncertainty=e,
                 instrument=Instrument.R_fwhm(1000.0),
                 marginalize_elines=True)               # flat prior on every covered line
 
+csp = CSPBasis(ssp, lookback_time=lb, zh_const=True, add_neb=True, cosmo=cosmo,
+               fixed={"gas_logu": -2.5, "gas_logz": -0.3})   # nebular model fixed
 model = SedModel(csp, [spec, phot], priors=priors, zred=3.2,
-                 transforms={"sfh": sfh_transform,
-                             "gas_logu": lambda th: jnp.array([-2.5]),   # nebular model fixed
-                             "gas_logz": lambda th: jnp.array([-0.3])},
+                 transforms={"sfh": sfh_transform},
                  kinematics=Kinematics(sigma_gal=150.0, sigma_gas=80.0))
 print(model.summary())                                 # lists the marginalised lines
 ```
+
+Constant transforms on the `SedModel` fix them the same way:
+`transforms={"sfh": sfh_transform, "gas_logu": lambda th: jnp.array([-2.5]),
+"gas_logz": lambda th: jnp.array([-0.3])}`.
 
 ## What is computed
 
@@ -64,8 +68,8 @@ listed by `model.summary()`. Explicitly requesting such a line in
 
 Unsupported configurations raise an error before sampling.
 
-- With `add_neb=True`, fix `gas_logu` and `gas_logz` through constant transforms
-  or tie them to other parameters. They cannot be independently sampled when
+- With `add_neb=True`, fix `gas_logu` and `gas_logz` (`CSPBasis(fixed=...)` or
+  constant transforms) or tie them to other parameters. They cannot be independently sampled when
   the line fluxes are free.
 - Supply an `Instrument` for the spectrum so the line width includes the LSF.
 - Use at most one marginalising spectrum per model.
