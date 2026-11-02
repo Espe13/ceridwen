@@ -37,8 +37,9 @@ below are the measured ones with a factor ~2 of room.  Predicted / measured / as
   ``rtol 1e-5`` (golden maggies ``1e-4``) and ``|dlnP| <= 1e-4 |lnP| + 0.05``.
 * Metal run to run: predicted ``rtol 1e-6`` everywhere; measured: every forward-model array
   and both ln P byte-identical, only the gradients differ (1e-5 to 6e-4 relative over three runs: the transpose
-  of the redshift interpolation is a scatter-add, atomic on the GPU; CLAUDE.md's GPU caveat).
-  Asserted: forward model and ln P byte-identical, gradients ``rtol 1e-3``.
+  of the redshift interpolation is a scatter-add, atomic on the GPU; CLAUDE.md's GPU caveat;
+  1.06e-3 on jax 0.12.0.1).  Asserted: forward model and ln P byte-identical, gradients
+  ``rtol 3e-3``.
 """
 from __future__ import annotations
 
@@ -206,5 +207,6 @@ def test_metal_is_reproducible(f32_metal):
         scale = np.maximum(np.abs(x), np.abs(y))
         rel = float(np.max(np.where(scale > 0, np.abs(x - y) / np.where(scale > 0, scale, 1.0), 0.0)))
         worst = max(worst, rel)
-        assert rel <= 1e-3, f"{k}: run-to-run relative difference {rel:.3e}"
+        # float32 gradients on the Apple GPU: 1.06e-3 (grad_gas_logz) on jax 0.12.0.1
+        assert rel <= 3e-3, f"{k}: run-to-run relative difference {rel:.3e}"
     print(f"\nMetal run-to-run: forward model and ln P identical; largest gradient difference {worst:.3e}")

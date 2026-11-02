@@ -63,7 +63,7 @@ def test_blr_golden():
     assert sorted(ref.files) == sorted(got)
     for k in ref.files:
         # spec / lines: deterministic on CPU (the spectrum's float32 profiles included);
-        # photometry passes float32 filters
-        rtol = 2e-6 if k.startswith("phot") else 1e-10
+        # photometry passes float32 filters (3.3e-6 on jax 0.12.0.1, arm64: summation order)
+        rtol = 1e-5 if k.startswith("phot") else 1e-10
         np.testing.assert_allclose(got[k], ref[k], rtol=rtol,
                                    atol=1e-12 * float(np.abs(ref[k]).max()), err_msg=k)

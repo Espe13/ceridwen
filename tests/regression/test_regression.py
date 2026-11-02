@@ -28,7 +28,10 @@ pytestmark = pytest.mark.fsps
 #: absolute tolerance as a fraction of the array's largest finite |value| (``ATOL_SCALE * max``);
 #: an element far below the array's peak is compared to that floor, every other at ``RTOL``
 ATOL_SCALE = 1e-10
-RTOL = 1e-7
+#: summation order differs between jax versions; on jax 0.12.0.1 (arm64) the baselines move by
+#: 1.1e-7 to 7.1e-7 (gp_likelihood gradients), and the float32 AGN-line photometry by 6.3e-6
+RTOL = 2e-6
+RTOL_BY_CATEGORY = {"agn_lines": 2e-5}
 
 
 @pytest.fixture(scope="session")
@@ -110,7 +113,7 @@ def test_category_matches_baseline(category, fresh):
         )
         atol = ATOL_SCALE * float(np.max(np.abs(exp[finite])))
         np.testing.assert_allclose(
-            act[finite], exp[finite], atol=atol, rtol=RTOL,
+            act[finite], exp[finite], atol=atol, rtol=RTOL_BY_CATEGORY.get(category, RTOL),
             err_msg=f"{category}/{key} changed beyond tolerance",
         )
 
