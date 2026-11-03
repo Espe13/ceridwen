@@ -863,7 +863,7 @@ lists unsupported combinations.</p>
 <p>Replace <code>&lt;kind&gt;</code> with <code>phot</code>, <code>spec</code> or <code>lines</code>. For several observations of
 the same type, use <code>&lt;root&gt;_&lt;kind&gt;_&lt;obs.name&gt;</code>, such as
 <code>log_jitter_spec_nirspec</code>; the unsuffixed name is then ambiguous and raises
-an error. Use a constant transform to fix a term.</p>
+an error. Use a constant transform to fix a term. <code>CSPBasis(fixed=...)</code> takes only CSP parameters; these names belong to the observations, so they are fixed with a constant transform.</p>
 <p><code>fitSED</code> reads these names automatically. With <code>run_sampler</code>, construct the
 <code>DiagonalNoiseModel</code> yourself. <code>log_jitter</code> is the natural log of a flux in
 the observation's units: maggies, cgs F_nu or erg s⁻¹ cm⁻². Choose its prior

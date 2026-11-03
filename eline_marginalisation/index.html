@@ -913,20 +913,23 @@ predictions, leaving the underlying stellar absorption available to constrain
 the population. This can retain information from features such as the Balmer
 series, Ca II H+K and Mg b that would be removed by <code>Spectrum.mask_lines</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">SedModel</span><span class="p">,</span> <span class="n">Kinematics</span><span class="p">,</span> <span class="n">Instrument</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">CSPBasis</span><span class="p">,</span> <span class="n">SedModel</span><span class="p">,</span> <span class="n">Kinematics</span><span class="p">,</span> <span class="n">Instrument</span>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen.observation</span><span class="w"> </span><span class="kn">import</span> <span class="n">Spectrum</span>
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">spec</span> <span class="o">=</span> <span class="n">Spectrum</span><span class="p">(</span><span class="n">wavelength</span><span class="o">=</span><span class="n">w_obs</span><span class="p">,</span> <span class="n">flux</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">uncertainty</span><span class="o">=</span><span class="n">e</span><span class="p">,</span>
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>                <span class="n">instrument</span><span class="o">=</span><span class="n">Instrument</span><span class="o">.</span><span class="n">R_fwhm</span><span class="p">(</span><span class="mf">1000.0</span><span class="p">),</span>
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                <span class="n">marginalize_elines</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>               <span class="c1"># flat prior on every covered line</span>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">model</span> <span class="o">=</span> <span class="n">SedModel</span><span class="p">(</span><span class="n">csp</span><span class="p">,</span> <span class="p">[</span><span class="n">spec</span><span class="p">,</span> <span class="n">phot</span><span class="p">],</span> <span class="n">priors</span><span class="o">=</span><span class="n">priors</span><span class="p">,</span> <span class="n">zred</span><span class="o">=</span><span class="mf">3.2</span><span class="p">,</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                 <span class="n">transforms</span><span class="o">=</span><span class="p">{</span><span class="s2">"sfh"</span><span class="p">:</span> <span class="n">sfh_transform</span><span class="p">,</span>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                             <span class="s2">"gas_logu"</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">2.5</span><span class="p">]),</span>   <span class="c1"># nebular model fixed</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                             <span class="s2">"gas_logz"</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mf">0.3</span><span class="p">])},</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="n">lookback_time</span><span class="o">=</span><span class="n">lb</span><span class="p">,</span> <span class="n">zh_const</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_neb</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">cosmo</span><span class="o">=</span><span class="n">cosmo</span><span class="p">,</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>               <span class="n">fixed</span><span class="o">=</span><span class="p">{</span><span class="s2">"gas_logu"</span><span class="p">:</span> <span class="o">-</span><span class="mf">2.5</span><span class="p">,</span> <span class="s2">"gas_logz"</span><span class="p">:</span> <span class="o">-</span><span class="mf">0.3</span><span class="p">})</span>   <span class="c1"># nebular model fixed</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="n">model</span> <span class="o">=</span> <span class="n">SedModel</span><span class="p">(</span><span class="n">csp</span><span class="p">,</span> <span class="p">[</span><span class="n">spec</span><span class="p">,</span> <span class="n">phot</span><span class="p">],</span> <span class="n">priors</span><span class="o">=</span><span class="n">priors</span><span class="p">,</span> <span class="n">zred</span><span class="o">=</span><span class="mf">3.2</span><span class="p">,</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                 <span class="n">transforms</span><span class="o">=</span><span class="p">{</span><span class="s2">"sfh"</span><span class="p">:</span> <span class="n">sfh_transform</span><span class="p">},</span>
 <a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>                 <span class="n">kinematics</span><span class="o">=</span><span class="n">Kinematics</span><span class="p">(</span><span class="n">sigma_gal</span><span class="o">=</span><span class="mf">150.0</span><span class="p">,</span> <span class="n">sigma_gas</span><span class="o">=</span><span class="mf">80.0</span><span class="p">))</span>
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="nb">print</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>                                 <span class="c1"># lists the marginalised lines</span>
 </code></pre></div>
+<p>Constant transforms on the <code>SedModel</code> fix them the same way:
+<code>transforms={"sfh": sfh_transform, "gas_logu": lambda th: jnp.array([-2.5]),
+"gas_logz": lambda th: jnp.array([-0.3])}</code>.</p>
 <h2 id="what-is-computed">What is computed<a class="headerlink" href="#what-is-computed" title="Permanent link">&para;</a></h2>
 <p>Line fluxes α are observed-frame, IGM-transmitted fluxes in erg s⁻¹ cm⁻².
 They enter the observations linearly:</p>
@@ -984,8 +987,8 @@ listed by <code>model.summary()</code>. Explicitly requesting such a line in
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <p>Unsupported configurations raise an error before sampling.</p>
 <ul>
-<li>With <code>add_neb=True</code>, fix <code>gas_logu</code> and <code>gas_logz</code> through constant transforms
-  or tie them to other parameters. They cannot be independently sampled when
+<li>With <code>add_neb=True</code>, fix <code>gas_logu</code> and <code>gas_logz</code> (<code>CSPBasis(fixed=...)</code> or
+  constant transforms) or tie them to other parameters. They cannot be independently sampled when
   the line fluxes are free.</li>
 <li>Supply an <code>Instrument</code> for the spectrum so the line width includes the LSF.</li>
 <li>Use at most one marginalising spectrum per model.</li>
@@ -993,9 +996,10 @@ listed by <code>model.summary()</code>. Explicitly requesting such a line in
   <a href="../gp_likelihood/">GP likelihood</a>, upper limits or an
   <a href="../outlier_model/">outlier mixture</a>. An observation outside that system,
   such as a second spectrum, can use a separate noise model.</li>
-<li>Joint photometry with sampled <code>zred</code>, or with sampled <code>sigma_gas</code> and
-  <code>broaden_photometry=True</code>, raises <code>NotImplementedError</code>. A spectrum-only
-  fit can sample <code>zred</code>.</li>
+<li>Photometry fitted jointly takes the marginalised lines through its own line
+  term (each line's flux through each filter), also with a sampled <code>zred</code> or a
+  sampled <code>sigma_gas</code> with <code>broaden_photometry=True</code>; the photometric columns
+  are then evaluated at each call's redshift and gas width.</li>
 <li>Set the gas velocity dispersion in km/s with <code>Kinematics(sigma_gas=...)</code>.
   There is no <code>eline_sigma</code> parameter.</li>
 </ul>

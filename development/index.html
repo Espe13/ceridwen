@@ -856,13 +856,13 @@ from the directory containing the clone, where Python may import the clone's
 <tr>
 <td>Regression baselines</td>
 <td><code>pytest tests/regression/test_regression.py -q</code></td>
-<td>22 output categories, 4 optional grid-dependent categories and 3 requiring AGN tables; stored arrays compared at <code>rtol=1e-7</code>, with absolute tolerance 1e-10 times each array's maximum; the first 9 also require maximum relative residual 1e-6; figures saved in <code>tests/regression/figures/</code></td>
+<td>22 output categories, 4 optional grid-dependent categories and 3 requiring AGN tables; stored arrays compared at <code>rtol=2e-6</code> (<code>agn_lines</code> 2e-5; float32 summation order differs between jax versions), with absolute tolerance 1e-10 times each array's maximum; the first 9 also require maximum relative residual 1e-6; figures saved in <code>tests/regression/figures/</code></td>
 <td>requires local FSPS data</td>
 </tr>
 <tr>
 <td>Golden spectra</td>
 <td><code>pytest tests/csp/test_lookback_flip_invariant.py -q</code></td>
-<td>6 SFH/metallicity configurations; SSP weights at <code>rtol=1e-12</code>, spectra, line fluxes and photometry at <code>rtol=1e-6</code> to allow float32 contractions</td>
+<td>13 configurations: 6 SFH/metallicity, 3 AGN, 3 AGN2 (requiring AGN tables) and 1 with a fixed nebular block; SSP weights at <code>rtol=1e-12</code>, spectra, line fluxes and photometry (through <code>csp.predict</code>, as in a fit) at <code>rtol=1e-6</code> to allow float32 contractions</td>
 <td>requires local FSPS data</td>
 </tr>
 <tr>

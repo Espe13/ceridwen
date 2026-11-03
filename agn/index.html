@@ -1061,7 +1061,8 @@ magnitude. Sample their logarithms and transform them:</p>
 <p>Add <code>log_fagn</code> and <code>log_fagn_bbb</code> to <code>free_param_init</code> as well as <code>priors</code>
 and <code>transforms</code>. <code>SedModel</code> rejects priors for names missing from the
 initial parameters. With <code>add_neb=True</code> and <code>add_dust_emission=True</code>, provide
-priors or constant transforms for <code>gas_logz</code>, <code>gas_logu</code>, <code>duste_qpah</code>,
+priors, or fixed values (<code>CSPBasis(fixed=...)</code> or constant transforms), for
+<code>gas_logz</code>, <code>gas_logu</code>, <code>duste_qpah</code>,
 <code>duste_umin</code>, <code>duste_gamma</code>, <code>tau_pow</code> and <code>alpha_pow</code>. AGN lines also add
 <code>agn_eline_sigma</code>. Nested sampling requires a prior for every free parameter.
 Dust emission requires both <code>add_dust=True</code> and <code>add_diffuse_dust=True</code>,
@@ -1094,7 +1095,8 @@ on it mainly near filter edges. <code>SedModel</code> warns if a width prior is
 supplied without a spectrum, without unmasked AGN-line pixels, or when
 instrumental sigma exceeds three times the prior's upper bound at every
 AGN line. Fix the width in these cases:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">transforms</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"agn_eline_sigma"</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">th</span><span class="p">:</span> <span class="n">jnp</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">100.0</span><span class="p">])}</span>   <span class="c1"># and no prior on it</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="o">...</span><span class="p">,</span> <span class="n">agn</span><span class="o">=</span><span class="n">AGNConfig</span><span class="p">(),</span> <span class="n">fixed</span><span class="o">=</span><span class="p">{</span><span class="s2">"agn_eline_sigma"</span><span class="p">:</span> <span class="mf">100.0</span><span class="p">})</span>   <span class="c1"># no prior on it</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># or, on the SedModel: transforms={"agn_eline_sigma": lambda th: jnp.array([100.0])}</span>
 </code></pre></div>
 <p>The instrumental sigma is sigma_inst = c / (2.3548 R_FWHM):</p>
 <table>
