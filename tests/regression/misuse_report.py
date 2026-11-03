@@ -176,7 +176,7 @@ def _tied_gas_with_prior():
 
 
 def _old_res_floor_factor():
-    """res_floor_factor= (pixels per sigma, removed in 1.1.0): must raise, naming res_floor_fwhm_px."""
+    """res_floor_factor= (pixels per sigma, removed in 1.0.14): must raise, naming res_floor_fwhm_px."""
     if not os.environ.get("SPS_HOME"):
         raise RuntimeError("SPS_HOME unset: needs the nebular grids (scenario n/a)")
     from ceridwen import NebularModel

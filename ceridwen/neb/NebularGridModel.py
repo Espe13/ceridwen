@@ -178,7 +178,7 @@ class NebularModel:
         if "res_floor_factor" in removed:
             old = float(removed.pop("res_floor_factor"))
             raise TypeError(
-                "NebularModel(res_floor_factor=) was removed in 1.1.0: it was the minimum line "
+                "NebularModel(res_floor_factor=) was removed in 1.0.14: it was the minimum line "
                 "SIGMA in model-grid pixels. The floor is now res_floor_fwhm_px, the minimum "
                 "FWHM in pixels (sigma = res_floor_fwhm_px / 2.355, as in FSPS; default 2). "
                 f"The old width is res_floor_fwhm_px={old * FWHM_PER_SIGMA:g} "

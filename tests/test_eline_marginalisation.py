@@ -535,7 +535,7 @@ def test_only_one_marginalising_spectrum(csp):
 
 def test_photometry_with_sampled_redshift_uses_the_redshift_of_the_call(csp):
     """With a sampled zred the fitted lines reach the photometry through its own line term
-    (Photometry._line_photometry) at the redshift of the call (refused before 1.1.0, when the
+    (Photometry._line_photometry) at the redshift of the call (refused before 1.0.14, when the
     photometric lines were painted on the model grid)."""
     import jax.numpy as jnp
     model, _ = _model(csp, zred_prior=Uniform(low=0.29, high=0.31))

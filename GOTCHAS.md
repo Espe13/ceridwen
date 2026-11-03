@@ -258,7 +258,7 @@ prefer `predict`/`get_spectrum_components`.
 - **Photometry integrates the model pixels.** The filter integral is exact for a
   spectrum linear between the model pixels and a filter linear between its own points
   (`FilterSet.flux_weights`), so a feature narrower than the filter grid keeps its flux.
-  Before 1.1.0 the spectrum was sampled at the filter grid: a line at the old pixel floor
+  Before 1.0.14 the spectrum was sampled at the filter grid: a line at the old pixel floor
   lost or gained 0.4 % of its flux through a band (median; up to 4.9 %), and continua were
   0.8-2.5e-4 high.
 - **Line width floor.** On the model grid a line is at least `res_floor_fwhm_px`
@@ -697,7 +697,7 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
   transmission averaged over the line's profile on the model grid, the same as the painted
   path. At Ly-α the Madau forest starts inside the line, so its blue half is absorbed (the
   line keeps 0.79 of its flux at z = 3, 0.44 at z = 6 on the BPASS grid, with the 2 px
-  FWHM floor; 0.81 and 0.49 with the pre-1.1.0 floor); the value depends on how finely the
+  FWHM floor; 0.81 and 0.49 with the pre-1.0.14 floor); the value depends on how finely the
   model grid samples the line. The photometry uses the same line fluxes.
 - **The IGM acts after `σ_gal`** and before the instrument (`docs/conventions.md`,
   Broadening). A fixed `σ_gal = 0` keeps the IGM on the model grid.

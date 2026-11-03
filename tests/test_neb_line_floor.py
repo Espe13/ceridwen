@@ -1,6 +1,6 @@
 """The nebular line-width floor is ``res_floor_fwhm_px`` model-grid pixels per FWHM, as in FSPS
 (``sps_setup.f90:999-1001``: ``dlam = dlam*2/2.355*nebular_smooth_factor``, the sigma of the
-Gaussians in ``gaussnebarr``); the pre-1.1.0 ``res_floor_factor``
+Gaussians in ``gaussnebarr``); the pre-1.0.14 ``res_floor_factor``
 (pixels per sigma) raises with the conversion."""
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def test_res_floor_fwhm_px_sets_the_fwhm(ssp):
     neb = _neb(ssp, res_floor_fwhm_px=1.0)
     np.testing.assert_allclose(np.asarray(neb.dlam_lines),
                                np.asarray(neb.neb_res_min) * 1.0 / 2.355, rtol=1e-12, atol=0)
-    # the pre-1.1.0 width (res_floor_factor pixels per sigma) is res_floor_fwhm_px = 2.355 x that
+    # the pre-1.0.14 width (res_floor_factor pixels per sigma) is res_floor_fwhm_px = 2.355 x that
     old = _neb(ssp, res_floor_fwhm_px=2.0 * 2.355)
     np.testing.assert_allclose(np.asarray(old.dlam_lines), 2.0 * np.asarray(old.neb_res_min),
                                rtol=1e-12, atol=0)

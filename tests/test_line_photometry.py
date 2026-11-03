@@ -133,7 +133,7 @@ def test_free_redshift_equals_fixed_redshift_at_that_redshift(csp, broaden):
                                rtol=1e-6)
     # the whole photometry: without broadening to float32 rounding; with it, to the free-z
     # sigma_gal kernel, built on the whole 912-25000 A window (a different grid phase from the
-    # fixed-z one: 1.5e-4 in sdss_z0 for the stellar continuum alone, as before 1.1.0)
+    # fixed-z one: 1.5e-4 in sdss_z0 for the stellar continuum alone, as before 1.0.14)
     np.testing.assert_allclose(b, a, rtol=3e-4 if broaden else 2e-6)
 
 

@@ -1,4 +1,4 @@
-## 1.1.0 (2026-11-02)
+## 1.0.14 (2026-11-03)
 
 - `SedModel.display()` / `model_structure()` with a `Lines` observation of more than one line
   raised "truth value of an array ... is ambiguous" (`describe._obs_details`); fixed, with a test.
@@ -23,7 +23,7 @@
   band with narrow lines; it is now only the reference `csp._force_paint_lines`. With
   `marginalize_elines`, the fitted lines reach the photometry the same way, also with a
   sampled redshift or a sampled `sigma_gas` with `broaden_photometry` (both refused before
-  1.1.0, when the photometric lines were painted on the model grid).
+  1.0.14, when the photometric lines were painted on the model grid).
 - Nebular and AGN line widths on the model grid: the pixel floor is `res_floor_fwhm_px` pixels
   per FWHM (sigma = 2 px / 2.355 by default), as in FSPS (`sps_setup.f90:999-1002`); it was 2
   pixels per sigma, 2.355x wider. Lines at the floor are 2.355x narrower and taller; their

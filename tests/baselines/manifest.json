@@ -436,18 +436,18 @@
   ],
   "spectra_recaptured": "2026-09-10 broadening merge (W_*.npy untouched)",
   "spectra_recaptured_by_tag": {
-    "agn_fsps": "1.1.0: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
-    "agn_corrected_dustemi": "1.1.0: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
-    "agn2_skirtor_polar_cigale": "1.1.0: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
-    "agn2_skirtor_polar_corrected_dustemi": "1.1.0: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
-    "agn2_nlr_blr_corrected": "1.1.0: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
-    "step_constZ_pernode": "1.1.0: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
-    "step_constZ_perbin": "1.1.0: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
-    "step_varZ_pernode": "1.1.0: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
-    "step_varZ_perbin": "1.1.0: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
-    "linear_constZ_pernode": "1.1.0: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
-    "linear_varZ_pernode": "1.1.0: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
-    "agn_prospector": "1.1.0: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
-    "fixed_neb": "1.1.0: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged"
+    "agn_fsps": "1.0.14: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
+    "agn_corrected_dustemi": "1.0.14: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
+    "agn2_skirtor_polar_cigale": "1.0.14: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
+    "agn2_skirtor_polar_corrected_dustemi": "1.0.14: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
+    "agn2_nlr_blr_corrected": "1.0.14: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
+    "step_constZ_pernode": "1.0.14: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
+    "step_constZ_perbin": "1.0.14: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
+    "step_varZ_pernode": "1.0.14: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
+    "step_varZ_perbin": "1.0.14: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
+    "linear_constZ_pernode": "1.0.14: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
+    "linear_varZ_pernode": "1.0.14: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
+    "agn_prospector": "1.0.14: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged",
+    "fixed_neb": "1.0.14: line floor 2 px per FWHM (FSPS sps_setup.f90:999-1002); maggies through csp.predict with the exact filter integral and each line's flux through the filters; W unchanged"
   }
 }
