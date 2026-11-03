@@ -2,8 +2,6 @@
 
 - `SedModel.display()` / `model_structure()` with a `Lines` observation of more than one line
   raised "truth value of an array ... is ambiguous" (`describe._obs_details`); fixed, with a test.
-- `SedModel.display()` / `describe`: a `Lines` observation with several fluxes no longer raises
-  ("truth value of an array ... is ambiguous"), and a single zero flux counts as one line.
 - `logmass` needs only a prior: without a `free_param_init` entry it is sampled, starting at
   the prior's median. A `free_param_init` value still takes precedence, so existing models are
   unchanged.
