@@ -1,4 +1,4 @@
-## Unreleased
+## 1.0.15 (2026-11-05)
 
 - Float32 mode (Apple GPU, `CERIDWEN_X64=0`): a sampled redshift with emission lines in the
   photometry raised "LineWeightTable needs log-uniform filter grids" when the model was built.
