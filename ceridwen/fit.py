@@ -743,7 +743,8 @@ def write_result_h5(
             mask           (n_data,)  bool
             sky, calibration, upper_limit   (n_data,)  when the observation has them
             attrs: type, name, noise_floor, [instrument_kind, instrument_scale,
-                   instrument_scale_range, subtract_library, filternames, ...],
+                   instrument_scale_range, subtract_library, filternames,
+                   filterfiles (JSON: the absolute .par path of each filter), ...],
                    likelihood_json (with ``likelihood``: kernel class and noise-model settings)
 
         /provenance/        attrs: ceridwen_version, ceridwen_githash (build stamp),
@@ -830,6 +831,8 @@ def write_result_h5(
                     og.attrs["zred_ref"] = float(proj.opz_ref - 1.0)
             if hasattr(obs, "filternames"):
                 og.attrs["filternames"] = json.dumps(obs.filternames)
+            if getattr(obs, "filterfiles", None) is not None:
+                og.attrs["filterfiles"] = json.dumps(list(obs.filterfiles))
             if hasattr(obs, "line_names") and obs.line_names is not None:
                 og.attrs["line_names"] = json.dumps(list(obs.line_names))
             if hasattr(obs, "line_ind") and obs.line_ind is not None:

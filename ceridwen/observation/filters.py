@@ -5,6 +5,7 @@ imports and data paths repointed at ``ceridwen``.
 """
 import numpy as np
 import os
+import warnings
 import jax.numpy as jnp
 from typing import  List, Optional, Tuple
 from jax import vmap
@@ -23,6 +24,65 @@ from pathlib import Path
 _PKGDIR = Path(__file__).resolve().parent.parent   # the ceridwen package root
 
 lightspeed = 2.998e18  # AA/s
+
+# A directory of user ``.par`` files searched before the bundled library; read each time a
+# filter name is resolved (not at import), so it can be set inside a running session.
+FILTER_DIR_ENV = "CERIDWEN_FILTER_DIR"
+
+
+def library_filter_dir() -> str:
+    """The directory of the bundled filter library (``ceridwen/data/filters``)."""
+    try:
+        from importlib.resources import files
+        return str(files("ceridwen").joinpath("data", "filters"))
+    except Exception:
+        return os.path.join(str(_PKGDIR), "data", "filters")
+
+
+def _library_filter_file(kname: str) -> str:
+    try:
+        from importlib.resources import files
+        return str(files("ceridwen").joinpath("data", "filters", f"{kname}.par"))
+    except Exception:
+        # Fall back to the data directory relative to this file
+        _pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(_pkg_dir, "data", "filters", f"{kname}.par")
+
+
+def resolve_filter_file(kname: str, directory: Optional[str] = None, *, warn: bool = True) -> str:
+    """The ``.par`` file of filter ``kname``.
+
+    With ``directory`` only ``<directory>/<kname>.par`` is tried.  Otherwise the order is
+    ``$CERIDWEN_FILTER_DIR`` (when set), then the bundled library; a name found in both is
+    taken from ``$CERIDWEN_FILTER_DIR`` with a ``UserWarning`` naming both files.  A name
+    found nowhere raises ``FileNotFoundError`` listing every file tried.
+    """
+    if directory is not None:
+        path = os.path.abspath(os.path.join(os.path.expanduser(os.fspath(directory)), f"{kname}.par"))
+        if not os.path.isfile(path):
+            raise FileNotFoundError(
+                f"Filter transmission file '{path}' does not exist (directory= was given, so "
+                f"no other location is searched).")
+        return path
+    lib = _library_filter_file(kname)
+    env = os.environ.get(FILTER_DIR_ENV) or None
+    searched = []
+    if env is not None:
+        path = os.path.abspath(os.path.join(os.path.expanduser(env), f"{kname}.par"))
+        searched.append(f"{path} (${FILTER_DIR_ENV})")
+        if os.path.isfile(path):
+            if warn and os.path.isfile(lib):
+                warnings.warn(
+                    f"Filter '{kname}' is in ${FILTER_DIR_ENV} and in the bundled library; "
+                    f"using {path}, not {lib}.", UserWarning, stacklevel=3)
+            return path
+    searched.append(f"{lib} (bundled library)")
+    if os.path.isfile(lib):
+        return lib
+    raise FileNotFoundError(
+        f"Filter transmission file for '{kname}' does not exist; searched: "
+        + "; ".join(searched)
+        + f". Pass directory= (Photometry: filter_directory=) or set ${FILTER_DIR_ENV}.")
 
 
 
@@ -49,6 +109,7 @@ class Filter:
         wmin: float = 1e2,
         min_trans: float = 1e-5,
         data: Optional[Tuple] = None,
+        _path: Optional[str] = None,
         **extras
     ):
         """
@@ -63,7 +124,9 @@ class Filter:
             A short nickname for the filter (defaults to kname).
 
         directory : str, optional
-            Directory from which to load the filter file.
+            Directory from which to load the filter file (only that directory is tried).
+            Without it the name is looked up in ``$CERIDWEN_FILTER_DIR``, then in the
+            bundled library (:func:`resolve_filter_file`).
 
         dlnlam : float, optional
             If provided, resample the transmission to a log-lambda grid.
@@ -82,7 +145,13 @@ class Filter:
         self.min_trans = min_trans
 
         # Determine where to load the filter from
-        self.filename = self._resolve_filename(kname, directory) if data is None else None
+        # (_path: a file FilterSet has already resolved, so the lookup and its warning run once)
+        if data is not None:
+            self.filename = None
+        elif _path is not None:
+            self.filename = _path
+        else:
+            self.filename = resolve_filter_file(kname, directory)
 
         if data is not None:
             wave, trans = data
@@ -128,17 +197,8 @@ class Filter:
             return f"Filter: {self.nick}\n" + "\n".join(rows)
 
     def _resolve_filename(self, kname: str, directory: Optional[str]) -> str:
-        if directory is not None:
-            return os.path.join(directory, f"{kname}.par")
+        return resolve_filter_file(kname, directory)
 
-        try:
-            from importlib.resources import files
-            return str(files("ceridwen").joinpath("data", "filters", f"{kname}.par"))
-        except Exception:
-            # Fall back to the data directory relative to this file
-            _pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            return os.path.join(_pkg_dir, "data", "filters", f"{kname}.par")
-        
     @property
     def transmission(self):
         return self._transmission
@@ -422,9 +482,14 @@ class FilterSet:
             Logarithmic spacing for the shared wavelength grid. If None, inferred.
 
         loading_kwargs : dict
-            Additional keyword arguments passed to the filter loader.
+            Additional keyword arguments passed to the filter loader; ``directory=`` is where
+            the ``.par`` files are read (:func:`resolve_filter_file`).
         """
         self.filternames = filterlist
+        directory = loading_kwargs.pop("directory", None)
+        # each name resolved once: the files both loads below read, recorded as provenance
+        self.filterfiles = [resolve_filter_file(n, directory) for n in self.filternames]
+        loading_kwargs["_paths"] = self.filterfiles
 
         # Load the native filters (may have different wavelength grids initially)
         native = load_filters(self.filternames, **loading_kwargs)
@@ -828,7 +893,10 @@ def load_filters(filternamelist, **kwargs):
     filterlist : list of Filter() instances
         A list of filter objects.
     """
-    return [Filter(f, **kwargs) for f in filternamelist]
+    paths = kwargs.pop("_paths", None)
+    if paths is None:
+        return [Filter(f, **kwargs) for f in filternamelist]
+    return [Filter(f, _path=p, **kwargs) for f, p in zip(filternamelist, paths)]
 
 def getSED(sourcewave, sourceflux, filterset=None, filterlist = None, linear_flux=False, **kwargs):
     """
@@ -877,7 +945,7 @@ def getSED(sourcewave, sourceflux, filterset=None, filterlist = None, linear_flu
     else:
         return sed
     
-def list_available_filters(startswith=None):
+def list_available_filters(startswith=None, directory=None):
     """
     Return a sorted list of available filter names.
 
@@ -885,6 +953,11 @@ def list_available_filters(startswith=None):
     ----------
     startswith : str, optional
         If given, only return filters whose names start with this string.
+
+    directory : str, optional
+        List the ``.par`` files in this directory only.  Without it, the names a filter
+        can be loaded by without ``directory=``: the bundled library together with
+        ``$CERIDWEN_FILTER_DIR`` when that is set.
 
     Returns
     -------
@@ -894,11 +967,17 @@ def list_available_filters(startswith=None):
     import os
     from importlib.resources import files
 
-    try:
-        filter_dir = files("ceridwen").joinpath("data/filters")
-        names = [f.name for f in filter_dir.iterdir() if f.name.endswith(".par")]
-    except Exception:
-        names = os.listdir(os.path.join(_PKGDIR, "data", "filters"))
+    if directory is not None:
+        names = os.listdir(os.path.expanduser(os.fspath(directory)))
+    else:
+        try:
+            filter_dir = files("ceridwen").joinpath("data/filters")
+            names = [f.name for f in filter_dir.iterdir() if f.name.endswith(".par")]
+        except Exception:
+            names = os.listdir(os.path.join(_PKGDIR, "data", "filters"))
+        env = os.environ.get(FILTER_DIR_ENV) or None
+        if env is not None and os.path.isdir(os.path.expanduser(env)):
+            names = sorted(set(names) | set(os.listdir(os.path.expanduser(env))))
 
     parfiles = sorted(n[:-4] for n in names if n.endswith(".par"))
 

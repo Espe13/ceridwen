@@ -197,6 +197,33 @@ def _gas_prior_outside_cloudy_axis(transform=False):
     return _model_with(priors={"gas_logz": Uniform(low=-2.0, high=0.5)}, csp_obj=c)
 
 
+def _filter_from_data():
+    """A Filter built from arrays: Photometry reloads filters by name, so it cannot be used."""
+    from ceridwen.observation.filters import Filter
+    f = Filter("sdss_g0")
+    return Photometry(filters=[Filter("my_g", data=(np.asarray(f.wavelength),
+                                                    np.asarray(f.transmission)))], name="p")
+
+
+def _shadowed_filter():
+    """A library filter name also present in $CERIDWEN_FILTER_DIR: the user file wins."""
+    import shutil
+    import tempfile
+    from ceridwen.observation.filters import FILTER_DIR_ENV, library_filter_dir
+    d = tempfile.mkdtemp(prefix="misuse_filters_")
+    shutil.copyfile(os.path.join(library_filter_dir(), "sdss_g0.par"), os.path.join(d, "sdss_g0.par"))
+    old = os.environ.get(FILTER_DIR_ENV)
+    os.environ[FILTER_DIR_ENV] = d
+    try:
+        return Photometry(filters=["sdss_g0"], name="p")
+    finally:
+        if old is None:
+            del os.environ[FILTER_DIR_ENV]
+        else:
+            os.environ[FILTER_DIR_ENV] = old
+        shutil.rmtree(d)
+
+
 def _afe_refused_cell():
     """The (logzsol, afe) corner built on FSPS's duplicated isoc_feh_p050_afe_p6 file."""
     from ceridwen.ssps.ssp_data_afe import SSPDataAfe
@@ -336,6 +363,8 @@ def run_scenarios():
                        name="l").predict(csp.get_spectrum(th), csp.wave)),
         ("unknown filter name", {"ERROR"},
          lambda: Photometry(filters=["not_a_filter_xyz"], name="p").setup_for_model(csp.wave)),
+        ("Filter(data=) passed to Photometry", {"ERROR"}, _filter_from_data),
+        ("filter shadowed by $CERIDWEN_FILTER_DIR", {"WARN"}, _shadowed_filter),
         ("all-zero uncertainty", {"ERROR"},
          lambda: (lambda sp: (sp.setup_for_model(csp.wave), sp.chi_sq(sp.predict(csp.get_spectrum(th), csp.wave)))) (
                   Spectrum(wavelength=jnp.linspace(4000, 7000, 40), flux=jnp.ones(40),

@@ -49,6 +49,7 @@ SEED = 20260906
 N_FIXED = 4                       # draws per fixed= / constant-transform pair
 AFE_GRID = HERE.parent / "ceridwen" / "data" / "test_data" / "amist_c3k_lr_chab_afe.h5"
 FIXED_BAD = []                    # fixed= arrays that differ from their constant-transform twin
+FILTERDIR_BAD = []                # filter_directory= arrays that differ from their library twin
 
 
 def _flat(prefix, obj, out):
@@ -67,7 +68,7 @@ def _flat(prefix, obj, out):
 def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla=False, lsf=None,
            interp="step", track=False, zred=ZRED, spec_wave=SPEC_WAVE, filters=FILTERS,
            marg=False, line_windows=False, support=False, agn=None, fix=None, fix_via="fixed",
-           csp_extra=None, afe=False):
+           csp_extra=None, afe=False, filter_directory=None):
     """``fix``: {name: value} held fixed, by ``CSPBasis(fixed=fix)`` (``fix_via="fixed"``) or by
     the equivalent constant transforms (``"transform"``); ``afe``: CSPBasis_afe on the alpha grid."""
     fix = dict(fix or {})
@@ -115,7 +116,9 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
     _sfh.__name__ = "logsfr_ratios_to_sfh"
 
     obs = [Photometry(filters=filters, flux=[2e-9] * len(filters),
-                      uncertainty=[2e-10] * len(filters), name="phot"),
+                      uncertainty=[2e-10] * len(filters), name="phot",
+                      **({} if filter_directory is None else
+                         {"filter_directory": filter_directory})),
            Spectrum(wavelength=spec_wave * (1.0 + zred), flux=np.full(spec_wave.size, 1e-9),
                     uncertainty=np.full(spec_wave.size, 1e-10),
                     instrument=(Instrument.sigma_kms(150.0) if lsf is None else
@@ -467,6 +470,10 @@ def collect(args):
         _fixed_pairs(args, out)
     else:
         print("  (package has no CSPBasis(fixed=): fixed-parameter pairs skipped)")
+    if "filter_directory" in inspect.signature(Photometry.__init__).parameters:
+        _filterdir_pairs(args, out)
+    else:
+        print("  (package has no Photometry(filter_directory=): filter-directory pairs skipped)")
     return out
 
 
@@ -527,6 +534,44 @@ def _fixed_pairs(args, out):
         print(f"  DIFF {k}")
 
 
+def _filterdir_pairs(args, out):
+    """Photometry(filter_directory=) on copies of the library .par files under new names,
+    against the same model on the library names: every array of the pair must be
+    byte-identical (FILTERDIR_BAD lists the ones that are not)."""
+    import shutil
+    import tempfile
+    from ceridwen.observation.filters import library_filter_dir
+    d = tempfile.mkdtemp(prefix="ceridwen_t4_filters_")
+    names = [f"user_{f}" for f in FILTERS]
+    for f, n in zip(FILTERS, names):
+        shutil.copyfile(os.path.join(library_filter_dir(), f"{f}.par"), os.path.join(d, f"{n}.par"))
+    plain = dict(add_neb=False, add_igm=True, sigma_losvd=250.0, dust_emission=False)
+    pairs = [("fd_plain", plain)]
+    if os.environ.get("SPS_HOME"):        # the lines' flux through the filters too
+        pairs.append(("fd_neb", dict(plain, add_neb=True)))
+    n_cmp = 0
+    for tag, cfg in pairs:
+        t0 = time.perf_counter()
+        for via, kw in (("library", {}), ("directory", dict(filters=names, filter_directory=d))):
+            model = _build(**cfg, **kw)
+            theta = _draws(model, N_FIXED, np.random.default_rng(SEED + 11))
+            key = f"{tag}/{via}"
+            _forward(model, theta, key, out)
+            _postprocess(model, theta, key, out)
+            _likelihood(model, theta, key, out)
+        for k in [k for k in out if k.startswith(f"{tag}/library/")]:
+            twin = k.replace("/library/", "/directory/", 1)
+            a, b = out[k], out.get(twin)
+            n_cmp += 1
+            if b is None or a.dtype != b.dtype or a.shape != b.shape or a.tobytes() != b.tobytes():
+                FILTERDIR_BAD.append(k)
+        print(f"{tag:<16} {len(out)} arrays so far  ({time.perf_counter() - t0:.1f} s)")
+    shutil.rmtree(d)
+    print(f"filter_directory= vs library filters: {n_cmp} arrays, {len(FILTERDIR_BAD)} differ")
+    for k in FILTERDIR_BAD[:40]:
+        print(f"  DIFF {k}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--save")
@@ -553,7 +598,7 @@ def main():
     if args.save:
         np.savez(args.save, **out)
         print(f"saved {len(out)} arrays -> {args.save}")
-        if (kernel_bad or FIXED_BAD) and not args.compare:
+        if (kernel_bad or FIXED_BAD or FILTERDIR_BAD) and not args.compare:
             sys.exit(1)
     if args.compare:
         ref = np.load(args.compare)
@@ -573,7 +618,7 @@ def main():
             print(f"  DIFF {k}: max|old-new| = {d}")
         for k in missing[:20]:
             print(f"  MISSING {k}")
-        sys.exit(1 if (bad or missing or kernel_bad or FIXED_BAD) else 0)
+        sys.exit(1 if (bad or missing or kernel_bad or FIXED_BAD or FILTERDIR_BAD) else 0)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,17 @@
 ## 1.0.15 (2026-11-05)
 
+- User filter curves: `Photometry(filter_directory=...)` reads `<name>.par` from that
+  directory only; without it a name is looked up in `$CERIDWEN_FILTER_DIR` (read when the
+  name is resolved), then in the bundled library. A name in both warns and uses
+  `$CERIDWEN_FILTER_DIR`; a name found nowhere raises `FileNotFoundError` listing every file
+  tried. The filter-set cache is keyed by directory as well as names.
+- A `Filter` object passed to `Photometry` that was built with `data=` or read from another
+  file now raises `ValueError`; it used to be replaced by the library file of that name
+  without a word. Names and `Filter` objects can be mixed in one list (this used to fail).
+- The result file stores the `.par` path of each filter (`/obs/<name>` attribute
+  `filterfiles`, JSON) next to `filternames`; `Photometry.metadata` carries it too.
+  `list_available_filters()` includes `$CERIDWEN_FILTER_DIR`, and takes `directory=`.
+  Library filters give byte-identical results.
 - Float32 mode (Apple GPU, `CERIDWEN_X64=0`): a sampled redshift with emission lines in the
   photometry raised "LineWeightTable needs log-uniform filter grids" when the model was built.
   The filter grids are made in the working precision, and float32 rounding put their steps in

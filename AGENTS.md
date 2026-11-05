@@ -72,8 +72,10 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
   SSP cache (`SSPData.from_fsps`) also needs FSPS.
 - **Filters and attenuation curves are internal**:
   `ceridwen/observation/filters.py` and `ceridwen/dust/attenuation_laws.py`,
-  vendored from `sedpy-jax` (MIT), with the 293 filter `.par` files and the two
-  reference spectra under `ceridwen/data/`. There is no `sedpy` dependency; do
+  vendored from `sedpy-jax` (MIT), with the 296 filter `.par` files and the two
+  reference spectra under `ceridwen/data/`. User filters: `Photometry(filter_directory=)`
+  (only that directory), else `$CERIDWEN_FILTER_DIR` then the library
+  (`filters.resolve_filter_file`; a name in both warns). There is no `sedpy` dependency; do
   not add one.
 - **Nested sampling needs `blackjax.nss`/`blackjax.ns`**, released in blackjax
   1.6; `pyproject.toml` requires `blackjax>=1.6` (which forces `jax>=0.9` and

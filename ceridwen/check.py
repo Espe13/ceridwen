@@ -99,9 +99,11 @@ def check_environment(verbose: bool = True) -> bool:
     # from sedpy-jax, which is not a dependency), so what is worth checking is
     # that the data files came along with the install.
     try:
-        from ceridwen.observation.filters import list_available_filters
+        from ceridwen.observation.filters import library_filter_dir, list_available_filters
         from ceridwen.dust.attenuation_laws import ATTENUATION_LAWS
-        n_filt, n_law = len(list_available_filters()), len(ATTENUATION_LAWS)
+        # the bundled files only: $CERIDWEN_FILTER_DIR must not hide a broken install
+        n_filt = len(list_available_filters(directory=library_filter_dir()))
+        n_law = len(ATTENUATION_LAWS)
         if n_filt and n_law:
             record(_OK, "filters + attenuation",
                    f"{n_filt} filters, {n_law} attenuation laws")

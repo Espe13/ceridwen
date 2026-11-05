@@ -84,8 +84,26 @@ line profiles to be recomputed. See [Conventions](conventions.md).
 ## 2. Photometry
 
 Supply broadband fluxes in AB maggies. Filter names refer to CERIDWEN's
-bundled library of 293 filters; list them with
+bundled library of 296 filters; list them with
 `python -c "from ceridwen.observation.filters import list_available_filters as f; print(f())"`.
+
+To use your own curves, write each as `<name>.par` (two columns: wavelength in
+Å, transmission) and either pass the directory, or set it once for every
+session:
+
+```python
+phot = Photometry(filters=["my_nb816", "jwst_f444w"], filter_directory="~/filters", ...)
+```
+
+```bash
+export CERIDWEN_FILTER_DIR=~/filters
+```
+
+The lookup order is: `filter_directory=` alone when it is given (no
+fallback); otherwise `$CERIDWEN_FILTER_DIR`, then the bundled library. A name
+found in both `$CERIDWEN_FILTER_DIR` and the library is read from
+`$CERIDWEN_FILTER_DIR`, with a `UserWarning` naming both files. The result file
+records the `.par` file of each filter (`/obs/<name>` attribute `filterfiles`).
 The photometric prediction includes continuum and lines without the aperture
 or spectral calibration factors discussed below.
 

@@ -4,6 +4,7 @@ noise_floor) and each observation's likelihood / noise-model configuration are w
 ``write_result_h5`` / ``fitSED`` and read back by ``read_result_h5``."""
 from __future__ import annotations
 
+import json
 import pathlib
 import subprocess
 import warnings
@@ -110,6 +111,10 @@ def test_write_read_roundtrip(model, tmp_path):
     np.testing.assert_array_equal(s["calibration"], np.linspace(0.9, 1.1, WAVE.size))
     assert s["noise_floor"] == 0.02 and p["noise_floor"] == 0.0
     np.testing.assert_array_equal(p["upper_limit"], [False, False, True])
+    # the resolved .par file of each filter, next to its name
+    assert json.loads(p["filterfiles"]) == model.obs_dict["p"].filterfiles
+    assert [pathlib.Path(x).name for x in json.loads(p["filterfiles"])] == [
+        f"{n}.par" for n in FILTERS]
     assert "sky" not in p and "calibration" not in p and "upper_limit" not in s
     assert p["likelihood"]["class"] == "DiagonalGaussianLikelihoodWithUpperLimits"
     assert s["likelihood"]["class"] == "DiagonalGaussianLikelihood"

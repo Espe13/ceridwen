@@ -115,7 +115,16 @@ prefer `predict`/`get_spectrum_components`.
 - **Non-finite flux or non-finite / non-positive uncertainties** are masked at
   construction, with a warning when your mask did not already exclude them; the
   likelihood never sees them (not in the value, not in the gradient).
-- **Unknown filter name** → `FileNotFoundError` naming the missing `.par` file.
+- **Unknown filter name** → `FileNotFoundError` listing every `.par` file tried.
+  Lookup order: `Photometry(filter_directory=...)` alone when given (no
+  fallback); otherwise `$CERIDWEN_FILTER_DIR`, then the bundled library.
+- **A filter name in both `$CERIDWEN_FILTER_DIR` and the library** → the
+  `$CERIDWEN_FILTER_DIR` file is used, with a `UserWarning` naming both paths.
+  A stale variable in your shell changes every fit that uses that name.
+- **`Filter` objects in `Photometry(filters=...)`** are reloaded by name. One
+  built with `data=`, or read from a file other than the one its name resolves
+  to, raises `ValueError` (it used to be replaced by the library file
+  silently); pass the name and `filter_directory=` instead.
 - `SedModel` calls `setup_for_model` for every observation at construction, so
   you never call it yourself there. If you replace `model.observations`
   afterwards, call `model.setup_observations()` (it also drops the cached

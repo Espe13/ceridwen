@@ -2,22 +2,59 @@
 Broadband photometric observation container (AB maggies).
 """
 
+import os
+
 import jax.numpy as jnp
 import numpy as np
-from ceridwen.observation.filters import FilterSet
+from ceridwen.observation.filters import FILTER_DIR_ENV, FilterSet, resolve_filter_file
 from .base import Observation
 
 _FILTERSET_CACHE = {}
 
 
-def _filterset(filternames):
-    """One ``FilterSet`` per distinct filter-name tuple, shared by every Photometry that uses it."""
-    key = tuple(filternames)
+def _filter_directory(directory):
+    return None if directory is None else os.path.abspath(os.path.expanduser(os.fspath(directory)))
+
+
+def _filterset(filternames, directory=None):
+    """One ``FilterSet`` per distinct (filter names, directory, ``$CERIDWEN_FILTER_DIR``),
+    shared by every Photometry that uses it: the same names read from two directories are
+    two filter sets."""
+    names = tuple(filternames)
+    directory = _filter_directory(directory)
+    key = (names, directory, os.environ.get(FILTER_DIR_ENV) or None)
     fs = _FILTERSET_CACHE.get(key)
     if fs is None:
-        fs = FilterSet(list(key))
+        fs = FilterSet(list(names)) if directory is None else FilterSet(list(names), directory=directory)
         _FILTERSET_CACHE[key] = fs
     return fs
+
+
+def _filter_name(f, directory):
+    """The name of a filter given as a string or a ``Filter``.  A ``Filter`` is reloaded by
+    name, so it must be the file that name resolves to; anything else would be replaced."""
+    if isinstance(f, (str, os.PathLike)):
+        return os.fspath(f)
+    name = getattr(f, "name", None)
+    if not isinstance(name, str):
+        raise TypeError(f"Photometry filters must be filter names or Filter objects, got {f!r}")
+    src = getattr(f, "filename", None)
+    if src is None:
+        raise ValueError(
+            f"Filter '{name}' was built from data= arrays, which Photometry cannot use: it loads "
+            f"each filter by name.  Write the curve to '<dir>/{name}.par' (two columns: "
+            f"wavelength [A], transmission) and pass Photometry(filter_directory=<dir>).")
+    try:
+        want = resolve_filter_file(name, directory, warn=False)
+    except FileNotFoundError:
+        want = None
+    if want is None or os.path.abspath(src) != os.path.abspath(want):
+        raise ValueError(
+            f"Filter '{name}' was loaded from {src}, but Photometry loads filters by name and "
+            + (f"would read {want}" if want else "finds no file of that name")
+            + f".  Pass the name and Photometry(filter_directory="
+            f"'{os.path.dirname(os.path.abspath(src))}') instead.")
+    return name
 
 
 class Photometry(Observation):
@@ -25,7 +62,10 @@ class Photometry(Observation):
 
     Parameters
     ----------
-    filters : list of str or Filter -- names are resolved in the filter library
+    filters : list of str or Filter -- names are looked up in ``filter_directory`` when it is given,
+        otherwise in ``$CERIDWEN_FILTER_DIR`` and then the bundled library; a ``Filter`` must
+        come from the file its name resolves to (else ``ValueError``)
+    filter_directory : str or path, optional -- directory of ``<name>.par`` files; only it is searched
     upper_limit : bool array (n_filters,) -- True = one-sided (model > data only) chi-squared penalty
 
     Attributes
@@ -42,9 +82,10 @@ class Photometry(Observation):
         filters     = "filters",
         phot_mask   = "mask",
     )
-    _meta = ("kind", "name", "filternames")
+    _meta = ("kind", "name", "filternames", "filterfiles")
 
-    def __init__(self, filters=[], name=None, upper_limit=None, **kwargs):
+    def __init__(self, filters=[], name=None, upper_limit=None, filter_directory=None, **kwargs):
+        self.filter_directory = _filter_directory(filter_directory)
         self.set_filters(filters)
         self.upper_limit = (
             None if upper_limit is None
@@ -53,20 +94,21 @@ class Photometry(Observation):
         super().__init__(name=name, **kwargs)
 
     def set_filters(self, filters):
-        """Set the filter list from filter-name strings or ``Filter`` objects."""
+        """Set the filter list from filter-name strings or ``Filter`` objects (read from
+        ``self.filter_directory`` when set)."""
+        directory = getattr(self, "filter_directory", None)
         if not filters:
             self.filters     = []
             self.filternames = []
+            self.filterfiles = []
             self.filterset   = None
             return
 
-        try:
-            self.filternames = [f.name for f in filters]
-        except (AttributeError, TypeError):
-            self.filternames = list(filters)
+        self.filternames = [_filter_name(f, directory) for f in filters]
 
-        self.filterset = _filterset(self.filternames)
+        self.filterset = _filterset(self.filternames, directory)
         self.filters   = list(self.filterset.filters)
+        self.filterfiles = [os.path.abspath(p) for p in self.filterset.filterfiles]
         self.wave_eff = [f.wave_effective for f in self.filters]
         self._wavelength = jnp.asarray([f.wave_effective for f in self.filters])
 

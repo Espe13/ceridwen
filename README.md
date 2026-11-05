@@ -39,6 +39,7 @@ Enable AGN components with `CSPBasis(agn=AGNConfig())`:
 ### Data and fitting
 
 - Fit photometry, spectra and emission-line fluxes separately or together.
+- Use the 296 bundled filter curves, or your own `.par` files with `Photometry(filter_directory=...)` or `$CERIDWEN_FILTER_DIR`.
 - Combine stellar and gas velocity dispersions with the instrumental line-spread function in one broadening kernel, automatically accounting for the stellar library’s resolution.
 - Analytically marginalise over emission-line fluxes with `Spectrum(marginalize_elines=True)`.
 - Model noise and calibration uncertainties with jitter, calibration polynomials, an outlier mixture and a Gaussian-process likelihood for correlated residuals. Calibration polynomials can be sampled, profiled or marginalised.
