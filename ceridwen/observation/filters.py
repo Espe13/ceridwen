@@ -357,6 +357,29 @@ class Filter:
 FLUX_WINDOW_ZMAX = 30.0
 
 
+def _log_uniform_knots(wavelength):
+    """A filter's knots as float64 NumPy.  A float32 grid (float32 mode: ``gridify_transmission``
+    runs in the working precision) that is log-uniform up to float32 rounding is rebuilt in
+    float64 from its end points and length, so that :meth:`FilterSet._flux_tables` recognises
+    it; each knot moves by at most that rounding (~0.01 A at 4.4 um).  Float64 grids, and grids
+    that are not log-uniform, are returned unchanged."""
+    w = np.asarray(wavelength)
+    lam = w.astype(np.float64)
+    if w.dtype != np.float32 or lam.size < 3:
+        return lam
+    ln = np.log(lam)
+    d = np.diff(ln)
+    m = float(d.mean())
+    dev = float(np.abs(d - m).max())
+    # ln(lam) carries the rounding of a float32 ln (one ulp of |ln lam|) and of a float32 lam
+    # (eps): a step moves by at most twice their sum; 8x that leaves room for a GPU exp.  A grid
+    # that is not log-uniform deviates by a sizeable part of a step, not by rounding.
+    tol = 8.0 * (float(np.spacing(np.float32(np.abs(ln).max()))) + float(np.finfo(np.float32).eps))
+    if dev <= 1e-9 * m or not 0.0 < m or dev > tol or dev > 0.1 * m:
+        return lam
+    return np.exp(np.linspace(ln[0], ln[-1], lam.size))
+
+
 class FilterSet:
     """
     A collection of filters that share a common wavelength grid, enabling
@@ -514,7 +537,7 @@ class FilterSet:
             return t
         tables = []
         for f in self.filters:
-            lam = np.asarray(f.wavelength, dtype=np.float64)
+            lam = _log_uniform_knots(f.wavelength)
             g = np.asarray(f.transmission, dtype=np.float64) * lam / float(f.ab_zero_counts)
             h = np.diff(lam)
             s = np.diff(g) / h

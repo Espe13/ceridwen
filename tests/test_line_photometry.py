@@ -182,3 +182,73 @@ def test_marginalised_lines_reach_the_photometry_at_the_sampled_width():
             np.testing.assert_array_equal(cols[gas], want)
     a, b = cols[120.0], cols["sigma_gas"]
     assert np.all(np.abs(b - a) <= 3e-5 * np.abs(a).max(axis=1, keepdims=True))
+
+
+def test_float32_rounded_grid_is_rebuilt_log_uniform():
+    # float32 mode builds the filter grids in float32 (gridify_transmission), where their steps
+    # in ln lambda differ by ~5e-3; _log_uniform_knots recovers the log-uniform grid, so the
+    # arithmetic segment index and LineWeightTable (sampled redshift) work there too
+    from ceridwen.observation.filters import _log_uniform_knots
+    ln = np.linspace(np.log(36480.0), np.log(51972.0), 1865)
+    lam32 = np.exp(ln.astype(np.float32)).astype(np.float32)
+    d32 = np.diff(np.log(lam32.astype(np.float64)))
+    assert np.abs(d32 - d32.mean()).max() > 1e-9 * d32.mean()          # the old check fails
+    lam = _log_uniform_knots(lam32)
+    d = np.diff(np.log(lam))
+    assert lam.dtype == np.float64
+    assert np.abs(d - d.mean()).max() <= 1e-9 * d.mean()
+    np.testing.assert_allclose(lam, lam32, rtol=4e-6, atol=0)          # moved by rounding only
+    # a float64 grid, and a float32 grid that is not log-uniform, are returned unchanged
+    lam64 = np.exp(ln)
+    np.testing.assert_array_equal(_log_uniform_knots(lam64), lam64)
+    bumpy = lam32.copy()
+    bumpy[900] *= np.float32(1.0 + 0.3 * d32.mean())
+    np.testing.assert_array_equal(_log_uniform_knots(bumpy), bumpy.astype(np.float64))
+
+
+_F32_SAMPLED_Z = r"""
+import json, sys, warnings
+warnings.filterwarnings("ignore")
+import numpy as np, jax.numpy as jnp, ceridwen
+from ceridwen.precision import precision_name
+from ceridwen import SSPData, CSPBasis, SedModel, Cosmology, Kinematics
+from ceridwen.observation import Photometry
+from ceridwen.priors import Uniform
+csp = CSPBasis(SSPData.load(sys.argv[1]), lookback_time=jnp.linspace(0, 1, 4), zh_const=True,
+               add_neb=True, verbose=False, cosmo=Cosmology.planck18())
+bands = ["jwst_f090w", "jwst_f200w", "jwst_f356w", "jwst_f444w"]
+out = {"precision": precision_name()}
+for broaden in (False, True):
+    pred = {}
+    for free_z in (False, True):
+        phot = Photometry(filters=bands, flux=np.ones(4), uncertainty=np.ones(4), name="p")
+        pri = {"logmass": Uniform(low=8.0, high=12.0)}
+        kw = {"zred": 5.0}
+        if free_z:
+            pri["zred"] = Uniform(low=4.9, high=5.1)
+            kw = {"free_param_init": {"zred": jnp.array([5.0])}}
+        m = SedModel(csp, [phot], priors=pri, broaden_photometry=broaden,
+                     kinematics=Kinematics(sigma_gal=150.0, sigma_gas=100.0), **kw)
+        pred[free_z] = np.asarray(m.predict(m.theta_init)["p"], np.float64)
+    out[str(broaden)] = float(np.max(np.abs(pred[True] / pred[False] - 1.0)))
+print(json.dumps(out))
+"""
+
+
+def test_float32_sampled_redshift_with_lines_in_the_photometry():
+    # 1.0.14 refused this model in float32 (Apple GPU): "LineWeightTable needs log-uniform
+    # filter grids".  Run in a subprocess (jax_enable_x64 is process-global) on the CPU.
+    import json
+    import subprocess
+    if not os.environ.get("SPS_HOME"):
+        pytest.skip("SPS_HOME not set (CLOUDY grids)")
+    env = dict(os.environ, CERIDWEN_X64="0", JAX_PLATFORMS="cpu")
+    proc = subprocess.run([sys.executable, "-c", _F32_SAMPLED_Z, str(require_test_grid())],
+                          env=env, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    res = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert res["precision"] == "float32"
+    # measured 6.0e-5 (delta lines) and 9.5e-5 (Gaussian lines; float64 gives 8.9e-5 there,
+    # the sigma_gal kernel of the free-z path, see the float64 test above)
+    assert res["False"] < 2e-4
+    assert res["True"] < 3e-4

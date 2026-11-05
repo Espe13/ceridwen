@@ -1,3 +1,11 @@
+## Unreleased
+
+- Float32 mode (Apple GPU, `CERIDWEN_X64=0`): a sampled redshift with emission lines in the
+  photometry raised "LineWeightTable needs log-uniform filter grids" when the model was built.
+  The filter grids are made in the working precision, and float32 rounding put their steps in
+  ln lambda 5e-3 apart. `FilterSet._flux_tables` now rebuilds such a grid in float64 from its
+  end points (each knot moves by at most 1.8e-6 relative). Float64 results are byte-identical.
+
 ## 1.0.14 (2026-11-03)
 
 - `SedModel.display()` / `model_structure()` with a `Lines` observation of more than one line
