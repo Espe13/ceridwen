@@ -6,8 +6,12 @@ usage errors.
 
 ## Metallicity
 
-Use `theta["logzsol"]` for constant metallicity or `theta["logzsol_hist"]`
-for one value per lookback-time node. Values are log10(Z/Z_sun), using
+Use `theta["logzsol"]` for constant metallicity (`zh_const=True`) or
+`theta["logzsol_bins"]` for one value per SFH bin (`zh_const=False`, shape
+`(n_time - 1,)`, index 0 = the youngest bin), constant within each bin. The
+per-node `logzsol_hist` was removed: the model used only its bin means
+`0.5 * (zh[k] + zh[k+1])`, so one combination of the nodes was invisible to the
+data; it now raises with those bin means. Values are log10(Z/Z_sun), using
 the loaded grid's Z_sun; 0.0 is solar. Absolute-metallicity keys `Z` and
 `zh` are rejected with an error that shows the converted value.
 
@@ -111,9 +115,11 @@ Observations store data in float64, both at construction and when assigning
 
 ## SFH mass normalisation
 
-`logsfr_ratios_to_sfh` normalises the trapezoidal SFR integral to 1 M☉
-on the supplied `sfh_times_yr=csp.sfh_times` construction grid, including
-when redshift is free. `logmass` then sets the mass. Use this transform
+`logsfr_ratios_to_sfh` normalises the SFR integral to 1 M☉ on the
+supplied `sfh_times_yr=csp.sfh_times` construction grid, including when
+redshift is free: Σ SFR_i Δt_i for one SFR per bin (`sfh_interp="step"`,
+`n_time - 2` ratios), the trapezoidal integral for one per node
+(`"linear"`, `n_time - 1` ratios). `logmass` then sets the mass. Use this transform
 to avoid normalisation errors that can shift `logmass` by several dex.
 
 ## Unrecognised `theta` keys

@@ -42,7 +42,7 @@ def _model(mode):
                    agn=AGNConfig(agn_mode=mode, torus_model="skirtor16", polar_dust=True,
                                  lines=False))
     t = np.array(csp.sfh_times)
-    init = {"logsfr_ratios": jnp.zeros(len(t) - 1), "logmass": jnp.array([9.5]),
+    init = {"logsfr_ratios": jnp.zeros(len(t) - 2), "logmass": jnp.array([9.5]),
             "diffuse_tau_kc": jnp.array([0.5]), "skirtor_i": jnp.array([40.0])}
     obs = [Photometry(filters=["jwst_f150w", "jwst_f444w", "jwst_f770w"], flux=np.ones(3) * 1e-9,
                       uncertainty=np.ones(3) * 1e-10, name="phot")]

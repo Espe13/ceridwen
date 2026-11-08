@@ -95,14 +95,19 @@ def _build_theta_new(zh_const: bool, per_bin: bool):
     if zh_const:
         theta["logzsol"] = jnp.asarray([LOGZSOL_BASELINE])
     else:
-        theta["logzsol_hist"] = jnp.asarray(       # constant metallicity history
-            np.full(N_TIME, LOGZSOL_BASELINE))
+        theta["logzsol_bins"] = jnp.asarray(       # constant metallicity, one value per bin (the
+            np.full(N_TIME - 1, LOGZSOL_BASELINE))  # varZ W of the node history it replaced, bit for bit)
     return theta
 
 
 def _build_csp(ssp, theta, *, sfh_interp, zh_const, agn=None, **over):
     kw = dict(add_dust=False, add_diffuse_dust=False, add_dust_emission=False)
     kw.update(over)
+    if sfh_interp == "step" and np.size(theta["sfh"]) == np.size(theta["lookback_time"]):
+        # the step_*_pernode goldens were captured from a per-node SFR, which a step SFH used
+        # only through its bin means; a step CSP now takes those means directly (same W, bit for bit)
+        s = jnp.asarray(theta["sfh"])
+        theta = {**theta, "sfh": 0.5 * (s[:-1] + s[1:])}
     if agn is not None:
         from ceridwen.agn import AGNConfig
         agn = AGNConfig(**agn)
@@ -140,10 +145,12 @@ def _maggies(csp, theta):
 
 
 # AGN and fixed= configs (tests/baselines/_capture.py --agn / --fixed) carry "agn" (AGNConfig
-# kwargs or None), "csp" (CSPBasis overrides) and "theta" (AGN / dust / zred values)
+# kwargs or None), "csp" (CSPBasis overrides) and "theta" (AGN / dust / zred values); the
+# per-bin metallicity configs (--zbins) carry "logzsol_bins" (one value per SFH bin)
 CONFIGS = [(c["sfh_interp"], c["zh_const"], c["per_bin"], c["tag"])
            for c in MANIFEST["configs"]]
-_EXTRA = {c["tag"]: c for c in MANIFEST["configs"] if "agn" in c or "csp" in c}
+_EXTRA = {c["tag"]: c for c in MANIFEST["configs"]
+          if "agn" in c or "csp" in c or "logzsol_bins" in c}
 
 
 @pytest.mark.parametrize("sfh_interp,zh_const,per_bin,tag", CONFIGS)
@@ -156,6 +163,8 @@ def test_lookback_flip_invariant(ssp, sfh_interp, zh_const, per_bin, tag):
         if missing:
             pytest.skip(f"MISSING {root}/{missing}: golden {tag} did NOT run")
     theta = _build_theta_new(zh_const, per_bin)
+    if "logzsol_bins" in extra:                 # per-bin metallicity configs (_capture.py --zbins)
+        theta["logzsol_bins"] = jnp.asarray(extra["logzsol_bins"], dtype=float)
     csp   = _build_csp(ssp, theta, sfh_interp=sfh_interp, zh_const=zh_const,
                        agn=extra.get("agn"), **extra.get("csp", {}))
 

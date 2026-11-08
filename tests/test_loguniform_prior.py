@@ -206,9 +206,9 @@ def _sed_model(ssp):
     from ceridwen import CSPBasis, SedModel
     from ceridwen.cosmology import Cosmology
     from ceridwen.observation import Photometry
-    n_time = 5
+    n_time = 6                                    # 5 step bins, one sampled SFR per bin
     csp = CSPBasis(ssp, theta={"lookback_time": jnp.linspace(0.0, 12.0, n_time),
-                               "sfh": jnp.ones(n_time), "logzsol": jnp.array([-0.2])},
+                               "sfh": jnp.ones(n_time - 1), "logzsol": jnp.array([-0.2])},
                    zh_const=True, sfh_interp="step", add_dust=False, add_diffuse_dust=True,
                    add_neb=False, verbose=False, cosmo=Cosmology.planck18())
     filters = ["sdss_u0", "sdss_g0", "sdss_r0", "sdss_i0", "sdss_z0"]
@@ -334,7 +334,11 @@ def test_fitsed_logpost_gradient_matches_fd(grid, tau):
             # the photometric prediction is float32 (see CLAUDE.md T3: float32 einsums), so
             # ln p carries ~1e-5 of rounding noise; a 1e-3 relative step keeps the FD error
             # from it at the per-cent level (1e-6 steps give FD errors of order unity).
-            h = 1e-3 * max(abs(base.flat[i]), 1e-2)
+            # floor 1e-3: at |x| ~ 0.2 a 2e-4 step is float32-noise dominated (diffuse_dust_index
+            # at tau = 0.0101: FD -4.76 at h = 1e-4, -4.98 at h >= 1e-3, AD -4.986); the tau step
+            # keeps the old rule, its LogUniform lower bound is 1e-4 below the test point
+            scale = 1e-2 if name == "diffuse_tau_kc" else 1.0
+            h = 1e-3 * max(abs(base.flat[i]), scale)
             up, dn = base.copy(), base.copy()
             up.flat[i] += h
             dn.flat[i] -= h

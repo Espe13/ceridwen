@@ -131,7 +131,9 @@ def _build(add_neb, add_igm, sigma_losvd, dust_emission, gas_tied=False, igm_dla
                          wavelength=np.array(list(LINES.values())),
                          flux=np.full(len(LINES), 1e-17), uncertainty=np.full(len(LINES), 1e-18),
                          name="lines"))
-    init = {"logsfr_ratios": jnp.zeros(N_TIME - 1), "logmass": jnp.array([10.0])}
+    # step: one SFR per bin, N_TIME - 2 ratios between adjacent bins; linear: one per node
+    n_sfr = csp.theta_init["sfh"].size
+    init = {"logsfr_ratios": jnp.zeros(n_sfr - 1), "logmass": jnp.array([10.0])}
     if igm_dla:
         init.update(x_HI=jnp.array([0.5]), logN_HI=jnp.array([20.5]))
     if isinstance(lsf, str):
@@ -454,6 +456,19 @@ def collect(args):
                                                            "dust4_type": 1})))
     elif not has_agn:
         print("  (package has no ceridwen.agn: AGN configurations skipped)")
+    # one stellar metallicity per SFH bin (theta["logzsol_bins"], zh_const=False); the tied
+    # gas reads the youngest bin; appended last, earlier draws unchanged
+    import ceridwen.csp.csp as _cspmod
+    if "logzsol_bins" in getattr(_cspmod, "LOGZSOL_KEYS", ()):
+        zb = {"zh_const": False}
+        configs.append(("zbins_plain", dict(add_neb=False, add_igm=True, sigma_losvd=250.0,
+                                            dust_emission=False, csp_extra=zb)))
+        if os.environ.get("SPS_HOME"):
+            configs.append(("zbins_neb_tied", dict(add_neb=True, add_igm=True, sigma_losvd=250.0,
+                                                   dust_emission=False, gas_tied=True,
+                                                   csp_extra=zb)))
+    else:
+        print("  (package has no logzsol_bins: per-bin metallicity configurations skipped)")
     for tag, cfg in configs:
         t0 = time.perf_counter()
         model = _build(**cfg)

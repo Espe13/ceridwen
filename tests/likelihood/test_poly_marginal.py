@@ -283,7 +283,7 @@ def _model(csp, spec_kw, init=None, priors=None, transforms=None, data=None):
                   uncertainty=np.full(WAVE.size, 1e-30), instrument=Instrument.sigma_kms(150.0),
                   name="s", **spec_kw)
     ph = Photometry(filters=FILTERS, flux=[1e-9] * 4, uncertainty=[1e-10] * 4, name="p")
-    fixed = {"sfh": jnp.ones(4), "logzsol": jnp.array([-0.3]), "tau_pow": jnp.array([1.0]),
+    fixed = {"sfh": jnp.ones(3), "logzsol": jnp.array([-0.3]), "tau_pow": jnp.array([1.0]),  # 3 step bins
              "alpha_pow": jnp.array([-1.0]), "diffuse_dust_index": jnp.array([0.0])}
     tr = {k: (lambda v: (lambda th: v))(v) for k, v in fixed.items()}
     tr.update(transforms or {})

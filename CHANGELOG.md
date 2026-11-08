@@ -1,3 +1,36 @@
+## 2.0.0 (2026-11-08)
+
+Two breaking changes, both so that every sampled number reaches the data; code written for 1.x
+raises with the fix and the converted values. See `docs/migration.md` (Upgrading to 2.0).
+
+- **Breaking: a step SFH takes one SFR per bin, as Prospector's FastStepBasis.**
+  `sfh_interp="step"` holds the SFR constant within each bin; it now takes `theta["sfh"]` of
+  shape `(n_time - 1,)`, and `logsfr_ratios_to_sfh(r, sfh_times_yr=csp.sfh_times)` with
+  `n_time - 2` ratios of ADJACENT BIN SFRs returns it, normalised so Σ SFR_i Δt_i = 1 M☉
+  (equal to Prospector's `logsfr_ratios_to_masses` to 1e-13). Before, a step CSP took one SFR
+  per node and used only the bin means, so the continuity prior acted on node ratios, not on
+  the bins the data see, and one alternating combination of the nodes changed no output.
+  A per-node `sfh` in step mode now raises with the bin means, which give the same model to
+  the last bit (tested against the previous commit); `SedModel` refuses an `sfh` transform of
+  the wrong length at setup. `"linear"` (FSPS's tabular SFH) keeps one SFR per node. The
+  `lookback_time=` shortcut gives a per-bin default for step (`sfh_per_bin` now defaults to
+  None; False is refused with step). Fits change: with the same nodes a step fit has one
+  ratio fewer and a different prior; the examples, notebooks and docs add one lookback node so
+  their ratio vectors keep their length. The step goldens pass unchanged with the bin means.
+- **Breaking: the metallicity history is one value per SFH bin.** `theta["logzsol_bins"]`
+  (shape `(n_time - 1,)`, log10(Z/Z_sun) of the grid, index 0 = youngest bin) replaces the
+  per-node `theta["logzsol_hist"]` in `CSPBasis` and `CSPBasis_afe` (`zh_const=False`, also
+  with the `lookback_time=` shortcut). The kernel only ever used one value per bin, the mean of
+  the bin's two edge nodes, so N+1 node values set N bin values: one alternating combination
+  of the nodes changed no output, the sampler drifted along it, and the tied gas metallicity
+  (the node at today) moved freely with it. `logzsol_hist` now raises wherever it appears
+  (theta, `fixed=`, priors, `free_param_init`, transforms) with the bin means
+  `0.5*(h[:-1] + h[1:])`, which give the same model to the last bit. A prior on the nodes has
+  no per-bin equivalent: give priors per bin. `gas_tied=True` uses the youngest bin. Old
+  result files stay readable; `convert_result` refuses the pre-1.0.5 per-node `zh`. Constant
+  metallicity (`zh_const=True`, the default) is unchanged (T4). New goldens
+  `{step,linear}_binZ_{pernode,perbin}`; the varZ goldens pass unchanged with the bin means.
+
 ## 1.0.15 (2026-11-05)
 
 - User filter curves: `Photometry(filter_directory=...)` reads `<name>.par` from that

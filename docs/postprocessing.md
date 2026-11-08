@@ -30,7 +30,7 @@ kinematics, including `broaden_photometry`.
 | `out['theta'][name]` | `(N,)` or `(N, k)` | equal-weight posterior draws of every sampled parameter |
 | `out['log_likelihood']`, `out['draw_index']` | `(N,)` | log-likelihood of each draw and its index in the raw samples |
 | `out['extras']['sfh']['lookback_gyr']` | `(N, n_time)` | lookback grid of each draw (follows a sampled `zred` when `track_zred_age`; the SFR is scaled with it so the formed mass is kept) |
-| `out['extras']['sfh']['sfr']` | `(N, n_time)` or `(N, n_time-1)` | SFR in M⊙/yr in the CSP's convention (per node, or per bin for `sfh_per_bin`) |
+| `out['extras']['sfh']['sfr']` | `(N, n_time-1)` or `(N, n_time)` | SFR in M⊙/yr in the CSP's convention (per bin for `sfh_interp="step"` or `sfh_per_bin`, per node for `"linear"`) |
 | `out['extras']['sfh']['sfr_per_bin']` | `(N, n_time-1)` | the per-bin SFR the step kernel integrates |
 | `out['extras']['sfh']['mass_formed']` | `(N,)` | ∫ SFR dt, M⊙ |
 | `out['extras']['sfh']['sfr10']`, `sfr100`, ... | `(N,)` | mean SFR over the last 10, 100, ... Myr (`windows_myr`, default 3, 5, 10, 20, 50, 100, 500) |

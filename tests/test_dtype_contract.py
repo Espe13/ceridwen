@@ -57,7 +57,7 @@ def _model(ssp_grid_path, add_neb):
                          uncertainty=np.full(len(LINES), 1e-18), name="lines"))
     def sfh(th):
         return logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=t_yr)
-    init = {"logsfr_ratios": jnp.zeros(N_TIME - 1), "logmass": jnp.array([10.0])}
+    init = {"logsfr_ratios": jnp.zeros(N_TIME - 2), "logmass": jnp.array([10.0])}
     with warnings.catch_warnings():           # no priors: flat, as the bit-identity harness
         warnings.simplefilter("ignore")
         model = SedModel(csp, obs, priors={}, transforms={"sfh": sfh}, free_param_init=init,

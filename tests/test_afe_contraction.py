@@ -68,10 +68,14 @@ def test_folded_afe_equals_explicit_plane(kw, obrun):
 
 
 def test_afe_absent_unchanged():
+    # get_spectrum and _reference contract the same float32 arrays in different orders, so they
+    # agree to float32 rounding, not bit for bit (1.0e-7 of max on jax 0.12, identical at the
+    # commit before 2.0.0); the bound is the one test_folded_afe_equals_explicit_plane uses
     csp = _csp(zh_const=True)
     th = dict(csp.theta_init)
-    np.testing.assert_array_equal(np.asarray(csp.get_spectrum(th)),
-                                  np.asarray(_reference(csp, th, True)))
+    new = np.asarray(csp.get_spectrum(th))
+    ref = np.asarray(_reference(csp, th, True))
+    assert np.max(np.abs(new - ref)) <= 2e-6 * np.max(np.abs(ref))
 
 
 @pytest.mark.skipif(not os.environ.get("SPS_HOME"), reason="dust emission needs $SPS_HOME")

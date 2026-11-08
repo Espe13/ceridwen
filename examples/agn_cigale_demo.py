@@ -54,7 +54,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 SSP_FILE = HERE / "ssp_data.h5"
 SEED = 11
 ZRED = 2.5
-N_TIME = 6
+N_TIME = 7      # SFH nodes -> 6 step bins -> 5 logsfr_ratios between adjacent bins
 SNR = 10.0
 FILTERS = ["jwst_f090w", "jwst_f115w", "jwst_f150w", "jwst_f200w", "jwst_f277w",
            "jwst_f356w", "jwst_f444w", "jwst_f770w", "jwst_f1000w", "jwst_f1280w",
@@ -103,7 +103,7 @@ def build(ssp, agn, observations, free=()):
         elif k not in ("logsfr_ratios", "logzsol", "logmass", "diffuse_tau_kc"):
             transforms[k] = lambda th, _v=v: _v
     for k, v in csp.theta_init.items():          # every other CSP key: fixed at its default
-        if k not in priors and k not in transforms and k not in ("sfh", "zred", "logzsol_hist"):
+        if k not in priors and k not in transforms and k not in ("sfh", "zred", "logzsol_bins"):
             transforms[k] = lambda th, _v=jnp.atleast_1d(jnp.asarray(v)): _v
     return SedModel(csp, observations=observations, priors=priors, transforms=transforms,
                     free_param_init={k: v for k, v in TRUTH.items() if k in priors}, zred=ZRED)

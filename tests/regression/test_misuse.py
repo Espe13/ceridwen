@@ -59,9 +59,11 @@ def _weight_csp(zh_const, sfh, sfh_interp):
     T = 13.8
     lb = jnp.linspace(0.0, T, 10)   # NEW lookback convention
     Zc = -0.15          # logzsol (log10 Z/Z_sun), inside every shipped grid
+    if sfh_interp == "step":                  # a step SFH takes one SFR per bin: the node means
+        sfh = 0.5 * (sfh[:-1] + sfh[1:])
     theta = {"lookback_time": lb, "sfh": sfh}
-    theta["logzsol" if zh_const else "logzsol_hist"] = (jnp.array([Zc]) if zh_const
-                                                       else jnp.full(10, Zc))
+    theta["logzsol" if zh_const else "logzsol_bins"] = (jnp.array([Zc]) if zh_const
+                                                       else jnp.full(9, Zc))
     csp = CSPBasis(ssp, theta=theta, cosmo=Cosmology.planck18(), zh_const=zh_const,
                    add_dust=False, add_diffuse_dust=False, add_dust_emission=False,
                    add_neb=False, add_igm=False, verbose=False, sfh_interp=sfh_interp)
@@ -101,7 +103,7 @@ def test_var_zh_zero_sfr_is_finite():
     T = 13.8
     lb = jnp.linspace(0.0, T, 10)   # NEW lookback convention
     sfh = (jnp.exp(-0.5 * ((lb - 0.05) / 0.03) ** 2)
-           + 0.7 * jnp.exp(-0.5 * ((lb - 11.) / 0.8) ** 2)).at[3].set(0.0)
+           + 0.7 * jnp.exp(-0.5 * ((lb - 11.) / 0.8) ** 2)).at[3:5].set(0.0)   # step: bin 3 = 0
     for sfh_interp in ("linear", "step"):
         cv = _weight_csp(False, sfh, sfh_interp)
         w = (cv.calculate_ssp_weights_var_zh(dict(cv.theta_init)) if sfh_interp == "linear"

@@ -25,6 +25,9 @@ Usage
     python tests/baselines/_capture.py --agn2   # ONLY the AGN2 configs (AGN2_CONFIGS: SKIRTOR,
                                                 # polar dust, Feltre+16 NLR, BLR; they need the
                                                 # converted tables of $CERIDWEN_AGN_DATA)
+    python tests/baselines/_capture.py --zbins  # CHECK the per-bin metallicity goldens
+                                                # (ZBINS_CONFIGS) against the files; writes
+                                                # nothing (captured 2026-11-07, see capture_zbins)
 """
 from __future__ import annotations
 
@@ -79,13 +82,20 @@ def _build_theta(zh_const: bool, per_bin: bool):
     if zh_const:
         theta["logzsol"] = jnp.asarray([LOGZSOL_BASELINE])
     else:
-        theta["logzsol_hist"] = jnp.asarray(np.full(N_TIME, LOGZSOL_BASELINE))
+        # constant metallicity, one value per bin: the same W, bit for bit, as the node history
+        # np.full(N_TIME, LOGZSOL_BASELINE) the varZ goldens were captured with (0.5*(c+c) == c)
+        theta["logzsol_bins"] = jnp.asarray(np.full(N_TIME - 1, LOGZSOL_BASELINE))
     return theta
 
 
 def _build_csp(ssp, theta, *, sfh_interp, zh_const, agn=None, **over):
     kw = dict(add_dust=False, add_diffuse_dust=False, add_dust_emission=False)
     kw.update(over)
+    if sfh_interp == "step" and np.size(theta["sfh"]) == np.size(theta["lookback_time"]):
+        # the step_*_pernode goldens were captured from a per-node SFR, which a step SFH used
+        # only through its bin means; a step CSP now takes those means directly (same W, bit for bit)
+        s = jnp.asarray(theta["sfh"])
+        theta = {**theta, "sfh": 0.5 * (s[:-1] + s[1:])}
     return CSPBasis(
         ssp,
         theta             = theta,
@@ -154,6 +164,56 @@ FIXED_CONFIGS = [
              "fixed": {"gas_logu": -2.5, "gas_logz": -0.3}},
      "theta": {"zred": 2.0, "diffuse_tau_kc": 0.6}},
 ]
+
+
+# Per-bin stellar metallicity golden configs (theta["logzsol_bins"], 2026-11-07): the pre-AGN
+# goldens' SFH (per node and per bin, step and linear) with a NON-constant metallicity per bin,
+# inside the test grid's logzsol axis and off its nodes (young bins richer); index 0 = youngest.
+ZBINS_LOGZSOL = [-0.12, -0.2578, -0.4745, -0.6033, -0.795, -1.0048, -1.1195, -1.2943, -1.499]
+ZBINS_CONFIGS = [
+    {"tag": f"{interp}_binZ_{'perbin' if per_bin else 'pernode'}", "sfh_interp": interp,
+     "per_bin": per_bin, "logzsol_bins": ZBINS_LOGZSOL}
+    for interp in ("step", "linear") for per_bin in (False, True)]
+
+
+def zbins_arrays(ssp, cfg):
+    """(W, spec, lines, maggies) of one per-bin metallicity config, exactly as the T3 test computes
+    them."""
+    theta = _build_theta(False, cfg["per_bin"])
+    theta["logzsol_bins"] = jnp.asarray(np.asarray(cfg["logzsol_bins"], dtype=float))
+    csp = _build_csp(ssp, theta, sfh_interp=cfg["sfh_interp"], zh_const=False)
+    phot = _photometry(csp)
+    theta_full = {k: jnp.asarray(v) for k, v in csp.theta_init.items()}
+    theta_full["logmass"] = jnp.zeros(1)
+    theta_full["zred"] = jnp.zeros(1)
+    theta_full["igm_factor"] = jnp.ones(1)
+    theta_full["eline_scaling"] = jnp.ones(1)
+    W = np.asarray(csp.calculate_ssp_weights(theta_full))
+    spec = np.asarray(csp.get_spectrum(theta_full))
+    lines = np.asarray(csp.get_line_spec(theta_full))
+    maggies = _model_maggies(csp, phot, theta_full)
+    return W, spec, lines, maggies
+
+
+def capture_zbins():
+    """Check the per-bin metallicity goldens against the current code; writes nothing.
+
+    They were captured on 2026-11-07 (branch feature/logzsol-bins) only after each config's W
+    equalled the same metallicities fed as a per-node history through the then-existing node
+    path to 1e-11, and spec / lines / maggies to 1e-6.  That path ("logzsol_hist") has since been
+    removed, so the independent route cannot be re-run here: re-capturing these tags would write
+    numbers no longer justified by it.  A change that moves them is a physics change (CLAUDE.md
+    section 4)."""
+    sys.path.insert(0, str(THIS_DIR.parent))
+    from _gridfixture import require_test_grid
+    ssp = SSPData.load(str(require_test_grid()))
+    for cfg in ZBINS_CONFIGS:
+        a = zbins_arrays(ssp, cfg)
+        ref = [np.load(THIS_DIR / f"{n}_{cfg['tag']}.npy") for n in ("W", "spec", "lines", "maggies")]
+        rel = [float(np.max(np.abs(x - y)) / np.max(np.abs(y))) for x, y in zip(a, ref)]
+        print(f"[capture --zbins] {cfg['tag']}: max rel vs the golden (W, spec, lines, maggies) = "
+              f"{', '.join(f'{r:.2e}' for r in rel)}")
+    print("[capture --zbins] nothing written")
 
 
 def agn_arrays(ssp, cfg):
@@ -348,4 +408,6 @@ if __name__ == "__main__":
         sys.exit(capture_agn(FIXED_CONFIGS))
     if "--agn2" in sys.argv[1:]:
         sys.exit(capture_agn(AGN2_CONFIGS))
+    if "--zbins" in sys.argv[1:]:
+        sys.exit(capture_zbins())
     sys.exit(capture_agn() if "--agn" in sys.argv[1:] else main())

@@ -472,7 +472,7 @@ def test_postprocess_agn_curve_and_mdust(tmp_path):
                       name="phot")]
     t = np.array(csp.sfh_times)
     from ceridwen.model.transforms import logsfr_ratios_to_sfh
-    init = {"logsfr_ratios": jnp.zeros(len(t) - 1), "logmass": jnp.array([9.0]),
+    init = {"logsfr_ratios": jnp.zeros(len(t) - 2), "logmass": jnp.array([9.0]),
             **_agn_vals(ON, "corrected")}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

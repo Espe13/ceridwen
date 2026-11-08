@@ -47,7 +47,7 @@ def _sed(csp, obs, priors=None, transforms=None, init=None):
     t = np.array(csp.sfh_times)
     tr = {"sfh": lambda th, _t=t: T.logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)}
     tr.update(transforms or {})
-    fi = {"logsfr_ratios": jnp.zeros(len(t) - 1), "logmass": jnp.array([9.0])}
+    fi = {"logsfr_ratios": jnp.zeros(len(t) - 2), "logmass": jnp.array([9.0])}
     fi.update(init or {})
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")

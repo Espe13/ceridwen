@@ -46,7 +46,7 @@ def build_model(result_path=None):
         csp, observations=[phot],
         transforms={"sfh": lambda th, _t=sfh_times_yr:
                     logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)},
-        free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 1),
+        free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 2),
                          "logmass": jnp.array([10.0])},
         zred=ZRED,
     )

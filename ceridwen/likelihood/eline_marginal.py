@@ -301,7 +301,7 @@ def build_eline_system(model) -> Optional[ElineSystem]:
         tab = line_table_for(csp)
         neb = SimpleNamespace(nebem_line_pos=tab["wave"], nebem_line_names=tab["names"])
     if getattr(csp, "gas_tied", False):
-        zkey = "logzsol" if getattr(csp, "zh_const", True) else "logzsol_hist"
+        zkey = getattr(csp, "zh_key", None) or ("logzsol" if getattr(csp, "zh_const", True) else "logzsol_bins")
         if zkey in model.param_names:
             warnings.warn(
                 f"marginalize_elines=True with gas_tied=True: the gas metallicity follows the "

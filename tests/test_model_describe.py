@@ -56,7 +56,7 @@ def model():
     from ceridwen.priors import ClippedNormal, Normal, StudentT, Uniform
 
     ssp = SSPData.load(str(GRID))
-    csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 10.0, 5), zh_const=True,
+    csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 10.0, 6), zh_const=True,
                    sfh_interp="step", add_dust=True, add_diffuse_dust=True, add_neb=False,
                    verbose=False, cosmo=Cosmology.planck18())
     t_yr = np.array(csp.sfh_times)

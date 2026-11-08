@@ -48,7 +48,7 @@ def _model(csp, obs, kin, **kw):
 
     def _sfh(th, _t=t):
         return logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)
-    init = {"logsfr_ratios": jnp.zeros(N_TIME - 1), "logmass": jnp.array([10.0])}
+    init = {"logsfr_ratios": jnp.zeros(N_TIME - 2), "logmass": jnp.array([10.0])}
     for k in kin.free_keys:
         init[k] = jnp.array([250.0])
     return SedModel(csp, obs, priors={}, transforms={"sfh": _sfh},

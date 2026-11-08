@@ -1250,6 +1250,14 @@ def convert_result(path, ssp_grid, out=None, *, overwrite=False):
         if not legacy:
             raise ValueError(f"{path} has no absolute-metallicity parameter to convert "
                              f"(parameters: {names})")
+        if "zh" in legacy:
+            raise ValueError(
+                f"{path} samples 'zh', a per-NODE absolute metallicity history.  Its logzsol "
+                "form, the per-node 'logzsol_hist', was removed: the model used only the bin "
+                "means 0.5*(zh[k] + zh[k+1]), and a prior on nodes has no per-bin equivalent, "
+                "so the file cannot be converted to 'logzsol_bins'.  The samples are still "
+                "readable (ceridwen.resultfile); the per-bin metallicity of each sample is "
+                "0.5*(zh[:-1] + zh[1:]) - log10 Z_sun.  Refit with theta['logzsol_bins'].")
         f_nz = int(mod.attrs.get("n_metallicities", -1))
         f_nage = int(mod.attrs.get("n_ssp_ages", -1))
         if f_nz not in (-1, n_z) or f_nage not in (-1, n_age):
@@ -1261,7 +1269,7 @@ def convert_result(path, ssp_grid, out=None, *, overwrite=False):
     shutil.copyfile(path, out)
     with h5py.File(out, "r+") as f:
         mod, samp = f["model"], f["samples"]
-        rename = {"Z": "logzsol", "zh": "logzsol_hist"}
+        rename = {"Z": "logzsol"}
         for old, new in rename.items():
             if old in samp:
                 samp[new] = np.asarray(samp[old]) - l0
@@ -1280,7 +1288,7 @@ def convert_result(path, ssp_grid, out=None, *, overwrite=False):
         if "transforms" in mod.attrs:
             tx = json.loads(mod.attrs["transforms"])
             mod.attrs["transforms"] = json.dumps(
-                [t.replace("Z <-", "logzsol <-").replace("zh <-", "logzsol_hist <-") for t in tx])
+                [t.replace("Z <-", "logzsol <-") for t in tx])
         mod.attrs["metallicity_convention"] = METALLICITY_CONVENTION
         mod.attrs["log10_zsun"] = l0
         if getattr(grid, "zsun_nominal", None) is not None:

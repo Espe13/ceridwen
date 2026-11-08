@@ -90,7 +90,7 @@ def _model(mode, test):
         model = SedModel(csp, [spec, lines],
                          transforms={"sfh": lambda th, _t=t: logsfr_ratios_to_sfh(
                              th["logsfr_ratios"], sfh_times_yr=_t)},
-                         free_param_init={"logsfr_ratios": jnp.zeros(len(t) - 1),
+                         free_param_init={"logsfr_ratios": jnp.zeros(len(t) - 2),
                                           "logmass": jnp.array([9.0])},
                          zred=ZRED, kinematics=Kinematics(sigma_gal=100.0, sigma_gas=60.0))
     _CACHE[mode] = (model, csp, spec)

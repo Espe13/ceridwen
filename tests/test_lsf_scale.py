@@ -45,7 +45,7 @@ from ceridwen.model.transforms import logsfr_ratios_to_sfh                # noqa
 from _f32bounds import B8, lnl_bound, fft_atol   # noqa: E402,F401  (float32 bounds)
 
 ZRED = 0.8
-N_TIME = 5
+N_TIME = 6          # 5 step bins, 4 logsfr_ratios
 FILTERS = ["sdss_g0", "sdss_r0", "sdss_i0", "sdss_z0"]
 SPEC_WAVE = np.exp(np.arange(np.log(4400.0), np.log(7000.0), 90.0 / 2.99792458e5)) * (1 + ZRED)
 LINES = {"Hbeta": 4862.71, "OIII5007": 5008.24, "Halpha": 6564.61}
@@ -88,7 +88,7 @@ def _model(csp, ins, kin=None, priors=None, init=None, obs=None, **kw):
 
     def _sfh(th, _t=t):
         return logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)
-    fi = {"logsfr_ratios": jnp.zeros(N_TIME - 1), "logmass": jnp.array([10.0])}
+    fi = {"logsfr_ratios": jnp.zeros(N_TIME - 2), "logmass": jnp.array([10.0])}
     if isinstance(getattr(ins, "scale", 1.0), str):
         fi[ins.scale] = jnp.array([1.0])
     fi.update(init or {})
@@ -402,7 +402,7 @@ def test_marginalised_lines_with_sampled_scale(csp):
     unc = 0.03 * np.abs(truth)
 
     def build(ins, kin=None, priors=None, init=None):
-        fi = {"logsfr_ratios": jnp.zeros(N_TIME - 1), "logmass": jnp.array([10.0])}
+        fi = {"logsfr_ratios": jnp.zeros(N_TIME - 2), "logmass": jnp.array([10.0])}
         fi.update(init or {})
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -469,7 +469,7 @@ def test_sedmodel_scale_guards(csp):
     ins = Instrument.R_fwhm(1500.0, scale="lsf_scale")
     t = np.array(csp.sfh_times)
     sfh = {"sfh": lambda th, _t=t: logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)}
-    base = {"logsfr_ratios": jnp.zeros(N_TIME - 1), "logmass": jnp.array([10.0])}
+    base = {"logsfr_ratios": jnp.zeros(N_TIME - 2), "logmass": jnp.array([10.0])}
 
     def build(ins, priors, init=None, transforms=None):
         with warnings.catch_warnings():

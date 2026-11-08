@@ -1,6 +1,6 @@
 # Recipes: Prospector features without package changes
 
-Small, JIT-safe, float64 add-ons built on the public API (`logzsol`, `logzsol_hist`, ...). None of them changes `ceridwen/`. Each has a check script that compares it with an independent reference (Prospector, FSPS or an analytic limit). Four correspond to package code: `igm_damping_dla.py` and `extra_dust_laws.py` re-export the package code, and their checks run against it; `map_fit.py` corresponds to `ceridwen.optimize.map_fit` / `fitSED(optimize=True)`, and `loguniform_prior.py` to `ceridwen.priors.LogUniform`. Checks run on CPU in minutes.
+Small, JIT-safe, float64 add-ons built on the public API (`logzsol`, `logzsol_bins`, ...). None of them changes `ceridwen/`. Each has a check script that compares it with an independent reference (Prospector, FSPS or an analytic limit). Four correspond to package code: `igm_damping_dla.py` and `extra_dust_laws.py` re-export the package code, and their checks run against it; `map_fit.py` corresponds to `ceridwen.optimize.map_fit` / `fitSED(optimize=True)`, and `loguniform_prior.py` to `ceridwen.priors.LogUniform`. Checks run on CPU in minutes.
 
 Setup for the checks:
 

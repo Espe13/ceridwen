@@ -34,7 +34,7 @@ def setup():
     from ceridwen.priors import ClippedNormal, StudentT, Uniform
 
     ssp = SSPData.load(str(GRID))
-    csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 10.0, 5), zh_const=True,
+    csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 10.0, 6), zh_const=True,
                    sfh_interp="step", add_dust=False, add_diffuse_dust=True, add_neb=False,
                    verbose=False, cosmo=Cosmology.planck18())
     t_yr = np.array(csp.sfh_times)
@@ -179,6 +179,7 @@ def test_a_different_csp_is_named(setup, tmp_path):
     from ceridwen.cosmology import Cosmology
     from ceridwen.resultfile import check_model_against_result
     path = _write(setup["build"](), tmp_path / "r.h5")
+    # linear on 5 nodes: the same 5 SFR values as the step setup's 5 bins, other grid and scheme
     csp2 = CSPBasis(SSPData.load(str(GRID)), lookback_time=jnp.linspace(0.0, 9.0, 5),
                     zh_const=True, sfh_interp="linear", add_dust=False, add_diffuse_dust=True,
                     add_neb=False, verbose=False, cosmo=Cosmology.planck18())
@@ -188,7 +189,7 @@ def test_a_different_csp_is_named(setup, tmp_path):
                                    ("logsfr_ratios", "logmass", "sigma_gal")},
                   zred=m.zred, kinematics=m.kinematics)
     keys = {d[0] for d in check_model_against_result(m2, path).differences}
-    assert keys == {"/model@csp_config", "/model/sfh_times_yr"}, keys
+    assert keys == {"/model@csp_config", "/model/sfh_times_yr", "/model@n_time"}, keys
 
     # an older file without the CSP record: noted, not a difference
     import h5py
@@ -294,7 +295,7 @@ def test_old_file_without_cloudy_dust_means_the_dusty_grid(setup, tmp_path):
 
     def neb_model(cloudy_dust):
         kw = {} if cloudy_dust is None else {"init_neb_params": {"cloudy_dust": cloudy_dust}}
-        csp = CSPBasis(SSPData.load(str(GRID)), lookback_time=jnp.linspace(0.0, 10.0, 5),
+        csp = CSPBasis(SSPData.load(str(GRID)), lookback_time=jnp.linspace(0.0, 10.0, 6),
                        zh_const=True, sfh_interp="step", add_dust=False, add_diffuse_dust=True,
                        add_neb=True, verbose=False, cosmo=Cosmology.planck18(), **kw)
         m = setup["build"]()

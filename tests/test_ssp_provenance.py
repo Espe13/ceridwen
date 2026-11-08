@@ -277,7 +277,7 @@ def test_afe_load_without_resolution_raises_with_converter_pointer(tmp_path):
 # ----------------------------------------------------------------------
 def _minimal_theta(n=5):
     lb = jnp.linspace(0.0, 13.8, n)
-    return {"lookback_time": lb, "sfh": jnp.ones(n), "logzsol": jnp.array([-0.15])}
+    return {"lookback_time": lb, "sfh": jnp.ones(n - 1), "logzsol": jnp.array([-0.15])}   # step bins
 
 
 def test_csp_reads_isoc_type_from_ssp_grid():

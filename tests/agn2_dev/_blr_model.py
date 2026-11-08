@@ -77,7 +77,7 @@ def build(test, mode="corrected", duste=False, dust4=False, sigma_max=2000.0, ph
         model = SedModel(csp, obs,
                          transforms={"sfh": lambda th, _t=t: logsfr_ratios_to_sfh(
                              th["logsfr_ratios"], sfh_times_yr=_t)},
-                         free_param_init={"logsfr_ratios": jnp.zeros(len(t) - 1),
+                         free_param_init={"logsfr_ratios": jnp.zeros(len(t) - 2),
                                           "logmass": jnp.array([9.0])},
                          zred=ZRED, kinematics=Kinematics(sigma_gal=100.0, sigma_gas=60.0,
                                                           sigma_max=sigma_max))

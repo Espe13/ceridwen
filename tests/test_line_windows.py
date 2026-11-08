@@ -233,7 +233,7 @@ def _build_csp():
 
 def _build_model(csp, wave, R, sigma_max):
     t = np.array(csp.sfh_times)
-    init = {"logsfr_ratios": jnp.zeros(len(t) - 1), "logmass": jnp.array([10.0]),
+    init = {"logsfr_ratios": jnp.zeros(len(t) - 2), "logmass": jnp.array([10.0]),
             "sigma_gas": jnp.array([0.3 * sigma_max])}
     tr = {"sfh": lambda th, _t=t: logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t),
           # marginalised line fluxes: the nebular parameters are fixed (eline_marginal refuses

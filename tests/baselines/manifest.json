@@ -432,6 +432,134 @@
           5
         ]
       }
+    },
+    {
+      "tag": "step_binZ_pernode",
+      "sfh_interp": "step",
+      "zh_const": false,
+      "per_bin": false,
+      "logzsol_bins": [
+        -0.12,
+        -0.2578,
+        -0.4745,
+        -0.6033,
+        -0.795,
+        -1.0048,
+        -1.1195,
+        -1.2943,
+        -1.499
+      ],
+      "shapes": {
+        "W": [
+          12,
+          43
+        ],
+        "spec": [
+          15000
+        ],
+        "lines": [
+          15000
+        ],
+        "maggies": [
+          5
+        ]
+      }
+    },
+    {
+      "tag": "step_binZ_perbin",
+      "sfh_interp": "step",
+      "zh_const": false,
+      "per_bin": true,
+      "logzsol_bins": [
+        -0.12,
+        -0.2578,
+        -0.4745,
+        -0.6033,
+        -0.795,
+        -1.0048,
+        -1.1195,
+        -1.2943,
+        -1.499
+      ],
+      "shapes": {
+        "W": [
+          12,
+          43
+        ],
+        "spec": [
+          15000
+        ],
+        "lines": [
+          15000
+        ],
+        "maggies": [
+          5
+        ]
+      }
+    },
+    {
+      "tag": "linear_binZ_pernode",
+      "sfh_interp": "linear",
+      "zh_const": false,
+      "per_bin": false,
+      "logzsol_bins": [
+        -0.12,
+        -0.2578,
+        -0.4745,
+        -0.6033,
+        -0.795,
+        -1.0048,
+        -1.1195,
+        -1.2943,
+        -1.499
+      ],
+      "shapes": {
+        "W": [
+          12,
+          43
+        ],
+        "spec": [
+          15000
+        ],
+        "lines": [
+          15000
+        ],
+        "maggies": [
+          5
+        ]
+      }
+    },
+    {
+      "tag": "linear_binZ_perbin",
+      "sfh_interp": "linear",
+      "zh_const": false,
+      "per_bin": true,
+      "logzsol_bins": [
+        -0.12,
+        -0.2578,
+        -0.4745,
+        -0.6033,
+        -0.795,
+        -1.0048,
+        -1.1195,
+        -1.2943,
+        -1.499
+      ],
+      "shapes": {
+        "W": [
+          12,
+          43
+        ],
+        "spec": [
+          15000
+        ],
+        "lines": [
+          15000
+        ],
+        "maggies": [
+          5
+        ]
+      }
     }
   ],
   "spectra_recaptured": "2026-09-10 broadening merge (W_*.npy untouched)",

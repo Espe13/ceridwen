@@ -73,7 +73,7 @@ LOCAL_GRIDS = [
 
 SEED = 7
 ZRED = 0.10                         # fixed redshift (quiescent, Legacy-observable)
-N_BINS = 10                         # SFH bins -> N_BINS-1 = 9 logsfr_ratios
+N_BINS = 10                         # SFH step bins (N_BINS+1 nodes) -> N_BINS-1 = 9 logsfr_ratios
 GALAXY_LOSVD = 200.0                # stellar velocity dispersion [km/s], FIXED
 SPEC_RES_KMS = 70.0                 # instrument LSF sigma [km/s]
 SNR_PHOT, SNR_SPEC = 30.0, 30.0
@@ -121,7 +121,7 @@ def main() -> None:
     # add_diffuse_dust=True gives the diffuse tau + slope we fit.
     csp = CSPBasis_afe(
         ssp,
-        lookback_time=jnp.linspace(0.0, 12.0, N_BINS),
+        lookback_time=jnp.linspace(0.0, 12.0, N_BINS + 1),
         zh_const=True, sfh_interp="step",
         add_dust=False, add_diffuse_dust=True,
         verbose=False,

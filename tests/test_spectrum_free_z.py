@@ -60,7 +60,7 @@ def _model(csp, obs, *, zred_prior=None, zred_fixed=None, extra_priors=None):
 
     def _sfh(th, _t=t):
         return logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)
-    init = {"logsfr_ratios": jnp.zeros(N_TIME - 1), "logmass": jnp.array([10.0])}
+    init = {"logsfr_ratios": jnp.zeros(N_TIME - 2), "logmass": jnp.array([10.0])}
     priors = dict(extra_priors or {})
     kw = {}
     if zred_fixed is not None:

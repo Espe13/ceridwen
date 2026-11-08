@@ -91,7 +91,8 @@ def test_fixed_survives_initialize_model_structure(ssp):
     ({"diffuse_R_v_cal00": 3.1}, {}, "diffuse_law='calzetti'"),
     ({"agn_tau": 20.0}, {}, r"agn=AGNConfig"),
     ({"afe": 0.2}, {}, "CSPBasis_afe"),
-    ({"logzsol_hist": [0.0] * 4}, {}, "zh_const=False"),
+    ({"logzsol_bins": [0.0] * 4}, {}, "zh_const=False"),
+    ({"logzsol_hist": [0.0] * 5}, {}, "logzsol_hist.*was removed"),   # deliberate misuse
     ({"igm_factor": 0.5}, {}, r"CSPBasis\(igm_factor=\.\.\.\)"),
     ({"logmass": 10.0}, {}, "constant transform on the SedModel"),
     ({"not_a_key": 1.0}, {}, "not a parameter of this CSP"),
@@ -108,7 +109,7 @@ def test_unknown_key_lists_the_valid_ones(ssp):
 
 @pytest.mark.parametrize("fix, match", [
     ({"alpha_pow": [-0.7, -0.5]}, r"shape \(2,\), but 'alpha_pow' has shape \(1,\)"),
-    ({"sfh": [1.0, 1.0]}, r"shape \(2,\), but 'sfh' has shape \(4,\)"),
+    ({"sfh": [1.0, 1.0]}, r"shape \(2,\), but 'sfh' has shape \(3,\)"),   # 3 step bins
     ({"alpha_pow": float("nan")}, "not finite"),
 ])
 def test_bad_value_raises(ssp, fix, match):

@@ -1,9 +1,9 @@
 """
 Tests for ``CSPBasis.display_sfh``.
 
-Cover the four (sfh_interp, sfh-input-shape) combinations:
-    (a) step,   per-node
-    (b) step,   per-bin
+Cover the three (sfh_interp, sfh-input-shape) combinations:
+    (b) step,   per-bin  (a step SFH takes one SFR per bin only; ``per_bin=False`` builds the
+                          bin means of the per-node test SFR)
     (c) linear, per-node
     (d) linear, per-bin
 
@@ -63,7 +63,7 @@ def _make_sfh(lookback, per_bin: bool):
 
 def _build_csp(ssp, *, sfh_interp, per_bin, n_time=10, tuniv=13.8):
     lookback = _make_lookback(n_time=n_time, tuniv=tuniv)
-    sfh      = _make_sfh(lookback, per_bin=per_bin)
+    sfh      = _make_sfh(lookback, per_bin=per_bin or sfh_interp == "step")
     theta    = {
         "lookback_time": lookback,
         "sfh":           sfh,
@@ -88,7 +88,6 @@ def _build_csp(ssp, *, sfh_interp, per_bin, n_time=10, tuniv=13.8):
 # -----------------------------------------------------------------------------
 
 @pytest.mark.parametrize("sfh_interp,per_bin", [
-    ("step",   False),
     ("step",   True),
     ("linear", False),
     ("linear", True),
@@ -137,9 +136,8 @@ def test_display_sfh_step_height_matches_weight_branch(ssp):
     n_time = 8
     csp    = _build_csp(ssp, sfh_interp="step", per_bin=False, n_time=n_time)
 
-    # Expected per-bin SFR -- the same branch _ssp_weights uses for per-node:
-    psi      = np.asarray(csp.theta_init["sfh"])
-    expected = 0.5 * (psi[:-1] + psi[1:])
+    # Expected per-bin SFR: a step CSP holds one SFR per bin, the value _ssp_weights uses
+    expected = np.asarray(csp.theta_init["sfh"])
 
     fig, ax = plt.subplots()
     csp.display_sfh(ax=ax, overlay_nodes=False)

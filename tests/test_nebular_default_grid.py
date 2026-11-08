@@ -46,9 +46,9 @@ def test_default_is_the_dust_free_grid():
 
 
 def test_default_lines_match_python_fsps_default():
+    if not os.environ.get("SPS_HOME"):          # first: python-fsps raises RuntimeError on import
+        pytest.skip("SPS_HOME not set")         # without it, which importorskip does not catch
     fsps = pytest.importorskip("fsps")
-    if not os.environ.get("SPS_HOME"):
-        pytest.skip("SPS_HOME not set")
     sp = fsps.StellarPopulation(zcontinuous=1, sfh=0, imf_type=1, add_neb_emission=True,
                                 gas_logu=-2.0, gas_logz=0.0, logzsol=0.0)
     # python-fsps 0.5 has no cloudy_dust parameter; FSPS reads ZAU_ND unless compiled with

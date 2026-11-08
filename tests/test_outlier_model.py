@@ -386,7 +386,7 @@ def _model(ssp, priors=None, transforms=None, init=None, two_spectra=False, phot
     from ceridwen.observation import Photometry, Spectrum, Lines
     from ceridwen.sampler.priors import Uniform
     cosmo = Cosmology.planck18()
-    csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, float(cosmo.age(ZRED)), 5),
+    csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, float(cosmo.age(ZRED)), 6),
                    zh_const=True, sfh_interp="step", add_dust=True, add_diffuse_dust=True,
                    add_neb=False, add_igm=False, verbose=False, cosmo=cosmo)
     t_yr = np.array(csp.sfh_times)

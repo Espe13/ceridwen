@@ -12,8 +12,9 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
 ## Conventions that are easy to get wrong — do not assume the common defaults
 
 1. **Metallicity is SOLAR-RELATIVE: `logzsol = log10(Z/Z_sun)`.** The parameters
-   are `theta["logzsol"]` (constant, shape `(1,)`) and `theta["logzsol_hist"]`
-   (shape `(n_time,)`); `0.0` is solar on every grid. Z_sun is the **grid's own** solar node,
+   are `theta["logzsol"]` (constant, shape `(1,)`) and `theta["logzsol_bins"]`
+   (`zh_const=False`, shape `(n_time-1,)`, one per SFH bin, index 0 = youngest; the per-node
+   `logzsol_hist` was removed); `0.0` is solar on every grid. Z_sun is the **grid's own** solar node,
    resolved at load from `zsun=`, the file's `log10_zsun` provenance, or the content-hash
    table in `ceridwen/ssps/grid_metadata.py` — never from `isoc_type` (FSPS versions give MIST's
    `zsol` as 0.0142, 0.0191 or 0.0185 under the same name). A grid whose Z_sun is unknown
@@ -50,11 +51,14 @@ observed-frame projection) fit with nested sampling or VI-preconditioned NUTS.
    with `track_zred_age=True` the grid is stretched to `age(zred)` and the SFR scaled so
    that this mass is kept. So `logmass` is the formed mass whenever `theta['sfh']`
    integrates to 1 M_sun on the construction grid, as `logsfr_ratios_to_sfh(...,
-   sfh_times_yr=csp.sfh_times)` arranges (trapezoidal rule, item 4), fixed or free
+   sfh_times_yr=csp.sfh_times)` arranges (item 4), fixed or free
    redshift; a directly sampled `sfh` carries its own normalisation.
 
-4. **SFH mass normalisation is mass-weighted (trapezoidal), not mean-SFR.** See
-   `model/transforms.py` (`logsfr_ratios_to_sfh`). Getting this wrong biases
+4. **SFH mass normalisation is mass-weighted, not mean-SFR.** `sfh_interp="step"` takes one
+   SFR per bin, `theta["sfh"]` of shape `(n_time-1,)`, with `n_time-2` `logsfr_ratios` between
+   adjacent bins, normalised so Σ SFR_i Δt_i = 1 M_sun (Prospector's continuity SFH); `"linear"`
+   takes one per node (`n_time-1` ratios, trapezoidal integral). A per-node SFR is refused in
+   step mode. See `model/transforms.py` (`logsfr_ratios_to_sfh`). Getting this wrong biases
    `logmass` by many dex. Use the provided transform; don't hand-roll it.
 
 ## Hard requirements (the model will not run otherwise)
@@ -199,8 +203,8 @@ projection → likelihood → sampler.
   still works.
 - `model/` — `model.py`: `SedModel` (`predict`, `apply_transforms`, `ln_prior`,
   `log_prob`; free vs. derived params, `logmass` amplitude scaling).
-  `transforms.py`: `logsfr_ratios_to_sfh` and inverse (mass-weighted trapezoidal
-  normalisation). `describe.py`: `SedModel.latex()` (parameter table) and
+  `transforms.py`: `logsfr_ratios_to_sfh` and inverse (mass-weighted normalisation: per bin
+  for step, trapezoidal per node for linear). `describe.py`: `SedModel.latex()` (parameter table) and
   `SedModel.display()` (model diagram and prior predictive); a transform's inputs are traced
   from its program, a constant transform is a fixed parameter, `PARAM_INFO` holds each key's
   symbol, meaning and unit.

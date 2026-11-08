@@ -120,13 +120,13 @@ def main() -> int:
 
     # ---- Step 1: forward model -------------------------------------------
     T_UNIV = 13.8          # age of the universe [Gyr]
-    N_TIME = 5             # SFH bins -> N_TIME - 1 = 4 free logsfr_ratios
-    #                        (must match the length of TRUE_LOGSFR_RATIOS below)
+    N_TIME = 6             # SFH nodes -> 5 step bins -> N_TIME - 2 = 4 logsfr_ratios between
+    #                        adjacent bins (must match the length of TRUE_LOGSFR_RATIOS below)
     lookback = jnp.linspace(0.0, T_UNIV, N_TIME)   # today @ index 0
 
     csp = CSPBasis(
         ssp_data,
-        theta={"lookback_time": lookback, "sfh": jnp.ones(N_TIME),
+        theta={"lookback_time": lookback, "sfh": jnp.ones(N_TIME - 1),   # one SFR per bin
                # logzsol = log10(Z / Z_sun) with the SSP grid's OWN Z_sun (0 = solar).
                # Every shipped grid covers at least [-2.3, +0.3]; csp.zmet prints the axis
                # and csp.zsun_nominal the Z_sun it was resolved to.
@@ -190,7 +190,7 @@ def main() -> int:
         observations=[phot_obs],
         priors=priors,
         transforms={"sfh": logsfr_to_sfh},
-        free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 1),
+        free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 2),
                          "logmass": TRUE_LOGMASS},
         broaden_photometry=False,   # the mock above was made without kinematic broadening
     )

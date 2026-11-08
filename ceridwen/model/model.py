@@ -183,6 +183,7 @@ class SedModel:
                     self.param_names.append(p)
 
         self._check_metallicity_setup(free_param_init)
+        self._check_sfh_transform_shape(csp)
         self._check_agn_eline_sigma_range()
         self._check_agn2_prior_ranges()
 
@@ -268,10 +269,37 @@ class SedModel:
                 stacklevel=2)
 
 
+    def _check_sfh_transform_shape(self, csp):
+        """Refuse an "sfh" transform whose output does not have the CSP's SFH shape (one SFR per
+        bin for sfh_interp='step'), at setup rather than as a shape error inside the kernel."""
+        fn = self.transforms.get("sfh")
+        want = getattr(csp, "theta_init", {}).get("sfh")
+        if fn is None or want is None:
+            return
+        try:
+            got = tuple(np.shape(np.asarray(fn(dict(self.theta_init)))))
+        except Exception:                 # depends on something not in theta_init: not checkable
+            return
+        want = tuple(np.shape(want))
+        if got == want:
+            return
+        n_time = getattr(csp, "n_time", None)
+        step = getattr(csp, "sfh_interp", None) == "step"
+        hint = ""
+        if step and n_time is not None and got == (n_time,):
+            hint = (f"  sfh_interp='step' takes one SFR per BIN ({n_time - 1},), as Prospector's "
+                    f"FastStepBasis: give logsfr_ratios_to_sfh {n_time - 2} ratios (between "
+                    f"adjacent bins) with sfh_times_yr=csp.sfh_times ({n_time} nodes), not "
+                    f"{n_time - 1}.")
+        raise ValueError(
+            f"the 'sfh' transform gives shape {got} at the start values, but this CSP's SFH has "
+            f"shape {want} (sfh_interp={getattr(csp, 'sfh_interp', None)!r}, "
+            f"{n_time} lookback nodes).{hint}")
+
     def _check_metallicity_setup(self, free_param_init):
         """Refuse the removed absolute-metallicity keys, and check every metallicity prior /
         fixed value against the grid (and the nebular axis when the gas is tied)."""
-        from ..csp.csp import (LOGZSOL_KEYS, REMOVED_METALLICITY_KEYS, prior_support,
+        from ..csp.csp import (LOGZSOL_KEYS, REMOVED_THETA_KEYS, prior_support,
                                removed_metallicity_key_error, ABSOLUTE_LOOKING_LOGZSOL)
         csp = self.csp
         l0 = getattr(csp, "log10_zsun", None)
@@ -280,7 +308,7 @@ class SedModel:
         for where, d in (("priors", self.priors), ("transforms", self.transforms),
                          ("free_param_init", free_param_init or {}),
                          ("theta_init", self.theta_init)):
-            for old in REMOVED_METALLICITY_KEYS:
+            for old in REMOVED_THETA_KEYS:
                 if old in d:
                     v = d[old] if where in ("free_param_init", "theta_init") else None
                     raise removed_metallicity_key_error(old, v, l0,
@@ -608,7 +636,7 @@ class SedModel:
         cells = cells()
         if not cells:
             return
-        zname = "logzsol" if getattr(csp, "zh_const", True) else "logzsol_hist"
+        zname = getattr(csp, "zh_key", None) or ("logzsol" if getattr(csp, "zh_const", True) else "logzsol_bins")
         def _hi(name):
             if name in self.priors:
                 return prior_support(self.priors[name])[1]

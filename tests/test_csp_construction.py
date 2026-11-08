@@ -49,14 +49,14 @@ def ssp():
 def test_shortcut_matches_full_theta_structure(ssp):
     lb = jnp.linspace(0.0, 12.0, 6)
     via_theta = CSPBasis(
-        ssp, theta={"lookback_time": lb, "sfh": jnp.ones(6),
+        ssp, theta={"lookback_time": lb, "sfh": jnp.ones(5),     # step: one SFR per bin
                     "logzsol": jnp.array([-0.15])}, **KW)
     via_shortcut = CSPBasis(ssp, lookback_time=lb, **KW)
 
     np.testing.assert_allclose(np.asarray(via_shortcut.sfh_times),
                                np.asarray(via_theta.sfh_times))
     assert via_shortcut.n_time == via_theta.n_time == 6
-    assert via_shortcut.sfh_per_bin is False
+    assert via_shortcut.sfh_per_bin is True           # step: one SFR per bin
     assert via_shortcut.zh_is_scalar is True          # zh_const -> 'logzsol' mode
     # Neutral initial Z must lie inside the grid: no clamp messages.
     assert via_shortcut.check_param_ranges(warn=False) == []
@@ -73,7 +73,8 @@ def test_shortcut_time_varying_zh(ssp):
     kw = dict(KW, zh_const=False)
     csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6), **kw)
     assert csp.zh_is_scalar is False
-    assert csp.theta_init["logzsol_hist"].shape == (6,)
+    assert csp.theta_init["logzsol_bins"].shape == (5,)
+    assert "logzsol_hist" not in csp.theta_init
 
 
 def test_theta_and_shortcut_are_mutually_exclusive(ssp):

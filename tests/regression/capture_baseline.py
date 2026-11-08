@@ -73,6 +73,14 @@ SPS_HOME = os.environ.get("SPS_HOME", str(pathlib.Path.home() / "Prospector" / "
 # --------------------------------------------------------------------------- #
 #  Fixed parameter definitions (also written to params.json as a record)
 # --------------------------------------------------------------------------- #
+
+def _bins(sfh):
+    """One SFR per bin for a step CSP: the bin means of a per-node SFR, which is what the step
+    kernel used when these baselines were captured from per-node inputs (same weights, bit for
+    bit); sfh_interp="step" now takes the per-bin values directly."""
+    s = jnp.asarray(sfh)
+    return 0.5 * (s[:-1] + s[1:])
+
 def fixed_params() -> dict:
     """All scalar / array constants that define the baseline evaluations."""
     T_UNIV = 13.8
@@ -400,7 +408,7 @@ def _igm_damping_dla_baseline() -> dict[str, np.ndarray]:
 def _dust_emission_themis_baseline(p, ssp_data, spec_attn, spec_dustfree, diffuse_curve):
     from ceridwen.csp.csp import CSPBasis
     from ceridwen.cosmology import Cosmology
-    csp = CSPBasis(ssp_data, theta={"lookback_time": p["lookback"], "sfh": p["sfh"],
+    csp = CSPBasis(ssp_data, theta={"lookback_time": p["lookback"], "sfh": _bins(p["sfh"]),
                                     "logzsol": jnp.array([-0.4])},
                    cosmo=Cosmology.planck18(), zh_const=True, add_neb=False, add_dust=True,
                    add_diffuse_dust=True, add_dust_emission=True, duste_model="THEMIS",
@@ -460,7 +468,7 @@ def _dust_laws_baseline(p, ssp_data) -> dict[str, np.ndarray]:
     }
     for tag, (bins, diffuse, vals) in configs.items():
         with contextlib.redirect_stdout(io.StringIO()):
-            csp = CSPBasis(ssp_data, theta={"lookback_time": p["lookback"], "sfh": p["sfh"],
+            csp = CSPBasis(ssp_data, theta={"lookback_time": p["lookback"], "sfh": _bins(p["sfh"]),
                                             "logzsol": jnp.array([-0.4])},
                            cosmo=Cosmology.planck18(), zh_const=True, add_neb=False,
                            add_dust=True, add_diffuse_dust=True, init_dust_params=bins,
@@ -514,7 +522,7 @@ def _logzsol_baselines(p) -> dict:
             continue
         cls, basis = (SSPDataAfe, CSPBasis_afe) if is_afe else (SSPData, CSPBasis)
         ssp = cls.load(str(path))
-        theta = {"lookback_time": p["lookback"], "sfh": p["sfh"],
+        theta = {"lookback_time": p["lookback"], "sfh": _bins(p["sfh"]),
                  "logzsol": jnp.array([LOGZSOL_INTERIOR])}
         if is_afe:
             theta["afe"] = jnp.array([AFE_INTERIOR])
@@ -705,18 +713,20 @@ def _stellar_mass_baseline(p) -> dict:
     out = {}
     for interp in ("step", "linear"):
         for zh in ("const", "var"):
-            theta = {"lookback_time": lb, "sfh": sfh}
+            theta = {"lookback_time": lb, "sfh": _bins(sfh) if interp == "step" else sfh}
             if zh == "const":
                 theta["logzsol"] = jnp.array([LOGZSOL_INTERIOR])
             else:
-                theta["logzsol_hist"] = jnp.linspace(LOGZSOL_INTERIOR, -1.2, n)
+                # one value per bin: the bin means of the node history this was captured with
+                znodes = jnp.linspace(LOGZSOL_INTERIOR, -1.2, n)
+                theta["logzsol_bins"] = 0.5 * (znodes[:-1] + znodes[1:])
             csp = CSPBasis(grid, theta=theta, cosmo=Cosmology.planck18(),
                            zh_const=(zh == "const"), add_neb=False, add_dust=False,
                            add_diffuse_dust=False, add_igm=False, verbose=False,
                            sfh_interp=interp)
             th = dict(csp.theta_init)
             vals = [csp.surviving_mass_fraction(th),
-                    csp.surviving_mass_fraction(dict(th, sfh=jnp.ones(n)))]
+                    csp.surviving_mass_fraction(dict(th, sfh=jnp.ones(th["sfh"].size)))]
             out[f"mfrac_{interp}_{zh}zh"] = np.asarray(vals, dtype=np.float64)
     return {"stellar_mass": out}
 
@@ -745,7 +755,7 @@ def _eline_marginal_baseline(p, ssp_data) -> dict[str, np.ndarray]:
     fixed = {k: jnp.atleast_1d(jnp.asarray(v)) for k, v in csp.theta_init.items()}
     # captured at the native axis value log10 Z = -2.0; in logzsol that is the same
     # physical metallicity, -2.0 - log10 Z_sun (BPASS: -0.30102999566398125)
-    fixed.update(sfh=jnp.array([1.0, 1.0, 0.6, 0.3, 0.2, 0.1]),
+    fixed.update(sfh=_bins(jnp.array([1.0, 1.0, 0.6, 0.3, 0.2, 0.1])),
                  logzsol=jnp.array([-2.0 - float(ssp_data.log10_zsun)]),
                  diffuse_tau_kc=jnp.array([p["diffuse_tau_kc"]]),
                  diffuse_dust_index=jnp.array([p["diffuse_dust_index"]]),
@@ -827,7 +837,7 @@ def _lsf_scale_baseline(p, ssp_data) -> dict[str, np.ndarray]:
                    verbose=False,
                    init_neb_params={"cloudy_dust": True})   # the grid of the capture
     fixed = {k: jnp.atleast_1d(jnp.asarray(v)) for k, v in csp.theta_init.items()}
-    fixed.update(sfh=jnp.array([1.0, 1.0, 0.6, 0.3, 0.2, 0.1]),
+    fixed.update(sfh=_bins(jnp.array([1.0, 1.0, 0.6, 0.3, 0.2, 0.1])),
                  logzsol=jnp.array([-0.3]),
                  diffuse_tau_kc=jnp.array([p["diffuse_tau_kc"]]),
                  diffuse_dust_index=jnp.array([p["diffuse_dust_index"]]),
@@ -881,7 +891,7 @@ def _agn_csp(ssp_data, agn, **over):
 
 def _agn_theta(csp, **vals):
     th = {k: jnp.atleast_1d(jnp.asarray(v)) for k, v in csp.theta_init.items()}
-    th.update(sfh=jnp.array([1.0, 0.8, 0.5, 0.3, 0.2]), logzsol=jnp.array([-0.3]),
+    th.update(sfh=_bins(jnp.array([1.0, 0.8, 0.5, 0.3, 0.2])), logzsol=jnp.array([-0.3]),
               logmass=jnp.array([10.0]), diffuse_tau_kc=jnp.array([0.5]),
               diffuse_dust_index=jnp.array([-0.2]))
     th.update({k: jnp.array([v]) for k, v in vals.items()})

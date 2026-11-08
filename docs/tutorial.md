@@ -51,12 +51,13 @@ cosmo = Cosmology.planck18()
 # >= 2 nodes). Its oldest node must not exceed the age of the universe at ZRED,
 # cosmo.age(0.5) = 8.6 Gyr under Planck18; SedModel refuses a grid that does.
 # CSPBasis refuses to build without a grid (or an explicit theta).
-lookback = jnp.linspace(0.0, 8.0, 5)        # 5 nodes -> 4 free logsfr_ratios
+lookback = jnp.linspace(0.0, 8.0, 6)        # 6 nodes -> 5 step bins -> 4 logsfr_ratios
 csp = CSPBasis(
     ssp,
     lookback_time=lookback,
     cosmo=cosmo,
-    zh_const=True, sfh_interp="step",       # one "logzsol"; zh_const=False samples "logzsol_hist"
+    zh_const=True, sfh_interp="step",       # one "logzsol"; zh_const=False samples "logzsol_bins"
+                                            # (one per SFH bin)
     add_dust=True, add_diffuse_dust=True,   # birth-cloud + diffuse attenuation
     add_neb=True,                           # nebular continuum + lines (needs $SPS_HOME)
     add_igm=True,                           # Madau (1995), auto-scales with zred
@@ -370,7 +371,7 @@ sfh_times_yr = np.array(csp.sfh_times)
 def logsfr_to_sfh(free_theta, _t=sfh_times_yr):
     return logsfr_ratios_to_sfh(free_theta["logsfr_ratios"], sfh_times_yr=_t)
 
-N_RATIOS = 4   # number of SFH nodes - 1
+N_RATIOS = 4   # step SFH: number of bins - 1 = number of nodes - 2
 model = SedModel(
     csp,
     observations=observations,

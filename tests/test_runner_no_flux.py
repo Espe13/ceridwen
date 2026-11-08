@@ -32,7 +32,7 @@ def test_fit_without_flux_names_the_observation(tmp_path):
                      priors={"logzsol": Uniform(low=-1.0, high=0.0),
                              "diffuse_tau_kc": Uniform(low=0.0, high=2.0),
                              "diffuse_dust_index": Uniform(low=-1.0, high=0.4)},
-                     transforms={"sfh": lambda th: jnp.ones(3)},
+                     transforms={"sfh": lambda th: jnp.ones(2)},     # 2 step bins
                      zred=0.1)
     with pytest.raises(ValueError, match="'phot' has no flux"):
         fitSED(model, sampler="nested", rng_key=jax.random.PRNGKey(0),

@@ -42,7 +42,7 @@ OUT = HERE / "mock_galaxy.npz"
 
 # ---- mock configuration (all recorded in the output file) -----------------
 ZRED = 0.1                              # fixed spectroscopic redshift
-N_TIME = 6                              # SFH nodes -> 5 free logsfr_ratios
+N_TIME = 7                              # SFH nodes -> 6 step bins -> 5 logsfr_ratios between adjacent bins
 T_OLDEST = 12.0                         # Gyr, oldest SFH node (< age of universe at z)
 FILTERS = ["galex_FUV", "galex_NUV",
            "sdss_u0", "sdss_g0", "sdss_r0", "sdss_i0", "sdss_z0",
@@ -91,7 +91,7 @@ def main() -> None:
         ],
         transforms={"sfh": lambda th, _t=sfh_times_yr:
                     logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)},
-        free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 1),
+        free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 2),
                          "logmass": jnp.array([10.0])},
         zred=ZRED,
         # kinematics= not given: DEFAULT_KINEMATICS, sigma_gal = 300 km/s fixed,

@@ -67,7 +67,7 @@ def build(csp, arm):
 
     def _sfh(th, _t=t):
         return logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)
-    init = {"logsfr_ratios": jnp.zeros(N_TIME - 1), "logmass": jnp.array([10.0])}
+    init = {"logsfr_ratios": jnp.zeros(N_TIME - 2), "logmass": jnp.array([10.0])}
     if arm == "on":
         init["lsf_scale"] = jnp.array([1.0])
     with warnings.catch_warnings():

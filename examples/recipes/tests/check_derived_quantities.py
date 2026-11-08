@@ -55,7 +55,8 @@ def report(name, ok, msg):
 
 def build(ssp, interp, n_time=7):
     lookback = jnp.array([0.0, 0.03, 0.1, 0.5, 1.5, 4.0, 13.0])[:n_time]
-    csp = CSPBasis(ssp, theta={"lookback_time": lookback, "sfh": jnp.ones(n_time),
+    n_sfr = n_time - 1 if interp == "step" else n_time      # step: one SFR per bin
+    csp = CSPBasis(ssp, theta={"lookback_time": lookback, "sfh": jnp.ones(n_sfr),
                                "logzsol": jnp.array([-0.3])},
                    zh_const=True, sfh_interp=interp, add_dust=False, add_diffuse_dust=True,
                    add_neb=False, verbose=False, cosmo=Cosmology.planck18())
@@ -66,7 +67,7 @@ def build(ssp, interp, n_time=7):
                 "logzsol": Uniform(low=-1.0, high=0.2), "diffuse_tau_kc": Uniform(low=0.0, high=1.0),
                 "diffuse_dust_index": Uniform(low=-1.0, high=0.3)},
         transforms={"sfh": lambda th, _t=T: logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)},
-        free_param_init={"logsfr_ratios": jnp.zeros(n_time - 1), "logmass": jnp.array([10.0])},
+        free_param_init={"logsfr_ratios": jnp.zeros(n_sfr - 1), "logmass": jnp.array([10.0])},
         broaden_photometry=False)
     return csp, model
 

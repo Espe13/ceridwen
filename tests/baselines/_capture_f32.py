@@ -66,11 +66,14 @@ def _golden_theta(zh_const, per_bin):
     if zh_const:
         theta["logzsol"] = jnp.asarray([LOGZSOL_BASELINE])
     else:
-        theta["logzsol_hist"] = jnp.asarray(np.full(N_TIME, LOGZSOL_BASELINE))
+        theta["logzsol_bins"] = jnp.asarray(np.full(N_TIME - 1, LOGZSOL_BASELINE))
     return theta
 
 
 def _golden_csp(ssp, theta, *, sfh_interp, zh_const):
+    if sfh_interp == "step" and np.size(theta["sfh"]) == np.size(theta["lookback_time"]):
+        s = jnp.asarray(theta["sfh"])          # a step SFH takes one SFR per bin: the node means
+        theta = {**theta, "sfh": 0.5 * (s[:-1] + s[1:])}
     return CSPBasis(ssp, theta=theta, cosmo=Cosmology.planck18(), zh_const=zh_const,
                     add_dust=False, add_diffuse_dust=False, add_dust_emission=False,
                     add_neb=True, init_neb_params={"cloudy_dust": True}, nebemlineinspec=True,
@@ -110,7 +113,7 @@ def golden_arrays(ssp) -> dict:
 # physical units (cgs F_nu, AB maggies, erg/s/cm^2): the magnitudes a float32 kernel has to
 # survive (sigma ~ 1e-31 for the spectrum).  Deterministic: no random numbers.
 ZRED = 0.8
-MOCK_N_TIME = 5
+MOCK_N_TIME = 6                 # 5 step bins: 4 logsfr_ratios between adjacent bins
 FILTERS = ["sdss_u0", "sdss_g0", "sdss_r0", "sdss_i0", "sdss_z0"]
 SPEC_WAVE_REST = np.linspace(3800.0, 8800.0, 600)
 LINES = {"Hbeta": 4862.71, "OIII5007": 5008.24, "Halpha": 6564.61}

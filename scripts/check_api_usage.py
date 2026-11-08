@@ -27,10 +27,11 @@ REMOVED_NAMES = {
     "_apply_losvd", "_setup_losvd_kernel", "NebularModelFSPSMatch", "SVDCSPBasis",
     "ThetaVector", "make_theta_vector_from_csp", "flux_factor_maggies",
 }
-# theta / prior / free_param_init keys removed in v1.0.5 (absolute log10 Z -> logzsol).
+# theta / prior / free_param_init keys removed in v1.0.5 (absolute log10 Z -> logzsol) and
+# the per-node history 'logzsol_hist' (removed: one metallicity per SFH bin, 'logzsol_bins').
 # They are STRING keys, so no name or kwarg check can see them: dict literals and
 # subscripts are scanned separately (check_source).
-REMOVED_THETA_KEYS = {"Z": "logzsol", "zh": "logzsol_hist"}
+REMOVED_THETA_KEYS = {"Z": "logzsol", "zh": "logzsol_bins", "logzsol_hist": "logzsol_bins"}
 
 # constructor / function names whose keyword arguments are checked
 CHECKED = {

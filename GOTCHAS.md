@@ -15,7 +15,7 @@ Run `python tests/regression/misuse_report.py` to regenerate
 
 ## 1. Metallicity is SOLAR-RELATIVE — and Z_sun is per grid
 
-`theta["logzsol"]` (constant) and `theta["logzsol_hist"]` (time-varying) are
+`theta["logzsol"]` (constant) and `theta["logzsol_bins"]` (one per SFH bin) are
 **`log10(Z / Z_sun)`**, with the Z_sun **of the SSP grid you loaded**. `0.0` is solar on
 every grid. The keys `theta["Z"]` / `theta["zh"]` (`log10` of the *absolute* metallicity)
 raise a `ValueError` that prints the converted value.
@@ -66,9 +66,15 @@ prefer `predict`/`get_spectrum_components`.
 ## 3. Metallicity-mode ↔ key mismatch
 
 - `zh_const=True` needs `theta["logzsol"]` (shape `(1,)`); `zh_const=False` needs
-  `theta["logzsol_hist"]` (shape `(n_time,)`, index 0 = today).
+  `theta["logzsol_bins"]` (shape `(n_time-1,)`, one per SFH BIN, index 0 = youngest bin),
+  constant within each bin. With `gas_tied=True` the gas follows `logzsol_bins[0]`.
+- The per-node `theta["logzsol_hist"]` was removed: the model only used its bin means
+  `0.5*(zh[k]+zh[k+1])`, so one alternating combination of the nodes (+a, -a, +a, ...)
+  changed nothing and the sampler drifted along it. It raises wherever it appears and prints
+  the bin means, which give the same model. Priors set on nodes do not translate: give them
+  per bin.
 - A mismatch raises a clear `ValueError` at construction naming the fix, and supplying
-  *both* keys raises as well.
+  both `logzsol` and `logzsol_bins` raises as well.
 - `theta["Z"]` / `theta["zh"]` raise wherever they appear — theta, `priors`,
   `free_param_init`, `transforms` — with the converted value in the message.
 
@@ -77,13 +83,17 @@ prefer `predict`/`get_spectrum_components`.
 - **NaN/Inf SFH** → **`ValueError` at construction.**
 - **Negative SFR** (e.g. from an unconstrained sampler — sample `log SFR`!) is
   clipped to ≥0 internally → ~zero flux. **Warned at construction.**
-- **`sfh` length** is overloaded: `(n_time,)` = node-based, `(n_time-1,)` =
-  per-bin/FastStepBasis. Wrong lengths raise a clear `AssertionError`; the two
-  valid lengths switch interpretation silently — make sure you know which you
-  mean.
+- **`sfh` length.** `sfh_interp="step"` takes one SFR per bin, `(n_time-1,)`, as
+  Prospector's FastStepBasis: `logsfr_ratios_to_sfh` with `n_time-2` ratios (adjacent bins)
+  and `sfh_times_yr=csp.sfh_times`. A per-node `(n_time,)` SFR raises in step mode (it
+  entered only through its bin means, so one combination of the nodes was invisible and a
+  continuity prior on node ratios was not a prior on the bins); the error prints the bin
+  means. `"linear"` takes `(n_time,)` (FSPS's tabular SFH), or `(n_time-1,)` mapped to
+  nodes. An `sfh` transform of the wrong length is refused when the `SedModel` is built;
+  other lengths raise an `AssertionError`.
 - **Metallicity & SFR units are identical across all four
   `calculate_ssp_weights_*` calculations.** Metallicity (`theta["logzsol"]` for
-  constant-Z, `theta["logzsol_hist"]` for time-varying) is `log10(Z/Z_sun)` on the
+  constant-Z, `theta["logzsol_bins"]` for time-varying) is `log10(Z/Z_sun)` on the
   `self.zmet` logzsol axis in **every** variant; the
   SFR history `theta["sfh"]` is a linear rate floored identically at `1e-30`
   everywhere, so `const_zh == var_zh` for a constant metallicity history, also
@@ -880,7 +890,8 @@ the spectrum's whitened residuals, `K = I + a^2 exp(-dlambda^2 / 2 l^2) + 1e-6 I
   transform. `igm_factor` has its own constructor argument, `CSPBasis(igm_factor=...)`; a
   transform or prior on `igm_factor` replaces that value per call.
 - **Shapes.** A value must have the parameter's shape: a number for a `(1,)` parameter, an
-  array of `(n_time,)` for `logzsol_hist` or `sfh`; anything else, or a non-finite value,
+  array of `(n_time,)` for a per-node `sfh`, of `(n_time - 1,)` for `logzsol_bins` or a per-bin `sfh`;
+  anything else, or a non-finite value,
   raises.
 - **Ranges.** A fixed value outside the logzsol grid, the CLOUDY `gas_logz` / `gas_logu` axes,
   the [alpha/Fe] axis or the AGN line-width range raises in `SedModel`, the same check as for a

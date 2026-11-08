@@ -18,8 +18,10 @@ ssp.display()                                      # library, IMF, grid coverage
 ```
 
 **2. Build the model.** `lookback_time` contains SFH nodes in Gyr, increasing
-from 0 at the present. A transform converts the sampled `logsfr_ratios` into
-an SFR at each node. `logzsol` is log10(Z/Z_sun) for the loaded grid.
+from 0 at the present; with `sfh_interp="step"` the SFR is constant between
+adjacent nodes, one value per bin. A transform converts the sampled
+`logsfr_ratios` (log SFR ratios of adjacent bins, Prospector's continuity
+SFH) into those bin SFRs: 7 nodes give 6 bins and 5 ratios. `logzsol` is log10(Z/Z_sun) for the loaded grid.
 
 ```python
 import jax, jax.numpy as jnp
@@ -36,7 +38,7 @@ FILTERS = ["galex_FUV", "galex_NUV", "sdss_u0", "sdss_g0", "sdss_r0",
 SPEC_WAVE = np.linspace(4000.0, 8000.0, 600)       # observed-frame vacuum Angstrom
 LSF = Instrument.sigma_kms(150.0)                  # instrumental line-spread function
 
-csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6),
+csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 7),
                cosmo=Cosmology.planck18(),
                zh_const=True, sfh_interp="step",
                add_dust=False, add_diffuse_dust=True, add_neb=False, verbose=False)

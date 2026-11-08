@@ -50,7 +50,7 @@ def model():
                     uncertainty=np.ones_like(SPEC_WAVE) * 1e-31,
                     instrument=Instrument.sigma_kms(100.0), name="spec")]
     return SedModel(csp, obs, priors={}, transforms={"sfh": _sfh},
-                    free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 1),
+                    free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 2),
                                      "logmass": jnp.array([10.0])}, zred=ZRED)
 
 
@@ -79,10 +79,10 @@ def test_shapes_and_conventions(model, tmp_path):
     out = pp.run()
     N = 12
     assert out["theta"]["logmass"].shape == (N,)
-    assert out["theta"]["logsfr_ratios"].shape == (N, N_TIME - 1)
+    assert out["theta"]["logsfr_ratios"].shape == (N, N_TIME - 2)
     assert out["draw_index"].shape == (N,) and out["meta"]["resampled"] is True
     sfh = out["extras"]["sfh"]
-    assert sfh["lookback_gyr"].shape == (N, N_TIME) and sfh["sfr"].shape == (N, N_TIME)
+    assert sfh["lookback_gyr"].shape == (N, N_TIME) and sfh["sfr"].shape == (N, N_TIME - 1)
     for w in WIN:
         assert sfh[f"sfr{w:g}"].shape == (N,) and sfh[f"ssfr{w:g}"].shape == (N,)
     # formed mass is 10**logmass under the unit-normalised transform
@@ -126,7 +126,7 @@ def test_shapes_and_conventions(model, tmp_path):
     ll = np.asarray(res.log_likelihoods)
     assert b["index"] == int(np.argmax(ll)) and b["log_likelihood"] == pytest.approx(float(ll.max()))
     np.testing.assert_allclose(b["theta"]["logmass"], float(np.asarray(res.samples["logmass"])[b["index"]]))
-    assert b["extras"]["sfh"]["sfr"].shape == (N_TIME,) and np.ndim(b["extras"]["uv"]["MUV"]) == 0
+    assert b["extras"]["sfh"]["sfr"].shape == (N_TIME - 1,) and np.ndim(b["extras"]["uv"]["MUV"]) == 0
     assert b["prediction"]["photometry"]["phot"].shape == (3,) and np.ndim(b["derived"]["A_V"]) == 0
     paths = pp.figures(tmp_path / "figs", title="test galaxy")
     assert all(paths[k].stat().st_size > 1000 for k in ("summary", "corner", "diagnostics"))

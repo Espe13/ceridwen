@@ -55,7 +55,7 @@ SSP_FILE = HERE / "ssp_data.h5"
 
 SEED = 42
 ZRED = 0.1
-N_TIME = 6
+N_TIME = 7      # SFH nodes -> 6 step bins -> 5 logsfr_ratios between adjacent bins
 SNR_PHOT, SNR_SPEC = 20.0, 25.0
 FILTERS = ["galex_NUV", "sdss_u0", "sdss_g0", "sdss_r0", "sdss_i0",
            "sdss_z0", "twomass_J", "twomass_Ks", "wise_w1"]
@@ -131,7 +131,7 @@ def main() -> None:
             transforms={"sfh": lambda th, _t=sfh_times_yr:
                         logsfr_ratios_to_sfh(th["logsfr_ratios"],
                                              sfh_times_yr=_t)},
-            free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 1),
+            free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 2),
                              "logmass": jnp.array([10.0]),
                              "sigma_gal": jnp.array([200.0])},
             zred=ZRED,

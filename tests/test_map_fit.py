@@ -55,7 +55,7 @@ def mock():
             csp, observations=obs, priors=priors,
             transforms={"sfh": lambda th, _t=t_yr:
                         logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)},
-            free_param_init=init or {"logsfr_ratios": jnp.zeros(mm.N_TIME - 1),
+            free_param_init=init or {"logsfr_ratios": jnp.zeros(mm.N_TIME - 2),
                                      "logmass": jnp.array([10.0])},
             zred=mm.ZRED)
 

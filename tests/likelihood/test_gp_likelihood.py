@@ -421,7 +421,7 @@ def mock(tmp_path_factory):
                    add_igm=False, verbose=False, cosmo=Cosmology.planck18())
     n = 600
     w = np.linspace(5000.0, 6200.0, n)
-    fixed = {"sfh": lambda th: jnp.ones(4), "logzsol": lambda th: jnp.array([-0.3])}
+    fixed = {"sfh": lambda th: jnp.ones(3), "logzsol": lambda th: jnp.array([-0.3])}   # 3 step bins
     priors = {"logmass": Uniform(low=10.0, high=11.0),
               "log_gp_amp_spec": Uniform(low=-3.0, high=1.5),
               "log_gp_length_spec": Uniform(low=1.0, high=5.5)}

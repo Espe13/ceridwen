@@ -65,7 +65,7 @@ _CSP_OWNED_KWARGS = {
         ["zmet", "logzsol", "pmetals"],
         "metallicity — the SSP grid spans metallicity itself (ssp_lgmet, on "
         "FSPS's discrete zlegend); the metallicity is a FIT parameter, "
-        "theta['logzsol'] = log10(Z/Z_sun) (or theta['logzsol_hist']), sampled "
+        "theta['logzsol'] = log10(Z/Z_sun) (or theta['logzsol_bins'], one per SFH bin), sampled "
         "by CSPBasis on that axis, so a fixed metallicity must not be set at "
         "build time",
     ),

@@ -181,7 +181,7 @@ def _model(csp, *, width=0.0, marg=True, phot=True, lines=True, fit=None, fix=No
         tr.update({"gas_logu": lambda th: jnp.array([-2.23]),
                    "gas_logz": lambda th: jnp.array([-0.37])})
     tr.update(extra_transforms or {})
-    init = {"logsfr_ratios": jnp.zeros(len(t) - 1), "logmass": jnp.array([9.0])}
+    init = {"logsfr_ratios": jnp.zeros(len(t) - 2), "logmass": jnp.array([9.0])}
     kw = dict(zred=T.ZRED)
     priors = {}
     if zred_prior is not None:
@@ -442,7 +442,7 @@ def _noneb_model(csp0, flux=None, phot_flux=None, **spec_kw):
         warnings.simplefilter("ignore")
         return SedModel(csp0, obs, zred=T.ZRED, kinematics=Kinematics(sigma_gal=150.0, sigma_gas=T.SIGMA_GAS),
                         transforms={"sfh": lambda th, _t=t: logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t)},
-                        free_param_init={"logsfr_ratios": jnp.zeros(len(t) - 1), "logmass": jnp.array([9.0])})
+                        free_param_init={"logsfr_ratios": jnp.zeros(len(t) - 2), "logmass": jnp.array([9.0])})
 
 
 def test_without_a_nebular_model_lines_come_from_emlines_info():
@@ -646,7 +646,7 @@ def test_static_fast_path_is_off_when_the_weights_depend_on_the_model(csp):
                          transforms={"sfh": lambda th, _t=t: logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t),
                                      "gas_logu": lambda th: jnp.array([-2.23]),
                                      "gas_logz": lambda th: jnp.array([-0.37])},
-                         free_param_init={"logsfr_ratios": jnp.zeros(len(t) - 1), "logmass": jnp.array([9.0])})
+                         free_param_init={"logsfr_ratios": jnp.zeros(len(t) - 2), "logmass": jnp.array([9.0])})
     assert model._eline_system.static is None
 
 

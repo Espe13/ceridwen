@@ -52,7 +52,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 SSP_FILE = HERE / "ssp_data.h5"
 SEED = 7
 ZRED = 2.0
-N_TIME = 6
+N_TIME = 7      # SFH nodes -> 6 step bins -> 5 logsfr_ratios between adjacent bins
 SNR = 15.0
 FILTERS = ["jwst_f090w", "jwst_f115w", "jwst_f150w", "jwst_f200w", "jwst_f277w",
            "jwst_f356w", "jwst_f444w", "jwst_f770w", "jwst_f1000w", "jwst_f1500w",

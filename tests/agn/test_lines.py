@@ -537,5 +537,5 @@ def test_B9_refused_by_sedmodel_construction():
                      kinematics=Kinematics(sigma_gal=150.0, sigma_gas=T.SIGMA_GAS),
                      transforms={"sfh": lambda th, _t=t: logsfr_ratios_to_sfh(
                          th["logsfr_ratios"], sfh_times_yr=_t)},
-                     free_param_init={"logsfr_ratios": jnp.zeros(len(t) - 1),
+                     free_param_init={"logsfr_ratios": jnp.zeros(len(t) - 2),
                                       "logmass": jnp.array([9.0])})

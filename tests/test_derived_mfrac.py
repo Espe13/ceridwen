@@ -58,7 +58,8 @@ def _grids():
 
 
 def _model(grid, sfh_interp="step"):
-    lookback = jnp.linspace(0.0, 13.0, N_TIME)
+    # N_TIME SFR values (4 ratios) either way: step takes one per bin, so one more node
+    lookback = jnp.linspace(0.0, 13.0, N_TIME + (1 if sfh_interp == "step" else 0))
     csp = CSPBasis(grid, theta={"lookback_time": lookback, "sfh": jnp.ones(N_TIME),
                                 "logzsol": jnp.array([-0.2])},
                    zh_const=True, sfh_interp=sfh_interp, add_dust=False, add_diffuse_dust=True,
@@ -82,7 +83,7 @@ def _model(grid, sfh_interp="step"):
                             "logmass": Uniform(low=10.0, high=11.0),
                             "diffuse_tau_kc": Uniform(low=0.0, high=2.0),
                             "diffuse_dust_index": Uniform(low=-1.0, high=0.4)},
-                    free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 1),
+                    free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 1),   # N_TIME SFRs
                                      "logmass": jnp.array([10.5])},
                     broaden_photometry=False)
 

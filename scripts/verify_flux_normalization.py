@@ -54,7 +54,7 @@ assert np.isclose(ff_native, 1.553165e-22, rtol=1e-3), "ff(0.1) wrong!"
 
 # ── 2. end-to-end model prediction ─────────────────────────────────────────
 ssp = SSPData.load(str(SSP_FILE))
-csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 6),
+csp = CSPBasis(ssp, lookback_time=jnp.linspace(0.0, 12.0, 7),   # 6 step bins, 5 ratios
                zh_const=True, sfh_interp="step",
                add_dust=False, add_diffuse_dust=True, add_neb=False,
                verbose=False, cosmo=Cosmology.planck18())

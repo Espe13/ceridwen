@@ -185,7 +185,7 @@ def _obs(lines_wave=None):
 
 def _model(csp, obs, extra_init=None):
     t = np.array(csp.sfh_times)
-    init = {"logsfr_ratios": jnp.zeros(len(t) - 1), "logmass": jnp.array([9.0])}
+    init = {"logsfr_ratios": jnp.zeros(len(t) - 2), "logmass": jnp.array([9.0])}
     init.update(extra_init or {})
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")           # unpriored sampled parameters
@@ -394,12 +394,12 @@ def test_eline_scaling_acts_on_lines_observation_only(csp):
 
 
 def test_old_population_has_no_lines(built, csp):
-    """Lines come from young stars only: zeroing the SFR at the three youngest nodes
-    (0, 10, 100 Myr) removes the line flux (the nebular grid ends at ~20 Myr)."""
+    """Lines come from young stars only: zeroing the SFR of the two youngest bins
+    (0-10 and 10-100 Myr) removes the line flux (the nebular grid ends at ~20 Myr)."""
     model, spec, *_, th, _ = built
     mt = _csp_theta(model, th)
     F_young = np.asarray(csp.predict_line_fluxes(mt))
-    mt["sfh"] = mt["sfh"] * jnp.array([0.0, 0.0, 0.0, 1.0, 1.0])
+    mt["sfh"] = mt["sfh"] * jnp.array([0.0, 0.0, 1.0, 1.0])
     F_old = np.asarray(csp.predict_line_fluxes(mt))
     assert F_young.max() > 0.0
     assert F_old.max() < 1e-12 * F_young.max()

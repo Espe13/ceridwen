@@ -49,7 +49,7 @@ class _LazyCmap:
 _LABELS = {
     "logmass": r"$\log M_\mathrm{formed}/\mathrm{M}_\odot$", "zred": r"$z$",
     "logzsol": r"$\log(Z_\star/\mathrm{Z}_\odot)$",
-    "logzsol_hist": r"$\log(Z_\star/\mathrm{Z}_\odot)$",
+    "logzsol_bins": r"$\log(Z_\star/\mathrm{Z}_\odot)$",
     "logzsol_total": r"$[Z/\mathrm{H}]$",
     "gas_logz": r"$\log(Z_\mathrm{gas}/\mathrm{Z}_\odot)$", "gas_logu": r"$\log U$",
     "frac_obrun": r"$f_\mathrm{esc}$", "eline_scaling": r"$s_\mathrm{line}$",
@@ -61,7 +61,7 @@ _LABELS = {
 
 
 _FEH_LABELS = {"logzsol": r"$[\mathrm{Fe}/\mathrm{H}]$",
-               "logzsol_hist": r"$[\mathrm{Fe}/\mathrm{H}]$"}
+               "logzsol_bins": r"$[\mathrm{Fe}/\mathrm{H}]$"}
 
 
 def _label(name: str, feh: bool = False) -> str:

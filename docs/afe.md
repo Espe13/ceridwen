@@ -27,9 +27,10 @@ ssp.display()                       # (n_afe, n_Z, n_age, n_wave) = (5, 13, 107,
 csp = CSPBasis_afe(ssp, lookback_time=jnp.linspace(0.0, 12.0, 9),
                    cosmo=Cosmology.planck18(), zh_const=True, verbose=False)
 
+t = jnp.linspace(0.0, 12.0, 9)                  # 9 nodes, 8 step bins
 theta = {
-    "lookback_time":      jnp.linspace(0.0, 12.0, 9),
-    "sfh":                jnp.exp(-jnp.linspace(0.0, 12.0, 9) / 1.0),
+    "lookback_time":      t,
+    "sfh":                jnp.exp(-0.5 * (t[:-1] + t[1:]) / 1.0),   # one SFR per bin
     "logzsol":            jnp.array([-0.3]),   # = [Fe/H] on an aMIST grid
     "afe":                jnp.array([0.4]),    # [α/Fe]: re-partitions that Z
     "tau_pow":            jnp.array([0.3]),

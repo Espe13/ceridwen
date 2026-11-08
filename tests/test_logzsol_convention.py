@@ -231,7 +231,7 @@ def test_const_equals_history_at_the_same_metallicity(name):
     n_time = const.n_time
     hist = _csp(ssp, is_afe, zh_const=False)
     tc = dict(const.theta_init); tc["logzsol"] = jnp.array([x])
-    th = dict(hist.theta_init); th["logzsol_hist"] = jnp.full((n_time,), x)
+    th = dict(hist.theta_init); th["logzsol_bins"] = jnp.full((n_time - 1,), x)
     Wc = np.asarray(const.calculate_ssp_weights(tc))
     Wh = np.asarray(hist.calculate_ssp_weights(th))
     assert np.allclose(Wc, Wh, rtol=1e-10, atol=1e-30)
@@ -268,7 +268,7 @@ def test_old_absolute_keys_raise_with_the_converted_value():
     ssp, _ = _load("mist_bpass_v2")
     with pytest.raises(ValueError, match=r"theta\['Z'\] is not a parameter name"):
         _csp(ssp, False, theta={"lookback_time": jnp.linspace(0.0, 13.0, 4),
-                                "sfh": jnp.ones(4), "Z": jnp.array([-2.0])},
+                                "sfh": jnp.ones(3), "Z": jnp.array([-2.0])},
              lookback_time=None)
 
 
@@ -360,7 +360,7 @@ def test_gas_tied_removes_gas_logz_from_the_parameters():
     assert "gas_logz" not in getattr(csp, "neb_param_names", [])
     assert "gas_logu" in csp.neb_param_names          # the ionisation parameter stays free
     with pytest.raises(ValueError, match="gas_tied=True"):
-        CSPBasis(ssp, theta={"lookback_time": jnp.linspace(0.0, 13.0, 4), "sfh": jnp.ones(4),
+        CSPBasis(ssp, theta={"lookback_time": jnp.linspace(0.0, 13.0, 4), "sfh": jnp.ones(3),
                              "logzsol": jnp.array([-0.3]), "gas_logz": jnp.array([-0.3])},
                  zh_const=True, add_dust=False, add_diffuse_dust=False, add_neb=True,
                  gas_tied=True, sps_home=os.environ["SPS_HOME"], add_igm=False,

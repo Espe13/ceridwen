@@ -47,7 +47,8 @@ def _bpass():
 def _csp(ssp, interp, per_bin, zh_const, track=True, cls=CSPBasis, T=None):
     T = float(COSMO.age(0.0)) if T is None else T
     lb = np.linspace(0.0, T, N)
-    kw = dict(lookback_time=lb, zh_const=zh_const, sfh_interp=interp, sfh_per_bin=per_bin,
+    # sfh_per_bin=False means "the scheme's default": per bin for step (the only step form)
+    kw = dict(lookback_time=lb, zh_const=zh_const, sfh_interp=interp, sfh_per_bin=per_bin or None,
               add_dust=False, add_diffuse_dust=False, track_zred_age=track, verbose=False,
               cosmo=COSMO)
     if cls is CSPBasis:
@@ -59,7 +60,7 @@ def _unit_sfh(csp, per_bin):
     """Unit formed mass on the construction grid: the shipped transform per node; per bin, the
     same SFR values normalised by sum(sfr * dt)."""
     t = np.asarray(csp.sfh_times)
-    if not per_bin:
+    if not csp.sfh_per_bin:
         return logsfr_ratios_to_sfh(RATIOS, sfh_times_yr=t)
     sfr = 10.0 ** np.concatenate([[0.0], -np.cumsum(np.asarray(RATIOS)[:-1])])
     return jnp.asarray(sfr / np.sum(sfr * np.diff(t)))
@@ -70,11 +71,12 @@ def _theta(csp, sfh, z, zh_const):
     if zh_const:
         th["logzsol"] = jnp.array([-0.3])
     else:
-        th["logzsol_hist"] = jnp.linspace(-0.3, -1.0, N)
+        zh = jnp.linspace(-0.3, -1.0, N)
+        th["logzsol_bins"] = 0.5 * (zh[:-1] + zh[1:])
     return th
 
 
-SCHEMES = [("step", False), ("step", True), ("linear", False), ("linear", True)]
+SCHEMES = [("step", True), ("linear", False), ("linear", True)]   # step: one SFR per bin only
 
 
 @pytest.mark.parametrize("zh_const", [True, False])
@@ -137,12 +139,17 @@ def test_grad_wrt_zred_is_finite(interp):
 
 
 # ------------------------------------------------------------------ PostProcess ----
+def _n_ratios(csp):
+    """Ratios between adjacent SFR values: n_time-2 for a per-bin SFH (step), n_time-1 per node."""
+    return int(np.size(csp.theta_init["sfh"])) - 1
+
+
 def _model(csp, free_z, zred):
     t_yr = np.array(csp.sfh_times)
 
     def _sfh(t, _t=t_yr):
         return logsfr_ratios_to_sfh(t["logsfr_ratios"], sfh_times_yr=_t)
-    init = {"logsfr_ratios": RATIOS, "logmass": jnp.array([10.3])}
+    init = {"logsfr_ratios": RATIOS[:_n_ratios(csp)], "logmass": jnp.array([10.3])}
     if free_z:
         init["zred"] = jnp.array([zred])
     return SedModel(csp, [], priors={}, transforms={"sfh": _sfh}, free_param_init=init,
@@ -152,8 +159,9 @@ def _model(csp, free_z, zred):
 def _result(model, zs):
     n = len(zs)
     rng = np.random.default_rng(0)
-    samples = {"logsfr_ratios": jnp.asarray(np.asarray(RATIOS)[None] + 0.1 * rng.standard_normal(
-                   (n, N - 1))),
+    k = _n_ratios(model.csp)
+    samples = {"logsfr_ratios": jnp.asarray(np.asarray(RATIOS)[None, :k] + 0.1 * rng.standard_normal(
+                   (n, k))),
                "logmass": jnp.asarray(10.3 + 0.2 * rng.standard_normal(n))}
     if "zred" in model.param_names:
         samples["zred"] = jnp.asarray(np.asarray(zs, dtype=float))

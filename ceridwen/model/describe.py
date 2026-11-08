@@ -193,7 +193,7 @@ def model_structure(model) -> Structure:
         stars.details.append(f"SFH on {sfh_t.size} lookback nodes ({getattr(csp, 'sfh_interp', '')}),"
                              f" {sfh_t.min():.3g}-{sfh_t.max():.3g} Gyr")
     stars.details.append("metallicity constant in time" if getattr(csp, "zh_const", False)
-                         else "metallicity history")
+                         else "metallicity history, one value per SFH bin")
     st.append(stars)
     if getattr(csp, "neb", None) is not None:
         neb = Stage("neb", "Nebular emission", TEAL,
@@ -432,12 +432,12 @@ PARAM_INFO = {
     "sfh": (r"\mathrm{SFR}(t)", "star-formation rate at each lookback node",
             r"$M_\odot\,\mathrm{yr}^{-1}$ per $10^{\log M}$"),
     "logsfr_ratios": (r"\log(\mathrm{SFR}_i/\mathrm{SFR}_{i+1})",
-                      "log ratio of the SFR in adjacent SFH nodes (index 0 = today)", "dex"),
+                      "log ratio of the SFR in adjacent SFH bins (step; nodes for linear), index 0 = today", "dex"),
     "lookback_time": (r"t_\mathrm{lb}", "SFH lookback-time nodes", "Gyr"),
     "logzsol": (r"\log(Z_\star/Z_\odot)", "stellar metallicity, constant in time",
                 r"dex ($Z_\odot$ of the grid)"),
-    "logzsol_hist": (r"\log(Z_\star/Z_\odot)(t)", "stellar metallicity at each lookback node",
-                     r"dex ($Z_\odot$ of the grid)"),
+    "logzsol_bins": (r"\log(Z_\star/Z_\odot)_i", "stellar metallicity of each SFH bin "
+                     "(index 0 = youngest)", r"dex ($Z_\odot$ of the grid)"),
     "afe": (r"[\alpha/\mathrm{Fe}]", r"$\alpha$-element enhancement of the SSPs", "dex"),
     "logmass": (r"\log(M/M_\odot)",
                 r"mass scale: the spectrum is multiplied by $10^{\log M}$ (the mass formed "

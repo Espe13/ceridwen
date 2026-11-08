@@ -37,7 +37,8 @@ def _csp(dem=True, geometry="runaway_bc", cosmo=None):
 
 def _theta(csp, tau_diff):
     th = dict(csp.theta_init)
-    th.update(sfh=jnp.array([10., 3., 1., 1., 1., 1.]), logzsol=jnp.array([0.0]),
+    th.update(sfh=jnp.array([6.5, 2., 1., 1., 1.]),   # step bins: the means of nodes [10, 3, 1, 1, 1, 1]
+              logzsol=jnp.array([0.0]),
               tau_pow=jnp.array([1.0]), alpha_pow=jnp.array([-1.0]),
               diffuse_tau_kc=jnp.array([tau_diff]), diffuse_dust_index=jnp.array([0.0]),
               gas_logz=jnp.array([0.0]), gas_logu=jnp.array([-2.0]))

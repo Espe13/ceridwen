@@ -208,7 +208,10 @@ def _grid_with_table():
 
 
 def _csp(grid, lookback_gyr, sfh, interp):
-    th = {"lookback_time": jnp.asarray(lookback_gyr), "sfh": jnp.asarray(sfh),
+    sfh = jnp.asarray(sfh)
+    if interp == "step" and sfh.size == np.size(lookback_gyr):   # a step SFH: one SFR per bin,
+        sfh = 0.5 * (sfh[:-1] + sfh[1:])                         # the means of the node values
+    th = {"lookback_time": jnp.asarray(lookback_gyr), "sfh": sfh,
           "logzsol": jnp.array([0.0])}
     csp = CSPBasis(grid, theta=th, zh_const=True, sfh_interp=interp, add_neb=False,
                    add_dust=False, add_diffuse_dust=False, verbose=False,

@@ -50,7 +50,7 @@ from ceridwen.observation import Photometry, Spectrum  # noqa: E402
 from ceridwen.priors import ClippedNormal, LogUniform, StudentT, Uniform  # noqa: E402
 
 ZRED = 3.0
-N_TIME = 5
+N_TIME = 6          # SFH nodes -> 5 step bins -> 4 logsfr_ratios
 FILTERS = ["jwst_f090w", "jwst_f115w", "jwst_f150w", "jwst_f200w", "jwst_f277w", "jwst_f356w",
            "jwst_f410m", "jwst_f444w", "jwst_f770w", "jwst_f1000w", "jwst_f1800w"]
 TRUTH = {"logsfr_ratios": jnp.array([0.2, 0.0, -0.2, -0.4]), "logzsol": jnp.array([-0.5]),
@@ -72,7 +72,7 @@ def build(csp, obs):
                   "fagn": lambda th: 10.0 ** th["log_fagn"],
                   "fagn_bbb": lambda th: 10.0 ** th["log_fagn_bbb"],
                   "diffuse_dust_index": lambda th: jnp.array([0.0])}       # fixed slope
-    init = {"logsfr_ratios": jnp.zeros(N_TIME - 1), "logzsol": jnp.array([-0.8]),
+    init = {"logsfr_ratios": jnp.zeros(N_TIME - 2), "logzsol": jnp.array([-0.8]),
             "logmass": jnp.array([10.2]), "diffuse_tau_kc": jnp.array([0.3]),
             "log_fagn": jnp.array([-2.0]), "agn_tau": jnp.array([30.0]),
             "log_fagn_bbb": jnp.array([-1.0])}
@@ -152,7 +152,7 @@ def build_sigma(csp, obs):
     m0 = build(csp, obs[0])
     priors = {**m0.priors, **SIGMA_PRIORS}
     transforms = {**m0.transforms, **{k: (lambda th, v=v: jnp.array([v])) for k, v in GAS.items()}}
-    init = {"logsfr_ratios": jnp.zeros(len(t) - 1), "logzsol": jnp.array([-0.8]),
+    init = {"logsfr_ratios": jnp.zeros(len(t) - 2), "logzsol": jnp.array([-0.8]),
             "logmass": jnp.array([10.2]), "diffuse_tau_kc": jnp.array([0.3]),
             "log_fagn": jnp.array([-2.0]), "agn_tau": jnp.array([30.0]),
             "log_fagn_bbb": jnp.array([-1.0]), **SIGMA_INIT}

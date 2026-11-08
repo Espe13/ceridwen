@@ -129,7 +129,7 @@ def test_grad_igm_damping_dla():
         csp, ["jwst_f090w", "jwst_f115w", "jwst_f150w", "jwst_f200w"], (1180.0, 1400.0), 7.0,
         free={"logmass": (8.0, 10.0), "x_HI": (0.0, 1.0), "logN_HI": (19.0, 22.5),
               "z_dla": (6.0, 7.0)},
-        fixed={"sfh": np.ones(5), "logzsol": -0.5})
+        fixed={"sfh": np.ones(4), "logzsol": -0.5})
     _check(f, names, lo, hi)
 
 
@@ -141,7 +141,7 @@ def test_grad_dust_laws():
         csp, ["sdss_u0", "sdss_g0", "sdss_r0", "sdss_i0"], (1800.0, 3000.0), 1.0,
         free={"logmass": (8.0, 10.0), "tau_noll": (0.0, 2.0), "Ebump": (0.0, 4.0),
               "tau_g03smc": (0.0, 1.0), "diffuse_tau_reddy": (0.0, 1.0)},
-        fixed={"sfh": np.ones(5), "logzsol": -0.5, "delta": -0.2, "c_r": 0.0})
+        fixed={"sfh": np.ones(4), "logzsol": -0.5, "delta": -0.2, "c_r": 0.0})
     _check(f, names, lo, hi)
 
 
@@ -153,6 +153,6 @@ def test_grad_themis():
         csp, ["wise_w1", "wise_w2", "wise_w3", "wise_w4"], (5000.0, 7000.0), 0.1,
         free={"logmass": (8.0, 10.0), "diffuse_tau_kc": (0.1, 1.5),
               "duste_qpah": (1.0, 18.0), "duste_umin": (0.2, 50.0), "duste_gamma": (0.0, 0.5)},
-        fixed={"sfh": np.ones(5), "logzsol": -0.5, "diffuse_dust_index": 0.0,
+        fixed={"sfh": np.ones(4), "logzsol": -0.5, "diffuse_dust_index": 0.0,
                "tau_pow": 0.3, "alpha_pow": -1.0})
     _check(f, names, lo, hi)

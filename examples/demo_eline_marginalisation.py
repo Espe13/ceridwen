@@ -33,7 +33,7 @@ OUT = HERE / "demo_eline_output"
 
 SEED = 7
 ZRED = 2.5
-N_TIME = 6
+N_TIME = 7      # SFH nodes -> 6 step bins -> 5 logsfr_ratios between adjacent bins
 R_FWHM = 1000.0
 SNR = 20.0
 FILTERS = ["jwst_f115w", "jwst_f150w", "jwst_f200w", "jwst_f277w", "jwst_f356w", "jwst_f444w"]
@@ -82,7 +82,7 @@ def main() -> None:
             transforms={"sfh": lambda th, _t=t: logsfr_ratios_to_sfh(th["logsfr_ratios"], sfh_times_yr=_t),
                         "gas_logu": lambda th: jnp.array([GAS["gas_logu"]]),
                         "gas_logz": lambda th: jnp.array([GAS["gas_logz"]])},
-            free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 1), "logmass": jnp.array([10.0])},
+            free_param_init={"logsfr_ratios": jnp.zeros(N_TIME - 2), "logmass": jnp.array([10.0])},
             kinematics=Kinematics(sigma_gal=150.0, sigma_gas=80.0))
 
     # -- mock: nebular model on, line fluxes rescaled away from CLOUDY --------------------
