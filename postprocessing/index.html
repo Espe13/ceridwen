@@ -320,6 +320,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading to 2.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../mac_gpu/" class="md-nav__link">
         
   
@@ -886,8 +913,8 @@ kinematics, including <code>broaden_photometry</code>.</p>
 </tr>
 <tr>
 <td><code>out['extras']['sfh']['sfr']</code></td>
-<td><code>(N, n_time)</code> or <code>(N, n_time-1)</code></td>
-<td>SFR in M⊙/yr in the CSP's convention (per node, or per bin for <code>sfh_per_bin</code>)</td>
+<td><code>(N, n_time-1)</code> or <code>(N, n_time)</code></td>
+<td>SFR in M⊙/yr in the CSP's convention (per bin for <code>sfh_interp="step"</code> or <code>sfh_per_bin</code>, per node for <code>"linear"</code>)</td>
 </tr>
 <tr>
 <td><code>out['extras']['sfh']['sfr_per_bin']</code></td>

@@ -320,6 +320,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading to 2.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../mac_gpu/" class="md-nav__link">
         
   
@@ -922,17 +949,18 @@ enables diffuse and birth-cloud dust attenuation.</p>
 <a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="c1"># &gt;= 2 nodes). Its oldest node must not exceed the age of the universe at ZRED,</span>
 <a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="c1"># cosmo.age(0.5) = 8.6 Gyr under Planck18; SedModel refuses a grid that does.</span>
 <a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="c1"># CSPBasis refuses to build without a grid (or an explicit theta).</span>
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="n">lookback</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">8.0</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>        <span class="c1"># 5 nodes -&gt; 4 free logsfr_ratios</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="n">lookback</span> <span class="o">=</span> <span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">8.0</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>        <span class="c1"># 6 nodes -&gt; 5 step bins -&gt; 4 logsfr_ratios</span>
 <a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span>
 <a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>    <span class="n">ssp</span><span class="p">,</span>
 <a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>    <span class="n">lookback_time</span><span class="o">=</span><span class="n">lookback</span><span class="p">,</span>
 <a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>    <span class="n">cosmo</span><span class="o">=</span><span class="n">cosmo</span><span class="p">,</span>
-<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>    <span class="n">zh_const</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sfh_interp</span><span class="o">=</span><span class="s2">"step"</span><span class="p">,</span>       <span class="c1"># one "logzsol"; zh_const=False samples "logzsol_hist"</span>
-<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>    <span class="n">add_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_diffuse_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>   <span class="c1"># birth-cloud + diffuse attenuation</span>
-<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>    <span class="n">add_neb</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                           <span class="c1"># nebular continuum + lines (needs $SPS_HOME)</span>
-<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>    <span class="n">add_igm</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                           <span class="c1"># Madau (1995), auto-scales with zred</span>
-<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>    <span class="c1"># sps_home defaults to $SPS_HOME</span>
-<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="p">)</span>
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>    <span class="n">zh_const</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sfh_interp</span><span class="o">=</span><span class="s2">"step"</span><span class="p">,</span>       <span class="c1"># one "logzsol"; zh_const=False samples "logzsol_bins"</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>                                            <span class="c1"># (one per SFH bin)</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>    <span class="n">add_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_diffuse_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>   <span class="c1"># birth-cloud + diffuse attenuation</span>
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>    <span class="n">add_neb</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                           <span class="c1"># nebular continuum + lines (needs $SPS_HOME)</span>
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>    <span class="n">add_igm</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>                           <span class="c1"># Madau (1995), auto-scales with zred</span>
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>    <span class="c1"># sps_home defaults to $SPS_HOME</span>
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="p">)</span>
 </code></pre></div>
 <p>Set the galaxy's velocity dispersions on the model through <code>Kinematics</code>,
 which is shared by all observations. Here the stellar dispersion is sampled
@@ -1296,7 +1324,7 @@ fitting, using empty lists for the others, and give each free parameter a prior.
 <a id="__codelineno-9-32" name="__codelineno-9-32" href="#__codelineno-9-32"></a><span class="k">def</span><span class="w"> </span><span class="nf">logsfr_to_sfh</span><span class="p">(</span><span class="n">free_theta</span><span class="p">,</span> <span class="n">_t</span><span class="o">=</span><span class="n">sfh_times_yr</span><span class="p">):</span>
 <a id="__codelineno-9-33" name="__codelineno-9-33" href="#__codelineno-9-33"></a>    <span class="k">return</span> <span class="n">logsfr_ratios_to_sfh</span><span class="p">(</span><span class="n">free_theta</span><span class="p">[</span><span class="s2">"logsfr_ratios"</span><span class="p">],</span> <span class="n">sfh_times_yr</span><span class="o">=</span><span class="n">_t</span><span class="p">)</span>
 <a id="__codelineno-9-34" name="__codelineno-9-34" href="#__codelineno-9-34"></a>
-<a id="__codelineno-9-35" name="__codelineno-9-35" href="#__codelineno-9-35"></a><span class="n">N_RATIOS</span> <span class="o">=</span> <span class="mi">4</span>   <span class="c1"># number of SFH nodes - 1</span>
+<a id="__codelineno-9-35" name="__codelineno-9-35" href="#__codelineno-9-35"></a><span class="n">N_RATIOS</span> <span class="o">=</span> <span class="mi">4</span>   <span class="c1"># step SFH: number of bins - 1 = number of nodes - 2</span>
 <a id="__codelineno-9-36" name="__codelineno-9-36" href="#__codelineno-9-36"></a><span class="n">model</span> <span class="o">=</span> <span class="n">SedModel</span><span class="p">(</span>
 <a id="__codelineno-9-37" name="__codelineno-9-37" href="#__codelineno-9-37"></a>    <span class="n">csp</span><span class="p">,</span>
 <a id="__codelineno-9-38" name="__codelineno-9-38" href="#__codelineno-9-38"></a>    <span class="n">observations</span><span class="o">=</span><span class="n">observations</span><span class="p">,</span>

@@ -320,6 +320,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading to 2.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../mac_gpu/" class="md-nav__link">
         
   
@@ -822,8 +849,10 @@ and checks its SHA-256 on every call. Use <code>available_grids()</code> to list
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="n">ssp</span><span class="o">.</span><span class="n">display</span><span class="p">()</span>                                      <span class="c1"># library, IMF, grid coverage</span>
 </code></pre></div>
 <p><strong>2. Build the model.</strong> <code>lookback_time</code> contains SFH nodes in Gyr, increasing
-from 0 at the present. A transform converts the sampled <code>logsfr_ratios</code> into
-an SFR at each node. <code>logzsol</code> is log10(Z/Z_sun) for the loaded grid.</p>
+from 0 at the present; with <code>sfh_interp="step"</code> the SFR is constant between
+adjacent nodes, one value per bin. A transform converts the sampled
+<code>logsfr_ratios</code> (log SFR ratios of adjacent bins, Prospector's continuity
+SFH) into those bin SFRs: 7 nodes give 6 bins and 5 ratios. <code>logzsol</code> is log10(Z/Z_sun) for the loaded grid.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">jax</span><span class="o">,</span><span class="w"> </span><span class="nn">jax.numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">jnp</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">ceridwen</span><span class="w"> </span><span class="kn">import</span> <span class="n">CSPBasis</span><span class="p">,</span> <span class="n">SedModel</span><span class="p">,</span> <span class="n">Instrument</span><span class="p">,</span> <span class="n">Cosmology</span>
@@ -838,7 +867,7 @@ an SFR at each node. <code>logzsol</code> is log10(Z/Z_sun) for the loaded grid.
 <a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="n">SPEC_WAVE</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">4000.0</span><span class="p">,</span> <span class="mf">8000.0</span><span class="p">,</span> <span class="mi">600</span><span class="p">)</span>       <span class="c1"># observed-frame vacuum Angstrom</span>
 <a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="n">LSF</span> <span class="o">=</span> <span class="n">Instrument</span><span class="o">.</span><span class="n">sigma_kms</span><span class="p">(</span><span class="mf">150.0</span><span class="p">)</span>                  <span class="c1"># instrumental line-spread function</span>
 <a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="n">lookback_time</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">12.0</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="n">csp</span> <span class="o">=</span> <span class="n">CSPBasis</span><span class="p">(</span><span class="n">ssp</span><span class="p">,</span> <span class="n">lookback_time</span><span class="o">=</span><span class="n">jnp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">12.0</span><span class="p">,</span> <span class="mi">7</span><span class="p">),</span>
 <a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>               <span class="n">cosmo</span><span class="o">=</span><span class="n">Cosmology</span><span class="o">.</span><span class="n">planck18</span><span class="p">(),</span>
 <a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>               <span class="n">zh_const</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sfh_interp</span><span class="o">=</span><span class="s2">"step"</span><span class="p">,</span>
 <a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>               <span class="n">add_dust</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">add_diffuse_dust</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">add_neb</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>

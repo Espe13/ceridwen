@@ -320,6 +320,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading to 2.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../mac_gpu/" class="md-nav__link">
         
   
@@ -978,8 +1005,12 @@
 needed to interpret a fit. <code>GOTCHAS.md</code> in the repository covers additional
 usage errors.</p>
 <h2 id="metallicity">Metallicity<a class="headerlink" href="#metallicity" title="Permanent link">&para;</a></h2>
-<p>Use <code>theta["logzsol"]</code> for constant metallicity or <code>theta["logzsol_hist"]</code>
-for one value per lookback-time node. Values are log10(Z/Z_sun), using
+<p>Use <code>theta["logzsol"]</code> for constant metallicity (<code>zh_const=True</code>) or
+<code>theta["logzsol_bins"]</code> for one value per SFH bin (<code>zh_const=False</code>, shape
+<code>(n_time - 1,)</code>, index 0 = the youngest bin), constant within each bin. The
+per-node <code>logzsol_hist</code> was removed: the model used only its bin means
+<code>0.5 * (zh[k] + zh[k+1])</code>, so one combination of the nodes was invisible to the
+data; it now raises with those bin means. Values are log10(Z/Z_sun), using
 the loaded grid's Z_sun; 0.0 is solar. Absolute-metallicity keys <code>Z</code> and
 <code>zh</code> are rejected with an error that shows the converted value.</p>
 <p>Typical ranges are [−2.30, +0.30] for BPASS (Z_sun = 0.020) and
@@ -1164,9 +1195,11 @@ of 3.4e38 and producing NaN.</p>
 Observations store data in float64, both at construction and when assigning
 <code>obs.flux</code> or <code>obs.uncertainty</code>. Input arrays may use float32.</p>
 <h2 id="sfh-mass-normalisation">SFH mass normalisation<a class="headerlink" href="#sfh-mass-normalisation" title="Permanent link">&para;</a></h2>
-<p><code>logsfr_ratios_to_sfh</code> normalises the trapezoidal SFR integral to 1 M☉
-on the supplied <code>sfh_times_yr=csp.sfh_times</code> construction grid, including
-when redshift is free. <code>logmass</code> then sets the mass. Use this transform
+<p><code>logsfr_ratios_to_sfh</code> normalises the SFR integral to 1 M☉ on the
+supplied <code>sfh_times_yr=csp.sfh_times</code> construction grid, including when
+redshift is free: Σ SFR_i Δt_i for one SFR per bin (<code>sfh_interp="step"</code>,
+<code>n_time - 2</code> ratios), the trapezoidal integral for one per node
+(<code>"linear"</code>, <code>n_time - 1</code> ratios). <code>logmass</code> then sets the mass. Use this transform
 to avoid normalisation errors that can shift <code>logmass</code> by several dex.</p>
 <h2 id="unrecognised-theta-keys">Unrecognised <code>theta</code> keys<a class="headerlink" href="#unrecognised-theta-keys" title="Permanent link">&para;</a></h2>
 <p>The model ignores keys it does not read. A typo such as <code>logmas</code> or <code>dust2</code>
